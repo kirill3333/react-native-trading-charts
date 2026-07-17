@@ -1,31 +1,28 @@
-import {
-  TradingCharts,
-  type OhlcCandle,
-  type TradeEvent,
-} from 'react-native-trading-charts';
+import { TradingCharts, type OhlcCandle } from 'react-native-trading-charts';
 
 import {
-  BybitNoDataError,
-  compareBybitTrades,
-  fetchRecentSpotTradesWithRetry,
+  BinanceNoDataError,
   fetchSpotKlinesWithRetry,
   klineTopic,
   parseKlineMarketMessage,
-  parseTradeMarketMessage,
-  tradeTopic,
-  type BybitInterval,
-  type BybitTicker,
-  type BybitTrade,
-} from './bybit';
+  type BinanceInterval,
+  type BinanceMarketMessage,
+  type BinanceTicker,
+} from './binance';
+import { binanceWebSocketClient } from './binanceWebSocket';
 import {
-  bybitWebSocketClient,
-  type BybitWebSocketEvent,
-  type BybitWebSocketListener,
-} from './bybitWebSocket';
+  fetchHyperliquidCandlesWithRetry,
+  hyperliquidCandleTopic,
+  HyperliquidNoDataError,
+  parseHyperliquidCandleMarketMessage,
+  type HyperliquidInterval,
+  type HyperliquidMarketMessage,
+  type HyperliquidTicker,
+} from './hyperliquid';
+import { hyperliquidWebSocketClient } from './hyperliquidWebSocket';
 
 const DEFAULT_CACHE_SIZE = 8;
 const MAX_CACHED_CANDLES = 300;
-const MAX_BUFFERED_TRADES = 50_000;
 
 export type ChartConnectionStatus =
   | 'loading'
@@ -45,24 +42,58 @@ export type ChartConnectionSnapshot = Readonly<{
 
 type TradingChartsApi = Pick<
   typeof TradingCharts,
-  'clear' | 'setHistory' | 'updateCandle' | 'updateTrades'
+  'clear' | 'setHistory' | 'updateCandle'
 >;
 
-type WebSocketClient = {
-  subscribe(topic: string, listener: BybitWebSocketListener): () => void;
+type ChartWebSocketState =
+  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused' | 'offline';
+
+type ChartWebSocketEvent<TMessage> =
+  | { type: 'state'; state: ChartWebSocketState; error: string | null }
+  | { type: 'ready'; topic: string; generation: number }
+  | {
+      type: 'message';
+      topic: string;
+      generation: number;
+      message: TMessage;
+    };
+
+type ChartWebSocketListener<TMessage> = (
+  event: ChartWebSocketEvent<TMessage>
+) => void;
+
+type WebSocketClient<TMessage> = {
+  subscribe(
+    topic: string,
+    listener: ChartWebSocketListener<TMessage>
+  ): () => void;
   reportProtocolError(generation: number, error: unknown): void;
 };
 
-export type ChartDataControllerOptions = {
+type FetchKlines<TInterval extends string> = (
+  symbol: string,
+  interval: TInterval,
+  options?: { signal?: AbortSignal; attempts?: number; baseDelayMs?: number }
+) => Promise<OhlcCandle[]>;
+
+export type ChartDataControllerOptions<
+  TInterval extends string = BinanceInterval,
+  TMessage = BinanceMarketMessage,
+> = {
   cacheSize?: number;
   charts?: TradingChartsApi;
-  websocketClient?: WebSocketClient;
-  fetchKlines?: typeof fetchSpotKlinesWithRetry;
-  fetchTrades?: typeof fetchRecentSpotTradesWithRetry;
+  websocketClient?: WebSocketClient<TMessage>;
+  fetchKlines?: FetchKlines<TInterval>;
+  topicFor?: (symbol: string, interval: TInterval) => string;
+  chartIdFor?: (symbol: string, interval: TInterval) => string;
+  sessionKeyFor?: (symbol: string, interval: TInterval) => string;
+  parseMarketMessage?: (message: TMessage) => OhlcCandle[];
+  isNoDataError?: (error: unknown) => boolean;
 };
 
-type SessionOptions = Required<Omit<ChartDataControllerOptions, 'cacheSize'>>;
-
+type SessionOptions<TInterval extends string, TMessage> = Required<
+  Omit<ChartDataControllerOptions<TInterval, TMessage>, 'cacheSize'>
+>;
 type TransportStatus = 'connecting' | 'reconnecting' | 'paused' | 'offline';
 
 const EMPTY_SNAPSHOT: ChartConnectionSnapshot = Object.freeze({
@@ -78,29 +109,27 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-function toTradeEvents(trades: ReadonlyArray<BybitTrade>): TradeEvent[] {
-  return trades.map((trade) => trade.event);
-}
-
 export function chartSessionKey(
   symbol: string,
-  interval: BybitInterval
+  interval: BinanceInterval
 ): string {
   return `${symbol}:${interval}`;
 }
 
-export function chartIdFor(symbol: string, interval: BybitInterval): string {
-  return `bybit-spot-${symbol}-${interval}`;
+export function chartIdFor(symbol: string, interval: BinanceInterval): string {
+  return `binance-spot-${symbol}-${interval}`;
 }
 
-class ChartDataSession {
+class ChartDataSession<TInterval extends string, TMessage> {
   readonly chartId: string;
   readonly key: string;
   private readonly symbol: string;
-  private readonly interval: BybitInterval;
+  private readonly interval: TInterval;
   private readonly topic: string;
-  private readonly options: SessionOptions;
+  private readonly options: SessionOptions<TInterval, TMessage>;
   private readonly listeners = new Set<() => void>();
+  private readonly candleBuffers = new Map<number, Map<number, OhlcCandle>>();
+  private readonly candlesByTimestamp = new Map<number, OhlcCandle>();
   private snapshot: ChartConnectionSnapshot = EMPTY_SNAPSHOT;
   private active = false;
   private disposed = false;
@@ -115,24 +144,17 @@ class ChartDataSession {
   private initialController: AbortController | null = null;
   private synchronizationController: AbortController | null = null;
   private unsubscribeLive: () => void = () => undefined;
-  private readonly tradeBuffers = new Map<number, Map<string, BybitTrade>>();
-  private readonly candleBuffers = new Map<number, Map<number, OhlcCandle>>();
-  private recentTradeIds = new Set<string>();
-  private recentTradeIdQueue: string[] = [];
-  private readonly tradesById = new Map<string, BybitTrade>();
-  private readonly candlesByTimestamp = new Map<number, OhlcCandle>();
 
   constructor(
     symbol: string,
-    interval: BybitInterval,
-    options: SessionOptions
+    interval: TInterval,
+    options: SessionOptions<TInterval, TMessage>
   ) {
     this.symbol = symbol;
     this.interval = interval;
-    this.key = chartSessionKey(symbol, interval);
-    this.chartId = chartIdFor(symbol, interval);
-    this.topic =
-      interval === '1s' ? tradeTopic(symbol) : klineTopic(symbol, interval);
+    this.key = options.sessionKeyFor(symbol, interval);
+    this.chartId = options.chartIdFor(symbol, interval);
+    this.topic = options.topicFor(symbol, interval);
     this.options = options;
   }
 
@@ -144,9 +166,7 @@ class ChartDataSession {
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   };
 
   prepare(): void {
@@ -183,7 +203,6 @@ class ChartDataSession {
     this.unsubscribeLive();
     this.unsubscribeLive = () => undefined;
     this.synchronizedGeneration = null;
-    this.tradeBuffers.clear();
     this.candleBuffers.clear();
     if (this.hasHistory) {
       this.setSnapshot({ status: 'historical', error: null });
@@ -243,27 +262,10 @@ class ChartDataSession {
     this.activeGeneration = null;
   }
 
-  private rememberTrade(trade: BybitTrade): boolean {
-    if (this.recentTradeIds.has(trade.id)) {
-      return false;
-    }
-    this.recentTradeIds.add(trade.id);
-    this.recentTradeIdQueue.push(trade.id);
-    this.tradesById.set(trade.id, trade);
-    if (this.recentTradeIdQueue.length > MAX_BUFFERED_TRADES) {
-      const expiredId = this.recentTradeIdQueue.shift();
-      if (expiredId != null) {
-        this.recentTradeIds.delete(expiredId);
-        this.tradesById.delete(expiredId);
-      }
-    }
-    return true;
-  }
-
   private cacheCandles(candles: ReadonlyArray<OhlcCandle>): void {
-    candles.forEach((candle) => {
-      this.candlesByTimestamp.set(candle.timestamp, candle);
-    });
+    candles.forEach((candle) =>
+      this.candlesByTimestamp.set(candle.timestamp, candle)
+    );
     if (this.candlesByTimestamp.size <= MAX_CACHED_CANDLES) {
       return;
     }
@@ -275,43 +277,10 @@ class ChartDataSession {
       .forEach((timestamp) => this.candlesByTimestamp.delete(timestamp));
   }
 
-  private bufferTrades(generation: number, trades: BybitTrade[]): void {
-    const buffer = this.tradeBuffers.get(generation) ?? new Map();
-    trades.forEach((trade) => buffer.set(trade.id, trade));
-    this.tradeBuffers.set(generation, buffer);
-    if (buffer.size > MAX_BUFFERED_TRADES) {
-      this.options.websocketClient.reportProtocolError(
-        generation,
-        new Error('Trade synchronization buffer exceeded 50,000 records')
-      );
-    }
-  }
-
   private bufferCandles(generation: number, candles: OhlcCandle[]): void {
     const buffer = this.candleBuffers.get(generation) ?? new Map();
     candles.forEach((candle) => buffer.set(candle.timestamp, candle));
     this.candleBuffers.set(generation, buffer);
-  }
-
-  private replaceTrades(
-    snapshot: ReadonlyArray<BybitTrade>,
-    generation?: number
-  ): void {
-    const mergedById = new Map(
-      snapshot.map((trade) => [trade.id, trade] as const)
-    );
-    if (generation != null) {
-      for (const trade of this.tradeBuffers.get(generation)?.values() ?? []) {
-        mergedById.set(trade.id, trade);
-      }
-    }
-    const merged = [...mergedById.values()].sort(compareBybitTrades);
-    this.tradesById.clear();
-    this.recentTradeIds = new Set();
-    this.recentTradeIdQueue = [];
-    merged.forEach((trade) => this.rememberTrade(trade));
-    this.options.charts.clear(this.chartId);
-    this.options.charts.updateTrades(this.chartId, toTradeEvents(merged));
   }
 
   private replaceCandles(
@@ -324,6 +293,7 @@ class ChartDataSession {
     if (generation == null) {
       return;
     }
+
     const latestSnapshotTimestamp = snapshot.at(-1)?.timestamp ?? 0;
     const bufferedCandles = [
       ...(this.candleBuffers.get(generation)?.values() ?? []),
@@ -338,12 +308,6 @@ class ChartDataSession {
 
   private replayCachedHistory(): void {
     if (!this.hasHistory) {
-      return;
-    }
-    if (this.interval === '1s') {
-      const trades = [...this.tradesById.values()].sort(compareBybitTrades);
-      this.options.charts.clear(this.chartId);
-      this.options.charts.updateTrades(this.chartId, toTradeEvents(trades));
       return;
     }
     const candles = [...this.candlesByTimestamp.values()].sort(
@@ -366,35 +330,20 @@ class ChartDataSession {
     this.setSnapshot({ status: 'loading', error: null });
 
     try {
-      if (this.interval === '1s') {
-        const snapshot = await this.options.fetchTrades(this.symbol, {
-          signal: controller.signal,
-        });
-        if (
-          this.disposed ||
-          controller.signal.aborted ||
-          this.initialController !== controller ||
-          this.synchronizedGeneration != null
-        ) {
-          return;
-        }
-        this.replaceTrades(snapshot);
-      } else {
-        const snapshot = await this.options.fetchKlines(
-          this.symbol,
-          this.interval,
-          { signal: controller.signal }
-        );
-        if (
-          this.disposed ||
-          controller.signal.aborted ||
-          this.initialController !== controller ||
-          this.synchronizedGeneration != null
-        ) {
-          return;
-        }
-        this.replaceCandles(snapshot);
+      const snapshot = await this.options.fetchKlines(
+        this.symbol,
+        this.interval,
+        { signal: controller.signal }
+      );
+      if (
+        this.disposed ||
+        controller.signal.aborted ||
+        this.initialController !== controller ||
+        this.synchronizedGeneration != null
+      ) {
+        return;
       }
+      this.replaceCandles(snapshot);
       this.initialController = null;
       this.hasHistory = true;
       this.setSnapshot({ status: 'historical', error: null });
@@ -425,7 +374,7 @@ class ChartDataSession {
         this.transportStatus !== 'paused'
       ) {
         this.setSnapshot({
-          status: error instanceof BybitNoDataError ? 'no-data' : 'error',
+          status: this.options.isNoDataError(error) ? 'no-data' : 'error',
           error: messageFromError(error),
         });
       }
@@ -433,37 +382,20 @@ class ChartDataSession {
   }
 
   private handleMarketMessage(
-    event: Extract<BybitWebSocketEvent, { type: 'message' }>
+    event: Extract<ChartWebSocketEvent<TMessage>, { type: 'message' }>
   ): void {
     if (!this.active || this.terminal || event.topic !== this.topic) {
       return;
     }
     try {
-      if (this.interval === '1s') {
-        const trades = parseTradeMarketMessage(event.message);
-        if (this.synchronizedGeneration === event.generation) {
-          const freshTrades = trades.filter((trade) =>
-            this.rememberTrade(trade)
-          );
-          if (freshTrades.length > 0) {
-            this.options.charts.updateTrades(
-              this.chartId,
-              toTradeEvents(freshTrades)
-            );
-          }
-        } else {
-          this.bufferTrades(event.generation, trades);
-        }
+      const candles = this.options.parseMarketMessage(event.message);
+      if (this.synchronizedGeneration === event.generation) {
+        candles.forEach((candle) => {
+          this.cacheCandles([candle]);
+          this.options.charts.updateCandle(this.chartId, candle);
+        });
       } else {
-        const candles = parseKlineMarketMessage(event.message);
-        if (this.synchronizedGeneration === event.generation) {
-          candles.forEach((candle) => {
-            this.cacheCandles([candle]);
-            this.options.charts.updateCandle(this.chartId, candle);
-          });
-        } else {
-          this.bufferCandles(event.generation, candles);
-        }
+        this.bufferCandles(event.generation, candles);
       }
     } catch (error) {
       this.options.websocketClient.reportProtocolError(event.generation, error);
@@ -484,49 +416,29 @@ class ChartDataSession {
     } else if (this.hasHistory) {
       status = 'historical';
     }
-    this.setSnapshot({
-      status,
-      error: null,
-    });
+    this.setSnapshot({ status, error: null });
 
     try {
-      if (this.interval === '1s') {
-        const snapshot = await this.options.fetchTrades(this.symbol, {
-          signal: controller.signal,
-        });
-        if (
-          !this.active ||
-          this.disposed ||
-          controller.signal.aborted ||
-          this.activeGeneration !== generation
-        ) {
-          return;
-        }
-        this.replaceTrades(snapshot, generation);
-      } else {
-        const snapshot = await this.options.fetchKlines(
-          this.symbol,
-          this.interval,
-          { signal: controller.signal }
-        );
-        if (
-          !this.active ||
-          this.disposed ||
-          controller.signal.aborted ||
-          this.activeGeneration !== generation
-        ) {
-          return;
-        }
-        this.replaceCandles(snapshot, generation);
+      const snapshot = await this.options.fetchKlines(
+        this.symbol,
+        this.interval,
+        { signal: controller.signal }
+      );
+      if (
+        !this.active ||
+        this.disposed ||
+        controller.signal.aborted ||
+        this.activeGeneration !== generation
+      ) {
+        return;
       }
-
+      this.replaceCandles(snapshot, generation);
       this.synchronizationController = null;
       this.activeGeneration = null;
       this.synchronizedGeneration = generation;
       this.hasHistory = true;
       this.initialHistoryFailed = false;
       this.hadLiveData = true;
-      this.tradeBuffers.clear();
       this.candleBuffers.clear();
       this.setSnapshot({ status: 'live', error: null });
     } catch (error) {
@@ -545,13 +457,13 @@ class ChartDataSession {
       this.unsubscribeLive();
       this.unsubscribeLive = () => undefined;
       this.setSnapshot({
-        status: error instanceof BybitNoDataError ? 'no-data' : 'error',
+        status: this.options.isNoDataError(error) ? 'no-data' : 'error',
         error: messageFromError(error),
       });
     }
   }
 
-  private handleSocketEvent = (event: BybitWebSocketEvent): void => {
+  private handleSocketEvent = (event: ChartWebSocketEvent<TMessage>): void => {
     if (!this.active || this.disposed || this.terminal) {
       return;
     }
@@ -585,16 +497,13 @@ class ChartDataSession {
       if (!this.hasHistory && !this.initialHistoryFailed) {
         this.loadInitialHistory().catch(() => undefined);
       }
-      let status: ChartConnectionStatus = 'loading';
+      let nextStatus: ChartConnectionStatus = 'loading';
       if (this.hadLiveData) {
-        status = this.transportStatus;
+        nextStatus = this.transportStatus;
       } else if (this.hasHistory) {
-        status = 'historical';
+        nextStatus = 'historical';
       }
-      this.setSnapshot({
-        status,
-        error: null,
-      });
+      this.setSnapshot({ status: nextStatus, error: null });
     }
   };
 
@@ -610,10 +519,17 @@ class ChartDataSession {
   }
 }
 
-export class ChartDataController {
+export class ChartDataController<
+  TTicker extends { symbol: string } = BinanceTicker,
+  TInterval extends string = BinanceInterval,
+  TMessage = BinanceMarketMessage,
+> {
   private readonly cacheSize: number;
-  private readonly sessionOptions: SessionOptions;
-  private readonly sessions = new Map<string, ChartDataSession>();
+  private readonly sessionOptions: SessionOptions<TInterval, TMessage>;
+  private readonly sessions = new Map<
+    string,
+    ChartDataSession<TInterval, TMessage>
+  >();
   private activeKey: string | null = null;
   private handover: {
     fromKey: string;
@@ -621,28 +537,50 @@ export class ChartDataController {
     removeListener: () => void;
   } | null = null;
 
-  constructor(options: ChartDataControllerOptions = {}) {
+  constructor(options: ChartDataControllerOptions<TInterval, TMessage> = {}) {
     this.cacheSize = Math.max(
       1,
       Math.floor(options.cacheSize ?? DEFAULT_CACHE_SIZE)
     );
     this.sessionOptions = {
       charts: options.charts ?? TradingCharts,
-      websocketClient: options.websocketClient ?? bybitWebSocketClient,
-      fetchKlines: options.fetchKlines ?? fetchSpotKlinesWithRetry,
-      fetchTrades: options.fetchTrades ?? fetchRecentSpotTradesWithRetry,
+      websocketClient:
+        options.websocketClient ??
+        (binanceWebSocketClient as WebSocketClient<TMessage>),
+      fetchKlines:
+        options.fetchKlines ??
+        (fetchSpotKlinesWithRetry as FetchKlines<TInterval>),
+      topicFor:
+        options.topicFor ??
+        ((symbol, interval) =>
+          klineTopic(symbol, interval as unknown as BinanceInterval)),
+      chartIdFor:
+        options.chartIdFor ??
+        ((symbol, interval) =>
+          chartIdFor(symbol, interval as unknown as BinanceInterval)),
+      sessionKeyFor:
+        options.sessionKeyFor ??
+        ((symbol, interval) =>
+          chartSessionKey(symbol, interval as unknown as BinanceInterval)),
+      parseMarketMessage:
+        options.parseMarketMessage ??
+        ((message) =>
+          parseKlineMarketMessage(message as unknown as BinanceMarketMessage)),
+      isNoDataError:
+        options.isNoDataError ??
+        ((error) => error instanceof BinanceNoDataError),
     };
   }
 
-  prepare(ticker: BybitTicker, interval: BybitInterval): string {
+  prepare(ticker: TTicker, interval: TInterval): string {
     const session = this.getOrCreate(ticker.symbol, interval);
     session.prepare();
     this.evictIfNeeded(session.key);
     return session.chartId;
   }
 
-  activate(ticker: BybitTicker, interval: BybitInterval): string {
-    const key = chartSessionKey(ticker.symbol, interval);
+  activate(ticker: TTicker, interval: TInterval): string {
+    const key = this.sessionOptions.sessionKeyFor(ticker.symbol, interval);
     const session = this.getOrCreate(ticker.symbol, interval);
     if (this.activeKey === key) {
       session.activate();
@@ -654,9 +592,8 @@ export class ChartDataController {
     const interruptedHandover = this.detachHandoverListener();
     this.activeKey = key;
 
-    // Register the replacement topic before releasing the previous one. Bybit
-    // supports dynamic subscriptions, so this keeps the physical socket open
-    // while the new interval is acknowledged and synchronized.
+    // Keep the existing topic alive until the replacement interval is
+    // acknowledged and synchronized by the active provider connector.
     session.activate();
 
     const obsoleteKey = interruptedHandover?.fromKey;
@@ -667,7 +604,6 @@ export class ChartDataController {
     ) {
       this.sessions.get(obsoleteKey)?.deactivate();
     }
-
     if (previousKey != null) {
       this.startHandover(previousKey, key, session);
     }
@@ -690,45 +626,46 @@ export class ChartDataController {
     }
   }
 
-  retry(ticker: BybitTicker, interval: BybitInterval): void {
+  retry(ticker: TTicker, interval: TInterval): void {
     this.getOrCreate(ticker.symbol, interval).retry();
   }
 
   subscribe(
-    ticker: BybitTicker,
-    interval: BybitInterval,
+    ticker: TTicker,
+    interval: TInterval,
     listener: () => void
   ): () => void {
     return (
       this.sessions
-        .get(chartSessionKey(ticker.symbol, interval))
+        .get(this.sessionOptions.sessionKeyFor(ticker.symbol, interval))
         ?.subscribe(listener) ?? (() => undefined)
     );
   }
 
-  getSnapshot(
-    ticker: BybitTicker,
-    interval: BybitInterval
-  ): ChartConnectionSnapshot {
+  getSnapshot(ticker: TTicker, interval: TInterval): ChartConnectionSnapshot {
     return (
       this.sessions
-        .get(chartSessionKey(ticker.symbol, interval))
+        .get(this.sessionOptions.sessionKeyFor(ticker.symbol, interval))
         ?.getSnapshot() ?? EMPTY_SNAPSHOT
     );
   }
 
   private getOrCreate(
     symbol: string,
-    interval: BybitInterval
-  ): ChartDataSession {
-    const key = chartSessionKey(symbol, interval);
+    interval: TInterval
+  ): ChartDataSession<TInterval, TMessage> {
+    const key = this.sessionOptions.sessionKeyFor(symbol, interval);
     const existing = this.sessions.get(key);
     if (existing != null) {
       this.sessions.delete(key);
       this.sessions.set(key, existing);
       return existing;
     }
-    const session = new ChartDataSession(symbol, interval, this.sessionOptions);
+    const session = new ChartDataSession<TInterval, TMessage>(
+      symbol,
+      interval,
+      this.sessionOptions
+    );
     this.sessions.set(key, session);
     return session;
   }
@@ -736,7 +673,7 @@ export class ChartDataController {
   private startHandover(
     fromKey: string,
     toKey: string,
-    session: ChartDataSession
+    session: ChartDataSession<TInterval, TMessage>
   ): void {
     const completeIfSettled = () => {
       if (
@@ -792,3 +729,27 @@ export class ChartDataController {
 }
 
 export const chartDataController = new ChartDataController();
+
+function hyperliquidChartIdFor(
+  symbol: string,
+  interval: HyperliquidInterval
+): string {
+  const safeSymbol = symbol.replace(/[^a-zA-Z0-9_-]/g, '-');
+  return `hyperliquid-perp-${safeSymbol}-${interval}`;
+}
+
+export const hyperliquidChartDataController = new ChartDataController<
+  HyperliquidTicker,
+  HyperliquidInterval,
+  HyperliquidMarketMessage
+>({
+  websocketClient: hyperliquidWebSocketClient,
+  fetchKlines: fetchHyperliquidCandlesWithRetry,
+  topicFor: hyperliquidCandleTopic,
+  chartIdFor: hyperliquidChartIdFor,
+  sessionKeyFor: (symbol, interval) => `hyperliquid:${symbol}:${interval}`,
+  parseMarketMessage: parseHyperliquidCandleMarketMessage,
+  isNoDataError: (error) => error instanceof HyperliquidNoDataError,
+});
+
+export { hyperliquidChartIdFor };

@@ -41,7 +41,7 @@ export function Chart() {
       chartId="btc-1m"
       timeframeMs={60_000}
       initialVisibleCount={100}
-      xAxis={{ locale: 'en-GB', timeZone: 'UTC' }}
+      xAxis={{ locale: 'en-GB', timeZone: 'UTC', spacing: 'time' }}
       yAxis={{
         position: 'right',
         scaleMargins: { top: 0.2, bottom: 0.1 },
@@ -97,6 +97,11 @@ application.
 Raw trades must be ordered by non-decreasing millisecond timestamp. Empty time
 buckets are not synthesized. A trade in the final history bucket continues that
 candle; an older trade is ignored with a development warning.
+
+`xAxis.spacing` defaults to `'time'`, where horizontal distance represents
+elapsed time. Use `'logical'` to give every candle one uniform slot regardless
+of timestamp gaps. Logical spacing keeps timestamps for axis labels and the
+crosshair while pan, zoom and live following operate by candle index.
 
 For market-cap axes, use the compact formatter:
 

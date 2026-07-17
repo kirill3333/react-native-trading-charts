@@ -51,6 +51,7 @@ export type XAxisOptions = {
   locale?: string;
   timeZone?: string;
   showSeconds?: boolean;
+  spacing?: 'time' | 'logical';
 };
 
 export type PriceScaleMargins = {

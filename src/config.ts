@@ -87,6 +87,10 @@ export function resolveChartConfig(
   }
 
   const axisHeight = finitePositive(props.xAxis?.height ?? 26, 'xAxis.height');
+  const xAxisSpacing = props.xAxis?.spacing ?? 'time';
+  if (xAxisSpacing !== 'time' && xAxisSpacing !== 'logical') {
+    throw new TypeError("xAxis.spacing must be 'time' or 'logical'");
+  }
   const axisWidth = finitePositive(props.yAxis?.width ?? 64, 'yAxis.width');
   const scaleMargins = props.yAxis?.scaleMargins ?? {
     top: 0.2,
@@ -114,6 +118,7 @@ export function resolveChartConfig(
       locale: props.xAxis?.locale ?? 'en-GB',
       timeZone: props.xAxis?.timeZone ?? 'UTC',
       showSeconds: props.xAxis?.showSeconds ?? false,
+      spacing: xAxisSpacing,
     },
     yAxis: {
       visible: props.yAxis?.visible ?? true,

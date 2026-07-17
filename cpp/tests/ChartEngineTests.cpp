@@ -1,5 +1,6 @@
 #include "../ChartEngine.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -18,6 +19,50 @@ void expectNear(double actual, double expected, double tolerance = 1e-9) {
               << " of " << expected << '\n';
     assert(false);
   }
+}
+
+float renderedCandleBodyWidth(const tradingcharts::RenderSnapshot& snapshot,
+                              size_t candleOffset) {
+  constexpr size_t kFloatsPerVertex = 6;
+  constexpr size_t kVerticesPerQuad = 6;
+  constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
+  constexpr size_t kQuadsPerCandle = 2;
+  const size_t gridQuadCount = snapshot.xTicks.size() + snapshot.yTicks.size();
+  const size_t bodyQuad =
+      gridQuadCount + candleOffset * kQuadsPerCandle + 1;
+  const size_t offset = bodyQuad * kFloatsPerQuad;
+  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+
+  float minimumX = snapshot.vertices[offset];
+  float maximumX = minimumX;
+  for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
+    const float x = snapshot.vertices[offset + vertex * kFloatsPerVertex];
+    minimumX = std::min(minimumX, x);
+    maximumX = std::max(maximumX, x);
+  }
+  return maximumX - minimumX;
+}
+
+float renderedCandleBodyCenter(const tradingcharts::RenderSnapshot& snapshot,
+                               size_t candleOffset) {
+  constexpr size_t kFloatsPerVertex = 6;
+  constexpr size_t kVerticesPerQuad = 6;
+  constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
+  constexpr size_t kQuadsPerCandle = 2;
+  const size_t gridQuadCount = snapshot.xTicks.size() + snapshot.yTicks.size();
+  const size_t bodyQuad =
+      gridQuadCount + candleOffset * kQuadsPerCandle + 1;
+  const size_t offset = bodyQuad * kFloatsPerQuad;
+  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+
+  float minimumX = snapshot.vertices[offset];
+  float maximumX = minimumX;
+  for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
+    const float x = snapshot.vertices[offset + vertex * kFloatsPerVertex];
+    minimumX = std::min(minimumX, x);
+    maximumX = std::max(maximumX, x);
+  }
+  return (minimumX + maximumX) * 0.5f;
 }
 
 void testTradeAggregation() {
@@ -611,6 +656,71 @@ void testCrosshairHitTesting() {
   assert(snapshot->crosshairPrice <= snapshot->visibleYMax);
 }
 
+void testHybridHistoryUsesLocalCandleWidths() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.timeframeMs = 1000.0;
+  config.initialVisibleCount = 5;
+  config.showCurrentPrice = false;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+
+  const double candles[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      300000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+      600000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+      601000.0, 13.0, 15.0, 12.0, 14.0, 1.0,
+      602000.0, 14.0, 16.0, 13.0, 15.0, 1.0,
+  };
+  assert(engine.setHistory(candles, 30) == UpdateStatus::Applied);
+
+  const auto snapshot = engine.snapshot();
+  const float historicalWidth = renderedCandleBodyWidth(*snapshot, 1);
+  const float liveWidth = renderedCandleBodyWidth(*snapshot, 3);
+  assert(historicalWidth >= 10.0f);
+  assert(liveWidth <= 2.0f);
+  assert(historicalWidth > liveWidth * 5.0f);
+}
+
+void testLogicalSpacingUsesUniformCandleSlots() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.timeframeMs = 1000.0;
+  config.initialVisibleCount = 5;
+  config.logicalSpacing = true;
+  config.showCurrentPrice = false;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+
+  const double candles[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      300000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+      600000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+      601000.0, 13.0, 15.0, 12.0, 14.0, 1.0,
+      602000.0, 14.0, 16.0, 13.0, 15.0, 1.0,
+  };
+  assert(engine.setHistory(candles, 30) == UpdateStatus::Applied);
+
+  const auto snapshot = engine.snapshot();
+  expectNear(renderedCandleBodyWidth(*snapshot, 1),
+             renderedCandleBodyWidth(*snapshot, 3), 1e-5);
+  const float historicalStep =
+      renderedCandleBodyCenter(*snapshot, 2) - renderedCandleBodyCenter(*snapshot, 1);
+  const float liveStep =
+      renderedCandleBodyCenter(*snapshot, 4) - renderedCandleBodyCenter(*snapshot, 3);
+  expectNear(historicalStep, liveStep, 1e-5);
+
+  engine.setCrosshair(true, renderedCandleBodyCenter(*snapshot, 3), 200.0f);
+  const auto crosshair = engine.snapshot();
+  expectNear(crosshair->selectedCandle.timestamp, 601000.0);
+  assert(!crosshair->xTicks.empty());
+  for (const auto& tick : crosshair->xTicks) {
+    assert(tick.value == 0.0 || tick.value == 300000.0 ||
+           tick.value == 600000.0 || tick.value == 601000.0 ||
+           tick.value == 602000.0);
+  }
+}
+
 void testLargeHistoryAndTradeBurst() {
   constexpr size_t candleCount = 50000;
   constexpr size_t tradeCount = 1000;
@@ -684,6 +794,8 @@ int main() {
   testFitContentShowsHistoryAndResetsYScale();
   testViewportCommandsHandleEmptyHistory();
   testCrosshairHitTesting();
+  testHybridHistoryUsesLocalCandleWidths();
+  testLogicalSpacingUsesUniformCandleSlots();
   testLargeHistoryAndTradeBurst();
   std::cout << "ChartEngineTests passed\n";
   return 0;

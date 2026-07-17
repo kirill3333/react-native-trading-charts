@@ -39,8 +39,6 @@
     "test": "jest",
     "test:cpp": "c++ -std=c++17 -Wall -Wextra -pedantic cpp/ChartEngine.cpp cpp/tests/ChartEngineTests.cpp -o /tmp/trading-charts-engine-tests && /tmp/trading-charts-engine-tests",
     "release": "release-it --only-version",
-    "web": "vite",
-    "build:web": "vite build",
     "lint": "oxlint ."
   },
   "keywords": [
@@ -76,10 +74,8 @@
     "oxlint-tsgolint": "^0.25.0",
     "prettier": "^3.8.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
     "react-native": "0.85.0",
     "react-native-builder-bob": "^0.43.0",
-    "react-native-web": "~0.21.2",
     "release-it": "^20.2.0",
     "turbo": "^2.9.16",
     "typescript": "^6.0.3"
@@ -176,8 +172,7 @@
     "tools": [
       "jest",
       "lefthook",
-      "release-it",
-      "vite"
+      "release-it"
     ],
     "version": "0.63.0"
   }

@@ -73,11 +73,11 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     jfloatArray colors,
     jobjectArray strings) {
   ChartEngine* instance = engine(handle);
-  if (!instance || !numbers || env->GetArrayLength(numbers) < 21 ||
+  if (!instance || !numbers || env->GetArrayLength(numbers) < 22 ||
       !colors || env->GetArrayLength(colors) < 32) return;
-  jdouble n[21];
+  jdouble n[22];
   jfloat c[32];
-  env->GetDoubleArrayRegion(numbers, 0, 21, n);
+  env->GetDoubleArrayRegion(numbers, 0, 22, n);
   env->GetFloatArrayRegion(colors, 0, 32, c);
   auto colorAt = [&](int offset) {
     return Color{c[offset], c[offset + 1], c[offset + 2], c[offset + 3]};
@@ -104,6 +104,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.yScaleMarginTop = n[18];
   config.yScaleMarginBottom = n[19];
   config.displayScale = static_cast<float>(n[20]);
+  config.logicalSpacing = n[21] != 0;
   config.background = colorAt(0);
   config.grid = colorAt(4);
   config.axisText = colorAt(8);

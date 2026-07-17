@@ -118,7 +118,8 @@ void ChartEngine::setConfig(const ChartConfig& config) {
   std::lock_guard<std::mutex> lock(mutex_);
   const bool viewportDefaultsChanged =
       config_.initialVisibleCount != config.initialVisibleCount ||
-      config_.timeframeMs != config.timeframeMs;
+      config_.timeframeMs != config.timeframeMs ||
+      config_.logicalSpacing != config.logicalSpacing;
   config_ = config;
   config_.timeframeMs = std::max(std::round(config_.timeframeMs), 1.0);
   config_.initialVisibleCount = std::max(config_.initialVisibleCount, 1);
@@ -139,6 +140,22 @@ void ChartEngine::setConfig(const ChartConfig& config) {
   }
   if (viewportDefaultsChanged && !candles_.empty()) resetViewportLocked();
   markDirtyLocked();
+}
+
+double ChartEngine::xDomainUnitLocked() const {
+  return config_.logicalSpacing ? 1.0 : config_.timeframeMs;
+}
+
+double ChartEngine::candleXLocked(size_t index) const {
+  return config_.logicalSpacing ? static_cast<double>(index) : candles_[index].timestamp;
+}
+
+double ChartEngine::dataXMinLocked() const {
+  return candleXLocked(0) - xDomainUnitLocked() * 0.5;
+}
+
+double ChartEngine::dataXMaxLocked() const {
+  return candleXLocked(candles_.size() - 1) + xDomainUnitLocked() * 2.5;
 }
 
 void ChartEngine::setSize(float width, float height) {
@@ -201,12 +218,12 @@ UpdateStatus ChartEngine::updateCandle(const double* values, size_t valueCount) 
     candles_.back() = candle;
     lastTradeTimestamp_ = std::max(lastTradeTimestamp_, candle.timestamp);
   } else if (candle.timestamp > candles_.back().timestamp) {
-    const double oldLast = candles_.back().timestamp;
+    const double oldLast = candleXLocked(candles_.size() - 1);
     const bool followLiveEdge = isAtLiveEdgeLocked();
     candles_.push_back(candle);
     lastTradeTimestamp_ = candle.timestamp;
     if (followLiveEdge) {
-      const double delta = candle.timestamp - oldLast;
+      const double delta = candleXLocked(candles_.size() - 1) - oldLast;
       visibleXMin_ += delta;
       visibleXMax_ += delta;
       clampViewportLocked();
@@ -242,11 +259,11 @@ UpdateStatus ChartEngine::updateTradeLocked(double timestamp, double price, doub
     last.close = price;
     last.volume += size;
   } else {
-    const double oldLast = last.timestamp;
+    const double oldLast = candleXLocked(candles_.size() - 1);
     const bool followLiveEdge = isAtLiveEdgeLocked();
     candles_.push_back(Candle{bucket, price, price, price, price, size});
     if (followLiveEdge) {
-      const double delta = bucket - oldLast;
+      const double delta = candleXLocked(candles_.size() - 1) - oldLast;
       visibleXMin_ += delta;
       visibleXMax_ += delta;
       clampViewportLocked();
@@ -309,9 +326,10 @@ void ChartEngine::resetViewportLocked() {
   const size_t count = std::min(
       candles_.size(), static_cast<size_t>(std::max(config_.initialVisibleCount, 1)));
   const size_t begin = candles_.size() - count;
-  visibleXMin_ = candles_[begin].timestamp - config_.timeframeMs * 0.5;
-  visibleXMax_ = candles_.back().timestamp + config_.timeframeMs * 2.5;
-  if (!(visibleXMax_ > visibleXMin_)) visibleXMax_ = visibleXMin_ + config_.timeframeMs * 3.0;
+  const double unit = xDomainUnitLocked();
+  visibleXMin_ = candleXLocked(begin) - unit * 0.5;
+  visibleXMax_ = candleXLocked(candles_.size() - 1) + unit * 2.5;
+  if (!(visibleXMax_ > visibleXMin_)) visibleXMax_ = visibleXMin_ + unit * 3.0;
   viewportInitialized_ = true;
   clampViewportLocked();
 }
@@ -324,10 +342,11 @@ void ChartEngine::fitContentLocked() {
     visibleXMax_ = 1.0;
     return;
   }
-  visibleXMin_ = candles_.front().timestamp - config_.timeframeMs * 0.5;
-  visibleXMax_ = candles_.back().timestamp + config_.timeframeMs * 2.5;
+  const double unit = xDomainUnitLocked();
+  visibleXMin_ = dataXMinLocked();
+  visibleXMax_ = dataXMaxLocked();
   if (!(visibleXMax_ > visibleXMin_)) {
-    visibleXMax_ = visibleXMin_ + config_.timeframeMs * 3.0;
+    visibleXMax_ = visibleXMin_ + unit * 3.0;
   }
   viewportInitialized_ = true;
   clampViewportLocked();
@@ -335,10 +354,11 @@ void ChartEngine::fitContentLocked() {
 
 void ChartEngine::clampViewportLocked() {
   if (candles_.empty() || !viewportInitialized_) return;
-  const double dataMin = candles_.front().timestamp - config_.timeframeMs * 0.5;
-  const double dataMax = candles_.back().timestamp + config_.timeframeMs * 2.5;
-  const double fullSpan = std::max(dataMax - dataMin, config_.timeframeMs * 3.0);
-  double span = std::max(visibleXMax_ - visibleXMin_, config_.timeframeMs * 3.0);
+  const double dataMin = dataXMinLocked();
+  const double dataMax = dataXMaxLocked();
+  const double minimumSpan = xDomainUnitLocked() * 3.0;
+  const double fullSpan = std::max(dataMax - dataMin, minimumSpan);
+  double span = std::max(visibleXMax_ - visibleXMin_, minimumSpan);
   span = std::min(span, fullSpan);
   visibleXMin_ = std::max(visibleXMin_, dataMin);
   visibleXMax_ = visibleXMin_ + span;
@@ -350,7 +370,7 @@ void ChartEngine::clampViewportLocked() {
 
 bool ChartEngine::isAtLiveEdgeLocked() const {
   if (candles_.empty() || !viewportInitialized_) return false;
-  const double dataMax = candles_.back().timestamp + config_.timeframeMs * 2.5;
+  const double dataMax = dataXMaxLocked();
   const float axisWidth = config_.showYAxis ? config_.yAxisWidth : 0.0f;
   const double plotWidth = std::max(static_cast<double>(width_ - axisWidth), 1.0);
   const double domainPerPixel = (visibleXMax_ - visibleXMin_) / plotWidth;
@@ -493,15 +513,35 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
     return result;
   }
 
-  auto lower = std::lower_bound(
-      candles_.begin(), candles_.end(), visibleXMin_,
-      [](const Candle& candle, double value) { return candle.timestamp < value; });
-  auto upper = std::upper_bound(
-      candles_.begin(), candles_.end(), visibleXMax_,
-      [](double value, const Candle& candle) { return value < candle.timestamp; });
+  auto lower = candles_.begin();
+  auto upper = candles_.end();
+  if (config_.logicalSpacing) {
+    const double lastIndex = static_cast<double>(candles_.size() - 1);
+    const size_t lowerIndex = static_cast<size_t>(std::max(
+        0.0, std::min(lastIndex, std::ceil(visibleXMin_))));
+    const size_t upperIndex = static_cast<size_t>(std::max(
+        0.0, std::min(lastIndex, std::floor(visibleXMax_)))) + 1;
+    lower = candles_.begin() + static_cast<std::ptrdiff_t>(lowerIndex);
+    upper = candles_.begin() + static_cast<std::ptrdiff_t>(upperIndex);
+  } else {
+    lower = std::lower_bound(
+        candles_.begin(), candles_.end(), visibleXMin_,
+        [](const Candle& candle, double value) { return candle.timestamp < value; });
+    upper = std::upper_bound(
+        candles_.begin(), candles_.end(), visibleXMax_,
+        [](double value, const Candle& candle) { return value < candle.timestamp; });
+  }
   if (lower == upper) {
     lower = candles_.begin();
     upper = candles_.end();
+  }
+
+  if (config_.logicalSpacing) {
+    result->visibleXMin = lower->timestamp;
+    result->visibleXMax = (upper - 1)->timestamp;
+    if (!(result->visibleXMax > result->visibleXMin)) {
+      result->visibleXMax = result->visibleXMin + config_.timeframeMs;
+    }
   }
 
   double rawMin = lower->low;
@@ -542,12 +582,27 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
 
   const int xTarget = std::max(
       2, static_cast<int>(result->plot.width() / (72.0f * config_.displayScale)));
-  const double xStep = timeStep(visibleXMax_ - visibleXMin_, xTarget);
-  const double firstX = std::ceil(visibleXMin_ / xStep) * xStep;
-  for (int i = 0; i < 256; ++i) {
-    const double value = firstX + static_cast<double>(i) * xStep;
-    if (value > visibleXMax_ + xStep * 1e-9) break;
-    result->xTicks.push_back(AxisTick{value, projectX(value)});
+  if (config_.logicalSpacing) {
+    const double visibleSpan = visibleXMax_ - visibleXMin_;
+    const size_t indexStep = std::max<size_t>(
+        1, static_cast<size_t>(std::ceil(visibleSpan / xTarget)));
+    const double firstVisibleIndex = std::max(0.0, std::ceil(visibleXMin_));
+    size_t index = static_cast<size_t>(firstVisibleIndex);
+    const size_t remainder = index % indexStep;
+    if (remainder != 0) index += indexStep - remainder;
+    for (int i = 0; i < 256 && index < candles_.size() &&
+         static_cast<double>(index) <= visibleXMax_; ++i, index += indexStep) {
+      result->xTicks.push_back(
+          AxisTick{candles_[index].timestamp, projectX(static_cast<double>(index))});
+    }
+  } else {
+    const double xStep = timeStep(visibleXMax_ - visibleXMin_, xTarget);
+    const double firstX = std::ceil(visibleXMin_ / xStep) * xStep;
+    for (int i = 0; i < 256; ++i) {
+      const double value = firstX + static_cast<double>(i) * xStep;
+      if (value > visibleXMax_ + xStep * 1e-9) break;
+      result->xTicks.push_back(AxisTick{value, projectX(value)});
+    }
   }
 
   const int yTarget = std::max(
@@ -577,17 +632,35 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   const size_t visibleCount = static_cast<size_t>(std::distance(lower, upper));
   const size_t stride = std::max<size_t>(1, (visibleCount + kMaxVisibleCandles - 1) /
       kMaxVisibleCandles);
-  const double slotDomain = config_.timeframeMs * static_cast<double>(stride);
-  const float slotWidth = static_cast<float>(slotDomain / (visibleXMax_ - visibleXMin_)) *
-      result->plot.width();
-  const float bodyWidth = std::clamp(slotWidth * 0.7f, 1.0f, 28.0f);
-  const float wickWidth = std::clamp(bodyWidth * 0.08f, 1.0f, 2.0f);
+  const double fallbackSlotDomain = xDomainUnitLocked() * static_cast<double>(stride);
 
   size_t index = static_cast<size_t>(std::distance(candles_.begin(), lower));
   const size_t end = static_cast<size_t>(std::distance(candles_.begin(), upper));
   for (; index < end; index += stride) {
     const Candle& candle = candles_[index];
-    const float x = projectX(candle.timestamp);
+    double slotDomain = fallbackSlotDomain;
+    if (!config_.logicalSpacing) {
+      bool hasLocalSpacing = false;
+      if (index >= stride) {
+        const double previousSpacing = candle.timestamp - candles_[index - stride].timestamp;
+        if (previousSpacing > 0.0) {
+          slotDomain = previousSpacing;
+          hasLocalSpacing = true;
+        }
+      }
+      if (index + stride < candles_.size()) {
+        const double nextSpacing = candles_[index + stride].timestamp - candle.timestamp;
+        if (nextSpacing > 0.0) {
+          slotDomain = hasLocalSpacing ? std::min(slotDomain, nextSpacing) : nextSpacing;
+        }
+      }
+    }
+    const float slotWidth =
+        static_cast<float>(slotDomain / (visibleXMax_ - visibleXMin_)) *
+        result->plot.width();
+    const float bodyWidth = std::clamp(slotWidth * 0.7f, 1.0f, 28.0f);
+    const float wickWidth = std::clamp(bodyWidth * 0.08f, 1.0f, 2.0f);
+    const float x = projectX(candleXLocked(index));
     if (x + bodyWidth < result->plot.left || x - bodyWidth > result->plot.right) continue;
     const Color color = candle.close >= candle.open ? config_.up : config_.down;
     const float wickTop = std::clamp(projectY(candle.high), result->plot.top, result->plot.bottom);
@@ -621,22 +694,33 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   if (crosshairActive_ && config_.crosshairEnabled) {
     const float touchX = std::clamp(crosshairTouchX_, result->plot.left, result->plot.right);
     const float touchY = std::clamp(crosshairTouchY_, result->plot.top, result->plot.bottom);
-    const double touchTimestamp = visibleXMin_ +
+    const double touchXDomain = visibleXMin_ +
         static_cast<double>((touchX - result->plot.left) / result->plot.width()) *
         (visibleXMax_ - visibleXMin_);
-    auto nearest = std::lower_bound(
-        candles_.begin(), candles_.end(), touchTimestamp,
-        [](const Candle& candle, double value) { return candle.timestamp < value; });
-    if (nearest == candles_.end()) nearest = candles_.end() - 1;
-    if (nearest != candles_.begin()) {
-      const auto previous = nearest - 1;
-      if (touchTimestamp - previous->timestamp < nearest->timestamp - touchTimestamp) {
-        nearest = previous;
+    auto nearest = candles_.begin();
+    size_t nearestIndex = 0;
+    if (config_.logicalSpacing) {
+      nearestIndex = static_cast<size_t>(std::max(
+          0.0, std::min(static_cast<double>(candles_.size() - 1),
+                        std::round(touchXDomain))));
+      nearest = candles_.begin() + static_cast<std::ptrdiff_t>(nearestIndex);
+    } else {
+      nearest = std::lower_bound(
+          candles_.begin(), candles_.end(), touchXDomain,
+          [](const Candle& candle, double value) { return candle.timestamp < value; });
+      if (nearest == candles_.end()) nearest = candles_.end() - 1;
+      if (nearest != candles_.begin()) {
+        const auto previous = nearest - 1;
+        if (touchXDomain - previous->timestamp < nearest->timestamp - touchXDomain) {
+          nearest = previous;
+        }
       }
+      nearestIndex = static_cast<size_t>(std::distance(candles_.begin(), nearest));
     }
     result->crosshairVisible = true;
     result->selectedCandle = *nearest;
-    result->crosshairX = std::clamp(projectX(nearest->timestamp), result->plot.left, result->plot.right);
+    result->crosshairX = std::clamp(
+        projectX(candleXLocked(nearestIndex)), result->plot.left, result->plot.right);
     result->crosshairY = touchY;
     result->crosshairPrice = yMax -
         static_cast<double>((touchY - result->plot.top) / result->plot.height()) * (yMax - yMin);

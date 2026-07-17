@@ -2,42 +2,32 @@ import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import {
-  BYBIT_WEBSOCKET_URL,
-  parseBybitWebSocketEnvelope,
-  type BybitMarketMessage,
-} from './bybit';
+  BINANCE_WEBSOCKET_URL,
+  parseBinanceWebSocketEnvelope,
+  type BinanceMarketMessage,
+} from './binance';
 
 const OPEN_TIMEOUT_MS = 10_000;
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
-const HEARTBEAT_INTERVAL_MS = 20_000;
-const PONG_TIMEOUT_MS = 10_000;
 const STABLE_CONNECTION_MS = 30_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const SOCKET_OPEN = 1;
 const SOCKET_CLOSING = 2;
 
-export type BybitWebSocketState =
+export type BinanceWebSocketState =
   'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused' | 'offline';
 
-export type BybitWebSocketEvent =
-  | {
-      type: 'state';
-      state: BybitWebSocketState;
-      error: string | null;
-    }
-  | {
-      type: 'ready';
-      topic: string;
-      generation: number;
-    }
+export type BinanceWebSocketEvent =
+  | { type: 'state'; state: BinanceWebSocketState; error: string | null }
+  | { type: 'ready'; topic: string; generation: number }
   | {
       type: 'message';
       topic: string;
       generation: number;
-      message: BybitMarketMessage;
+      message: BinanceMarketMessage;
     };
 
-export type BybitWebSocketListener = (event: BybitWebSocketEvent) => void;
+export type BinanceWebSocketListener = (event: BinanceWebSocketEvent) => void;
 
 type WebSocketLike = {
   readyState: number;
@@ -61,7 +51,7 @@ type NetInfoSource = {
   addEventListener(listener: (state: NetInfoState) => void): () => void;
 };
 
-export type BybitWebSocketClientOptions = {
+export type BinanceWebSocketClientOptions = {
   url?: string;
   createSocket?: (url: string) => WebSocketLike;
   appState?: AppStateSource;
@@ -70,7 +60,7 @@ export type BybitWebSocketClientOptions = {
 };
 
 type TopicSubscription = {
-  listeners: Set<BybitWebSocketListener>;
+  listeners: Set<BinanceWebSocketListener>;
   readyGeneration: number | null;
 };
 
@@ -83,7 +73,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export class BybitWebSocketClient {
+export class BinanceWebSocketClient {
   private readonly url: string;
   private readonly createSocket: (url: string) => WebSocketLike;
   private readonly appState: AppStateSource;
@@ -95,7 +85,7 @@ export class BybitWebSocketClient {
     PendingSubscription
   >();
   private socket: WebSocketLike | null = null;
-  private state: BybitWebSocketState = 'idle';
+  private state: BinanceWebSocketState = 'idle';
   private stateError: string | null = null;
   private generation = 0;
   private requestSequence = 0;
@@ -106,16 +96,13 @@ export class BybitWebSocketClient {
   private appStateSubscription: { remove(): void } | null = null;
   private netInfoUnsubscribe: (() => void) | null = null;
   private openTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private closeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  private pendingPingRequestId: string | null = null;
   private failureReason: string | null = null;
 
-  constructor(options: BybitWebSocketClientOptions = {}) {
-    this.url = options.url ?? BYBIT_WEBSOCKET_URL;
+  constructor(options: BinanceWebSocketClientOptions = {}) {
+    this.url = options.url ?? BINANCE_WEBSOCKET_URL;
     this.createSocket =
       options.createSocket ??
       ((url) => new WebSocket(url) as unknown as WebSocketLike);
@@ -124,7 +111,7 @@ export class BybitWebSocketClient {
     this.random = options.random ?? Math.random;
   }
 
-  subscribe(topic: string, listener: BybitWebSocketListener): () => void {
+  subscribe(topic: string, listener: BinanceWebSocketListener): () => void {
     let subscription = this.topics.get(topic);
     const isFirstTopic = this.topics.size === 0;
     if (subscription == null) {
@@ -136,11 +123,7 @@ export class BybitWebSocketClient {
     if (isFirstTopic) {
       this.startLifecycleMonitoring();
     } else {
-      listener({
-        type: 'state',
-        state: this.state,
-        error: this.stateError,
-      });
+      listener({ type: 'state', state: this.state, error: this.stateError });
       if (
         subscription.readyGeneration === this.generation &&
         this.socket?.readyState === SOCKET_OPEN
@@ -156,11 +139,10 @@ export class BybitWebSocketClient {
 
     let subscribed = true;
     return () => {
-      if (!subscribed) {
-        return;
+      if (subscribed) {
+        subscribed = false;
+        this.unsubscribe(topic, listener);
       }
-      subscribed = false;
-      this.unsubscribe(topic, listener);
     };
   }
 
@@ -178,11 +160,11 @@ export class BybitWebSocketClient {
     this.failSocket(
       this.socket,
       generation,
-      `Invalid Bybit stream data: ${errorMessage(error)}`
+      `Invalid Binance stream data: ${errorMessage(error)}`
     );
   }
 
-  private unsubscribe(topic: string, listener: BybitWebSocketListener): void {
+  private unsubscribe(topic: string, listener: BinanceWebSocketListener): void {
     const subscription = this.topics.get(topic);
     if (subscription == null) {
       return;
@@ -207,9 +189,9 @@ export class BybitWebSocketClient {
     if (socket?.readyState === SOCKET_OPEN) {
       socket.send(
         JSON.stringify({
-          req_id: this.nextRequestId('unsub'),
-          op: 'unsubscribe',
-          args: [topic],
+          method: 'UNSUBSCRIBE',
+          params: [topic],
+          id: this.nextRequestId('unsub'),
         })
       );
     }
@@ -298,7 +280,6 @@ export class BybitWebSocketClient {
         return;
       }
       this.clearOpenTimer();
-      this.startHeartbeat(socket, generation);
       for (const topic of this.topics.keys()) {
         this.sendSubscribe(topic, socket, generation);
       }
@@ -310,7 +291,7 @@ export class BybitWebSocketClient {
       }
       try {
         this.handleMessage(
-          parseBybitWebSocketEnvelope(event.data),
+          parseBinanceWebSocketEnvelope(event.data),
           socket,
           generation
         );
@@ -326,7 +307,6 @@ export class BybitWebSocketClient {
     socket.onerror = () => {
       this.failSocket(socket, generation, 'WebSocket connection error');
     };
-
     socket.onclose = (event) => {
       let detail = 'unknown reason';
       if (event.reason != null && event.reason.length > 0) {
@@ -343,7 +323,7 @@ export class BybitWebSocketClient {
   }
 
   private handleMessage(
-    envelope: ReturnType<typeof parseBybitWebSocketEnvelope>,
+    envelope: ReturnType<typeof parseBinanceWebSocketEnvelope>,
     socket: WebSocketLike,
     generation: number
   ): void {
@@ -363,26 +343,14 @@ export class BybitWebSocketClient {
       return;
     }
 
-    if (envelope.kind === 'pong') {
-      if (
-        this.pendingPingRequestId != null &&
-        (envelope.requestId == null ||
-          envelope.requestId === this.pendingPingRequestId)
-      ) {
-        this.clearPongTimer();
-      }
-      return;
-    }
-
     if (envelope.kind === 'error') {
       this.failSocket(
         socket,
         generation,
-        `Bybit WebSocket error: ${envelope.message}`
+        `Binance WebSocket error: ${envelope.message}`
       );
       return;
     }
-
     if (envelope.kind !== 'subscribed') {
       return;
     }
@@ -421,12 +389,9 @@ export class BybitWebSocketClient {
     }
   }
 
-  private findPendingSubscription(requestId: string | null):
-    | {
-        requestId: string;
-        value: PendingSubscription;
-      }
-    | undefined {
+  private findPendingSubscription(
+    requestId: string | null
+  ): { requestId: string; value: PendingSubscription } | undefined {
     if (requestId != null) {
       const value = this.pendingSubscriptions.get(requestId);
       return value == null ? undefined : { requestId, value };
@@ -455,7 +420,7 @@ export class BybitWebSocketClient {
     }
     const requestId = this.nextRequestId('sub');
     socket.send(
-      JSON.stringify({ req_id: requestId, op: 'subscribe', args: [topic] })
+      JSON.stringify({ method: 'SUBSCRIBE', params: [topic], id: requestId })
     );
     const timer = setTimeout(() => {
       this.pendingSubscriptions.delete(requestId);
@@ -466,25 +431,6 @@ export class BybitWebSocketClient {
       );
     }, SUBSCRIBE_TIMEOUT_MS);
     this.pendingSubscriptions.set(requestId, { topic, timer });
-  }
-
-  private startHeartbeat(socket: WebSocketLike, generation: number): void {
-    this.clearHeartbeatTimer();
-    this.heartbeatTimer = setInterval(() => {
-      if (!this.isCurrent(socket, generation)) {
-        return;
-      }
-      if (this.pendingPingRequestId != null) {
-        this.failSocket(socket, generation, 'Heartbeat response timed out');
-        return;
-      }
-      const requestId = this.nextRequestId('ping');
-      this.pendingPingRequestId = requestId;
-      socket.send(JSON.stringify({ req_id: requestId, op: 'ping' }));
-      this.pongTimer = setTimeout(() => {
-        this.failSocket(socket, generation, 'Heartbeat response timed out');
-      }, PONG_TIMEOUT_MS);
-    }, HEARTBEAT_INTERVAL_MS);
   }
 
   private failSocket(
@@ -534,7 +480,6 @@ export class BybitWebSocketClient {
     if (this.reconnectTimer != null) {
       return;
     }
-
     this.emitState('reconnecting', reason);
     const exponentialDelay = Math.min(
       MAX_RECONNECT_DELAY_MS,
@@ -580,8 +525,6 @@ export class BybitWebSocketClient {
 
   private clearTransportTimers(): void {
     this.clearOpenTimer();
-    this.clearHeartbeatTimer();
-    this.clearPongTimer();
     this.clearStableTimer();
     if (this.closeFallbackTimer != null) {
       clearTimeout(this.closeFallbackTimer);
@@ -600,21 +543,6 @@ export class BybitWebSocketClient {
     }
   }
 
-  private clearHeartbeatTimer(): void {
-    if (this.heartbeatTimer != null) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-  }
-
-  private clearPongTimer(): void {
-    if (this.pongTimer != null) {
-      clearTimeout(this.pongTimer);
-      this.pongTimer = null;
-    }
-    this.pendingPingRequestId = null;
-  }
-
   private clearReconnectTimer(): void {
     if (this.reconnectTimer != null) {
       clearTimeout(this.reconnectTimer);
@@ -629,7 +557,7 @@ export class BybitWebSocketClient {
     }
   }
 
-  private emitState(state: BybitWebSocketState, error: string | null): void {
+  private emitState(state: BinanceWebSocketState, error: string | null): void {
     if (state === this.state && error === this.stateError) {
       return;
     }
@@ -652,4 +580,4 @@ export class BybitWebSocketClient {
   }
 }
 
-export const bybitWebSocketClient = new BybitWebSocketClient();
+export const binanceWebSocketClient = new BinanceWebSocketClient();

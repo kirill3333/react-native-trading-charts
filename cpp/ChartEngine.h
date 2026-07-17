@@ -44,6 +44,7 @@ struct ChartConfig {
   std::string xLocale = "en-GB";
   std::string xTimeZone = "UTC";
   bool showSeconds = false;
+  bool logicalSpacing = false;
 
   bool showYAxis = true;
   bool yAxisOnRight = true;
@@ -158,6 +159,10 @@ class ChartEngine {
   static bool validCandle(const Candle& candle);
   static Candle candleFromValues(const double* values);
   void markDirtyLocked();
+  double xDomainUnitLocked() const;
+  double candleXLocked(size_t index) const;
+  double dataXMinLocked() const;
+  double dataXMaxLocked() const;
   void resetViewportLocked();
   void fitContentLocked();
   void clampViewportLocked();

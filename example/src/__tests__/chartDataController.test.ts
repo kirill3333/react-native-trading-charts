@@ -5,7 +5,6 @@ jest.mock('react-native-trading-charts', () => ({
     clear: jest.fn(),
     setHistory: jest.fn(),
     updateCandle: jest.fn(),
-    updateTrades: jest.fn(),
   },
 }));
 
@@ -14,18 +13,18 @@ jest.mock('@react-native-community/netinfo', () => ({
   default: { addEventListener: jest.fn() },
 }));
 
-import { type BybitTicker, type BybitTrade } from '../bybit';
+import { type BinanceMarketMessage, type BinanceTicker } from '../binance';
 import {
   ChartDataController,
   chartIdFor,
   type ChartDataControllerOptions,
 } from '../chartDataController';
 import {
-  type BybitWebSocketEvent,
-  type BybitWebSocketListener,
-} from '../bybitWebSocket';
+  type BinanceWebSocketEvent,
+  type BinanceWebSocketListener,
+} from '../binanceWebSocket';
 
-const ticker: BybitTicker = {
+const ticker: BinanceTicker = {
   symbol: 'BTCUSDT',
   lastPrice: 10,
   lastPriceText: '10',
@@ -34,20 +33,46 @@ const ticker: BybitTicker = {
   precision: 2,
   minMove: 0.01,
 };
+const ethTicker: BinanceTicker = { ...ticker, symbol: 'ETHUSDT' };
 
-const ethTicker: BybitTicker = { ...ticker, symbol: 'ETHUSDT' };
-const solTicker: BybitTicker = { ...ticker, symbol: 'SOLUSDT' };
+const firstCandle = {
+  timestamp: 1_000,
+  open: 10,
+  high: 12,
+  low: 9,
+  close: 11,
+  volume: 2,
+};
+const secondCandle = {
+  timestamp: 2_000,
+  open: 11,
+  high: 13,
+  low: 10,
+  close: 12,
+  volume: 3,
+};
 
-function trade(
-  id: string,
-  timestamp: number,
-  price: number,
-  sequence = timestamp
-): BybitTrade {
+function marketMessage(
+  symbol: string,
+  interval: '1s' | '1m',
+  candle = secondCandle
+): BinanceMarketMessage {
   return {
-    id,
-    sequence: String(sequence),
-    event: { timestamp, price, size: 1 },
+    kind: 'market',
+    topic: `${symbol.toLowerCase()}@kline_${interval}`,
+    data: {
+      e: 'kline',
+      s: symbol,
+      k: {
+        t: candle.timestamp,
+        i: interval,
+        o: String(candle.open),
+        h: String(candle.high),
+        l: String(candle.low),
+        c: String(candle.close),
+        v: String(candle.volume),
+      },
+    },
   };
 }
 
@@ -64,42 +89,39 @@ function deferred<T>() {
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
 }
 
-describe('ChartDataController', () => {
+describe('ChartDataController with Binance native klines', () => {
   const charts = {
     setHistory: jest.fn(),
     updateCandle: jest.fn(),
-    updateTrades: jest.fn(),
     clear: jest.fn(),
   };
-  const unsubscribe = jest.fn<(topic: string) => void>();
   const subscribe =
-    jest.fn<(topic: string, listener: BybitWebSocketListener) => () => void>();
+    jest.fn<
+      (topic: string, listener: BinanceWebSocketListener) => () => void
+    >();
+  const unsubscribe = jest.fn<(topic: string) => void>();
   const reportProtocolError = jest.fn();
-  const fetchTrades =
-    jest.fn<NonNullable<ChartDataControllerOptions['fetchTrades']>>();
   const fetchKlines =
     jest.fn<NonNullable<ChartDataControllerOptions['fetchKlines']>>();
-  let listenersByTopic: Map<string, Set<BybitWebSocketListener>>;
+  let listenersByTopic: Map<string, Set<BinanceWebSocketListener>>;
 
   function createController(cacheSize = 8) {
     return new ChartDataController({
       cacheSize,
       charts,
       fetchKlines,
-      fetchTrades,
       websocketClient: { subscribe, reportProtocolError },
     });
   }
 
-  function emit(event: BybitWebSocketEvent) {
+  function emit(event: BinanceWebSocketEvent) {
     const listeners =
       event.type === 'state'
         ? new Set(
-            [...listenersByTopic.values()].flatMap((topicListeners) => [
-              ...topicListeners,
-            ])
+            [...listenersByTopic.values()].flatMap((values) => [...values])
           )
         : listenersByTopic.get(event.topic);
     if (listeners == null || listeners.size === 0) {
@@ -111,17 +133,12 @@ describe('ChartDataController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     listenersByTopic = new Map();
-    subscribe.mockImplementation((topic, nextListener) => {
+    subscribe.mockImplementation((topic, listener) => {
       const listeners = listenersByTopic.get(topic) ?? new Set();
-      listeners.add(nextListener);
+      listeners.add(listener);
       listenersByTopic.set(topic, listeners);
-      let subscribed = true;
       return () => {
-        if (!subscribed) {
-          return;
-        }
-        subscribed = false;
-        listeners.delete(nextListener);
+        listeners.delete(listener);
         if (listeners.size === 0) {
           listenersByTopic.delete(topic);
         }
@@ -130,349 +147,148 @@ describe('ChartDataController', () => {
     });
   });
 
-  it('loads and applies history before React subscribes or the route activates', async () => {
-    const history =
-      deferred<
-        Awaited<
-          ReturnType<NonNullable<ChartDataControllerOptions['fetchKlines']>>
-        >
-      >();
-    fetchKlines.mockReturnValue(history.promise);
+  it('loads native 1s history directly instead of trades or 5m candles', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
     const controller = createController();
-
-    controller.prepare(ticker, '1');
-    controller.prepare(ticker, '1');
-    expect(fetchKlines).toHaveBeenCalledTimes(1);
-    expect(subscribe).not.toHaveBeenCalled();
-
-    const statusListener = jest.fn();
-    const removeStatusListener = controller.subscribe(
-      ticker,
-      '1',
-      statusListener
+    expect(controller.prepare(ticker, '1s')).toBe('binance-spot-BTCUSDT-1s');
+    await flushPromises();
+    expect(fetchKlines).toHaveBeenCalledWith(
+      'BTCUSDT',
+      '1s',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
-    expect(fetchKlines).toHaveBeenCalledTimes(1);
-
-    history.resolve([
-      { timestamp: 0, open: 10, high: 12, low: 9, close: 11, volume: 2 },
-    ]);
-    await history.promise;
-    await flushPromises();
-
-    expect(charts.setHistory).toHaveBeenCalledWith(chartIdFor('BTCUSDT', '1'), [
-      { timestamp: 0, open: 10, high: 12, low: 9, close: 11, volume: 2 },
-    ]);
-    expect(controller.getSnapshot(ticker, '1').status).toBe('historical');
-    expect(statusListener).toHaveBeenCalled();
-    removeStatusListener();
-  });
-
-  it('retries a failed history request without recreating the session', async () => {
-    fetchKlines
-      .mockRejectedValueOnce(new Error('History unavailable'))
-      .mockResolvedValueOnce([
-        { timestamp: 0, open: 2, high: 3, low: 1, close: 2 },
-      ]);
-    const controller = createController();
-
-    controller.prepare(ticker, '1');
-    await flushPromises();
-    expect(controller.getSnapshot(ticker, '1')).toEqual({
-      status: 'error',
-      error: 'History unavailable',
-    });
-
-    controller.retry(ticker, '1');
-    await flushPromises();
-
-    expect(fetchKlines).toHaveBeenCalledTimes(2);
-    expect(controller.getSnapshot(ticker, '1').status).toBe('historical');
-    expect(charts.setHistory).toHaveBeenLastCalledWith(
-      chartIdFor('BTCUSDT', '1'),
-      [{ timestamp: 0, open: 2, high: 3, low: 1, close: 2 }]
+    expect(charts.setHistory).toHaveBeenCalledWith(
+      chartIdFor('BTCUSDT', '1s'),
+      [firstCandle]
     );
   });
 
-  it('keeps initial history loading after the chart route deactivates', async () => {
-    const history =
-      deferred<
-        Awaited<
-          ReturnType<NonNullable<ChartDataControllerOptions['fetchKlines']>>
-        >
-      >();
-    fetchKlines.mockReturnValue(history.promise);
+  it('uses the Binance kline stream for the 1s interval', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
     const controller = createController();
-
-    controller.prepare(ticker, '1');
-    controller.activate(ticker, '1');
-    const signal = fetchKlines.mock.calls[0]?.[2]?.signal;
-    controller.deactivate();
-
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect(signal?.aborted).toBe(false);
-
-    history.resolve([{ timestamp: 0, open: 1, high: 1, low: 1, close: 1 }]);
-    await history.promise;
+    controller.activate(ticker, '1s');
     await flushPromises();
-    expect(controller.getSnapshot(ticker, '1').status).toBe('historical');
-  });
-
-  it('keeps the previous topic until the replacement is live', async () => {
-    fetchKlines.mockResolvedValue([
-      { timestamp: 0, open: 1, high: 1, low: 1, close: 1 },
-    ]);
-    const controller = createController();
-
-    controller.activate(ticker, '1');
-    await flushPromises();
-    emit({ type: 'ready', topic: 'kline.1.BTCUSDT', generation: 1 });
-    await flushPromises();
-    expect(controller.getSnapshot(ticker, '1').status).toBe('live');
-
-    controller.activate(ticker, '5');
-    expect(subscribe).toHaveBeenLastCalledWith(
-      'kline.5.BTCUSDT',
+    expect(subscribe).toHaveBeenCalledWith(
+      'btcusdt@kline_1s',
       expect.any(Function)
     );
-    expect(unsubscribe).not.toHaveBeenCalled();
-    expect(listenersByTopic.has('kline.1.BTCUSDT')).toBe(true);
-    expect(listenersByTopic.has('kline.5.BTCUSDT')).toBe(true);
-
-    await flushPromises();
-    emit({ type: 'ready', topic: 'kline.5.BTCUSDT', generation: 1 });
-    await flushPromises();
-
-    expect(controller.getSnapshot(ticker, '5').status).toBe('live');
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect(unsubscribe).toHaveBeenCalledWith('kline.1.BTCUSDT');
-    expect(listenersByTopic.has('kline.1.BTCUSDT')).toBe(false);
-    expect(listenersByTopic.has('kline.5.BTCUSDT')).toBe(true);
   });
 
-  it('does not resubscribe when the active session is activated again', () => {
-    fetchKlines.mockReturnValue(new Promise(() => undefined));
+  it('buffers websocket candles until REST synchronization closes the gap', async () => {
+    const initial = deferred<(typeof firstCandle)[]>();
+    fetchKlines
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValueOnce([firstCandle]);
     const controller = createController();
-
-    controller.activate(ticker, '1');
-    controller.activate(ticker, '1');
-
-    expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(unsubscribe).not.toHaveBeenCalled();
-  });
-
-  it('retires an interrupted handover during rapid interval changes', async () => {
-    fetchKlines.mockResolvedValue([
-      { timestamp: 0, open: 1, high: 1, low: 1, close: 1 },
-    ]);
-    const controller = createController();
-
-    controller.activate(ticker, '1');
-    await flushPromises();
-    emit({ type: 'ready', topic: 'kline.1.BTCUSDT', generation: 1 });
-    await flushPromises();
-
-    controller.activate(ticker, '5');
-    controller.activate(ticker, '15');
-
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect(unsubscribe).toHaveBeenCalledWith('kline.1.BTCUSDT');
-    expect(listenersByTopic.has('kline.5.BTCUSDT')).toBe(true);
-    expect(listenersByTopic.has('kline.15.BTCUSDT')).toBe(true);
-
-    await flushPromises();
-    emit({ type: 'ready', topic: 'kline.15.BTCUSDT', generation: 1 });
-    await flushPromises();
-
-    expect(controller.getSnapshot(ticker, '15').status).toBe('live');
-    expect(unsubscribe).toHaveBeenCalledTimes(2);
-    expect(unsubscribe).toHaveBeenLastCalledWith('kline.5.BTCUSDT');
-    expect(listenersByTopic.has('kline.15.BTCUSDT')).toBe(true);
-  });
-
-  it('merges buffered trades into the live synchronization snapshot', async () => {
-    const initialSnapshot = deferred<BybitTrade[]>();
-    const synchronizedSnapshot = deferred<BybitTrade[]>();
-    fetchTrades
-      .mockReturnValueOnce(initialSnapshot.promise)
-      .mockReturnValueOnce(synchronizedSnapshot.promise);
-    const controller = createController();
-
-    controller.prepare(ticker, '1s');
     controller.activate(ticker, '1s');
+
     emit({
       type: 'message',
-      topic: 'publicTrade.BTCUSDT',
+      topic: 'btcusdt@kline_1s',
       generation: 1,
-      message: {
-        kind: 'market',
-        topic: 'publicTrade.BTCUSDT',
-        data: [{ i: 'overlap', seq: 2, T: 2_000, p: '22', v: '1' }],
-      },
+      message: marketMessage('BTCUSDT', '1s'),
     });
-    emit({ type: 'ready', topic: 'publicTrade.BTCUSDT', generation: 1 });
-    expect(fetchTrades).toHaveBeenCalledTimes(1);
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
+    expect(charts.updateCandle).not.toHaveBeenCalled();
 
-    initialSnapshot.resolve([trade('history', 1_000, 10)]);
-    await initialSnapshot.promise;
+    initial.resolve([firstCandle]);
     await flushPromises();
-    expect(fetchTrades).toHaveBeenCalledTimes(2);
-
-    synchronizedSnapshot.resolve([
-      trade('rest-only', 1_000, 10),
-      trade('overlap', 2_000, 20),
-    ]);
-    await synchronizedSnapshot.promise;
-    await flushPromises();
-
-    expect(charts.updateTrades).toHaveBeenLastCalledWith(
+    expect(fetchKlines).toHaveBeenNthCalledWith(
+      2,
+      'BTCUSDT',
+      '1s',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(charts.updateCandle).toHaveBeenCalledWith(
       chartIdFor('BTCUSDT', '1s'),
-      [
-        { timestamp: 1_000, price: 10, size: 1 },
-        { timestamp: 2_000, price: 22, size: 1 },
-      ]
+      secondCandle
     );
     expect(controller.getSnapshot(ticker, '1s').status).toBe('live');
   });
 
-  it('replays a buffered candle over the REST snapshot', async () => {
-    fetchKlines.mockResolvedValue([
-      { timestamp: 0, open: 10, high: 12, low: 9, close: 11, volume: 2 },
-      {
-        timestamp: 60_000,
-        open: 11,
-        high: 13,
-        low: 10,
-        close: 12,
-        volume: 3,
-      },
-    ]);
+  it('applies live updates through updateCandle after synchronization', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
     const controller = createController();
-    controller.prepare(ticker, '1');
-    controller.activate(ticker, '1');
-    await flushPromises();
-
-    emit({
-      type: 'message',
-      topic: 'kline.1.BTCUSDT',
-      generation: 1,
-      message: {
-        kind: 'market',
-        topic: 'kline.1.BTCUSDT',
-        data: [
-          {
-            start: 60_000,
-            open: '11',
-            high: '14',
-            low: '10',
-            close: '13',
-            volume: '4',
-          },
-        ],
-      },
-    });
-    emit({ type: 'ready', topic: 'kline.1.BTCUSDT', generation: 1 });
-    await flushPromises();
-
-    expect(charts.updateCandle).toHaveBeenCalledWith(
-      chartIdFor('BTCUSDT', '1'),
-      {
-        timestamp: 60_000,
-        open: 11,
-        high: 14,
-        low: 10,
-        close: 13,
-        volume: 4,
-      }
-    );
-    expect(controller.getSnapshot(ticker, '1').status).toBe('live');
-  });
-
-  it('aborts stale live synchronization and applies only the newest generation', async () => {
-    const first =
-      deferred<
-        Awaited<
-          ReturnType<NonNullable<ChartDataControllerOptions['fetchKlines']>>
-        >
-      >();
-    const second =
-      deferred<
-        Awaited<
-          ReturnType<NonNullable<ChartDataControllerOptions['fetchKlines']>>
-        >
-      >();
-    fetchKlines
-      .mockResolvedValueOnce([
-        { timestamp: 0, open: 0, high: 0, low: 0, close: 0 },
-      ])
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const controller = createController();
-    controller.prepare(ticker, '1');
-    controller.activate(ticker, '1');
-    await flushPromises();
-
-    emit({ type: 'ready', topic: 'kline.1.BTCUSDT', generation: 1 });
-    const firstSignal = fetchKlines.mock.calls[1]?.[2]?.signal;
-    emit({ type: 'ready', topic: 'kline.1.BTCUSDT', generation: 2 });
-    expect(firstSignal?.aborted).toBe(true);
-
-    first.resolve([{ timestamp: 0, open: 1, high: 1, low: 1, close: 1 }]);
-    second.resolve([{ timestamp: 0, open: 2, high: 2, low: 2, close: 2 }]);
-    await Promise.all([first.promise, second.promise]);
-    await flushPromises();
-
-    expect(charts.setHistory).toHaveBeenLastCalledWith(
-      chartIdFor('BTCUSDT', '1'),
-      [{ timestamp: 0, open: 2, high: 2, low: 2, close: 2 }]
-    );
-  });
-
-  it('reuses cached history and evicts only the least-recent inactive session', async () => {
-    fetchKlines.mockResolvedValue([
-      { timestamp: 0, open: 1, high: 1, low: 1, close: 1 },
-    ]);
-    const controller = createController(2);
-
-    controller.prepare(ticker, '1');
-    await flushPromises();
-    controller.prepare(ticker, '1');
-    expect(fetchKlines).toHaveBeenCalledTimes(1);
-
-    controller.activate(ticker, '1');
-    controller.prepare(ethTicker, '1');
-    await flushPromises();
-    controller.prepare(solTicker, '1');
-    await flushPromises();
-
-    expect(charts.clear).toHaveBeenCalledWith(chartIdFor('ETHUSDT', '1'));
-    expect(charts.clear).not.toHaveBeenCalledWith(chartIdFor('BTCUSDT', '1'));
-  });
-
-  it('reports an overflowing trade synchronization buffer', () => {
-    fetchTrades.mockReturnValue(new Promise(() => undefined));
-    const controller = createController();
-    controller.prepare(ticker, '1s');
     controller.activate(ticker, '1s');
-    const data = Array.from({ length: 50_001 }, (_, index) => ({
-      i: `trade-${index}`,
-      seq: index,
-      T: index,
-      p: '1',
-      v: '1',
-    }));
-
+    await flushPromises();
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
+    await flushPromises();
+    charts.updateCandle.mockClear();
     emit({
       type: 'message',
-      topic: 'publicTrade.BTCUSDT',
+      topic: 'btcusdt@kline_1s',
       generation: 1,
-      message: { kind: 'market', topic: 'publicTrade.BTCUSDT', data },
+      message: marketMessage('BTCUSDT', '1s'),
     });
-
-    expect(reportProtocolError).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({
-        message: 'Trade synchronization buffer exceeded 50,000 records',
-      })
+    expect(charts.updateCandle).toHaveBeenCalledWith(
+      chartIdFor('BTCUSDT', '1s'),
+      secondCandle
     );
+  });
+
+  it('refetches the same native interval after reconnect', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
+    const controller = createController();
+    controller.activate(ticker, '1s');
+    await flushPromises();
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
+    await flushPromises();
+    emit({
+      type: 'state',
+      state: 'reconnecting',
+      error: 'socket closed',
+    });
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 2 });
+    await flushPromises();
+    expect(fetchKlines.mock.calls.every((call) => call[1] === '1s')).toBe(true);
+    expect(controller.getSnapshot(ticker, '1s').status).toBe('live');
+  });
+
+  it('replays cached native candles when a session is activated again', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
+    const controller = createController();
+    controller.activate(ticker, '1s');
+    await flushPromises();
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
+    await flushPromises();
+    emit({
+      type: 'message',
+      topic: 'btcusdt@kline_1s',
+      generation: 1,
+      message: marketMessage('BTCUSDT', '1s'),
+    });
+    controller.deactivate();
+    charts.setHistory.mockClear();
+    controller.activate(ticker, '1s');
+    expect(charts.setHistory).toHaveBeenCalledWith(
+      chartIdFor('BTCUSDT', '1s'),
+      [firstCandle, secondCandle]
+    );
+  });
+
+  it('keeps the previous topic alive until an interval handover settles', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
+    const controller = createController();
+    controller.activate(ticker, '1s');
+    await flushPromises();
+    emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
+    await flushPromises();
+    controller.activate(ticker, '1m');
+    await flushPromises();
+    expect(listenersByTopic.has('btcusdt@kline_1s')).toBe(true);
+    emit({ type: 'ready', topic: 'btcusdt@kline_1m', generation: 1 });
+    await flushPromises();
+    expect(listenersByTopic.has('btcusdt@kline_1s')).toBe(false);
+  });
+
+  it('evicts inactive cached sessions without clearing the active chart', async () => {
+    fetchKlines.mockResolvedValue([firstCandle]);
+    const controller = createController(1);
+    controller.prepare(ticker, '1s');
+    await flushPromises();
+    controller.prepare(ethTicker, '1m');
+    await flushPromises();
+    expect(charts.clear).toHaveBeenCalledWith(chartIdFor('BTCUSDT', '1s'));
+    expect(charts.clear).not.toHaveBeenCalledWith(chartIdFor('ETHUSDT', '1m'));
   });
 });

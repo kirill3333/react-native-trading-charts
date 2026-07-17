@@ -592,6 +592,7 @@ NSString *TCMetalShaderSource(void) {
   _config.xLocale = [xAxis[@"locale"] UTF8String] ?: "en-GB";
   _config.xTimeZone = [xAxis[@"timeZone"] UTF8String] ?: "UTC";
   _config.showSeconds = [xAxis[@"showSeconds"] boolValue];
+  _config.logicalSpacing = [xAxis[@"spacing"] isEqualToString:@"logical"];
   _config.showYAxis = [yAxis[@"visible"] boolValue];
   _config.yAxisOnRight = ![yAxis[@"position"] isEqualToString:@"left"];
   _config.yAxisWidth = [yAxis[@"width"] floatValue];

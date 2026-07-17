@@ -11,10 +11,42 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchSpotTickers, type BybitTicker } from '../bybit';
-import { chartDataController } from '../chartDataController';
+import { fetchSpotTickers, type BinanceTicker } from '../binance';
+import {
+  chartDataController,
+  hyperliquidChartDataController,
+} from '../chartDataController';
+import {
+  fetchHyperliquidTickers,
+  type HyperliquidTicker,
+} from '../hyperliquid';
 
 const ROW_HEIGHT = 73;
+
+type MarketProvider = 'binance' | 'hyperliquid';
+type MarketTicker = BinanceTicker | HyperliquidTicker;
+
+type ProviderState = {
+  tickers: MarketTicker[];
+  loading: boolean;
+  loaded: boolean;
+  refreshing: boolean;
+  error: string | null;
+};
+
+const EMPTY_PROVIDER_STATE: ProviderState = {
+  tickers: [],
+  loading: false,
+  loaded: false,
+  refreshing: false,
+  error: null,
+};
+
+function isHyperliquidTicker(
+  ticker: MarketTicker
+): ticker is HyperliquidTicker {
+  return 'provider' in ticker && ticker.provider === 'hyperliquid';
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -24,7 +56,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown network error';
 }
 
-function formatPrice(ticker: BybitTicker): string {
+function formatPrice(ticker: MarketTicker): string {
   return ticker.lastPrice.toLocaleString('en-US', {
     minimumFractionDigits: ticker.precision,
     maximumFractionDigits: ticker.precision,
@@ -44,61 +76,110 @@ function formatTurnover(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-function useSpotTickers() {
-  const [tickers, setTickers] = useState<BybitTicker[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
+function tickerPair(ticker: MarketTicker): {
+  base: string;
+  quote: string;
+} {
+  if (isHyperliquidTicker(ticker)) {
+    return { base: ticker.baseAsset, quote: ticker.quoteAsset };
+  }
+  return { base: ticker.symbol.slice(0, -4), quote: 'USDT' };
+}
 
-  const load = useCallback(async (refresh: boolean) => {
-    controllerRef.current?.abort();
+function useProviderTickers(provider: MarketProvider) {
+  const [states, setStates] = useState<Record<MarketProvider, ProviderState>>({
+    binance: { ...EMPTY_PROVIDER_STATE },
+    hyperliquid: { ...EMPTY_PROVIDER_STATE },
+  });
+  const statesRef = useRef(states);
+  const controllersRef = useRef<
+    Partial<Record<MarketProvider, AbortController>>
+  >({});
+  statesRef.current = states;
+
+  const load = useCallback(async (target: MarketProvider, refresh: boolean) => {
+    controllersRef.current[target]?.abort();
     const controller = new AbortController();
-    controllerRef.current = controller;
-    setError(null);
-    if (refresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+    controllersRef.current[target] = controller;
+    setStates((current) => ({
+      ...current,
+      [target]: {
+        ...current[target],
+        error: null,
+        loading: refresh ? current[target].loading : true,
+        refreshing: refresh,
+      },
+    }));
 
     try {
-      const nextTickers = await fetchSpotTickers(controller.signal);
-      if (controllerRef.current !== controller) {
+      const nextTickers =
+        target === 'binance'
+          ? await fetchSpotTickers(controller.signal)
+          : await fetchHyperliquidTickers(controller.signal);
+      if (controllersRef.current[target] !== controller) {
         return;
       }
       if (nextTickers.length === 0) {
-        throw new Error('Bybit returned no USDT tickers');
+        throw new Error(
+          target === 'binance'
+            ? 'Binance returned no USDT tickers'
+            : 'Hyperliquid returned no perpetual markets'
+        );
       }
-      setTickers(nextTickers);
+      setStates((current) => ({
+        ...current,
+        [target]: {
+          tickers: nextTickers,
+          loading: false,
+          loaded: true,
+          refreshing: false,
+          error: null,
+        },
+      }));
     } catch (nextError) {
-      if (controllerRef.current === controller && !isAbortError(nextError)) {
-        setError(errorMessage(nextError));
+      if (
+        controllersRef.current[target] === controller &&
+        !isAbortError(nextError)
+      ) {
+        setStates((current) => ({
+          ...current,
+          [target]: {
+            ...current[target],
+            loading: false,
+            loaded: true,
+            refreshing: false,
+            error: errorMessage(nextError),
+          },
+        }));
       }
     } finally {
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
-        setLoading(false);
-        setRefreshing(false);
+      if (controllersRef.current[target] === controller) {
+        delete controllersRef.current[target];
       }
     }
   }, []);
 
   useEffect(() => {
-    load(false).catch(() => undefined);
-    return () => {
-      controllerRef.current?.abort();
-      controllerRef.current = null;
-    };
-  }, [load]);
+    const current = statesRef.current[provider];
+    if (!current.loaded && !current.loading) {
+      load(provider, false).catch(() => undefined);
+    }
+  }, [load, provider]);
+
+  useEffect(
+    () => () => {
+      Object.values(controllersRef.current).forEach((controller) =>
+        controller?.abort()
+      );
+      controllersRef.current = {};
+    },
+    []
+  );
 
   return {
-    tickers,
-    loading,
-    refreshing,
-    error,
-    retry: () => load(false).catch(() => undefined),
-    refresh: () => load(true).catch(() => undefined),
+    ...states[provider],
+    retry: () => load(provider, false),
+    refresh: () => load(provider, true),
   };
 }
 
@@ -125,13 +206,14 @@ function ErrorState({ title, message, onRetry }: ErrorStateProps) {
 }
 
 type TickerRowProps = {
-  ticker: BybitTicker;
-  onPress: (ticker: BybitTicker) => void;
+  ticker: MarketTicker;
+  onPress: (ticker: MarketTicker) => void;
 };
 
 function TickerRow({ ticker, onPress }: TickerRowProps) {
   const positive = ticker.change24hPercent >= 0;
   const change = `${positive ? '+' : ''}${ticker.change24hPercent.toFixed(2)}%`;
+  const pair = tickerPair(ticker);
 
   return (
     <Pressable
@@ -145,11 +227,14 @@ function TickerRow({ ticker, onPress }: TickerRowProps) {
     >
       <View style={styles.tickerIdentity}>
         <Text style={styles.tickerSymbol}>
-          {ticker.symbol.slice(0, -4)}
-          <Text style={styles.quoteSymbol}> / USDT</Text>
+          {pair.base}
+          <Text style={styles.quoteSymbol}> / {pair.quote}</Text>
         </Text>
         <Text style={styles.turnoverText}>
           Vol {formatTurnover(ticker.turnover24h)}
+          {isHyperliquidTicker(ticker)
+            ? `  ·  up to ${ticker.maxLeverage}×`
+            : ''}
         </Text>
       </View>
       <View style={styles.tickerPriceBlock}>
@@ -163,13 +248,47 @@ function TickerRow({ ticker, onPress }: TickerRowProps) {
   );
 }
 
-function MarketsHeader() {
+type MarketsHeaderProps = {
+  provider: MarketProvider;
+  onChange: (provider: MarketProvider) => void;
+};
+
+function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
   return (
     <View style={styles.marketsHeader}>
-      <Text style={styles.eyebrow}>BYBIT SPOT</Text>
+      <View accessibilityRole="tablist" style={styles.providerTabs}>
+        {(['binance', 'hyperliquid'] as const).map((item) => {
+          const selected = item === provider;
+          return (
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              key={item}
+              onPress={() => onChange(item)}
+              style={({ pressed }) => [
+                styles.providerTab,
+                selected && styles.providerTabSelected,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  selected
+                    ? styles.providerTabTextSelected
+                    : styles.providerTabText
+                }
+              >
+                {item === 'binance' ? 'Binance' : 'Hyperliquid'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       <Text style={styles.screenTitle}>Markets</Text>
       <Text style={styles.screenSubtitle}>
-        USDT pairs sorted by 24-hour turnover
+        {provider === 'binance'
+          ? 'Binance Spot · USDT pairs by 24-hour turnover'
+          : 'Hyperliquid Perps · markets by 24-hour notional volume'}
       </Text>
     </View>
   );
@@ -177,28 +296,44 @@ function MarketsHeader() {
 
 export function MarketsScreen() {
   const navigation = useNavigation();
-  const { tickers, loading, refreshing, error, retry, refresh } =
-    useSpotTickers();
+  const [provider, setProvider] = useState<MarketProvider>('binance');
+  const { tickers, loading, loaded, refreshing, error, retry, refresh } =
+    useProviderTickers(provider);
 
   const openChart = useCallback(
-    (ticker: BybitTicker) => {
-      chartDataController.prepare(ticker, '1');
-      navigation.navigate('Chart', { ticker, interval: '1' });
+    (ticker: MarketTicker) => {
+      if (isHyperliquidTicker(ticker)) {
+        hyperliquidChartDataController.prepare(ticker, '1m');
+        navigation.navigate('Chart', {
+          provider: 'hyperliquid',
+          ticker,
+          interval: '1m',
+        });
+        return;
+      }
+      chartDataController.prepare(ticker, '1m');
+      navigation.navigate('Chart', {
+        provider: 'binance',
+        ticker,
+        interval: '1m',
+      });
     },
     [navigation]
   );
 
-  const renderItem = useCallback<ListRenderItem<BybitTicker>>(
+  const renderItem = useCallback<ListRenderItem<MarketTicker>>(
     ({ item }) => <TickerRow onPress={openChart} ticker={item} />,
     [openChart]
   );
 
   let content;
-  if (loading && tickers.length === 0) {
+  if ((!loaded || loading) && tickers.length === 0) {
     content = (
       <View style={styles.centerState}>
         <ActivityIndicator color="#8D7CFF" size="large" />
-        <Text style={styles.loadingText}>Loading Bybit markets…</Text>
+        <Text style={styles.loadingText}>
+          Loading {provider === 'binance' ? 'Binance' : 'Hyperliquid'} markets…
+        </Text>
       </View>
     );
   } else if (error != null && tickers.length === 0) {
@@ -239,7 +374,8 @@ export function MarketsScreen() {
             index,
           })}
           initialNumToRender={14}
-          keyExtractor={(item) => item.symbol}
+          key={provider}
+          keyExtractor={(item) => `${provider}:${item.symbol}`}
           onRefresh={() => {
             void refresh();
           }}
@@ -254,7 +390,7 @@ export function MarketsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
-        <MarketsHeader />
+        <MarketsHeader onChange={setProvider} provider={provider} />
         {content}
       </View>
     </SafeAreaView>
@@ -266,15 +402,31 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#100C18' },
   marketsHeader: {
     paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingTop: 12,
     paddingBottom: 20,
   },
-  eyebrow: {
-    color: '#8D7CFF',
-    fontSize: 11,
+  providerTabs: {
+    backgroundColor: '#1A1522',
+    borderColor: '#292431',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    marginBottom: 20,
+    padding: 3,
+  },
+  providerTab: {
+    alignItems: 'center',
+    borderRadius: 9,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 38,
+  },
+  providerTabSelected: { backgroundColor: '#7562F4' },
+  providerTabText: { color: '#8F899B', fontSize: 13, fontWeight: '700' },
+  providerTabTextSelected: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 1.8,
-    marginBottom: 8,
   },
   screenTitle: {
     color: '#F6F3FA',

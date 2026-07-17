@@ -16,22 +16,46 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TradingCharts, TradingChartsView } from 'react-native-trading-charts';
 
 import {
-  BYBIT_INTERVALS,
-  type BybitInterval,
-  type BybitTicker,
-} from '../bybit';
+  BINANCE_INTERVALS,
+  type BinanceInterval,
+  type BinanceTicker,
+} from '../binance';
 import {
   chartDataController,
   chartIdFor,
+  hyperliquidChartDataController,
+  hyperliquidChartIdFor,
   type ChartConnectionStatus,
 } from '../chartDataController';
+import {
+  HYPERLIQUID_INTERVALS,
+  type HyperliquidInterval,
+  type HyperliquidTicker,
+} from '../hyperliquid';
 
-type ChartScreenProps = StaticScreenProps<{
-  ticker: BybitTicker;
-  interval: BybitInterval;
-}>;
+type ChartRouteParams =
+  | {
+      provider: 'binance';
+      ticker: BinanceTicker;
+      interval: BinanceInterval;
+    }
+  | {
+      provider: 'hyperliquid';
+      ticker: HyperliquidTicker;
+      interval: HyperliquidInterval;
+    };
 
-function formatPrice(ticker: BybitTicker): string {
+type ChartScreenProps = StaticScreenProps<ChartRouteParams>;
+
+type PriceTicker = {
+  symbol: string;
+  lastPrice: number;
+  change24hPercent: number;
+  precision: number;
+  minMove: number;
+};
+
+function formatPrice(ticker: PriceTicker): string {
   return ticker.lastPrice.toLocaleString('en-US', {
     minimumFractionDigits: ticker.precision,
     maximumFractionDigits: ticker.precision,
@@ -84,22 +108,61 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
   );
 }
 
-export function ChartScreen({ route }: ChartScreenProps) {
+type IntervalOption<TInterval extends string> = {
+  value: TInterval;
+  label: string;
+  timeframeMs: number;
+};
+
+type ChartController<TTicker, TInterval extends string> = {
+  prepare(ticker: TTicker, interval: TInterval): string;
+  retry(ticker: TTicker, interval: TInterval): void;
+  subscribe(
+    ticker: TTicker,
+    interval: TInterval,
+    listener: () => void
+  ): () => void;
+  getSnapshot(
+    ticker: TTicker,
+    interval: TInterval
+  ): { status: ChartConnectionStatus; error: string | null };
+};
+
+type ChartContentProps<
+  TTicker extends PriceTicker,
+  TInterval extends string,
+> = {
+  ticker: TTicker;
+  interval: TInterval;
+  intervals: ReadonlyArray<IntervalOption<TInterval>>;
+  controller: ChartController<TTicker, TInterval>;
+  chartId: string;
+  baseAsset: string;
+  quoteAsset: string;
+  venueLabel: string;
+};
+
+function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
+  ticker,
+  interval,
+  intervals,
+  controller,
+  chartId,
+  baseAsset,
+  quoteAsset,
+  venueLabel,
+}: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
-  const { ticker, interval } = route.params;
   const intervalConfig =
-    BYBIT_INTERVALS.find((item) => item.value === interval) ??
-    BYBIT_INTERVALS[0];
-  const chartId = chartIdFor(ticker.symbol, interval);
+    intervals.find((item) => item.value === interval) ?? intervals[0];
 
   const subscribe = useCallback(
-    (listener: () => void) =>
-      chartDataController.subscribe(ticker, interval, listener),
-    [interval, ticker]
+    (listener: () => void) => controller.subscribe(ticker, interval, listener),
+    [controller, interval, ticker]
   );
   const getSnapshot = useCallback(
-    () => chartDataController.getSnapshot(ticker, interval),
-    [interval, ticker]
+    () => controller.getSnapshot(ticker, interval),
+    [controller, interval, ticker]
   );
   const { status, error } = useSyncExternalStore(
     subscribe,
@@ -108,19 +171,20 @@ export function ChartScreen({ route }: ChartScreenProps) {
   );
 
   const changeInterval = useCallback(
-    (nextInterval: BybitInterval) => {
+    (nextInterval: TInterval) => {
       if (nextInterval === interval) {
         return;
       }
-      chartDataController.prepare(ticker, nextInterval);
-      navigation.setParams({ ticker, interval: nextInterval });
+      controller.prepare(ticker, nextInterval);
+      const setIntervalParam = navigation.setParams as unknown as (params: {
+        interval: TInterval;
+      }) => void;
+      setIntervalParam({ interval: nextInterval });
     },
-    [interval, navigation, ticker]
+    [controller, interval, navigation, ticker]
   );
 
-  const renderInterval = useCallback<
-    ListRenderItem<(typeof BYBIT_INTERVALS)[number]>
-  >(
+  const renderInterval = useCallback<ListRenderItem<IntervalOption<TInterval>>>(
     ({ item }) => {
       const selected = item.value === interval;
       return (
@@ -165,10 +229,10 @@ export function ChartScreen({ route }: ChartScreenProps) {
           </Pressable>
           <View style={styles.chartTitleBlock}>
             <Text style={styles.chartTitle}>
-              {ticker.symbol.slice(0, -4)}
-              <Text style={styles.quoteSymbol}> / USDT</Text>
+              {baseAsset}
+              <Text style={styles.quoteSymbol}> / {quoteAsset}</Text>
             </Text>
-            <Text style={styles.chartSubtitle}>Bybit Spot</Text>
+            <Text style={styles.chartSubtitle}>{venueLabel}</Text>
           </View>
           <View style={styles.headerPriceBlock}>
             <Text style={styles.headerPrice}>{formatPrice(ticker)}</Text>
@@ -187,7 +251,7 @@ export function ChartScreen({ route }: ChartScreenProps) {
 
         <FlatList
           contentContainerStyle={styles.intervalBarContent}
-          data={BYBIT_INTERVALS}
+          data={intervals}
           horizontal
           keyExtractor={(item) => item.value}
           renderItem={renderInterval}
@@ -198,7 +262,7 @@ export function ChartScreen({ route }: ChartScreenProps) {
         {hasError ? (
           <Pressable
             accessibilityRole="button"
-            onPress={() => chartDataController.retry(ticker, interval)}
+            onPress={() => controller.retry(ticker, interval)}
             style={({ pressed }) => [
               styles.chartErrorBanner,
               pressed && styles.pressed,
@@ -207,8 +271,8 @@ export function ChartScreen({ route }: ChartScreenProps) {
             <Text numberOfLines={2} style={styles.chartErrorText}>
               {error ??
                 (status === 'no-data'
-                  ? 'Bybit returned no data for this market and interval'
-                  : 'Could not connect to Bybit')}
+                  ? `${venueLabel} returned no data for this market and interval`
+                  : `Could not connect to ${venueLabel}`)}
             </Text>
             <Text style={styles.chartErrorRetry}>Try again</Text>
           </Pressable>
@@ -223,10 +287,11 @@ export function ChartScreen({ route }: ChartScreenProps) {
             initialVisibleCount={48}
             key={chartId}
             style={styles.chart}
-            timeframeMs={intervalConfig.timeframeMs}
+            timeframeMs={intervalConfig?.timeframeMs ?? 60_000}
             xAxis={{
               locale: 'en-GB',
-              showSeconds: intervalConfig.timeframeMs < 60_000,
+              showSeconds: (intervalConfig?.timeframeMs ?? 60_000) < 60_000,
+              spacing: 'time',
               timeZone: 'UTC',
             }}
             yAxis={{
@@ -279,6 +344,36 @@ export function ChartScreen({ route }: ChartScreenProps) {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+export function ChartScreen({ route }: ChartScreenProps) {
+  const params = route.params;
+  if (params.provider === 'hyperliquid') {
+    return (
+      <ChartContent
+        baseAsset={params.ticker.baseAsset}
+        chartId={hyperliquidChartIdFor(params.ticker.symbol, params.interval)}
+        controller={hyperliquidChartDataController}
+        interval={params.interval}
+        intervals={HYPERLIQUID_INTERVALS}
+        quoteAsset={params.ticker.quoteAsset}
+        ticker={params.ticker}
+        venueLabel="Hyperliquid Perpetual"
+      />
+    );
+  }
+  return (
+    <ChartContent
+      baseAsset={params.ticker.symbol.slice(0, -4)}
+      chartId={chartIdFor(params.ticker.symbol, params.interval)}
+      controller={chartDataController}
+      interval={params.interval}
+      intervals={BINANCE_INTERVALS}
+      quoteAsset="USDT"
+      ticker={params.ticker}
+      venueLabel="Binance Spot"
+    />
   );
 }
 

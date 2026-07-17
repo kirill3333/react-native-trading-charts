@@ -29,6 +29,7 @@ internal data class ChartConfig(
   val xLocale: String = "en-GB",
   val xTimeZone: String = "UTC",
   val showSeconds: Boolean = false,
+  val logicalSpacing: Boolean = false,
   val showYAxis: Boolean = true,
   val yAxisOnRight: Boolean = true,
   val yAxisWidth: Float = 64f,
@@ -70,6 +71,7 @@ internal data class ChartConfig(
         xLocale = xAxis.getString("locale"),
         xTimeZone = xAxis.getString("timeZone"),
         showSeconds = xAxis.getBoolean("showSeconds"),
+        logicalSpacing = xAxis.getString("spacing") == "logical",
         showYAxis = yAxis.getBoolean("visible"),
         yAxisOnRight = yAxis.getString("position") != "left",
         yAxisWidth = yAxis.getDouble("width").toFloat() * density,
@@ -115,6 +117,7 @@ internal data class ChartConfig(
     yScaleMarginTop,
     yScaleMarginBottom,
     displayScale.toDouble(),
+    if (logicalSpacing) 1.0 else 0.0,
   )
 
   fun nativeColors(): FloatArray {

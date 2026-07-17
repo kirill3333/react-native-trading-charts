@@ -109,6 +109,7 @@ describe('chart config', () => {
   it('resolves price and compact defaults', () => {
     const price = resolveChartConfig({ chartId: 'price' });
     expect(price.timeframeMs).toBe(60_000);
+    expect(price.xAxis.spacing).toBe('time');
     expect(price.yAxis.valueFormat).toMatchObject({
       type: 'price',
       precision: 2,
@@ -132,6 +133,16 @@ describe('chart config', () => {
     expect(() => resolveChartConfig({ chartId: '' })).toThrow(
       'chartId must be a non-empty string'
     );
+    expect(
+      resolveChartConfig({ chartId: 'logical', xAxis: { spacing: 'logical' } })
+        .xAxis.spacing
+    ).toBe('logical');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-spacing',
+        xAxis: { spacing: 'invalid' as 'time' },
+      })
+    ).toThrow('xAxis.spacing');
   });
 
   it('accepts valid scale margins and rejects invalid ranges', () => {
