@@ -7,6 +7,11 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface TradingChartsView : RCTViewComponentView
+- (void)applyHistoryData:(NSArray<NSNumber *> *)data;
+- (void)applyCandleData:(NSArray<NSNumber *> *)data;
+- (void)applyTradeData:(NSArray<NSNumber *> *)data;
+- (void)applyTradesData:(NSArray<NSNumber *> *)data;
+- (void)clearChartData;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -5,6 +5,12 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+# RN 0.85 prebuilt binaries are compiled without the debug-only Fabric ABI,
+# while native dependencies in a Debug build use it. Build RN from source so
+# react-native-screens and safe-area-context share the same C++ configuration.
+ENV['RCT_USE_PREBUILT_RNCORE'] = '0'
+ENV['RCT_USE_RN_DEP'] = '0'
+
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 

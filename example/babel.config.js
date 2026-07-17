@@ -6,7 +6,9 @@ const root = path.resolve(__dirname, '..');
 
 module.exports = getConfig(
   {
-    presets: ['module:@react-native/babel-preset'],
+    presets: [
+      ['module:@react-native/babel-preset', { enableBabelRuntime: '^7.25.0' }],
+    ],
   },
   { root, pkg }
 );
