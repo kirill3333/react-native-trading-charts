@@ -504,6 +504,96 @@ void testPanReportsViewportMovementAndBounds() {
   assert(!engine.pan(100.0f));
 }
 
+void testProgrammaticZoomUsesRightEdgeAndClampsToHistory() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initialVisibleCount = 4;
+  config.allowZoom = false;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      60000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+      120000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+      180000.0, 13.0, 15.0, 12.0, 14.0, 1.0,
+      240000.0, 14.0, 16.0, 13.0, 15.0, 1.0,
+      300000.0, 15.0, 17.0, 14.0, 16.0, 1.0,
+  };
+  assert(engine.setHistory(history, 36) == UpdateStatus::Applied);
+
+  const auto initial = engine.snapshot();
+  const double initialSpan = initial->visibleXMax - initial->visibleXMin;
+  const double rightEdge = initial->visibleXMax;
+  engine.zoomAtRightEdge(2.0);
+  const auto zoomedIn = engine.snapshot();
+  expectNear(zoomedIn->visibleXMax - zoomedIn->visibleXMin, initialSpan / 2.0);
+  expectNear(zoomedIn->visibleXMax, rightEdge);
+
+  engine.zoomAtRightEdge(1e12);
+  const auto minimum = engine.snapshot();
+  expectNear(minimum->visibleXMax - minimum->visibleXMin, 180000.0);
+  expectNear(minimum->visibleXMax, rightEdge);
+
+  engine.resetViewport();
+  engine.zoomAtRightEdge(0.5);
+  const auto zoomedOut = engine.snapshot();
+  expectNear(zoomedOut->visibleXMax - zoomedOut->visibleXMin, 480000.0);
+  expectNear(zoomedOut->visibleXMax, rightEdge);
+
+  engine.zoomAtRightEdge(1e-12);
+  const auto clamped = engine.snapshot();
+  expectNear(clamped->visibleXMin, -30000.0);
+  expectNear(clamped->visibleXMax, 450000.0);
+}
+
+void testFitContentShowsHistoryAndResetsYScale() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initialVisibleCount = 2;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      60000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+      120000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+      180000.0, 40.0, 44.0, 39.0, 43.0, 1.0,
+  };
+  assert(engine.setHistory(history, 24) == UpdateStatus::Applied);
+
+  const auto defaultViewport = engine.snapshot();
+  engine.fitContent();
+  const auto fitted = engine.snapshot();
+  expectNear(fitted->visibleXMin, -30000.0);
+  expectNear(fitted->visibleXMax, 330000.0);
+  const double fittedYMin = fitted->visibleYMin;
+  const double fittedYMax = fitted->visibleYMax;
+
+  engine.scaleY(-fitted->plot.height() * 0.5f);
+  engine.zoomAtRightEdge(2.0);
+  engine.fitContent();
+  const auto restored = engine.snapshot();
+  expectNear(restored->visibleXMin, fitted->visibleXMin);
+  expectNear(restored->visibleXMax, fitted->visibleXMax);
+  expectNear(restored->visibleYMin, fittedYMin);
+  expectNear(restored->visibleYMax, fittedYMax);
+
+  engine.resetViewport();
+  const auto reset = engine.snapshot();
+  expectNear(reset->visibleXMin, defaultViewport->visibleXMin);
+  expectNear(reset->visibleXMax, defaultViewport->visibleXMax);
+}
+
+void testViewportCommandsHandleEmptyHistory() {
+  ChartEngine engine;
+  engine.setSize(800.0f, 500.0f);
+  engine.zoomAtRightEdge(2.0);
+  engine.fitContent();
+  const auto snapshot = engine.snapshot();
+  expectNear(snapshot->visibleXMin, 0.0);
+  expectNear(snapshot->visibleXMax, 1.0);
+  assert(!snapshot->crosshairVisible);
+}
+
 void testCrosshairHitTesting() {
   ChartEngine engine;
   engine.setSize(800.0f, 500.0f);
@@ -590,6 +680,9 @@ int main() {
   testViewportFollowsNewTradeBucketAtLiveEdge();
   testViewportResumesFollowingAfterReturningToLiveEdge();
   testPanReportsViewportMovementAndBounds();
+  testProgrammaticZoomUsesRightEdgeAndClampsToHistory();
+  testFitContentShowsHistoryAndResetsYScale();
+  testViewportCommandsHandleEmptyHistory();
   testCrosshairHitTesting();
   testLargeHistoryAndTradeBurst();
   std::cout << "ChartEngineTests passed\n";

@@ -127,8 +127,10 @@ class ChartEngine {
 
   bool pan(float deltaPixels);
   void zoom(double scale, float focusX);
+  void zoomAtRightEdge(double scale);
   void scaleY(float deltaPixels);
   void resetViewport();
+  void fitContent();
   void setCrosshair(bool active, float x, float y);
 
   size_t candleCount() const;
@@ -157,6 +159,7 @@ class ChartEngine {
   static Candle candleFromValues(const double* values);
   void markDirtyLocked();
   void resetViewportLocked();
+  void fitContentLocked();
   void clampViewportLocked();
   bool isAtLiveEdgeLocked() const;
   UpdateStatus updateTradeLocked(double timestamp, double price, double size);

@@ -80,6 +80,13 @@ TradingCharts.updateTrade('btc-1m', {
 
 // Prefer batches for burst/high-frequency feeds.
 TradingCharts.updateTrades('btc-1m', incomingTrades);
+
+// Programmatic zoom is anchored to the right edge of the visible range.
+// Values greater than 1 zoom in; values between 0 and 1 zoom out.
+TradingCharts.zoom('btc-1m', 1.25);
+
+// Show the complete loaded history and restore automatic Y scaling.
+TradingCharts.fitContent('btc-1m');
 ```
 
 `chartId` must be unique and stable while the view is mounted. Calls made before
@@ -117,6 +124,13 @@ one-finger vertical drag that starts on the Y axis scales the visible price
 range. Drag up to narrow the range or down to expand it. The selected Y scale is
 preserved while autoscale follows the visible candles; double-tap the chart to
 reset both axes to their default viewport and autoscale.
+
+`TradingCharts.zoom(chartId, scale)` provides the same horizontal scaling from
+application controls, anchored to the right edge of the current viewport. A
+scale greater than `1` zooms in and a scale between `0` and `1` zooms out.
+`TradingCharts.fitContent(chartId)` shows the full loaded history and restores
+automatic Y scaling. These programmatic commands work even when
+`gestures.zoom` is disabled; the option controls touch gestures only.
 
 With `gestures.pan` enabled, a quick horizontal swipe continues scrolling with
 native momentum and slows to a stop at the beginning or end of the data.

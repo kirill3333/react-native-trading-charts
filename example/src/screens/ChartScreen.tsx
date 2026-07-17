@@ -13,7 +13,7 @@ import {
   type ListRenderItem,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TradingChartsView } from 'react-native-trading-charts';
+import { TradingCharts, TradingChartsView } from 'react-native-trading-charts';
 
 import {
   BYBIT_INTERVALS,
@@ -241,6 +241,42 @@ export function ChartScreen({ route }: ChartScreenProps) {
           />
           <ConnectionBadge status={status} />
         </View>
+        <View style={styles.chartControls}>
+          <Pressable
+            accessibilityLabel="Zoom in chart"
+            accessibilityRole="button"
+            onPress={() => TradingCharts.zoom(chartId, 1.25)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartControlSymbol}>+</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Zoom out chart"
+            accessibilityRole="button"
+            onPress={() => TradingCharts.zoom(chartId, 0.8)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartControlSymbol}>−</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Fit entire chart"
+            accessibilityRole="button"
+            onPress={() => TradingCharts.fitContent(chartId)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              styles.chartResetButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartResetText}>Reset</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -346,6 +382,35 @@ const styles = StyleSheet.create({
   },
   chartContainer: { flex: 1, position: 'relative' },
   chart: { flex: 1 },
+  chartControls: {
+    alignItems: 'center',
+    borderTopColor: '#292431',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  chartControlButton: {
+    alignItems: 'center',
+    backgroundColor: '#211B2B',
+    borderColor: '#393242',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 40,
+    justifyContent: 'center',
+    marginHorizontal: 4,
+    minWidth: 48,
+    paddingHorizontal: 14,
+  },
+  chartControlSymbol: {
+    color: '#F6F3FA',
+    fontSize: 24,
+    fontWeight: '500',
+    lineHeight: 26,
+  },
+  chartResetButton: { minWidth: 84 },
+  chartResetText: { color: '#C2B9FF', fontSize: 13, fontWeight: '800' },
   liveBadge: {
     alignItems: 'center',
     backgroundColor: 'rgba(20, 40, 33, 0.9)',

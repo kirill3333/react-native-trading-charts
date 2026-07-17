@@ -122,6 +122,20 @@ export const TradingCharts = {
     NativeTradingCharts.updateTrades(chartId, packed);
   },
 
+  zoom(chartId: string, scale: number) {
+    assertChartId(chartId);
+    assertFinite(scale, 'scale');
+    if (scale <= 0) {
+      throw new TypeError('scale must be greater than 0');
+    }
+    NativeTradingCharts.zoom(chartId, scale);
+  },
+
+  fitContent(chartId: string) {
+    assertChartId(chartId);
+    NativeTradingCharts.fitContent(chartId);
+  },
+
   clear(chartId: string) {
     assertChartId(chartId);
     NativeTradingCharts.clear(chartId);

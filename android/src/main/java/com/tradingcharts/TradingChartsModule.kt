@@ -22,6 +22,14 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.updateTrades(chartId, trades.toDoubles())
   }
 
+  override fun zoom(chartId: String, scale: Double) {
+    TradingChartsRegistry.zoom(chartId, scale)
+  }
+
+  override fun fitContent(chartId: String) {
+    TradingChartsRegistry.fitContent(chartId)
+  }
+
   override fun clear(chartId: String) {
     TradingChartsRegistry.clear(chartId)
   }

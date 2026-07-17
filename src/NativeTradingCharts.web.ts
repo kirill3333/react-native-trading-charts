@@ -5,6 +5,8 @@ const NativeTradingChartsWeb: Spec = {
   updateCandle() {},
   updateTrade() {},
   updateTrades() {},
+  zoom() {},
+  fitContent() {},
   clear() {},
 };
 

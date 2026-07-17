@@ -406,6 +406,8 @@ NSString *TCMetalShaderSource(void) {
 - (void)applyCandle:(NSArray<NSNumber *> *)data;
 - (void)applyTrade:(NSArray<NSNumber *> *)data;
 - (void)applyTrades:(NSArray<NSNumber *> *)data;
+- (void)zoomByScale:(double)scale;
+- (void)fitContent;
 - (void)clearData;
 - (void)startDecelerationWithVelocity:(CGFloat)velocity;
 - (void)stopDeceleration;
@@ -633,6 +635,16 @@ NSString *TCMetalShaderSource(void) {
   TCLogStatus(_engine->updateTrades(values.data(), values.size()), @"updateTrades");
   [self requestFrame];
 }
+- (void)zoomByScale:(double)scale {
+  [self stopDeceleration];
+  _engine->zoomAtRightEdge(scale);
+  [self requestFrame];
+}
+- (void)fitContent {
+  [self stopDeceleration];
+  _engine->fitContent();
+  [self requestFrame];
+}
 - (void)clearData {
   [self stopDeceleration];
   _engine->clear();
@@ -768,6 +780,8 @@ NSString *TCMetalShaderSource(void) {
 - (void)applyCandleData:(NSArray<NSNumber *> *)data { [_host applyCandle:TCArrayOrEmpty(data)]; }
 - (void)applyTradeData:(NSArray<NSNumber *> *)data { [_host applyTrade:TCArrayOrEmpty(data)]; }
 - (void)applyTradesData:(NSArray<NSNumber *> *)data { [_host applyTrades:TCArrayOrEmpty(data)]; }
+- (void)zoomByScale:(double)scale { [_host zoomByScale:scale]; }
+- (void)fitChartContent { [_host fitContent]; }
 - (void)clearChartData { [_host clearData]; }
 
 @end

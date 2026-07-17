@@ -173,6 +173,12 @@ Java_com_tradingcharts_ChartEngineNative_nativeZoom(
 }
 
 JNIEXPORT void JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeZoomAtRightEdge(
+    JNIEnv*, jclass, jlong handle, jdouble scale) {
+  if (auto* instance = engine(handle)) instance->zoomAtRightEdge(scale);
+}
+
+JNIEXPORT void JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeScaleY(
     JNIEnv*, jclass, jlong handle, jfloat delta) {
   if (auto* instance = engine(handle)) instance->scaleY(delta);
@@ -181,6 +187,11 @@ Java_com_tradingcharts_ChartEngineNative_nativeScaleY(
 JNIEXPORT void JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeResetViewport(JNIEnv*, jclass, jlong handle) {
   if (auto* instance = engine(handle)) instance->resetViewport();
+}
+
+JNIEXPORT void JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeFitContent(JNIEnv*, jclass, jlong handle) {
+  if (auto* instance = engine(handle)) instance->fitContent();
 }
 
 JNIEXPORT void JNICALL

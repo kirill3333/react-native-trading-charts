@@ -50,8 +50,10 @@ internal object ChartEngineNative {
   @JvmStatic external fun nativeClear(handle: Long)
   @JvmStatic external fun nativePan(handle: Long, delta: Float): Boolean
   @JvmStatic external fun nativeZoom(handle: Long, scale: Double, focusX: Float)
+  @JvmStatic external fun nativeZoomAtRightEdge(handle: Long, scale: Double)
   @JvmStatic external fun nativeScaleY(handle: Long, delta: Float)
   @JvmStatic external fun nativeResetViewport(handle: Long)
+  @JvmStatic external fun nativeFitContent(handle: Long)
   @JvmStatic external fun nativeSetCrosshair(handle: Long, active: Boolean, x: Float, y: Float)
   @JvmStatic private external fun nativeAcquireSnapshot(handle: Long): Long
   @JvmStatic private external fun nativeReleaseSnapshot(handle: Long)

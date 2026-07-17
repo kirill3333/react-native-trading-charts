@@ -12,6 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)updateCandle:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
 - (void)updateTrade:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
 - (void)updateTrades:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
+- (void)zoomChart:(NSString *)chartId scale:(double)scale;
+- (void)fitContentForChart:(NSString *)chartId;
 - (void)clearChart:(NSString *)chartId;
 @end
 

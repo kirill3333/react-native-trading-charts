@@ -7,6 +7,8 @@ const mockNativeModule = {
   updateCandle: jest.fn(),
   updateTrade: jest.fn(),
   updateTrades: jest.fn(),
+  zoom: jest.fn(),
+  fitContent: jest.fn(),
   clear: jest.fn(),
 };
 
@@ -70,6 +72,35 @@ describe('TradingCharts data API', () => {
     expect(mockNativeModule.updateTrades).toHaveBeenCalledWith(
       'main',
       [101, 13, 0, 102, 11, 2]
+    );
+  });
+
+  it('forwards viewport commands to the native module', () => {
+    TradingCharts.zoom('main', 1.25);
+    TradingCharts.fitContent('main');
+
+    expect(mockNativeModule.zoom).toHaveBeenCalledWith('main', 1.25);
+    expect(mockNativeModule.fitContent).toHaveBeenCalledWith('main');
+  });
+
+  it('rejects invalid zoom arguments', () => {
+    expect(() => TradingCharts.zoom('', 1.25)).toThrow(
+      'chartId must be a non-empty string'
+    );
+    expect(() => TradingCharts.fitContent('')).toThrow(
+      'chartId must be a non-empty string'
+    );
+    expect(() => TradingCharts.zoom('main', 0)).toThrow(
+      'scale must be greater than 0'
+    );
+    expect(() => TradingCharts.zoom('main', -1)).toThrow(
+      'scale must be greater than 0'
+    );
+    expect(() => TradingCharts.zoom('main', Number.NaN)).toThrow(
+      'scale must be a finite number'
+    );
+    expect(() => TradingCharts.zoom('main', Number.POSITIVE_INFINITY)).toThrow(
+      'scale must be a finite number'
     );
   });
 });

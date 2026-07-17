@@ -66,6 +66,8 @@
       else if ([type isEqualToString:@"candle"]) [view applyCandleData:data];
       else if ([type isEqualToString:@"trade"]) [view applyTradeData:data];
       else if ([type isEqualToString:@"trades"]) [view applyTradesData:data];
+      else if ([type isEqualToString:@"zoom"]) [view zoomByScale:[command[@"scale"] doubleValue]];
+      else if ([type isEqualToString:@"fitContent"]) [view fitChartContent];
     }
   }];
 }
@@ -108,6 +110,32 @@
 }
 - (void)updateTrades:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
   [self enqueue:@"trades" data:data chartId:chartId];
+}
+
+- (void)zoomChart:(NSString *)chartId scale:(double)scale {
+  if (chartId.length == 0) return;
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    TradingChartsView *view = entry.view;
+    if (view) {
+      [view zoomByScale:scale];
+    } else {
+      [entry.pending addObject:@{ @"type": @"zoom", @"scale": @(scale) }];
+    }
+  }];
+}
+
+- (void)fitContentForChart:(NSString *)chartId {
+  if (chartId.length == 0) return;
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    TradingChartsView *view = entry.view;
+    if (view) {
+      [view fitChartContent];
+    } else {
+      [entry.pending addObject:@{ @"type": @"fitContent" }];
+    }
+  }];
 }
 
 - (void)clearChart:(NSString *)chartId {

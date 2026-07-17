@@ -219,6 +219,18 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     scheduleFrame()
   }
 
+  fun zoom(scale: Double) {
+    stopFling()
+    ChartEngineNative.nativeZoomAtRightEdge(engineHandle, scale)
+    scheduleFrame()
+  }
+
+  fun fitContent() {
+    stopFling()
+    ChartEngineNative.nativeFitContent(engineHandle)
+    scheduleFrame()
+  }
+
   fun clearData() {
     stopFling()
     ChartEngineNative.nativeClear(engineHandle)

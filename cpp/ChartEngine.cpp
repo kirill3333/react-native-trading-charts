@@ -316,6 +316,23 @@ void ChartEngine::resetViewportLocked() {
   clampViewportLocked();
 }
 
+void ChartEngine::fitContentLocked() {
+  yRangeMultiplier_ = 1.0;
+  if (candles_.empty()) {
+    viewportInitialized_ = false;
+    visibleXMin_ = 0.0;
+    visibleXMax_ = 1.0;
+    return;
+  }
+  visibleXMin_ = candles_.front().timestamp - config_.timeframeMs * 0.5;
+  visibleXMax_ = candles_.back().timestamp + config_.timeframeMs * 2.5;
+  if (!(visibleXMax_ > visibleXMin_)) {
+    visibleXMax_ = visibleXMin_ + config_.timeframeMs * 3.0;
+  }
+  viewportInitialized_ = true;
+  clampViewportLocked();
+}
+
 void ChartEngine::clampViewportLocked() {
   if (candles_.empty() || !viewportInitialized_) return;
   const double dataMin = candles_.front().timestamp - config_.timeframeMs * 0.5;
@@ -323,16 +340,12 @@ void ChartEngine::clampViewportLocked() {
   const double fullSpan = std::max(dataMax - dataMin, config_.timeframeMs * 3.0);
   double span = std::max(visibleXMax_ - visibleXMin_, config_.timeframeMs * 3.0);
   span = std::min(span, fullSpan);
-  if (visibleXMin_ < dataMin) {
-    visibleXMin_ = dataMin;
-    visibleXMax_ = dataMin + span;
-  }
+  visibleXMin_ = std::max(visibleXMin_, dataMin);
+  visibleXMax_ = visibleXMin_ + span;
   if (visibleXMax_ > dataMax) {
     visibleXMax_ = dataMax;
     visibleXMin_ = dataMax - span;
   }
-  visibleXMin_ = std::max(visibleXMin_, dataMin);
-  visibleXMax_ = std::min(visibleXMin_ + span, dataMax);
 }
 
 bool ChartEngine::isAtLiveEdgeLocked() const {
@@ -386,6 +399,19 @@ void ChartEngine::zoom(double scale, float focusX) {
   markDirtyLocked();
 }
 
+void ChartEngine::zoomAtRightEdge(double scale) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!viewportInitialized_ || !(scale > 0.0) || !finite(scale) || candles_.empty()) {
+    return;
+  }
+  const double oldSpan = visibleXMax_ - visibleXMin_;
+  const double newSpan = oldSpan / scale;
+  visibleXMin_ = visibleXMax_ - newSpan;
+  crosshairActive_ = false;
+  clampViewportLocked();
+  markDirtyLocked();
+}
+
 void ChartEngine::scaleY(float deltaPixels) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!config_.allowZoom || !config_.showYAxis || !viewportInitialized_ ||
@@ -408,6 +434,13 @@ void ChartEngine::resetViewport() {
   std::lock_guard<std::mutex> lock(mutex_);
   crosshairActive_ = false;
   resetViewportLocked();
+  markDirtyLocked();
+}
+
+void ChartEngine::fitContent() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  crosshairActive_ = false;
+  fitContentLocked();
   markDirtyLocked();
 }
 

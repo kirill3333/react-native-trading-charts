@@ -30,6 +30,14 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] updateTrades:trades chartId:chartId];
 }
 
+- (void)zoom:(NSString *)chartId scale:(double)scale {
+  [[TradingChartsRegistry shared] zoomChart:chartId scale:scale];
+}
+
+- (void)fitContent:(NSString *)chartId {
+  [[TradingChartsRegistry shared] fitContentForChart:chartId];
+}
+
 - (void)clear:(NSString *)chartId {
   [[TradingChartsRegistry shared] clearChart:chartId];
 }
