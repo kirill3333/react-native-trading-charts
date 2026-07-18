@@ -2,6 +2,7 @@ package com.tradingcharts
 
 import android.content.Context
 import android.opengl.GLSurfaceView
+import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -33,6 +34,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var crosshairActive = false
   private var suppressFlingForTouch = false
   private var lastFlingX = 0
+  private var pastEdgeWaitStartedAtMs = 0L
   private var lastVisibleRangeKey: Triple<Int, Int, Int>? = null
 
   private val flingFrame = object : Runnable {
@@ -44,10 +46,22 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       if (deltaX != 0) {
         val moved = ChartEngineNative.nativePan(engineHandle, deltaX.toFloat())
         if (!moved) {
-          stopFling()
-          return
+          val now = SystemClock.uptimeMillis()
+          if (deltaX > 0 && pastEdgeWaitStartedAtMs == 0L) {
+            // A positive delta moves toward older candles. Allow an in-flight
+            // prepend to extend the viewport before abandoning the fling.
+            pastEdgeWaitStartedAtMs = now
+          }
+          val waitingForPastData =
+            deltaX > 0 && now - pastEdgeWaitStartedAtMs < PAST_EDGE_DATA_WAIT_MS
+          if (!waitingForPastData) {
+            stopFling()
+            return
+          }
+        } else {
+          pastEdgeWaitStartedAtMs = 0L
+          scheduleFrame()
         }
-        scheduleFrame()
       }
       if (!flingScroller.isFinished) postOnAnimation(this)
     }
@@ -169,6 +183,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     removeCallbacks(flingFrame)
     if (!flingScroller.isFinished) flingScroller.forceFinished(true)
     lastFlingX = 0
+    pastEdgeWaitStartedAtMs = 0L
   }
 
   init {
@@ -350,5 +365,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   companion object {
     private const val TAG = "TradingCharts"
     private const val FLING_DISTANCE_LIMIT = 1_000_000_000
+    private const val PAST_EDGE_DATA_WAIT_MS = 1_500L
   }
 }

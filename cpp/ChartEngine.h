@@ -62,6 +62,7 @@ struct ChartConfig {
   bool allowZoom = true;
   bool showCurrentPrice = true;
   bool showCurrentPriceLabel = true;
+  bool pinCurrentPriceToEdge = true;
   bool crosshairEnabled = true;
   bool showTooltip = true;
 };

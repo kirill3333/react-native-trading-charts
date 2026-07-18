@@ -75,9 +75,11 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   ChartEngine* instance = engine(handle);
   if (!instance || !numbers || env->GetArrayLength(numbers) < 22 ||
       !colors || env->GetArrayLength(colors) < 32) return;
-  jdouble n[22];
+  const jsize numberCount = env->GetArrayLength(numbers);
+  jdouble n[23] = {};
   jfloat c[32];
   env->GetDoubleArrayRegion(numbers, 0, 22, n);
+  if (numberCount >= 23) env->GetDoubleArrayRegion(numbers, 22, 1, n + 22);
   env->GetFloatArrayRegion(colors, 0, 32, c);
   auto colorAt = [&](int offset) {
     return Color{c[offset], c[offset + 1], c[offset + 2], c[offset + 3]};
@@ -105,6 +107,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.yScaleMarginBottom = n[19];
   config.displayScale = static_cast<float>(n[20]);
   config.logicalSpacing = n[21] != 0;
+  config.pinCurrentPriceToEdge = numberCount < 23 || n[22] != 0;
   config.background = colorAt(0);
   config.grid = colorAt(4);
   config.axisText = colorAt(8);

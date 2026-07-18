@@ -129,10 +129,15 @@ internal class ChartOverlayView(context: Context) : View(context) {
     }
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
+      val badgeHalfHeight = 10f * density
+      val badgeY = frame.currentPriceY.coerceIn(
+        badgeHalfHeight,
+        max(badgeHalfHeight, frame.height - badgeHalfHeight),
+      )
       drawBadge(
         canvas,
         formatValue(frame.currentPrice, frame),
-        frame.currentPriceY,
+        badgeY,
         colorFromFloats(frame.currentPriceColor),
         config,
       )

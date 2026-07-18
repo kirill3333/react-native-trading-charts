@@ -729,15 +729,21 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   }
 
   const Candle& current = candles_.back();
-  if (config_.showCurrentPrice && current.close >= yMin && current.close <= yMax) {
-    result->currentPriceVisible = true;
+  if (config_.showCurrentPrice) {
     result->currentPrice = current.close;
-    result->currentPriceY = projectY(current.close);
     result->currentPriceColor = current.close >= current.open ? config_.up : config_.down;
-    for (float x = result->plot.left; x < result->plot.right; x += 6.0f) {
-      emitQuad(result->vertices, x, result->currentPriceY - 0.75f,
-               std::min(x + 3.0f, result->plot.right), result->currentPriceY + 0.75f,
-               result->currentPriceColor);
+
+    const bool priceInRange = current.close >= yMin && current.close <= yMax;
+    if (priceInRange || config_.pinCurrentPriceToEdge) {
+      result->currentPriceVisible = true;
+      result->currentPriceY = current.close > yMax
+          ? result->plot.top
+          : current.close < yMin ? result->plot.bottom : projectY(current.close);
+      for (float x = result->plot.left; x < result->plot.right; x += 6.0f) {
+        emitQuad(result->vertices, x, result->currentPriceY - 0.75f,
+                 std::min(x + 3.0f, result->plot.right), result->currentPriceY + 0.75f,
+                 result->currentPriceColor);
+      }
     }
   }
 

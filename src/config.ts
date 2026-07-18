@@ -134,6 +134,7 @@ export function resolveChartConfig(
     currentPrice: {
       visible: props.currentPrice?.visible ?? true,
       showLabel: props.currentPrice?.showLabel ?? true,
+      pinToEdge: props.currentPrice?.pinToEdge ?? true,
     },
     crosshair: {
       enabled: props.crosshair?.enabled ?? true,

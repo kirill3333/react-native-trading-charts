@@ -75,6 +75,7 @@ export type GestureOptions = {
 export type CurrentPriceOptions = {
   visible?: boolean;
   showLabel?: boolean;
+  pinToEdge?: boolean;
 };
 
 export type CrosshairOptions = {

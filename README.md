@@ -53,7 +53,7 @@ export function Chart() {
         },
       }}
       gestures={{ pan: true, zoom: true }}
-      currentPrice={{ visible: true, showLabel: true }}
+      currentPrice={{ visible: true, showLabel: true, pinToEdge: true }}
       crosshair={{ enabled: true, showTooltip: true }}
     />
   );
@@ -102,6 +102,11 @@ candle; an older trade is ignored with a development warning.
 elapsed time. Use `'logical'` to give every candle one uniform slot regardless
 of timestamp gaps. Logical spacing keeps timestamps for axis labels and the
 crosshair while pan, zoom and live following operate by candle index.
+
+`currentPrice.pinToEdge` defaults to `true`. When the latest price is outside
+the visible Y range, its line and label stay pinned to the upper or lower plot
+edge. Set `currentPrice={{ pinToEdge: false }}` to hide the indicator while its
+price is outside the range. `showLabel: false` hides only the label.
 
 For market-cap axes, use the compact formatter:
 

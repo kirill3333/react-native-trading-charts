@@ -192,7 +192,10 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
 
   const handleVisibleRangeChange = useCallback(
     (event: NativeSyntheticEvent<VisibleRangeChangeEvent>) => {
-      if (event.nativeEvent.firstVisibleIndex <= 30) {
+      const { firstVisibleIndex, lastVisibleIndex } = event.nativeEvent;
+      const visibleCount = lastVisibleIndex - firstVisibleIndex + 1;
+      const preloadThreshold = Math.max(30, visibleCount * 2);
+      if (firstVisibleIndex <= preloadThreshold) {
         controller.loadOlder(ticker, interval);
       }
     },

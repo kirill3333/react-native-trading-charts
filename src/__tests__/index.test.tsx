@@ -129,6 +129,14 @@ describe('chart config', () => {
       minMove: 0.01,
     });
     expect(price.yAxis.scaleMargins).toEqual({ top: 0.2, bottom: 0.1 });
+    expect(price.currentPrice.pinToEdge).toBe(true);
+
+    expect(
+      resolveChartConfig({
+        chartId: 'unpinned-price',
+        currentPrice: { pinToEdge: false },
+      }).currentPrice
+    ).toEqual({ visible: true, showLabel: true, pinToEdge: false });
 
     const compact = resolveChartConfig({
       chartId: 'cap',

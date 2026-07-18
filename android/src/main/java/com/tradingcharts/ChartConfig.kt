@@ -40,6 +40,7 @@ internal data class ChartConfig(
   val allowZoom: Boolean = true,
   val showCurrentPrice: Boolean = true,
   val showCurrentPriceLabel: Boolean = true,
+  val pinCurrentPriceToEdge: Boolean = true,
   val crosshairEnabled: Boolean = true,
   val showTooltip: Boolean = true,
 ) {
@@ -89,6 +90,7 @@ internal data class ChartConfig(
         allowZoom = gestures.getBoolean("zoom"),
         showCurrentPrice = current.getBoolean("visible"),
         showCurrentPriceLabel = current.getBoolean("showLabel"),
+        pinCurrentPriceToEdge = current.optBoolean("pinToEdge", true),
         crosshairEnabled = crosshair.getBoolean("enabled"),
         showTooltip = crosshair.getBoolean("showTooltip"),
       )
@@ -118,6 +120,7 @@ internal data class ChartConfig(
     yScaleMarginBottom,
     displayScale.toDouble(),
     if (logicalSpacing) 1.0 else 0.0,
+    if (pinCurrentPriceToEdge) 1.0 else 0.0,
   )
 
   fun nativeColors(): FloatArray {

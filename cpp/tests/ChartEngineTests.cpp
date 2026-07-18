@@ -451,6 +451,52 @@ void testCurrentPriceRemainsVisibleOutsideHorizontalViewport() {
   assert(snapshot->currentPriceY <= snapshot->plot.bottom);
 }
 
+void testCurrentPricePinsToVerticalViewportEdges() {
+  const auto snapshotForCurrentPrice = [](double open, double high, double low,
+                                          double close, bool pinToEdge,
+                                          bool visible = true) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initialVisibleCount = 3;
+    config.showCurrentPrice = visible;
+    config.pinCurrentPriceToEdge = pinToEdge;
+    engine.setConfig(config);
+    engine.setSize(800.0f, 500.0f);
+    const double history[] = {
+        0.0, 10.0, 11.0, 9.0, 10.0, 1.0,
+        60000.0, 10.0, 11.0, 9.0, 10.0, 1.0,
+        120000.0, 10.0, 11.0, 9.0, 10.0, 1.0,
+        180000.0, 10.0, 11.0, 9.0, 10.0, 1.0,
+        240000.0, 10.0, 11.0, 9.0, 10.0, 1.0,
+        300000.0, open, high, low, close, 1.0,
+    };
+    assert(engine.setHistory(history, 36) == UpdateStatus::Applied);
+    engine.pan(500.0f);
+    return engine.snapshot();
+  };
+
+  const auto above = snapshotForCurrentPrice(99.0, 101.0, 98.0, 100.0, true);
+  assert(above->currentPriceVisible);
+  expectNear(above->currentPrice, 100.0);
+  expectNear(above->currentPriceY, above->plot.top);
+
+  const auto below = snapshotForCurrentPrice(1.0, 2.0, 0.0, 1.0, true);
+  assert(below->currentPriceVisible);
+  expectNear(below->currentPrice, 1.0);
+  expectNear(below->currentPriceY, below->plot.bottom);
+
+  const auto inside = snapshotForCurrentPrice(10.0, 11.0, 9.0, 10.0, true);
+  assert(inside->currentPriceVisible);
+  assert(inside->currentPriceY > inside->plot.top);
+  assert(inside->currentPriceY < inside->plot.bottom);
+
+  const auto unpinned = snapshotForCurrentPrice(99.0, 101.0, 98.0, 100.0, false);
+  assert(!unpinned->currentPriceVisible);
+
+  const auto hidden = snapshotForCurrentPrice(99.0, 101.0, 98.0, 100.0, true, false);
+  assert(!hidden->currentPriceVisible);
+}
+
 void expectSameCandles(const ChartEngine& left, const ChartEngine& right) {
   assert(left.candleCount() == right.candleCount());
   for (size_t i = 0; i < left.candleCount(); ++i) {
@@ -828,6 +874,7 @@ int main() {
   testYAxisScalePersistsAcrossHorizontalPanAndResets();
   testYAxisScaleRespectsZoomOption();
   testCurrentPriceRemainsVisibleOutsideHorizontalViewport();
+  testCurrentPricePinsToVerticalViewportEdges();
   testTradeBatchMatchesSingles();
   testReadyCandleFeed();
   testViewportStopsFollowingAfterPan();
