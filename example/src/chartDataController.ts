@@ -22,7 +22,7 @@ import {
 import { hyperliquidWebSocketClient } from './hyperliquidWebSocket';
 
 const DEFAULT_CACHE_SIZE = 8;
-const MAX_CACHED_CANDLES = 300;
+const DEFAULT_MAX_CACHED_CANDLES = 20_000;
 
 export type ChartConnectionStatus =
   | 'loading'
@@ -42,7 +42,7 @@ export type ChartConnectionSnapshot = Readonly<{
 
 type TradingChartsApi = Pick<
   typeof TradingCharts,
-  'clear' | 'setHistory' | 'updateCandle'
+  'clear' | 'prependHistory' | 'setHistory' | 'updateCandle'
 >;
 
 type ChartWebSocketState =
@@ -73,7 +73,13 @@ type WebSocketClient<TMessage> = {
 type FetchKlines<TInterval extends string> = (
   symbol: string,
   interval: TInterval,
-  options?: { signal?: AbortSignal; attempts?: number; baseDelayMs?: number }
+  options?: {
+    signal?: AbortSignal;
+    attempts?: number;
+    baseDelayMs?: number;
+    beforeTimestamp?: number;
+    allowEmpty?: boolean;
+  }
 ) => Promise<OhlcCandle[]>;
 
 export type ChartDataControllerOptions<
@@ -81,6 +87,7 @@ export type ChartDataControllerOptions<
   TMessage = BinanceMarketMessage,
 > = {
   cacheSize?: number;
+  maxCachedCandles?: number;
   charts?: TradingChartsApi;
   websocketClient?: WebSocketClient<TMessage>;
   fetchKlines?: FetchKlines<TInterval>;
@@ -92,8 +99,13 @@ export type ChartDataControllerOptions<
 };
 
 type SessionOptions<TInterval extends string, TMessage> = Required<
-  Omit<ChartDataControllerOptions<TInterval, TMessage>, 'cacheSize'>
->;
+  Omit<
+    ChartDataControllerOptions<TInterval, TMessage>,
+    'cacheSize' | 'maxCachedCandles'
+  >
+> & {
+  maxCachedCandles: number;
+};
 type TransportStatus = 'connecting' | 'reconnecting' | 'paused' | 'offline';
 
 const EMPTY_SNAPSHOT: ChartConnectionSnapshot = Object.freeze({
@@ -143,6 +155,8 @@ class ChartDataSession<TInterval extends string, TMessage> {
   private pendingReadyGeneration: number | null = null;
   private initialController: AbortController | null = null;
   private synchronizationController: AbortController | null = null;
+  private olderHistoryController: AbortController | null = null;
+  private hasMoreHistory = true;
   private unsubscribeLive: () => void = () => undefined;
 
   constructor(
@@ -200,6 +214,8 @@ class ChartDataSession<TInterval extends string, TMessage> {
     this.active = false;
     this.pendingReadyGeneration = null;
     this.abortSynchronization();
+    this.olderHistoryController?.abort();
+    this.olderHistoryController = null;
     this.unsubscribeLive();
     this.unsubscribeLive = () => undefined;
     this.synchronizedGeneration = null;
@@ -233,6 +249,10 @@ class ChartDataSession<TInterval extends string, TMessage> {
     }
   }
 
+  loadOlder(): void {
+    this.loadOlderHistory().catch(() => undefined);
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -241,6 +261,8 @@ class ChartDataSession<TInterval extends string, TMessage> {
     this.disposed = true;
     this.initialController?.abort();
     this.initialController = null;
+    this.olderHistoryController?.abort();
+    this.olderHistoryController = null;
     this.listeners.clear();
     this.options.charts.clear(this.chartId);
   }
@@ -266,14 +288,14 @@ class ChartDataSession<TInterval extends string, TMessage> {
     candles.forEach((candle) =>
       this.candlesByTimestamp.set(candle.timestamp, candle)
     );
-    if (this.candlesByTimestamp.size <= MAX_CACHED_CANDLES) {
+    if (this.candlesByTimestamp.size <= this.options.maxCachedCandles) {
       return;
     }
     const timestamps = [...this.candlesByTimestamp.keys()].sort(
       (left, right) => left - right
     );
     timestamps
-      .slice(0, timestamps.length - MAX_CACHED_CANDLES)
+      .slice(0, timestamps.length - this.options.maxCachedCandles)
       .forEach((timestamp) => this.candlesByTimestamp.delete(timestamp));
   }
 
@@ -287,9 +309,19 @@ class ChartDataSession<TInterval extends string, TMessage> {
     snapshot: ReadonlyArray<OhlcCandle>,
     generation?: number
   ): void {
+    const firstSnapshotTimestamp = snapshot[0]?.timestamp ?? Infinity;
+    const preservedOlder =
+      generation == null
+        ? []
+        : [...this.candlesByTimestamp.values()].filter(
+            (candle) => candle.timestamp < firstSnapshotTimestamp
+          );
+    const merged = [...preservedOlder, ...snapshot]
+      .sort((left, right) => left.timestamp - right.timestamp)
+      .slice(-this.options.maxCachedCandles);
     this.candlesByTimestamp.clear();
-    this.cacheCandles(snapshot);
-    this.options.charts.setHistory(this.chartId, snapshot);
+    this.cacheCandles(merged);
+    this.options.charts.setHistory(this.chartId, merged);
     if (generation == null) {
       return;
     }
@@ -314,6 +346,72 @@ class ChartDataSession<TInterval extends string, TMessage> {
       (left, right) => left.timestamp - right.timestamp
     );
     this.options.charts.setHistory(this.chartId, candles);
+  }
+
+  private async loadOlderHistory(): Promise<void> {
+    if (
+      !this.active ||
+      this.disposed ||
+      !this.hasHistory ||
+      !this.hasMoreHistory ||
+      this.olderHistoryController != null
+    ) {
+      return;
+    }
+    const oldestTimestamp = Math.min(...this.candlesByTimestamp.keys());
+    if (!Number.isFinite(oldestTimestamp)) {
+      return;
+    }
+    const remainingCapacity =
+      this.options.maxCachedCandles - this.candlesByTimestamp.size;
+    if (remainingCapacity <= 0) {
+      this.hasMoreHistory = false;
+      return;
+    }
+
+    const controller = new AbortController();
+    this.olderHistoryController = controller;
+    try {
+      const page = await this.options.fetchKlines(this.symbol, this.interval, {
+        signal: controller.signal,
+        beforeTimestamp: oldestTimestamp,
+        allowEmpty: true,
+      });
+      if (
+        !this.active ||
+        this.disposed ||
+        controller.signal.aborted ||
+        this.olderHistoryController !== controller
+      ) {
+        return;
+      }
+      const older = page
+        .filter(
+          (candle) =>
+            candle.timestamp < oldestTimestamp &&
+            !this.candlesByTimestamp.has(candle.timestamp)
+        )
+        .sort((left, right) => left.timestamp - right.timestamp)
+        .slice(-remainingCapacity);
+      if (older.length === 0) {
+        this.hasMoreHistory = false;
+        return;
+      }
+      this.cacheCandles(older);
+      this.options.charts.prependHistory(this.chartId, older);
+      if (this.candlesByTimestamp.size >= this.options.maxCachedCandles) {
+        this.hasMoreHistory = false;
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
+        // A transient page failure can be retried after the viewport moves again.
+        this.hasMoreHistory = true;
+      }
+    } finally {
+      if (this.olderHistoryController === controller) {
+        this.olderHistoryController = null;
+      }
+    }
   }
 
   private async loadInitialHistory(): Promise<void> {
@@ -543,6 +641,10 @@ export class ChartDataController<
       Math.floor(options.cacheSize ?? DEFAULT_CACHE_SIZE)
     );
     this.sessionOptions = {
+      maxCachedCandles: Math.max(
+        1,
+        Math.floor(options.maxCachedCandles ?? DEFAULT_MAX_CACHED_CANDLES)
+      ),
       charts: options.charts ?? TradingCharts,
       websocketClient:
         options.websocketClient ??
@@ -628,6 +730,10 @@ export class ChartDataController<
 
   retry(ticker: TTicker, interval: TInterval): void {
     this.getOrCreate(ticker.symbol, interval).retry();
+  }
+
+  loadOlder(ticker: TTicker, interval: TInterval): void {
+    this.getOrCreate(ticker.symbol, interval).loadOlder();
   }
 
   subscribe(
@@ -743,6 +849,7 @@ export const hyperliquidChartDataController = new ChartDataController<
   HyperliquidInterval,
   HyperliquidMarketMessage
 >({
+  maxCachedCandles: 6_000,
   websocketClient: hyperliquidWebSocketClient,
   fetchKlines: fetchHyperliquidCandlesWithRetry,
   topicFor: hyperliquidCandleTopic,

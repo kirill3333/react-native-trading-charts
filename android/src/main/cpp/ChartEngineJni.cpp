@@ -134,6 +134,13 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetHistory(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativePrependHistory(
+    JNIEnv* env, jclass, jlong handle, jdoubleArray values) {
+  auto data = doubles(env, values);
+  return engine(handle) ? statusValue(engine(handle)->prependHistory(data.data(), data.size())) : 2;
+}
+
+JNIEXPORT jint JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeUpdateCandle(
     JNIEnv* env, jclass, jlong handle, jdoubleArray values) {
   auto data = doubles(env, values);
@@ -269,7 +276,7 @@ JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass, jlong handle) {
   auto* holder = snapshot(handle);
   const auto* s = holder && *holder ? holder->get() : nullptr;
-  double m[27] = {};
+  double m[31] = {};
   if (s) {
     m[0] = s->width;
     m[1] = s->height;
@@ -298,9 +305,13 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass,
     m[24] = s->selectedCandle.low;
     m[25] = s->selectedCandle.close;
     m[26] = s->selectedCandle.volume;
+    m[27] = static_cast<double>(s->firstVisibleIndex);
+    m[28] = static_cast<double>(s->lastVisibleIndex);
+    m[29] = static_cast<double>(s->totalCandleCount);
+    m[30] = s->hasVisibleCandles ? 1.0 : 0.0;
   }
-  jdoubleArray result = env->NewDoubleArray(27);
-  env->SetDoubleArrayRegion(result, 0, 27, m);
+  jdoubleArray result = env->NewDoubleArray(31);
+  env->SetDoubleArrayRegion(result, 0, 31, m);
   return result;
 }
 

@@ -5,6 +5,7 @@
 #import <simd/simd.h>
 
 #import <react/renderer/components/TradingChartsViewSpec/ComponentDescriptors.h>
+#import <react/renderer/components/TradingChartsViewSpec/EventEmitters.h>
 #import <react/renderer/components/TradingChartsViewSpec/Props.h>
 #import <react/renderer/components/TradingChartsViewSpec/RCTComponentViewHelpers.h>
 
@@ -401,8 +402,11 @@ NSString *TCMetalShaderSource(void) {
 @end
 
 @interface TCChartHostView : UIView <UIGestureRecognizerDelegate, TCFrameLinkDelegate>
+@property(nonatomic, copy, nullable) void (^visibleRangeDidChange)(
+    std::shared_ptr<const RenderSnapshot> snapshot);
 - (void)applyConfigJson:(NSString *)json;
 - (void)applyHistory:(NSArray<NSNumber *> *)data;
+- (void)prependHistory:(NSArray<NSNumber *> *)data;
 - (void)applyCandle:(NSArray<NSNumber *> *)data;
 - (void)applyTrade:(NSArray<NSNumber *> *)data;
 - (void)applyTrades:(NSArray<NSNumber *> *)data;
@@ -427,11 +431,17 @@ NSString *TCMetalShaderSource(void) {
   CGFloat _horizontalVelocity;
   CFTimeInterval _lastDecelerationTimestamp;
   ChartConfig _config;
+  NSInteger _lastFirstVisibleIndex;
+  NSInteger _lastLastVisibleIndex;
+  NSInteger _lastTotalCandleCount;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     _engine = std::make_shared<ChartEngine>();
+    _lastFirstVisibleIndex = -1;
+    _lastLastVisibleIndex = -1;
+    _lastTotalCandleCount = -1;
     _engine->setConfig(_config);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     _metalView = [[MTKView alloc] initWithFrame:self.bounds device:device];
@@ -537,6 +547,18 @@ NSString *TCMetalShaderSource(void) {
   [_renderer setSnapshot:snapshot];
   [_overlay setSnapshot:snapshot];
   [_metalView draw];
+  if (snapshot->hasVisibleCandles) {
+    NSInteger first = static_cast<NSInteger>(snapshot->firstVisibleIndex);
+    NSInteger last = static_cast<NSInteger>(snapshot->lastVisibleIndex);
+    NSInteger total = static_cast<NSInteger>(snapshot->totalCandleCount);
+    if (first != _lastFirstVisibleIndex || last != _lastLastVisibleIndex ||
+        total != _lastTotalCandleCount) {
+      _lastFirstVisibleIndex = first;
+      _lastLastVisibleIndex = last;
+      _lastTotalCandleCount = total;
+      if (self.visibleRangeDidChange) self.visibleRangeDidChange(snapshot);
+    }
+  }
   if (_decelerating) [self requestFrame];
 }
 
@@ -621,6 +643,11 @@ NSString *TCMetalShaderSource(void) {
   TCLogStatus(_engine->setHistory(values.data(), values.size()), @"setHistory");
   [self requestFrame];
 }
+- (void)prependHistory:(NSArray<NSNumber *> *)data {
+  auto values = TCDoubles(data);
+  TCLogStatus(_engine->prependHistory(values.data(), values.size()), @"prependHistory");
+  [self requestFrame];
+}
 - (void)applyCandle:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
   TCLogStatus(_engine->updateCandle(values.data(), values.size()), @"updateCandle");
@@ -649,6 +676,9 @@ NSString *TCMetalShaderSource(void) {
 - (void)clearData {
   [self stopDeceleration];
   _engine->clear();
+  _lastFirstVisibleIndex = -1;
+  _lastLastVisibleIndex = -1;
+  _lastTotalCandleCount = -1;
   [self requestFrame];
 }
 
@@ -743,6 +773,22 @@ NSString *TCMetalShaderSource(void) {
     static const auto defaultProps = std::make_shared<const TradingChartsViewProps>();
     _props = defaultProps;
     _host = [[TCChartHostView alloc] initWithFrame:frame];
+    __weak TradingChartsView *weakSelf = self;
+    _host.visibleRangeDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
+      TradingChartsView *strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf->_eventEmitter) return;
+      auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+          strongSelf->_eventEmitter);
+      emitter->onVisibleRangeChange({
+          snapshot->visibleXMin,
+          snapshot->visibleXMax,
+          static_cast<int>(snapshot->firstVisibleIndex),
+          static_cast<int>(snapshot->lastVisibleIndex),
+          static_cast<int>(snapshot->totalCandleCount),
+          snapshot->firstVisibleIndex == 0,
+          snapshot->lastVisibleIndex + 1 == snapshot->totalCandleCount,
+      });
+    };
     self.contentView = _host;
   }
   return self;
@@ -778,6 +824,7 @@ NSString *TCMetalShaderSource(void) {
 }
 
 - (void)applyHistoryData:(NSArray<NSNumber *> *)data { [_host applyHistory:TCArrayOrEmpty(data)]; }
+- (void)prependHistoryData:(NSArray<NSNumber *> *)data { [_host prependHistory:TCArrayOrEmpty(data)]; }
 - (void)applyCandleData:(NSArray<NSNumber *> *)data { [_host applyCandle:TCArrayOrEmpty(data)]; }
 - (void)applyTradeData:(NSArray<NSNumber *> *)data { [_host applyTrade:TCArrayOrEmpty(data)]; }
 - (void)applyTradesData:(NSArray<NSNumber *> *)data { [_host applyTrades:TCArrayOrEmpty(data)]; }

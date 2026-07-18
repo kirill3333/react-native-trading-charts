@@ -66,6 +66,8 @@ type FetchCandlesRetryOptions = {
   signal?: AbortSignal;
   attempts?: number;
   baseDelayMs?: number;
+  beforeTimestamp?: number;
+  allowEmpty?: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -405,7 +407,8 @@ export async function fetchHyperliquidTickers(
 export async function fetchHyperliquidCandles(
   symbol: string,
   interval: HyperliquidInterval,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  beforeTimestamp?: number
 ): Promise<OhlcCandle[]> {
   const intervalConfig = HYPERLIQUID_INTERVALS.find(
     (item) => item.value === interval
@@ -413,7 +416,10 @@ export async function fetchHyperliquidCandles(
   if (intervalConfig == null) {
     throw new TypeError(`Unsupported Hyperliquid interval: ${interval}`);
   }
-  const endTime = Date.now();
+  const endTime =
+    beforeTimestamp == null
+      ? Date.now()
+      : Math.max(0, Math.floor(beforeTimestamp) - 1);
   const startTime =
     endTime - intervalConfig.timeframeMs * (HISTORY_CANDLE_COUNT + 2);
   return parseHyperliquidCandlesResponse(
@@ -447,9 +453,10 @@ export async function fetchHyperliquidCandlesWithRetry(
       const candles = await fetchHyperliquidCandles(
         symbol,
         interval,
-        options.signal
+        options.signal,
+        options.beforeTimestamp
       );
-      if (candles.length > 0) {
+      if (candles.length > 0 || options.allowEmpty === true) {
         return candles;
       }
       lastError = new HyperliquidNoDataError(

@@ -68,6 +68,8 @@ type FetchKlinesRetryOptions = {
   signal?: AbortSignal;
   attempts?: number;
   baseDelayMs?: number;
+  beforeTimestamp?: number;
+  allowEmpty?: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -481,10 +483,15 @@ export async function fetchSpotTickers(
 export async function fetchSpotKlines(
   symbol: string,
   interval: BinanceInterval,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  beforeTimestamp?: number
 ): Promise<OhlcCandle[]> {
   const query =
-    `?symbol=${encodeURIComponent(symbol)}` + `&interval=${interval}&limit=300`;
+    `?symbol=${encodeURIComponent(symbol)}` +
+    `&interval=${interval}&limit=300` +
+    (beforeTimestamp == null
+      ? ''
+      : `&endTime=${Math.max(0, Math.floor(beforeTimestamp) - 1)}`);
   return parseKlineResponse(await request(`/api/v3/klines${query}`, signal));
 }
 
@@ -505,8 +512,13 @@ export async function fetchSpotKlinesWithRetry(
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const candles = await fetchSpotKlines(symbol, interval, options.signal);
-      if (candles.length > 0) {
+      const candles = await fetchSpotKlines(
+        symbol,
+        interval,
+        options.signal,
+        options.beforeTimestamp
+      );
+      if (candles.length > 0 || options.allowEmpty === true) {
         return candles;
       }
       lastError = new BinanceNoDataError(

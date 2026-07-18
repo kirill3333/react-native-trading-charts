@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 jest.mock('react-native-trading-charts', () => ({
   TradingCharts: {
     clear: jest.fn(),
+    prependHistory: jest.fn(),
     setHistory: jest.fn(),
     updateCandle: jest.fn(),
   },
@@ -95,6 +96,7 @@ async function flushPromises() {
 describe('ChartDataController with Binance native klines', () => {
   const charts = {
     setHistory: jest.fn(),
+    prependHistory: jest.fn(),
     updateCandle: jest.fn(),
     clear: jest.fn(),
   };
@@ -224,6 +226,56 @@ describe('ChartDataController with Binance native klines', () => {
       chartIdFor('BTCUSDT', '1s'),
       secondCandle
     );
+  });
+
+  it('loads and prepends a page before the oldest cached candle', async () => {
+    const olderCandle = {
+      timestamp: 0,
+      open: 9,
+      high: 11,
+      low: 8,
+      close: 10,
+      volume: 1,
+    };
+    fetchKlines
+      .mockResolvedValueOnce([firstCandle])
+      .mockResolvedValueOnce([olderCandle]);
+    const controller = createController();
+    controller.activate(ticker, '1s');
+    await flushPromises();
+
+    controller.loadOlder(ticker, '1s');
+    await flushPromises();
+
+    expect(fetchKlines).toHaveBeenNthCalledWith(
+      2,
+      'BTCUSDT',
+      '1s',
+      expect.objectContaining({
+        beforeTimestamp: firstCandle.timestamp,
+        allowEmpty: true,
+        signal: expect.any(AbortSignal),
+      })
+    );
+    expect(charts.prependHistory).toHaveBeenCalledWith(
+      chartIdFor('BTCUSDT', '1s'),
+      [olderCandle]
+    );
+  });
+
+  it('stops pagination when the provider returns no older candles', async () => {
+    fetchKlines.mockResolvedValueOnce([firstCandle]).mockResolvedValueOnce([]);
+    const controller = createController();
+    controller.activate(ticker, '1s');
+    await flushPromises();
+
+    controller.loadOlder(ticker, '1s');
+    await flushPromises();
+    controller.loadOlder(ticker, '1s');
+    await flushPromises();
+
+    expect(fetchKlines).toHaveBeenCalledTimes(2);
+    expect(charts.prependHistory).not.toHaveBeenCalled();
   });
 
   it('refetches the same native interval after reconnect', async () => {

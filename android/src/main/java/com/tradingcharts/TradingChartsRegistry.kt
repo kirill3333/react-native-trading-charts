@@ -8,6 +8,7 @@ import java.lang.ref.WeakReference
 internal object TradingChartsRegistry {
   private sealed interface Command {
     data class History(val values: DoubleArray) : Command
+    data class PrependHistory(val values: DoubleArray) : Command
     data class Candle(val values: DoubleArray) : Command
     data class Trade(val values: DoubleArray) : Command
     data class Trades(val values: DoubleArray) : Command
@@ -41,6 +42,8 @@ internal object TradingChartsRegistry {
   }
 
   fun setHistory(chartId: String, values: DoubleArray) = enqueue(chartId, Command.History(values.copyOf()))
+  fun prependHistory(chartId: String, values: DoubleArray) =
+    enqueue(chartId, Command.PrependHistory(values.copyOf()))
   fun updateCandle(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Candle(values.copyOf()))
   fun updateTrade(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Trade(values.copyOf()))
   fun updateTrades(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Trades(values.copyOf()))
@@ -68,6 +71,7 @@ internal object TradingChartsRegistry {
   private fun apply(view: TradingChartsView, command: Command) {
     when (command) {
       is Command.History -> view.applyHistory(command.values)
+      is Command.PrependHistory -> view.prependHistory(command.values)
       is Command.Candle -> view.applyCandle(command.values)
       is Command.Trade -> view.applyTrade(command.values)
       is Command.Trades -> view.applyTrades(command.values)

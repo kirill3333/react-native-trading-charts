@@ -11,6 +11,7 @@ export type {
   PriceValueFormat,
   TradeEvent,
   TradingChartsViewProps,
+  VisibleRangeChangeEvent,
   XAxisOptions,
   YAxisOptions,
   YAxisValueFormat,

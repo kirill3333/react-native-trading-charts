@@ -13,6 +13,10 @@ internal data class ChartSnapshot(
   val plotBottom: Float,
   val visibleXMin: Double,
   val visibleXMax: Double,
+  val firstVisibleIndex: Int,
+  val lastVisibleIndex: Int,
+  val totalCandleCount: Int,
+  val hasVisibleCandles: Boolean,
   val visibleYMin: Double,
   val visibleYMax: Double,
   val vertices: FloatArray,
@@ -44,6 +48,7 @@ internal object ChartEngineNative {
   )
   @JvmStatic external fun nativeSetSize(handle: Long, width: Float, height: Float)
   @JvmStatic external fun nativeSetHistory(handle: Long, values: DoubleArray): Int
+  @JvmStatic external fun nativePrependHistory(handle: Long, values: DoubleArray): Int
   @JvmStatic external fun nativeUpdateCandle(handle: Long, values: DoubleArray): Int
   @JvmStatic external fun nativeUpdateTrade(handle: Long, values: DoubleArray): Int
   @JvmStatic external fun nativeUpdateTrades(handle: Long, values: DoubleArray): Int
@@ -86,6 +91,10 @@ internal object ChartEngineNative {
         plotBottom = meta[5].toFloat(),
         visibleXMin = meta[6],
         visibleXMax = meta[7],
+        firstVisibleIndex = meta[27].toInt(),
+        lastVisibleIndex = meta[28].toInt(),
+        totalCandleCount = meta[29].toInt(),
+        hasVisibleCandles = meta[30] != 0.0,
         visibleYMin = meta[8],
         visibleYMax = meta[9],
         vertices = nativeSnapshotVertices(snapshot),

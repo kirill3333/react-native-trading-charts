@@ -8,6 +8,8 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
 import android.widget.OverScroller
+import com.facebook.react.bridge.ReactContext
+import com.facebook.react.uimanager.UIManagerHelper
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
@@ -31,6 +33,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var crosshairActive = false
   private var suppressFlingForTouch = false
   private var lastFlingX = 0
+  private var lastVisibleRangeKey: Triple<Int, Int, Int>? = null
 
   private val flingFrame = object : Runnable {
     override fun run() {
@@ -204,6 +207,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     scheduleFrame()
   }
 
+  fun prependHistory(values: DoubleArray) {
+    logStatus("prependHistory", ChartEngineNative.nativePrependHistory(engineHandle, values))
+    scheduleFrame()
+  }
+
   fun applyCandle(values: DoubleArray) {
     logStatus("updateCandle", ChartEngineNative.nativeUpdateCandle(engineHandle, values))
     scheduleFrame()
@@ -234,6 +242,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun clearData() {
     stopFling()
     ChartEngineNative.nativeClear(engineHandle)
+    lastVisibleRangeKey = null
     scheduleFrame()
   }
 
@@ -253,7 +262,23 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       renderer.snapshot = snapshot
       overlay.snapshot = snapshot
       plotView.requestRender()
+      emitVisibleRangeChange(snapshot)
     }
+  }
+
+  private fun emitVisibleRangeChange(snapshot: ChartSnapshot) {
+    if (!snapshot.hasVisibleCandles || id == NO_ID) return
+    val key = Triple(
+      snapshot.firstVisibleIndex,
+      snapshot.lastVisibleIndex,
+      snapshot.totalCandleCount,
+    )
+    if (key == lastVisibleRangeKey) return
+    lastVisibleRangeKey = key
+    val reactContext = context as? ReactContext ?: return
+    UIManagerHelper.getEventDispatcher(reactContext)?.dispatchEvent(
+      VisibleRangeChangeEvent(UIManagerHelper.getSurfaceId(this), id, snapshot)
+    )
   }
 
   override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {

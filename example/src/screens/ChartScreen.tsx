@@ -11,9 +11,14 @@ import {
   Text,
   View,
   type ListRenderItem,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TradingCharts, TradingChartsView } from 'react-native-trading-charts';
+import {
+  TradingCharts,
+  TradingChartsView,
+  type VisibleRangeChangeEvent,
+} from 'react-native-trading-charts';
 
 import {
   BINANCE_INTERVALS,
@@ -117,6 +122,7 @@ type IntervalOption<TInterval extends string> = {
 type ChartController<TTicker, TInterval extends string> = {
   prepare(ticker: TTicker, interval: TInterval): string;
   retry(ticker: TTicker, interval: TInterval): void;
+  loadOlder(ticker: TTicker, interval: TInterval): void;
   subscribe(
     ticker: TTicker,
     interval: TInterval,
@@ -182,6 +188,15 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
       setIntervalParam({ interval: nextInterval });
     },
     [controller, interval, navigation, ticker]
+  );
+
+  const handleVisibleRangeChange = useCallback(
+    (event: NativeSyntheticEvent<VisibleRangeChangeEvent>) => {
+      if (event.nativeEvent.firstVisibleIndex <= 30) {
+        controller.loadOlder(ticker, interval);
+      }
+    },
+    [controller, interval, ticker]
   );
 
   const renderInterval = useCallback<ListRenderItem<IntervalOption<TInterval>>>(
@@ -286,6 +301,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             gestures={{ pan: true, zoom: true }}
             initialVisibleCount={48}
             key={chartId}
+            onVisibleRangeChange={handleVisibleRangeChange}
             style={styles.chart}
             timeframeMs={intervalConfig?.timeframeMs ?? 60_000}
             xAxis={{

@@ -63,6 +63,7 @@
       NSString *type = command[@"type"];
       NSArray<NSNumber *> *data = command[@"data"];
       if ([type isEqualToString:@"history"]) [view applyHistoryData:data];
+      else if ([type isEqualToString:@"prependHistory"]) [view prependHistoryData:data];
       else if ([type isEqualToString:@"candle"]) [view applyCandleData:data];
       else if ([type isEqualToString:@"trade"]) [view applyTradeData:data];
       else if ([type isEqualToString:@"trades"]) [view applyTradesData:data];
@@ -89,6 +90,7 @@
     TradingChartsView *view = entry.view;
     if (view) {
       if ([type isEqualToString:@"history"]) [view applyHistoryData:copy];
+      else if ([type isEqualToString:@"prependHistory"]) [view prependHistoryData:copy];
       else if ([type isEqualToString:@"candle"]) [view applyCandleData:copy];
       else if ([type isEqualToString:@"trade"]) [view applyTradeData:copy];
       else if ([type isEqualToString:@"trades"]) [view applyTradesData:copy];
@@ -101,6 +103,9 @@
 
 - (void)setHistory:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
   [self enqueue:@"history" data:data chartId:chartId];
+}
+- (void)prependHistory:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
+  [self enqueue:@"prependHistory" data:data chartId:chartId];
 }
 - (void)updateCandle:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
   [self enqueue:@"candle" data:data chartId:chartId];

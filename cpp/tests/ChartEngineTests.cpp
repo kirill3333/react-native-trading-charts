@@ -115,6 +115,49 @@ void testHistoryContinuation() {
   expectNear(candle.volume, 7.0);
 }
 
+void testPrependHistoryPreservesViewport() {
+  for (bool logicalSpacing : {false, true}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initialVisibleCount = 2;
+    config.logicalSpacing = logicalSpacing;
+    engine.setConfig(config);
+    engine.setSize(800.0f, 500.0f);
+    const double history[] = {
+        120000.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+        180000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+        240000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+    };
+    const double older[] = {
+        0.0, 8.0, 10.0, 7.0, 9.0, 1.0,
+        60000.0, 9.0, 11.0, 8.0, 10.0, 1.0,
+    };
+    assert(engine.setHistory(history, 18) == UpdateStatus::Applied);
+    const auto before = engine.snapshot();
+    assert(before->hasVisibleCandles);
+    assert(before->totalCandleCount == 3);
+
+    assert(engine.prependHistory(older, 12) == UpdateStatus::Applied);
+    const auto after = engine.snapshot();
+    assert(engine.candleCount() == 5);
+    assert(after->hasVisibleCandles);
+    assert(after->totalCandleCount == 5);
+    assert(after->firstVisibleIndex == before->firstVisibleIndex + 2);
+    assert(after->lastVisibleIndex == before->lastVisibleIndex + 2);
+    expectNear(after->visibleXMin, before->visibleXMin);
+    expectNear(after->visibleXMax, before->visibleXMax);
+  }
+}
+
+void testPrependHistoryRejectsOverlap() {
+  ChartEngine engine;
+  const double history[] = {60000.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  const double overlap[] = {60000.0, 9.0, 11.0, 8.0, 10.0, 1.0};
+  assert(engine.setHistory(history, 6) == UpdateStatus::Applied);
+  assert(engine.prependHistory(overlap, 6) == UpdateStatus::InvalidInput);
+  assert(engine.candleCount() == 1);
+}
+
 void testOldTradeIgnored() {
   ChartEngine engine;
   const double current[] = {70000.0, 10.0, 1.0};
@@ -770,6 +813,8 @@ int main() {
   testTradeAggregation();
   testBucketTransitionAndNoGaps();
   testHistoryContinuation();
+  testPrependHistoryPreservesViewport();
+  testPrependHistoryRejectsOverlap();
   testOldTradeIgnored();
   testRejectsUnalignedHistory();
   testSnapshotAndAutoscale();

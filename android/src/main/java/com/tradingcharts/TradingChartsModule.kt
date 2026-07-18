@@ -10,6 +10,10 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.setHistory(chartId, data.toDoubles())
   }
 
+  override fun prependHistory(chartId: String, data: ReadableArray) {
+    TradingChartsRegistry.prependHistory(chartId, data.toDoubles())
+  }
+
   override fun updateCandle(chartId: String, candle: ReadableArray) {
     TradingChartsRegistry.updateCandle(chartId, candle.toDoubles())
   }

@@ -92,6 +92,10 @@ struct RenderSnapshot {
   std::vector<AxisTick> yTicks;
   double visibleXMin = 0.0;
   double visibleXMax = 1.0;
+  size_t firstVisibleIndex = 0;
+  size_t lastVisibleIndex = 0;
+  size_t totalCandleCount = 0;
+  bool hasVisibleCandles = false;
   double visibleYMin = 0.0;
   double visibleYMax = 1.0;
 
@@ -121,6 +125,7 @@ class ChartEngine {
   void setSize(float width, float height);
 
   UpdateStatus setHistory(const double* values, size_t valueCount);
+  UpdateStatus prependHistory(const double* values, size_t valueCount);
   UpdateStatus updateCandle(const double* values, size_t valueCount);
   UpdateStatus updateTrade(const double* values, size_t valueCount);
   UpdateStatus updateTrades(const double* values, size_t valueCount);

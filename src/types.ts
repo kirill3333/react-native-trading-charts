@@ -1,4 +1,4 @@
-import { type ViewProps } from 'react-native';
+import { type NativeSyntheticEvent, type ViewProps } from 'react-native';
 
 export type OhlcCandle = {
   timestamp: number;
@@ -82,6 +82,16 @@ export type CrosshairOptions = {
   showTooltip?: boolean;
 };
 
+export type VisibleRangeChangeEvent = {
+  from: number;
+  to: number;
+  firstVisibleIndex: number;
+  lastVisibleIndex: number;
+  totalCount: number;
+  atStart: boolean;
+  atEnd: boolean;
+};
+
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
   timeframeMs?: number;
@@ -92,6 +102,9 @@ export type TradingChartsViewProps = ViewProps & {
   gestures?: GestureOptions;
   currentPrice?: CurrentPriceOptions;
   crosshair?: CrosshairOptions;
+  onVisibleRangeChange?: (
+    event: NativeSyntheticEvent<VisibleRangeChangeEvent>
+  ) => void;
 };
 
 export type ResolvedChartConfig = {

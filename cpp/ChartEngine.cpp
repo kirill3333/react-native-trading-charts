@@ -201,6 +201,49 @@ UpdateStatus ChartEngine::setHistory(const double* values, size_t valueCount) {
   return UpdateStatus::Applied;
 }
 
+UpdateStatus ChartEngine::prependHistory(const double* values, size_t valueCount) {
+  if (valueCount == 0) return UpdateStatus::Applied;
+  if (values == nullptr || valueCount % 6 != 0) return UpdateStatus::InvalidInput;
+
+  std::vector<Candle> older;
+  older.reserve(valueCount / 6);
+  double previous = -std::numeric_limits<double>::infinity();
+  for (size_t i = 0; i < valueCount; i += 6) {
+    Candle candle = candleFromValues(values + i);
+    if (!validCandle(candle) || candle.timestamp <= previous) {
+      return UpdateStatus::InvalidInput;
+    }
+    previous = candle.timestamp;
+    older.push_back(candle);
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const Candle& candle : older) {
+    if (!alignedTimestamp(candle.timestamp, config_.timeframeMs)) {
+      return UpdateStatus::InvalidInput;
+    }
+  }
+  if (!candles_.empty() && older.back().timestamp >= candles_.front().timestamp) {
+    return UpdateStatus::InvalidInput;
+  }
+  if (candles_.empty()) {
+    candles_ = std::move(older);
+    lastTradeTimestamp_ = candles_.back().timestamp;
+    resetViewportLocked();
+  } else {
+    if (config_.logicalSpacing && viewportInitialized_) {
+      const double shift = static_cast<double>(older.size());
+      visibleXMin_ += shift;
+      visibleXMax_ += shift;
+    }
+    candles_.insert(candles_.begin(), older.begin(), older.end());
+    clampViewportLocked();
+  }
+  crosshairActive_ = false;
+  markDirtyLocked();
+  return UpdateStatus::Applied;
+}
+
 UpdateStatus ChartEngine::updateCandle(const double* values, size_t valueCount) {
   if (values == nullptr || valueCount != 6) return UpdateStatus::InvalidInput;
   const Candle candle = candleFromValues(values);
@@ -500,6 +543,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   result->config = config_;
   result->visibleXMin = visibleXMin_;
   result->visibleXMax = visibleXMax_;
+  result->totalCandleCount = candles_.size();
 
   const float yLane = config_.showYAxis ? config_.yAxisWidth : 0.0f;
   const float xLane = config_.showXAxis ? config_.xAxisHeight : 0.0f;
@@ -535,6 +579,12 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
     lower = candles_.begin();
     upper = candles_.end();
   }
+
+  result->firstVisibleIndex = static_cast<size_t>(
+      std::distance(candles_.begin(), lower));
+  result->lastVisibleIndex = static_cast<size_t>(
+      std::distance(candles_.begin(), upper) - 1);
+  result->hasVisibleCandles = true;
 
   if (config_.logicalSpacing) {
     result->visibleXMin = lower->timestamp;

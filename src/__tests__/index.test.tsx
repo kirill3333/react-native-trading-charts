@@ -4,6 +4,7 @@ import { type resolveChartConfig as resolveChartConfigExport } from '../config';
 
 const mockNativeModule = {
   setHistory: jest.fn(),
+  prependHistory: jest.fn(),
   updateCandle: jest.fn(),
   updateTrade: jest.fn(),
   updateTrades: jest.fn(),
@@ -38,6 +39,18 @@ describe('TradingCharts data API', () => {
     expect(mockNativeModule.setHistory).toHaveBeenCalledWith(
       'main',
       [0, 10, 12, 9, 11, 0, 60_000, 11, 13, 10, 12, 4]
+    );
+  });
+
+  it('packs older history for viewport-preserving prepends', () => {
+    TradingCharts.prependHistory('main', [
+      { timestamp: 0, open: 8, high: 10, low: 7, close: 9 },
+      { timestamp: 60_000, open: 9, high: 11, low: 8, close: 10, volume: 3 },
+    ]);
+
+    expect(mockNativeModule.prependHistory).toHaveBeenCalledWith(
+      'main',
+      [0, 8, 10, 7, 9, 0, 60_000, 9, 11, 8, 10, 3]
     );
   });
 

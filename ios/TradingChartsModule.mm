@@ -18,6 +18,10 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] setHistory:data chartId:chartId];
 }
 
+- (void)prependHistory:(NSString *)chartId data:(NSArray<NSNumber *> *)data {
+  [[TradingChartsRegistry shared] prependHistory:data chartId:chartId];
+}
+
 - (void)updateCandle:(NSString *)chartId candle:(NSArray<NSNumber *> *)candle {
   [[TradingChartsRegistry shared] updateCandle:candle chartId:chartId];
 }

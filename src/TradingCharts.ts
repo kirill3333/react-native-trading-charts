@@ -89,6 +89,21 @@ export const TradingCharts = {
     NativeTradingCharts.setHistory(chartId, packed);
   },
 
+  prependHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
+    assertChartId(chartId);
+    const packed: number[] = [];
+    let previousTimestamp = -Infinity;
+    candles.forEach((candle, index) => {
+      validateCandle(candle, index);
+      if (candle.timestamp <= previousTimestamp) {
+        throw new TypeError('candles must have strictly increasing timestamps');
+      }
+      previousTimestamp = candle.timestamp;
+      packCandle(candle, packed);
+    });
+    NativeTradingCharts.prependHistory(chartId, packed);
+  },
+
   updateCandle(chartId: string, candle: OhlcCandle) {
     assertChartId(chartId);
     validateCandle(candle);
