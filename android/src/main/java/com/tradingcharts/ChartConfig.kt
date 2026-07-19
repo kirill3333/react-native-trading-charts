@@ -12,9 +12,21 @@ internal data class ValueFormat(
   val useGrouping: Boolean = true,
 )
 
+internal data class CrosshairTooltipLabels(
+  val open: String = "Open",
+  val close: String = "Close",
+  val high: String = "High",
+  val low: String = "Low",
+  val amplitude: String = "Amplitude",
+  val changePercent: String = "Change %",
+  val change: String = "Change",
+  val volume: String = "Volume",
+)
+
 internal data class ChartConfig(
   val timeframeMs: Double = 60_000.0,
   val initialVisibleCount: Int = 100,
+  val defaultScale: Double = 1.0,
   val displayScale: Float = 1f,
   val backgroundColor: Int = Color.rgb(16, 12, 24),
   val gridColor: Int = Color.rgb(41, 36, 49),
@@ -41,8 +53,12 @@ internal data class ChartConfig(
   val showCurrentPrice: Boolean = true,
   val showCurrentPriceLabel: Boolean = true,
   val pinCurrentPriceToEdge: Boolean = true,
+  val showPriceExtremes: Boolean = true,
   val crosshairEnabled: Boolean = true,
   val showTooltip: Boolean = true,
+  val tooltipBackgroundOpacity: Float = 1f,
+  val crosshairDashed: Boolean = false,
+  val tooltipLabels: CrosshairTooltipLabels = CrosshairTooltipLabels(),
 ) {
   companion object {
     fun fromJson(json: String, density: Float): ChartConfig {
@@ -54,10 +70,13 @@ internal data class ChartConfig(
       val format = yAxis.getJSONObject("valueFormat")
       val gestures = root.getJSONObject("gestures")
       val current = root.getJSONObject("currentPrice")
+      val priceExtremes = root.optJSONObject("priceExtremes")
       val crosshair = root.getJSONObject("crosshair")
+      val tooltipLabels = crosshair.optJSONObject("tooltipLabels")
       return ChartConfig(
         timeframeMs = root.getDouble("timeframeMs"),
         initialVisibleCount = root.getInt("initialVisibleCount"),
+        defaultScale = root.optDouble("defaultScale", 1.0),
         displayScale = density,
         backgroundColor = Color.parseColor(theme.getString("backgroundColor")),
         gridColor = Color.parseColor(theme.getString("gridColor")),
@@ -91,8 +110,23 @@ internal data class ChartConfig(
         showCurrentPrice = current.getBoolean("visible"),
         showCurrentPriceLabel = current.getBoolean("showLabel"),
         pinCurrentPriceToEdge = current.optBoolean("pinToEdge", true),
+        showPriceExtremes = priceExtremes?.optBoolean("visible", true) ?: true,
         crosshairEnabled = crosshair.getBoolean("enabled"),
         showTooltip = crosshair.getBoolean("showTooltip"),
+        tooltipBackgroundOpacity =
+          crosshair.optDouble("tooltipBackgroundOpacity", 1.0).toFloat(),
+        crosshairDashed = crosshair.optString("lineStyle", "solid") == "dashed",
+        tooltipLabels = CrosshairTooltipLabels(
+          open = tooltipLabels?.optString("open", "Open") ?: "Open",
+          close = tooltipLabels?.optString("close", "Close") ?: "Close",
+          high = tooltipLabels?.optString("high", "High") ?: "High",
+          low = tooltipLabels?.optString("low", "Low") ?: "Low",
+          amplitude = tooltipLabels?.optString("amplitude", "Amplitude") ?: "Amplitude",
+          changePercent =
+            tooltipLabels?.optString("changePercent", "Change %") ?: "Change %",
+          change = tooltipLabels?.optString("change", "Change") ?: "Change",
+          volume = tooltipLabels?.optString("volume", "Volume") ?: "Volume",
+        ),
       )
     }
   }
@@ -121,6 +155,10 @@ internal data class ChartConfig(
     displayScale.toDouble(),
     if (logicalSpacing) 1.0 else 0.0,
     if (pinCurrentPriceToEdge) 1.0 else 0.0,
+    if (showPriceExtremes) 1.0 else 0.0,
+    defaultScale,
+    if (crosshairDashed) 1.0 else 0.0,
+    tooltipBackgroundOpacity.toDouble(),
   )
 
   fun nativeColors(): FloatArray {

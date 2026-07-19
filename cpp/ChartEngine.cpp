@@ -47,6 +47,32 @@ void emitQuad(std::vector<float>& out,
   emitVertex(out, left, bottom, color);
 }
 
+void emitDashedVertical(std::vector<float>& out,
+                        float x,
+                        float top,
+                        float bottom,
+                        float displayScale,
+                        const Color& color) {
+  const float dash = 4.0f * displayScale;
+  const float gap = 3.0f * displayScale;
+  for (float y = top; y < bottom; y += dash + gap) {
+    emitQuad(out, x - 0.5f, y, x + 0.5f, std::min(y + dash, bottom), color);
+  }
+}
+
+void emitDashedHorizontal(std::vector<float>& out,
+                          float y,
+                          float left,
+                          float right,
+                          float displayScale,
+                          const Color& color) {
+  const float dash = 4.0f * displayScale;
+  const float gap = 3.0f * displayScale;
+  for (float x = left; x < right; x += dash + gap) {
+    emitQuad(out, x, y - 0.5f, std::min(x + dash, right), y + 0.5f, color);
+  }
+}
+
 double niceStep(double range, int targetCount, double minimum) {
   if (!(range > 0.0) || targetCount <= 0) return std::max(minimum, 1.0);
   const double raw = std::max(range / static_cast<double>(targetCount), minimum);
@@ -123,9 +149,17 @@ void ChartEngine::setConfig(const ChartConfig& config) {
   config_ = config;
   config_.timeframeMs = std::max(std::round(config_.timeframeMs), 1.0);
   config_.initialVisibleCount = std::max(config_.initialVisibleCount, 1);
+  if (!finite(config_.defaultScale) || !(config_.defaultScale > 0.0)) {
+    config_.defaultScale = 1.0;
+  }
   if (!finite(config_.displayScale) || !(config_.displayScale > 0.0f)) {
     config_.displayScale = 1.0f;
   }
+  if (!finite(config_.tooltipBackgroundOpacity)) {
+    config_.tooltipBackgroundOpacity = 1.0f;
+  }
+  config_.tooltipBackgroundOpacity =
+      std::clamp(config_.tooltipBackgroundOpacity, 0.0f, 1.0f);
   config_.xAxisHeight = std::max(config_.xAxisHeight, 1.0f);
   config_.yAxisWidth = std::max(config_.yAxisWidth, 1.0f);
   config_.precision = std::max(0, std::min(config_.precision, 12));
@@ -139,6 +173,7 @@ void ChartEngine::setConfig(const ChartConfig& config) {
     config_.yScaleMarginBottom = 0.1;
   }
   if (viewportDefaultsChanged && !candles_.empty()) resetViewportLocked();
+  if (!config_.crosshairEnabled) crosshairActive_ = false;
   markDirtyLocked();
 }
 
@@ -373,6 +408,8 @@ void ChartEngine::resetViewportLocked() {
   visibleXMin_ = candleXLocked(begin) - unit * 0.5;
   visibleXMax_ = candleXLocked(candles_.size() - 1) + unit * 2.5;
   if (!(visibleXMax_ > visibleXMin_)) visibleXMax_ = visibleXMin_ + unit * 3.0;
+  visibleXMin_ = visibleXMax_ -
+      (visibleXMax_ - visibleXMin_) / config_.defaultScale;
   viewportInitialized_ = true;
   clampViewportLocked();
 }
@@ -594,12 +631,22 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
     }
   }
 
+  auto minimumCandle = lower;
+  auto maximumCandle = lower;
   double rawMin = lower->low;
   double rawMax = lower->high;
   for (auto it = lower; it != upper; ++it) {
-    rawMin = std::min(rawMin, it->low);
-    rawMax = std::max(rawMax, it->high);
+    if (it->low < rawMin) {
+      rawMin = it->low;
+      minimumCandle = it;
+    }
+    if (it->high > rawMax) {
+      rawMax = it->high;
+      maximumCandle = it;
+    }
   }
+  const double visibleMinimumValue = rawMin;
+  const double visibleMaximumValue = rawMax;
   if (!(rawMax > rawMin)) {
     const double extendValue = 5.0 * config_.minMove;
     rawMin -= extendValue;
@@ -629,6 +676,33 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
     return result->plot.bottom - static_cast<float>((value - yMin) / (yMax - yMin)) *
         result->plot.height();
   };
+
+  const auto setExtremum = [&](PriceExtremum& extremum,
+                               std::vector<Candle>::const_iterator candle,
+                               double value) {
+    const size_t index = static_cast<size_t>(
+        std::distance(candles_.cbegin(), candle));
+    const double domainX = config_.logicalSpacing
+        ? static_cast<double>(index)
+        : candle->timestamp;
+    const float x = projectX(domainX);
+    const float y = projectY(value);
+    if (x < result->plot.left || x > result->plot.right ||
+        y < result->plot.top || y > result->plot.bottom) {
+      return;
+    }
+    extremum.visible = true;
+    extremum.value = value;
+    extremum.x = x;
+    extremum.y = y;
+    extremum.labelOnRight = x <= (result->plot.left + result->plot.right) * 0.5f;
+  };
+  if (config_.showPriceExtremes) {
+    setExtremum(result->visibleMaximum, maximumCandle, visibleMaximumValue);
+    if (visibleMinimumValue != visibleMaximumValue) {
+      setExtremum(result->visibleMinimum, minimumCandle, visibleMinimumValue);
+    }
+  }
 
   const int xTarget = std::max(
       2, static_cast<int>(result->plot.width() / (72.0f * config_.displayScale)));
@@ -739,9 +813,11 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
       result->currentPriceY = current.close > yMax
           ? result->plot.top
           : current.close < yMin ? result->plot.bottom : projectY(current.close);
+    }
+    if (priceInRange) {
       for (float x = result->plot.left; x < result->plot.right; x += 6.0f) {
-        emitQuad(result->vertices, x, result->currentPriceY - 0.75f,
-                 std::min(x + 3.0f, result->plot.right), result->currentPriceY + 0.75f,
+        emitQuad(result->vertices, x, result->currentPriceY - 0.5f,
+                 std::min(x + 3.0f, result->plot.right), result->currentPriceY + 0.5f,
                  result->currentPriceColor);
       }
     }
@@ -780,11 +856,26 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
     result->crosshairY = touchY;
     result->crosshairPrice = yMax -
         static_cast<double>((touchY - result->plot.top) / result->plot.height()) * (yMax - yMin);
+    result->selectedChange = nearest->close - nearest->open;
+    if (nearest->open != 0.0) {
+      const double denominator = std::abs(nearest->open);
+      result->selectedChangePercent = result->selectedChange / denominator * 100.0;
+      result->selectedAmplitudePercent =
+          (nearest->high - nearest->low) / denominator * 100.0;
+      result->selectedPercentagesValid = true;
+    }
     const Color lineColor = alpha(config_.crosshair, 0.85f);
-    emitQuad(result->vertices, result->crosshairX - 0.5f, result->plot.top,
-             result->crosshairX + 0.5f, result->plot.bottom, lineColor);
-    emitQuad(result->vertices, result->plot.left, touchY - 0.5f,
-             result->plot.right, touchY + 0.5f, lineColor);
+    if (config_.crosshairDashed) {
+      emitDashedVertical(result->vertices, result->crosshairX, result->plot.top,
+                         result->plot.bottom, config_.displayScale, lineColor);
+      emitDashedHorizontal(result->vertices, touchY, result->plot.left,
+                           result->plot.right, config_.displayScale, lineColor);
+    } else {
+      emitQuad(result->vertices, result->crosshairX - 0.5f, result->plot.top,
+               result->crosshairX + 0.5f, result->plot.bottom, lineColor);
+      emitQuad(result->vertices, result->plot.left, touchY - 0.5f,
+               result->plot.right, touchY + 0.5f, lineColor);
+    }
   }
 
   return result;

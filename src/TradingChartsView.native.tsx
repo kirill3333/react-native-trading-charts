@@ -1,19 +1,26 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { type NativeSyntheticEvent } from 'react-native';
 
 import { resolveChartConfig } from './config';
-import NativeTradingChartsView from './TradingChartsViewNativeComponent';
+import { selectedCandleFromNativeEvent } from './events';
+import NativeTradingChartsView, {
+  type SelectedCandleChangeNativeEvent,
+} from './TradingChartsViewNativeComponent';
 import { type TradingChartsViewProps } from './types';
 
 export function TradingChartsView({
   chartId,
   timeframeMs,
   initialVisibleCount,
+  defaultScale,
   theme,
   xAxis,
   yAxis,
   gestures,
   currentPrice,
+  priceExtremes,
   crosshair,
+  onSelectedCandleChange,
   ...viewProps
 }: TradingChartsViewProps) {
   if (typeof chartId !== 'string' || chartId.trim().length === 0) {
@@ -27,11 +34,13 @@ export function TradingChartsView({
           chartId,
           timeframeMs,
           initialVisibleCount,
+          defaultScale,
           theme,
           xAxis,
           yAxis,
           gestures,
           currentPrice,
+          priceExtremes,
           crosshair,
         })
       ),
@@ -39,8 +48,10 @@ export function TradingChartsView({
       chartId,
       crosshair,
       currentPrice,
+      defaultScale,
       gestures,
       initialVisibleCount,
+      priceExtremes,
       theme,
       timeframeMs,
       xAxis,
@@ -48,11 +59,23 @@ export function TradingChartsView({
     ]
   );
 
+  const handleSelectedCandleChange = useCallback(
+    (event: NativeSyntheticEvent<SelectedCandleChangeNativeEvent>) => {
+      onSelectedCandleChange?.(
+        selectedCandleFromNativeEvent(event.nativeEvent)
+      );
+    },
+    [onSelectedCandleChange]
+  );
+
   return (
     <NativeTradingChartsView
       {...viewProps}
       chartId={chartId}
       configJson={configJson}
+      onSelectedCandleChange={
+        onSelectedCandleChange ? handleSelectedCandleChange : undefined
+      }
     />
   );
 }

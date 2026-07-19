@@ -2,6 +2,7 @@ package com.tradingcharts
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -14,8 +15,31 @@ import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 internal class ChartOverlayView(context: Context) : View(context) {
+  private class ExtremumLabelCache {
+    var formatterKey: String? = null
+    var valueBits: Long = 0L
+    var hasValue: Boolean = false
+    var text: String = ""
+    var width: Float = 0f
+  }
+
+  private data class TooltipRow(
+    val label: String,
+    val value: String,
+    val valueColor: Int,
+  )
+
+  private data class TooltipLayout(
+    val header: String,
+    val rows: List<TooltipRow>,
+    val width: Float,
+    val height: Float,
+    val valueXOffset: Float,
+  )
+
   var snapshot: ChartSnapshot? = null
     set(value) {
       field = value
@@ -34,14 +58,29 @@ internal class ChartOverlayView(context: Context) : View(context) {
     typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
   }
   private val tooltipPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val extremumLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    strokeWidth = density
+  }
+  private val extremumBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val tooltipTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textSize = 11f * scaledDensity
     typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
   }
   private var formatterKey: String? = null
   private lateinit var numberFormat: NumberFormat
+  private lateinit var percentFormat: NumberFormat
+  private lateinit var volumeFormat: NumberFormat
   private lateinit var dateFormat: SimpleDateFormat
   private lateinit var fullDateFormat: SimpleDateFormat
+  private val maximumLabelCache = ExtremumLabelCache()
+  private val minimumLabelCache = ExtremumLabelCache()
+  private var tooltipLayout: TooltipLayout? = null
+  private var tooltipCandle: DoubleArray? = null
+  private var tooltipConfig: ChartConfig? = null
+  private var tooltipChangeBits: Long = 0L
+  private var tooltipChangePercentBits: Long = 0L
+  private var tooltipAmplitudePercentBits: Long = 0L
+  private var tooltipPercentagesValid = false
 
   init {
     setWillNotDraw(false)
@@ -58,12 +97,24 @@ internal class ChartOverlayView(context: Context) : View(context) {
       minimumFractionDigits = if (config.valueFormat.compact) 0 else config.valueFormat.precision
       maximumFractionDigits = config.valueFormat.precision
     }
+    percentFormat = NumberFormat.getNumberInstance(numberLocale).apply {
+      isGroupingUsed = false
+      minimumFractionDigits = 2
+      maximumFractionDigits = 2
+    }
+    volumeFormat = NumberFormat.getNumberInstance(numberLocale).apply {
+      isGroupingUsed = config.valueFormat.useGrouping
+      minimumFractionDigits = 0
+      maximumFractionDigits = 2
+    }
     val dateLocale = Locale.forLanguageTag(config.xLocale)
     val zone = TimeZone.getTimeZone(config.xTimeZone)
     dateFormat = SimpleDateFormat("HH:mm", dateLocale).apply { timeZone = zone }
     fullDateFormat = SimpleDateFormat("d MMM yyyy HH:mm:ss", dateLocale).apply {
       timeZone = zone
     }
+    tooltipLayout = null
+    tooltipConfig = null
   }
 
   private fun formatValue(value: Double, frame: ChartSnapshot): String {
@@ -97,6 +148,79 @@ internal class ChartOverlayView(context: Context) : View(context) {
     return dateFormat.format(Date(timestamp.toLong()))
   }
 
+  private fun formatPercent(value: Double, valid: Boolean): String =
+    if (valid) "${percentFormat.format(value)}%" else "—"
+
+  private fun formatVolume(value: Double): String {
+    val magnitude = abs(value)
+    val (scaled, suffix) = when {
+      magnitude >= 1e12 -> value / 1e12 to "T"
+      magnitude >= 1e9 -> value / 1e9 to "B"
+      magnitude >= 1e6 -> value / 1e6 to "M"
+      magnitude >= 1e3 -> value / 1e3 to "K"
+      else -> value to ""
+    }
+    return volumeFormat.format(scaled) + suffix
+  }
+
+  private fun prepareExtremumLabel(
+    extremum: PriceExtremumSnapshot,
+    frame: ChartSnapshot,
+    cache: ExtremumLabelCache,
+  ) {
+    val currentFormatterKey = formatterKey
+    val valueBits = extremum.value.toBits()
+    if (
+      cache.hasValue &&
+      cache.formatterKey == currentFormatterKey &&
+      cache.valueBits == valueBits
+    ) {
+      return
+    }
+    cache.hasValue = true
+    cache.formatterKey = currentFormatterKey
+    cache.valueBits = valueBits
+    cache.text = formatValue(extremum.value, frame)
+    cache.width = axisPaint.measureText(cache.text)
+  }
+
+  private fun drawExtremum(
+    canvas: Canvas,
+    extremum: PriceExtremumSnapshot,
+    frame: ChartSnapshot,
+    cache: ExtremumLabelCache,
+  ) {
+    if (!extremum.visible) return
+    prepareExtremumLabel(extremum, frame, cache)
+
+    val direction = if (extremum.labelOnRight) 1f else -1f
+    val lineEndX = (extremum.x + direction * 20f * density)
+      .coerceIn(frame.plotLeft, frame.plotRight)
+    canvas.drawLine(extremum.x, extremum.y, lineEndX, extremum.y, extremumLinePaint)
+
+    val unclampedTextX = if (extremum.labelOnRight) {
+      lineEndX + 4f * density
+    } else {
+      lineEndX - 4f * density - cache.width
+    }
+    val maximumTextX = max(frame.plotLeft, frame.plotRight - cache.width)
+    val textX = unclampedTextX.coerceIn(frame.plotLeft, maximumTextX)
+    val centeredBaseline = extremum.y - (axisPaint.ascent() + axisPaint.descent()) / 2f
+    val minimumBaseline = frame.plotTop - axisPaint.ascent()
+    val maximumBaseline = max(minimumBaseline, frame.plotBottom - axisPaint.descent())
+    val baseline = centeredBaseline.coerceIn(minimumBaseline, maximumBaseline)
+    canvas.drawRoundRect(
+      textX - 2f * density,
+      baseline + axisPaint.ascent() - density,
+      textX + cache.width + 2f * density,
+      baseline + axisPaint.descent() + density,
+      2f * density,
+      2f * density,
+      extremumBackgroundPaint,
+    )
+    canvas.drawText(cache.text, textX, baseline, axisPaint)
+  }
+
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
     val frame = snapshot ?: return
@@ -104,6 +228,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
     val config = frame.config
     axisPaint.color = config.axisTextColor
     axisPaint.typeface = Typeface.MONOSPACE
+    extremumLinePaint.color = config.axisTextColor
+    extremumBackgroundPaint.color = config.backgroundColor
 
     if (config.showXAxis) {
       var lastRight = -Float.MAX_VALUE
@@ -143,6 +269,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
       )
     }
 
+    drawExtremum(canvas, frame.visibleMaximum, frame, maximumLabelCache)
+    drawExtremum(canvas, frame.visibleMinimum, frame, minimumLabelCache)
+
     if (frame.crosshairVisible) {
       drawBadge(
         canvas,
@@ -154,6 +283,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
       drawTimeBadge(canvas, formatTime(frame.selectedCandle[0], frame, true), frame)
       if (config.showTooltip) drawTooltip(canvas, frame)
     }
+
   }
 
   private fun drawBadge(canvas: Canvas, text: String, y: Float, color: Int, config: ChartConfig) {
@@ -181,27 +311,93 @@ internal class ChartOverlayView(context: Context) : View(context) {
   }
 
   private fun drawTooltip(canvas: Canvas, frame: ChartSnapshot) {
-    val c = frame.selectedCandle
-    val lines = listOf(
-      formatTime(c[0], frame, true),
-      "O  ${formatValue(c[1], frame)}",
-      "H  ${formatValue(c[2], frame)}",
-      "L  ${formatValue(c[3], frame)}",
-      "C  ${formatValue(c[4], frame)}",
-    )
+    val layout = prepareTooltipLayout(frame)
     tooltipTextPaint.color = frame.config.tooltipTextColor
     tooltipPaint.color = frame.config.tooltipBackgroundColor
-    val boxWidth = lines.maxOf { tooltipTextPaint.measureText(it) } + 20f * density
-    val boxHeight = lines.size * 17f * density + 18f * density
+    tooltipPaint.alpha = (
+      Color.alpha(frame.config.tooltipBackgroundColor) *
+        frame.config.tooltipBackgroundOpacity
+      ).roundToInt()
+    val boxWidth = layout.width
+    val boxHeight = layout.height
     val left = if (frame.crosshairX > frame.width / 2f) frame.plotLeft + 8f * density
       else frame.plotRight - boxWidth - 8f * density
     val rect = RectF(left, frame.plotTop + 8f * density, left + boxWidth, frame.plotTop + 8f * density + boxHeight)
     canvas.drawRoundRect(rect, 8f * density, 8f * density, tooltipPaint)
     var y = rect.top + 9f * density - tooltipTextPaint.ascent()
-    lines.forEach { line ->
-      canvas.drawText(line, rect.left + 10f * density, y, tooltipTextPaint)
+    canvas.drawText(layout.header, rect.left + 10f * density, y, tooltipTextPaint)
+    y += 17f * density
+    layout.rows.forEach { row ->
+      tooltipTextPaint.color = frame.config.tooltipTextColor
+      canvas.drawText(row.label, rect.left + 10f * density, y, tooltipTextPaint)
+      tooltipTextPaint.color = row.valueColor
+      canvas.drawText(row.value, rect.left + layout.valueXOffset, y, tooltipTextPaint)
       y += 17f * density
     }
+  }
+
+  private fun prepareTooltipLayout(frame: ChartSnapshot): TooltipLayout {
+    val c = frame.selectedCandle
+    val cached = tooltipLayout
+    if (
+      cached != null &&
+      tooltipConfig === frame.config &&
+      tooltipCandle?.contentEquals(c) == true &&
+      tooltipChangeBits == frame.selectedChange.toBits() &&
+      tooltipChangePercentBits == frame.selectedChangePercent.toBits() &&
+      tooltipAmplitudePercentBits == frame.selectedAmplitudePercent.toBits() &&
+      tooltipPercentagesValid == frame.selectedPercentagesValid
+    ) {
+      return cached
+    }
+
+    val config = frame.config
+    val labels = config.tooltipLabels
+    val changeColor = when {
+      frame.selectedChange > 0.0 -> config.upColor
+      frame.selectedChange < 0.0 -> config.downColor
+      else -> config.tooltipTextColor
+    }
+    val rows = listOf(
+      TooltipRow(labels.open, formatValue(c[1], frame), config.tooltipTextColor),
+      TooltipRow(labels.close, formatValue(c[4], frame), config.tooltipTextColor),
+      TooltipRow(labels.high, formatValue(c[2], frame), config.tooltipTextColor),
+      TooltipRow(labels.low, formatValue(c[3], frame), config.tooltipTextColor),
+      TooltipRow(
+        labels.amplitude,
+        formatPercent(frame.selectedAmplitudePercent, frame.selectedPercentagesValid),
+        config.tooltipTextColor,
+      ),
+      TooltipRow(
+        labels.changePercent,
+        formatPercent(frame.selectedChangePercent, frame.selectedPercentagesValid),
+        changeColor,
+      ),
+      TooltipRow(labels.change, formatValue(frame.selectedChange, frame), changeColor),
+      TooltipRow(labels.volume, formatVolume(c[5]), config.tooltipTextColor),
+    )
+    val header = formatTime(c[0], frame, true)
+    val labelWidth = rows.maxOf { tooltipTextPaint.measureText(it.label) }
+    val valueWidth = rows.maxOf { tooltipTextPaint.measureText(it.value) }
+    val contentWidth = max(
+      tooltipTextPaint.measureText(header),
+      labelWidth + 12f * density + valueWidth,
+    )
+    val result = TooltipLayout(
+      header = header,
+      rows = rows,
+      width = contentWidth + 20f * density,
+      height = (rows.size + 1) * 17f * density + 18f * density,
+      valueXOffset = 10f * density + labelWidth + 12f * density,
+    )
+    tooltipLayout = result
+    tooltipCandle = c.copyOf()
+    tooltipConfig = config
+    tooltipChangeBits = frame.selectedChange.toBits()
+    tooltipChangePercentBits = frame.selectedChangePercent.toBits()
+    tooltipAmplitudePercentBits = frame.selectedAmplitudePercent.toBits()
+    tooltipPercentagesValid = frame.selectedPercentagesValid
+    return result
   }
 
   private fun colorFromFloats(value: FloatArray): Int {

@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   TradingCharts,
   TradingChartsView,
+  type OhlcCandle,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
 
@@ -159,8 +160,13 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   venueLabel,
 }: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
+  const [selectedCandle, setSelectedCandle] = useState<OhlcCandle | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
+
+  useEffect(() => {
+    setSelectedCandle(null);
+  }, [chartId]);
 
   const subscribe = useCallback(
     (listener: () => void) => controller.subscribe(ticker, interval, listener),
@@ -298,12 +304,26 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
 
         <View style={styles.chartContainer}>
           <TradingChartsView
+            accessibilityLabel="Trading chart"
+            accessibilityValue={{
+              text: selectedCandle
+                ? `Selected close ${selectedCandle.close}`
+                : 'No candle selected',
+            }}
             chartId={chartId}
-            crosshair={{ enabled: true, showTooltip: true }}
+            crosshair={{
+              enabled: true,
+              showTooltip: true,
+              tooltipBackgroundOpacity: 0.85,
+              lineStyle: 'dashed',
+            }}
             currentPrice={{ visible: true, showLabel: true }}
+            priceExtremes={{ visible: true }}
             gestures={{ pan: true, zoom: true }}
             initialVisibleCount={48}
+            defaultScale={1.25}
             key={chartId}
+            onSelectedCandleChange={setSelectedCandle}
             onVisibleRangeChange={handleVisibleRangeChange}
             style={styles.chart}
             timeframeMs={intervalConfig?.timeframeMs ?? 60_000}

@@ -2,6 +2,14 @@ package com.tradingcharts
 
 internal data class AxisTick(val value: Double, val position: Float)
 
+internal data class PriceExtremumSnapshot(
+  val visible: Boolean,
+  val value: Double,
+  val x: Float,
+  val y: Float,
+  val labelOnRight: Boolean,
+)
+
 internal data class ChartSnapshot(
   val revision: Long,
   val config: ChartConfig,
@@ -26,11 +34,17 @@ internal data class ChartSnapshot(
   val currentPrice: Double,
   val currentPriceY: Float,
   val currentPriceColor: FloatArray,
+  val visibleMaximum: PriceExtremumSnapshot,
+  val visibleMinimum: PriceExtremumSnapshot,
   val crosshairVisible: Boolean,
   val crosshairX: Float,
   val crosshairY: Float,
   val crosshairPrice: Double,
   val selectedCandle: DoubleArray,
+  val selectedChange: Double,
+  val selectedChangePercent: Double,
+  val selectedAmplitudePercent: Double,
+  val selectedPercentagesValid: Boolean,
 )
 
 internal object ChartEngineNative {
@@ -106,11 +120,29 @@ internal object ChartEngineNative {
         currentPriceColor = floatArrayOf(
           meta[13].toFloat(), meta[14].toFloat(), meta[15].toFloat(), meta[16].toFloat(),
         ),
+        visibleMaximum = PriceExtremumSnapshot(
+          visible = meta[31] != 0.0,
+          value = meta[32],
+          x = meta[33].toFloat(),
+          y = meta[34].toFloat(),
+          labelOnRight = meta[35] != 0.0,
+        ),
+        visibleMinimum = PriceExtremumSnapshot(
+          visible = meta[36] != 0.0,
+          value = meta[37],
+          x = meta[38].toFloat(),
+          y = meta[39].toFloat(),
+          labelOnRight = meta[40] != 0.0,
+        ),
         crosshairVisible = meta[17] != 0.0,
         crosshairX = meta[18].toFloat(),
         crosshairY = meta[19].toFloat(),
         crosshairPrice = meta[20],
         selectedCandle = meta.copyOfRange(21, 27),
+        selectedChange = meta[41],
+        selectedChangePercent = meta[42],
+        selectedAmplitudePercent = meta[43],
+        selectedPercentagesValid = meta[44] != 0.0,
       )
     } finally {
       nativeReleaseSnapshot(snapshot)

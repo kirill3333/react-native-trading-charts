@@ -76,10 +76,14 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   if (!instance || !numbers || env->GetArrayLength(numbers) < 22 ||
       !colors || env->GetArrayLength(colors) < 32) return;
   const jsize numberCount = env->GetArrayLength(numbers);
-  jdouble n[23] = {};
+  jdouble n[27] = {};
   jfloat c[32];
   env->GetDoubleArrayRegion(numbers, 0, 22, n);
   if (numberCount >= 23) env->GetDoubleArrayRegion(numbers, 22, 1, n + 22);
+  if (numberCount >= 24) env->GetDoubleArrayRegion(numbers, 23, 1, n + 23);
+  if (numberCount >= 25) env->GetDoubleArrayRegion(numbers, 24, 1, n + 24);
+  if (numberCount >= 26) env->GetDoubleArrayRegion(numbers, 25, 1, n + 25);
+  if (numberCount >= 27) env->GetDoubleArrayRegion(numbers, 26, 1, n + 26);
   env->GetFloatArrayRegion(colors, 0, 32, c);
   auto colorAt = [&](int offset) {
     return Color{c[offset], c[offset + 1], c[offset + 2], c[offset + 3]};
@@ -108,6 +112,11 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.displayScale = static_cast<float>(n[20]);
   config.logicalSpacing = n[21] != 0;
   config.pinCurrentPriceToEdge = numberCount < 23 || n[22] != 0;
+  config.showPriceExtremes = numberCount < 24 || n[23] != 0;
+  config.defaultScale = numberCount < 25 ? 1.0 : n[24];
+  config.crosshairDashed = numberCount >= 26 && n[25] != 0;
+  config.tooltipBackgroundOpacity =
+      numberCount < 27 ? 1.0f : static_cast<float>(n[26]);
   config.background = colorAt(0);
   config.grid = colorAt(4);
   config.axisText = colorAt(8);
@@ -279,7 +288,7 @@ JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass, jlong handle) {
   auto* holder = snapshot(handle);
   const auto* s = holder && *holder ? holder->get() : nullptr;
-  double m[31] = {};
+  double m[45] = {};
   if (s) {
     m[0] = s->width;
     m[1] = s->height;
@@ -312,9 +321,23 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass,
     m[28] = static_cast<double>(s->lastVisibleIndex);
     m[29] = static_cast<double>(s->totalCandleCount);
     m[30] = s->hasVisibleCandles ? 1.0 : 0.0;
+    m[31] = s->visibleMaximum.visible ? 1.0 : 0.0;
+    m[32] = s->visibleMaximum.value;
+    m[33] = s->visibleMaximum.x;
+    m[34] = s->visibleMaximum.y;
+    m[35] = s->visibleMaximum.labelOnRight ? 1.0 : 0.0;
+    m[36] = s->visibleMinimum.visible ? 1.0 : 0.0;
+    m[37] = s->visibleMinimum.value;
+    m[38] = s->visibleMinimum.x;
+    m[39] = s->visibleMinimum.y;
+    m[40] = s->visibleMinimum.labelOnRight ? 1.0 : 0.0;
+    m[41] = s->selectedChange;
+    m[42] = s->selectedChangePercent;
+    m[43] = s->selectedAmplitudePercent;
+    m[44] = s->selectedPercentagesValid ? 1.0 : 0.0;
   }
-  jdoubleArray result = env->NewDoubleArray(31);
-  env->SetDoubleArrayRegion(result, 0, 31, m);
+  jdoubleArray result = env->NewDoubleArray(45);
+  env->SetDoubleArrayRegion(result, 0, 45, m);
   return result;
 }
 

@@ -28,6 +28,7 @@ struct Candle {
 struct ChartConfig {
   double timeframeMs = 60000.0;
   int initialVisibleCount = 100;
+  double defaultScale = 1.0;
   float displayScale = 1.0f;
 
   Color background{16.0f / 255.0f, 12.0f / 255.0f, 24.0f / 255.0f, 1.0f};
@@ -63,8 +64,19 @@ struct ChartConfig {
   bool showCurrentPrice = true;
   bool showCurrentPriceLabel = true;
   bool pinCurrentPriceToEdge = true;
+  bool showPriceExtremes = true;
   bool crosshairEnabled = true;
   bool showTooltip = true;
+  bool crosshairDashed = false;
+  float tooltipBackgroundOpacity = 1.0f;
+  std::string tooltipLabelOpen = "Open";
+  std::string tooltipLabelClose = "Close";
+  std::string tooltipLabelHigh = "High";
+  std::string tooltipLabelLow = "Low";
+  std::string tooltipLabelAmplitude = "Amplitude";
+  std::string tooltipLabelChangePercent = "Change %";
+  std::string tooltipLabelChange = "Change";
+  std::string tooltipLabelVolume = "Volume";
 };
 
 struct Rect {
@@ -80,6 +92,14 @@ struct Rect {
 struct AxisTick {
   double value = 0.0;
   float position = 0.0f;
+};
+
+struct PriceExtremum {
+  bool visible = false;
+  double value = 0.0;
+  float x = 0.0f;
+  float y = 0.0f;
+  bool labelOnRight = true;
 };
 
 struct RenderSnapshot {
@@ -105,11 +125,18 @@ struct RenderSnapshot {
   float currentPriceY = 0.0f;
   Color currentPriceColor;
 
+  PriceExtremum visibleMaximum;
+  PriceExtremum visibleMinimum;
+
   bool crosshairVisible = false;
   float crosshairX = 0.0f;
   float crosshairY = 0.0f;
   double crosshairPrice = 0.0;
   Candle selectedCandle;
+  double selectedChange = 0.0;
+  double selectedChangePercent = 0.0;
+  double selectedAmplitudePercent = 0.0;
+  bool selectedPercentagesValid = false;
 };
 
 enum class UpdateStatus {

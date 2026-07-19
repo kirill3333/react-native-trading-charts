@@ -14,10 +14,21 @@ export type VisibleRangeChangeNativeEvent = Readonly<{
   atEnd: boolean;
 }>;
 
+export type SelectedCandleChangeNativeEvent = Readonly<{
+  active: boolean;
+  timestamp: CodegenTypes.Double;
+  open: CodegenTypes.Double;
+  high: CodegenTypes.Double;
+  low: CodegenTypes.Double;
+  close: CodegenTypes.Double;
+  volume: CodegenTypes.Double;
+}>;
+
 export interface NativeProps extends ViewProps {
   chartId: string;
   configJson: string;
   onVisibleRangeChange?: CodegenTypes.DirectEventHandler<VisibleRangeChangeNativeEvent>;
+  onSelectedCandleChange?: CodegenTypes.DirectEventHandler<SelectedCandleChangeNativeEvent>;
 }
 
 export default codegenNativeComponent<NativeProps>('TradingChartsView');

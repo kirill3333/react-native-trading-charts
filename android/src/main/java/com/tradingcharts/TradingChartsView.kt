@@ -31,11 +31,12 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var registeredChartId: String? = null
   private var pendingChartId: String? = null
   private var disposed = false
-  private var crosshairActive = false
+  private var crosshairPinned = false
   private var suppressFlingForTouch = false
   private var lastFlingX = 0
   private var pastEdgeWaitStartedAtMs = 0L
   private var lastVisibleRangeKey: Triple<Int, Int, Int>? = null
+  private var lastSelectedCandle: DoubleArray? = null
 
   private val flingFrame = object : Runnable {
     override fun run() {
@@ -71,9 +72,17 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     context,
     object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
       override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+        if (!config.allowZoom) return false
         suppressFlingForTouch = true
         stopFling()
-        return config.allowZoom
+        crosshairPinned = false
+        ChartEngineNative.nativeSetCrosshair(
+          engineHandle,
+          false,
+          detector.focusX,
+          detector.focusY,
+        )
+        return true
       }
 
       override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -103,7 +112,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         distanceX: Float,
         distanceY: Float,
       ): Boolean {
-        if (crosshairActive) {
+        if (crosshairPinned) {
           ChartEngineNative.nativeSetCrosshair(engineHandle, true, current.x, current.y)
         } else if (!scaleDetector.isInProgress) {
           if (isYAxisGesture(first)) {
@@ -117,12 +126,29 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       }
 
       override fun onLongPress(event: MotionEvent) {
-        if (!config.crosshairEnabled) return
+        if (!config.crosshairEnabled || (!crosshairPinned && !isPointInPlot(event.x, event.y))) return
         suppressFlingForTouch = true
         stopFling()
-        crosshairActive = true
+        crosshairPinned = true
         ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
         scheduleFrame()
+      }
+
+      override fun onSingleTapUp(event: MotionEvent): Boolean {
+        performClick()
+        if (crosshairPinned) {
+          crosshairPinned = false
+          ChartEngineNative.nativeSetCrosshair(engineHandle, false, event.x, event.y)
+          scheduleFrame()
+          return true
+        }
+        if (!config.crosshairEnabled || !isPointInPlot(event.x, event.y)) return true
+        suppressFlingForTouch = true
+        stopFling()
+        crosshairPinned = true
+        ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
+        scheduleFrame()
+        return true
       }
 
       override fun onFling(
@@ -134,7 +160,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         if (
           first == null ||
           suppressFlingForTouch ||
-          crosshairActive ||
+          crosshairPinned ||
           isYAxisGesture(first) ||
           !config.allowPan
         ) {
@@ -147,6 +173,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       override fun onDoubleTap(event: MotionEvent): Boolean {
         suppressFlingForTouch = true
         stopFling()
+        crosshairPinned = false
         ChartEngineNative.nativeResetViewport(engineHandle)
         scheduleFrame()
         return true
@@ -161,6 +188,12 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     } else {
       first.x <= config.yAxisWidth
     }
+  }
+
+  private fun isPointInPlot(x: Float, y: Float): Boolean {
+    val frame = overlay.snapshot ?: return false
+    return x >= frame.plotLeft && x <= frame.plotRight &&
+      y >= frame.plotTop && y <= frame.plotBottom
   }
 
   private fun startFling(velocityX: Float) {
@@ -210,6 +243,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     try {
       config = ChartConfig.fromJson(value, resources.displayMetrics.density)
       if (!config.allowPan) stopFling()
+      if (!config.crosshairEnabled) crosshairPinned = false
       ChartEngineNative.setConfig(engineHandle, config)
       scheduleFrame()
     } catch (error: Exception) {
@@ -218,11 +252,13 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   fun applyHistory(values: DoubleArray) {
+    crosshairPinned = false
     logStatus("setHistory", ChartEngineNative.nativeSetHistory(engineHandle, values))
     scheduleFrame()
   }
 
   fun prependHistory(values: DoubleArray) {
+    crosshairPinned = false
     logStatus("prependHistory", ChartEngineNative.nativePrependHistory(engineHandle, values))
     scheduleFrame()
   }
@@ -244,18 +280,21 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   fun zoom(scale: Double) {
     stopFling()
+    crosshairPinned = false
     ChartEngineNative.nativeZoomAtRightEdge(engineHandle, scale)
     scheduleFrame()
   }
 
   fun fitContent() {
     stopFling()
+    crosshairPinned = false
     ChartEngineNative.nativeFitContent(engineHandle)
     scheduleFrame()
   }
 
   fun clearData() {
     stopFling()
+    crosshairPinned = false
     ChartEngineNative.nativeClear(engineHandle)
     lastVisibleRangeKey = null
     scheduleFrame()
@@ -278,6 +317,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       overlay.snapshot = snapshot
       plotView.requestRender()
       emitVisibleRangeChange(snapshot)
+      emitSelectedCandleChange(snapshot)
     }
   }
 
@@ -293,6 +333,27 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     val reactContext = context as? ReactContext ?: return
     UIManagerHelper.getEventDispatcher(reactContext)?.dispatchEvent(
       VisibleRangeChangeEvent(UIManagerHelper.getSurfaceId(this), id, snapshot)
+    )
+  }
+
+  private fun emitSelectedCandleChange(snapshot: ChartSnapshot) {
+    if (id == NO_ID) return
+    val selected = snapshot.selectedCandle.takeIf { snapshot.crosshairVisible }
+    if (
+      (selected == null && lastSelectedCandle == null) ||
+      (selected != null && lastSelectedCandle?.contentEquals(selected) == true)
+    ) {
+      return
+    }
+    lastSelectedCandle = selected?.copyOf()
+    val reactContext = context as? ReactContext ?: return
+    UIManagerHelper.getEventDispatcher(reactContext)?.dispatchEvent(
+      SelectedCandleChangeEvent(
+        UIManagerHelper.getSurfaceId(this),
+        id,
+        selected != null,
+        selected ?: DoubleArray(6),
+      )
     )
   }
 
@@ -312,13 +373,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     )
     scaleDetector.onTouchEvent(event)
     gestureDetector.onTouchEvent(event)
-    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-      if (crosshairActive) {
-        crosshairActive = false
-        ChartEngineNative.nativeSetCrosshair(engineHandle, false, event.x, event.y)
-        scheduleFrame()
-      }
-    }
     return true
   }
 

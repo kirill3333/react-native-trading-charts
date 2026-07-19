@@ -293,6 +293,79 @@ void testCustomScaleMargins() {
   expectNear(snapshot->visibleYMax, 20.0 + 10.0 * 0.25 / 0.6);
 }
 
+void testVisiblePriceExtremes() {
+  const double history[] = {
+      0.0, 10.0, 100.0, 9.0, 10.0, 1.0,
+      60000.0, 11.0, 20.0, 8.0, 12.0, 1.0,
+      120000.0, 12.0, 30.0, 7.0, 13.0, 1.0,
+      180000.0, 40.0, 44.0, 39.0, 43.0, 1.0,
+      240000.0, 42.0, 48.0, 4.0, 45.0, 1.0,
+      300000.0, 44.0, 48.0, 43.0, 47.0, 1.0,
+  };
+
+  for (bool logicalSpacing : {false, true}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initialVisibleCount = 3;
+    config.logicalSpacing = logicalSpacing;
+    engine.setConfig(config);
+    engine.setSize(800.0f, 500.0f);
+    assert(engine.setHistory(history, 36) == UpdateStatus::Applied);
+
+    const auto initial = engine.snapshot();
+    assert(initial->visibleMaximum.visible);
+    assert(initial->visibleMinimum.visible);
+    expectNear(initial->visibleMaximum.value, 48.0);
+    expectNear(initial->visibleMinimum.value, 4.0);
+    expectNear(initial->visibleMaximum.x, initial->visibleMinimum.x, 1e-5);
+    expectNear(
+        initial->visibleMaximum.y,
+        initial->plot.bottom -
+            (48.0 - initial->visibleYMin) /
+                (initial->visibleYMax - initial->visibleYMin) *
+                initial->plot.height(),
+        1e-5);
+    assert(initial->visibleMaximum.labelOnRight ==
+           (initial->visibleMaximum.x <=
+            (initial->plot.left + initial->plot.right) * 0.5f));
+
+    assert(engine.pan(10000.0f));
+    const auto historical = engine.snapshot();
+    expectNear(historical->visibleMaximum.value, 100.0);
+    expectNear(historical->visibleMinimum.value, 4.0);
+    assert(!historical->visibleMinimum.labelOnRight);
+
+    engine.scaleY(-historical->plot.height() * 100.0f);
+    const auto verticallyClipped = engine.snapshot();
+    assert(!verticallyClipped->visibleMaximum.visible);
+    assert(!verticallyClipped->visibleMinimum.visible);
+  }
+
+  ChartEngine flat;
+  flat.setSize(800.0f, 500.0f);
+  const double flatHistory[] = {0.0, 65.0, 65.0, 65.0, 65.0, 1.0};
+  assert(flat.setHistory(flatHistory, 6) == UpdateStatus::Applied);
+  const auto flatSnapshot = flat.snapshot();
+  assert(flatSnapshot->visibleMaximum.visible);
+  assert(!flatSnapshot->visibleMinimum.visible);
+  expectNear(flatSnapshot->visibleMaximum.value, 65.0);
+
+  ChartEngine hidden;
+  ChartConfig hiddenConfig;
+  hiddenConfig.showPriceExtremes = false;
+  hidden.setConfig(hiddenConfig);
+  hidden.setSize(800.0f, 500.0f);
+  assert(hidden.setHistory(history, 36) == UpdateStatus::Applied);
+  const auto hiddenSnapshot = hidden.snapshot();
+  assert(!hiddenSnapshot->visibleMaximum.visible);
+  assert(!hiddenSnapshot->visibleMinimum.visible);
+
+  ChartEngine empty;
+  const auto emptySnapshot = empty.snapshot();
+  assert(!emptySnapshot->visibleMaximum.visible);
+  assert(!emptySnapshot->visibleMinimum.visible);
+}
+
 void testAutoscaleSupportsDifferentMagnitudesAndNegativeValues() {
   const std::vector<std::vector<double>> histories = {
       {0.0, 0.000000002, 0.000000003, 0.000000001, 0.000000002, 1.0},
@@ -495,6 +568,88 @@ void testCurrentPricePinsToVerticalViewportEdges() {
 
   const auto hidden = snapshotForCurrentPrice(99.0, 101.0, 98.0, 100.0, true, false);
   assert(!hidden->currentPriceVisible);
+  assert(above->vertices.size() == hidden->vertices.size());
+
+  const auto insideHidden =
+      snapshotForCurrentPrice(10.0, 11.0, 9.0, 10.0, true, false);
+  assert(inside->vertices.size() > insideHidden->vertices.size());
+}
+
+void testDefaultScaleControlsResetViewport() {
+  ChartEngine baseEngine;
+  ChartConfig baseConfig;
+  baseConfig.initialVisibleCount = 10;
+  baseEngine.setConfig(baseConfig);
+  baseEngine.setSize(800.0f, 500.0f);
+
+  ChartEngine scaledEngine;
+  ChartConfig scaledConfig = baseConfig;
+  scaledConfig.defaultScale = 2.0;
+  scaledEngine.setConfig(scaledConfig);
+  scaledEngine.setSize(800.0f, 500.0f);
+
+  std::vector<double> history;
+  for (int i = 0; i < 12; ++i) {
+    const double open = 100.0 + i;
+    history.insert(history.end(), {
+        static_cast<double>(i) * 60000.0,
+        open,
+        open + 2.0,
+        open - 2.0,
+        open + 1.0,
+        1.0,
+    });
+  }
+  assert(baseEngine.setHistory(history.data(), history.size()) == UpdateStatus::Applied);
+  assert(scaledEngine.setHistory(history.data(), history.size()) == UpdateStatus::Applied);
+
+  const auto base = baseEngine.snapshot();
+  const auto scaled = scaledEngine.snapshot();
+  const double baseSpan = base->visibleXMax - base->visibleXMin;
+  const double scaledSpan = scaled->visibleXMax - scaled->visibleXMin;
+  expectNear(scaled->visibleXMax, base->visibleXMax);
+  expectNear(scaledSpan, baseSpan / 2.0);
+
+  scaledEngine.pan(100.0f);
+  scaledEngine.resetViewport();
+  const auto reset = scaledEngine.snapshot();
+  expectNear(reset->visibleXMax, scaled->visibleXMax);
+  expectNear(reset->visibleXMax - reset->visibleXMin, scaledSpan);
+
+  ChartConfig nextConfig = scaledConfig;
+  nextConfig.defaultScale = 4.0;
+  scaledEngine.setConfig(nextConfig);
+  const auto unchanged = scaledEngine.snapshot();
+  expectNear(unchanged->visibleXMin, reset->visibleXMin);
+  expectNear(unchanged->visibleXMax, reset->visibleXMax);
+  scaledEngine.resetViewport();
+  const auto nextReset = scaledEngine.snapshot();
+  expectNear(nextReset->visibleXMax - nextReset->visibleXMin, baseSpan / 4.0);
+}
+
+void testCurrentPriceLineIsOneUnitThick() {
+  ChartEngine engine;
+  engine.setSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      60000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+  };
+  assert(engine.setHistory(history, 12) == UpdateStatus::Applied);
+  const auto snapshot = engine.snapshot();
+  assert(snapshot->currentPriceVisible);
+  constexpr size_t kFloatsPerVertex = 6;
+  constexpr size_t kVerticesPerQuad = 6;
+  constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
+  assert(snapshot->vertices.size() >= kFloatsPerQuad);
+  const size_t offset = snapshot->vertices.size() - kFloatsPerQuad;
+  float minimumY = snapshot->vertices[offset + 1];
+  float maximumY = minimumY;
+  for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
+    const float y = snapshot->vertices[offset + vertex * kFloatsPerVertex + 1];
+    minimumY = std::min(minimumY, y);
+    maximumY = std::max(maximumY, y);
+  }
+  expectNear(maximumY - minimumY, 1.0, 1e-6);
 }
 
 void expectSameCandles(const ChartEngine& left, const ChartEngine& right) {
@@ -728,6 +883,58 @@ void testViewportCommandsHandleEmptyHistory() {
   assert(!snapshot->crosshairVisible);
 }
 
+void testCrosshairStatisticsAndLineStyles() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.showXAxis = false;
+  config.showYAxis = false;
+  config.showCurrentPrice = false;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+
+  const double bullish[] = {0.0, 10.0, 15.0, 8.0, 12.0, 5.0};
+  assert(engine.setHistory(bullish, 6) == UpdateStatus::Applied);
+  const size_t baseVertexFloats = engine.snapshot()->vertices.size();
+  engine.setCrosshair(true, 400.0f, 220.0f);
+  const auto solid = engine.snapshot();
+  expectNear(solid->selectedChange, 2.0);
+  expectNear(solid->selectedChangePercent, 20.0);
+  expectNear(solid->selectedAmplitudePercent, 70.0);
+  assert(solid->selectedPercentagesValid);
+  assert(solid->vertices.size() - baseVertexFloats == 2 * 6 * 6);
+
+  engine.setCrosshair(false, 0.0f, 0.0f);
+  config.crosshairDashed = true;
+  config.displayScale = 2.0f;
+  engine.setConfig(config);
+  const size_t dashedBaseVertexFloats = engine.snapshot()->vertices.size();
+  engine.setCrosshair(true, 400.0f, 220.0f);
+  const auto dashed = engine.snapshot();
+  assert(dashed->vertices.size() - dashedBaseVertexFloats > 2 * 6 * 6);
+  for (size_t offset = dashedBaseVertexFloats; offset < dashed->vertices.size(); offset += 6) {
+    assert(dashed->vertices[offset] >= dashed->plot.left - 0.5f);
+    assert(dashed->vertices[offset] <= dashed->plot.right + 0.5f);
+    assert(dashed->vertices[offset + 1] >= dashed->plot.top - 0.5f);
+    assert(dashed->vertices[offset + 1] <= dashed->plot.bottom + 0.5f);
+  }
+
+  const double bearish[] = {0.0, 10.0, 11.0, 7.0, 8.0, 5.0};
+  assert(engine.setHistory(bearish, 6) == UpdateStatus::Applied);
+  engine.setCrosshair(true, 400.0f, 220.0f);
+  const auto down = engine.snapshot();
+  expectNear(down->selectedChange, -2.0);
+  expectNear(down->selectedChangePercent, -20.0);
+  expectNear(down->selectedAmplitudePercent, 40.0);
+  assert(down->selectedPercentagesValid);
+
+  const double zeroOpen[] = {0.0, 0.0, 2.0, 0.0, 1.0, 5.0};
+  assert(engine.setHistory(zeroOpen, 6) == UpdateStatus::Applied);
+  engine.setCrosshair(true, 400.0f, 220.0f);
+  const auto zero = engine.snapshot();
+  expectNear(zero->selectedChange, 1.0);
+  assert(!zero->selectedPercentagesValid);
+}
+
 void testCrosshairHitTesting() {
   ChartEngine engine;
   engine.setSize(800.0f, 500.0f);
@@ -868,6 +1075,7 @@ int main() {
   testOneTickRangeUsesScaleMargins();
   testFlatRangeUsesMinMove();
   testCustomScaleMargins();
+  testVisiblePriceExtremes();
   testAutoscaleSupportsDifferentMagnitudesAndNegativeValues();
   testCrosshairUsesAutoscaleInverse();
   testYAxisScaleDirectionLimitsAndCrosshair();
@@ -875,6 +1083,8 @@ int main() {
   testYAxisScaleRespectsZoomOption();
   testCurrentPriceRemainsVisibleOutsideHorizontalViewport();
   testCurrentPricePinsToVerticalViewportEdges();
+  testDefaultScaleControlsResetViewport();
+  testCurrentPriceLineIsOneUnitThick();
   testTradeBatchMatchesSingles();
   testReadyCandleFeed();
   testViewportStopsFollowingAfterPan();
@@ -885,6 +1095,7 @@ int main() {
   testProgrammaticZoomUsesRightEdgeAndClampsToHistory();
   testFitContentShowsHistoryAndResetsYScale();
   testViewportCommandsHandleEmptyHistory();
+  testCrosshairStatisticsAndLineStyles();
   testCrosshairHitTesting();
   testHybridHistoryUsesLocalCandleWidths();
   testLogicalSpacingUsesUniformCandleSlots();

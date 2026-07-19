@@ -41,6 +41,7 @@ export function Chart() {
       chartId="btc-1m"
       timeframeMs={60_000}
       initialVisibleCount={100}
+      defaultScale={1.25}
       xAxis={{ locale: 'en-GB', timeZone: 'UTC', spacing: 'time' }}
       yAxis={{
         position: 'right',
@@ -54,7 +55,32 @@ export function Chart() {
       }}
       gestures={{ pan: true, zoom: true }}
       currentPrice={{ visible: true, showLabel: true, pinToEdge: true }}
-      crosshair={{ enabled: true, showTooltip: true }}
+      priceExtremes={{ visible: true }}
+      theme={{
+        crosshairColor: '#A8A2B3',
+        tooltipBackgroundColor: '#1B1723',
+        tooltipTextColor: '#F5F2FA',
+      }}
+      crosshair={{
+        enabled: true,
+        showTooltip: true,
+        tooltipBackgroundOpacity: 0.85,
+        lineStyle: 'dashed',
+        tooltipLabels: {
+          open: 'Open',
+          close: 'Close',
+          high: 'High',
+          low: 'Low',
+          amplitude: 'Amplitude',
+          changePercent: 'Change %',
+          change: 'Change',
+          volume: 'Volume',
+        },
+      }}
+      onSelectedCandleChange={(candle) => {
+        // `null` is emitted once when the crosshair selection is cleared.
+        console.log('Selected candle', candle);
+      }}
     />
   );
 }
@@ -98,15 +124,46 @@ Raw trades must be ordered by non-decreasing millisecond timestamp. Empty time
 buckets are not synthesized. A trade in the final history bucket continues that
 candle; an older trade is ignored with a development warning.
 
+`defaultScale` defaults to `1` and scales the initial horizontal viewport after
+`initialVisibleCount` is applied. Values greater than `1` zoom in; values between
+`0` and `1` zoom out. The scale is restored by a double-tap reset and by the next
+`setHistory`. Changing the prop on a populated chart does not move the current
+viewport until one of those resets occurs.
+
+`onSelectedCandleChange` receives the selected OHLCV candle when the crosshair
+moves to a different candle or that candle's values change. It receives `null`
+once when the selection is cleared; moving within the same unchanged candle does
+not emit another callback.
+
+A single tap immediately pins the crosshair to the nearest candle. While pinned,
+a one-finger drag moves the selection and another single tap clears it. Long
+press still tracks the finger, but releasing it now leaves the selection pinned.
+Double-tap continues to reset the viewport and clears the selection.
+
+The tooltip shows Open, Close, High, Low, amplitude, absolute and percentage
+change, and volume. Amplitude and percentage change use the candle open as the
+baseline; percentages are shown as an em dash when the open is zero. Volume is
+formatted compactly without the Y-axis currency symbol. Labels can be localized
+through `crosshair.tooltipLabels`. Use `crosshair.tooltipBackgroundOpacity` for
+background alpha and `crosshair.lineStyle` to select solid or dashed lines; line
+and tooltip colors remain in `theme`.
+
 `xAxis.spacing` defaults to `'time'`, where horizontal distance represents
 elapsed time. Use `'logical'` to give every candle one uniform slot regardless
 of timestamp gaps. Logical spacing keeps timestamps for axis labels and the
 crosshair while pan, zoom and live following operate by candle index.
 
 `currentPrice.pinToEdge` defaults to `true`. When the latest price is outside
-the visible Y range, its line and label stay pinned to the upper or lower plot
-edge. Set `currentPrice={{ pinToEdge: false }}` to hide the indicator while its
-price is outside the range. `showLabel: false` hides only the label.
+the visible Y range, its label stays pinned to the upper or lower Y-axis edge
+while the price line is hidden. Set `currentPrice={{ pinToEdge: false }}` to
+hide the label too while its price is outside the range. `showLabel: false`
+hides only the label.
+
+`priceExtremes.visible` defaults to `true` and labels the highest wick and
+lowest wick among the visible candles. The labels use the same native
+`yAxis.valueFormat` formatter and axis text style as the Y-axis. Set
+`priceExtremes={{ visible: false }}` to hide them. An extremum outside a
+manually scaled Y viewport is hidden until it returns to the plot.
 
 For market-cap axes, use the compact formatter:
 
@@ -145,9 +202,9 @@ automatic Y scaling. These programmatic commands work even when
 With `gestures.pan` enabled, a quick horizontal swipe continues scrolling with
 native momentum and slows to a stop at the beginning or end of the data.
 
-The same native formatter is used for Y ticks, the live-price badge, crosshair
-badge and OHLC tooltip. X labels adapt to the visible time span and use the
-configured native locale and timezone.
+The same native formatter is used for Y ticks, visible price extremes, the
+live-price badge, crosshair badge and OHLC tooltip. X labels adapt to the
+visible time span and use the configured native locale and timezone.
 
 ## Contributing
 

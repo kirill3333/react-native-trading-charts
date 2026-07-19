@@ -17,6 +17,17 @@ const DEFAULT_THEME = {
   tooltipTextColor: '#F5F2FA',
 } as const;
 
+const DEFAULT_CROSSHAIR_TOOLTIP_LABELS = {
+  open: 'Open',
+  close: 'Close',
+  high: 'High',
+  low: 'Low',
+  amplitude: 'Amplitude',
+  changePercent: 'Change %',
+  change: 'Change',
+  volume: 'Volume',
+} as const;
+
 function finitePositive(value: number, name: string): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive finite number`);
@@ -85,6 +96,22 @@ export function resolveChartConfig(
   if (!Number.isInteger(initialVisibleCount) || initialVisibleCount <= 0) {
     throw new TypeError('initialVisibleCount must be a positive integer');
   }
+  const defaultScale = finitePositive(props.defaultScale ?? 1, 'defaultScale');
+  const tooltipBackgroundOpacity =
+    props.crosshair?.tooltipBackgroundOpacity ?? 1;
+  if (
+    !Number.isFinite(tooltipBackgroundOpacity) ||
+    tooltipBackgroundOpacity < 0 ||
+    tooltipBackgroundOpacity > 1
+  ) {
+    throw new TypeError(
+      'crosshair.tooltipBackgroundOpacity must be a finite number from 0 to 1'
+    );
+  }
+  const crosshairLineStyle = props.crosshair?.lineStyle ?? 'solid';
+  if (crosshairLineStyle !== 'solid' && crosshairLineStyle !== 'dashed') {
+    throw new TypeError("crosshair.lineStyle must be 'solid' or 'dashed'");
+  }
 
   const axisHeight = finitePositive(props.xAxis?.height ?? 26, 'xAxis.height');
   const xAxisSpacing = props.xAxis?.spacing ?? 'time';
@@ -111,6 +138,7 @@ export function resolveChartConfig(
   return {
     timeframeMs,
     initialVisibleCount,
+    defaultScale,
     theme: { ...DEFAULT_THEME, ...props.theme },
     xAxis: {
       visible: props.xAxis?.visible ?? true,
@@ -136,9 +164,18 @@ export function resolveChartConfig(
       showLabel: props.currentPrice?.showLabel ?? true,
       pinToEdge: props.currentPrice?.pinToEdge ?? true,
     },
+    priceExtremes: {
+      visible: props.priceExtremes?.visible ?? true,
+    },
     crosshair: {
       enabled: props.crosshair?.enabled ?? true,
       showTooltip: props.crosshair?.showTooltip ?? true,
+      tooltipBackgroundOpacity,
+      lineStyle: crosshairLineStyle,
+      tooltipLabels: {
+        ...DEFAULT_CROSSHAIR_TOOLTIP_LABELS,
+        ...props.crosshair?.tooltipLabels,
+      },
     },
   };
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { type TradingCharts as TradingChartsExport } from '../TradingCharts';
 import { type resolveChartConfig as resolveChartConfigExport } from '../config';
+import { selectedCandleFromNativeEvent } from '../events';
 
 const mockNativeModule = {
   setHistory: jest.fn(),
@@ -122,6 +123,7 @@ describe('chart config', () => {
   it('resolves price and compact defaults', () => {
     const price = resolveChartConfig({ chartId: 'price' });
     expect(price.timeframeMs).toBe(60_000);
+    expect(price.defaultScale).toBe(1);
     expect(price.xAxis.spacing).toBe('time');
     expect(price.yAxis.valueFormat).toMatchObject({
       type: 'price',
@@ -130,6 +132,23 @@ describe('chart config', () => {
     });
     expect(price.yAxis.scaleMargins).toEqual({ top: 0.2, bottom: 0.1 });
     expect(price.currentPrice.pinToEdge).toBe(true);
+    expect(price.priceExtremes.visible).toBe(true);
+    expect(price.crosshair).toEqual({
+      enabled: true,
+      showTooltip: true,
+      tooltipBackgroundOpacity: 1,
+      lineStyle: 'solid',
+      tooltipLabels: {
+        open: 'Open',
+        close: 'Close',
+        high: 'High',
+        low: 'Low',
+        amplitude: 'Amplitude',
+        changePercent: 'Change %',
+        change: 'Change',
+        volume: 'Volume',
+      },
+    });
 
     expect(
       resolveChartConfig({
@@ -137,6 +156,13 @@ describe('chart config', () => {
         currentPrice: { pinToEdge: false },
       }).currentPrice
     ).toEqual({ visible: true, showLabel: true, pinToEdge: false });
+
+    expect(
+      resolveChartConfig({
+        chartId: 'hidden-price-extremes',
+        priceExtremes: { visible: false },
+      }).priceExtremes
+    ).toEqual({ visible: false });
 
     const compact = resolveChartConfig({
       chartId: 'cap',
@@ -166,6 +192,52 @@ describe('chart config', () => {
     ).toThrow('xAxis.spacing');
   });
 
+  it('resolves and validates crosshair presentation options', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'styled-crosshair',
+      crosshair: {
+        tooltipBackgroundOpacity: 0.55,
+        lineStyle: 'dashed',
+        tooltipLabels: { open: 'Открытие', volume: 'Объём' },
+      },
+    });
+    expect(resolved.crosshair).toMatchObject({
+      tooltipBackgroundOpacity: 0.55,
+      lineStyle: 'dashed',
+      tooltipLabels: {
+        open: 'Открытие',
+        close: 'Close',
+        volume: 'Объём',
+      },
+    });
+    const serialized = JSON.parse(JSON.stringify(resolved)) as {
+      crosshair: typeof resolved.crosshair;
+    };
+    expect(serialized.crosshair).toMatchObject({
+      tooltipBackgroundOpacity: 0.55,
+      lineStyle: 'dashed',
+      tooltipLabels: { open: 'Открытие', volume: 'Объём' },
+    });
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'negative-tooltip-opacity',
+        crosshair: { tooltipBackgroundOpacity: -0.1 },
+      })
+    ).toThrow('crosshair.tooltipBackgroundOpacity');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'large-tooltip-opacity',
+        crosshair: { tooltipBackgroundOpacity: 1.1 },
+      })
+    ).toThrow('crosshair.tooltipBackgroundOpacity');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-crosshair-line-style',
+        crosshair: { lineStyle: 'dotted' as 'solid' },
+      })
+    ).toThrow('crosshair.lineStyle');
+  });
+
   it('accepts valid scale margins and rejects invalid ranges', () => {
     expect(
       resolveChartConfig({
@@ -188,6 +260,50 @@ describe('chart config', () => {
     ).toThrow('yAxis.scaleMargins');
   });
 
+  it('validates and serializes the default horizontal scale', () => {
+    expect(
+      resolveChartConfig({ chartId: 'zoomed', defaultScale: 1.5 }).defaultScale
+    ).toBe(1.5);
+    expect(() =>
+      resolveChartConfig({ chartId: 'zero-scale', defaultScale: 0 })
+    ).toThrow('defaultScale must be a positive finite number');
+    expect(() =>
+      resolveChartConfig({ chartId: 'negative-scale', defaultScale: -1 })
+    ).toThrow('defaultScale must be a positive finite number');
+    expect(() =>
+      resolveChartConfig({ chartId: 'nan-scale', defaultScale: Number.NaN })
+    ).toThrow('defaultScale must be a positive finite number');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'infinite-scale',
+        defaultScale: Number.POSITIVE_INFINITY,
+      })
+    ).toThrow('defaultScale must be a positive finite number');
+
+    const serialized = JSON.parse(
+      JSON.stringify(
+        resolveChartConfig({
+          chartId: 'callback-is-not-config',
+          onSelectedCandleChange: jest.fn(),
+        })
+      )
+    ) as Record<string, unknown>;
+    expect(serialized).not.toHaveProperty('onSelectedCandleChange');
+  });
+
+  it('serializes price-extreme visibility into the native JSON config', () => {
+    const configJson = JSON.stringify(
+      resolveChartConfig({
+        chartId: 'native-price-extremes',
+        priceExtremes: { visible: false },
+      })
+    );
+    const nativeConfig = JSON.parse(configJson) as {
+      priceExtremes: { visible: boolean };
+    };
+    expect(nativeConfig.priceExtremes).toEqual({ visible: false });
+  });
+
   it('validates compact minMove', () => {
     expect(
       resolveChartConfig({
@@ -203,5 +319,42 @@ describe('chart config', () => {
         yAxis: { valueFormat: { type: 'compact', minMove: 0 } },
       })
     ).toThrow('yAxis.valueFormat.minMove');
+  });
+});
+
+describe('selected candle events', () => {
+  it('maps active native events to OHLCV candles', () => {
+    expect(
+      selectedCandleFromNativeEvent({
+        active: true,
+        timestamp: 60_000,
+        open: 10,
+        high: 13,
+        low: 9,
+        close: 12,
+        volume: 4,
+      })
+    ).toEqual({
+      timestamp: 60_000,
+      open: 10,
+      high: 13,
+      low: 9,
+      close: 12,
+      volume: 4,
+    });
+  });
+
+  it('maps inactive native events to null', () => {
+    expect(
+      selectedCandleFromNativeEvent({
+        active: false,
+        timestamp: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+        volume: 0,
+      })
+    ).toBeNull();
   });
 });

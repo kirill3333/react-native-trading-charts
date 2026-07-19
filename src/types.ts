@@ -78,9 +78,29 @@ export type CurrentPriceOptions = {
   pinToEdge?: boolean;
 };
 
+export type PriceExtremesOptions = {
+  visible?: boolean;
+};
+
+export type CrosshairLineStyle = 'solid' | 'dashed';
+
+export type CrosshairTooltipLabels = {
+  open?: string;
+  close?: string;
+  high?: string;
+  low?: string;
+  amplitude?: string;
+  changePercent?: string;
+  change?: string;
+  volume?: string;
+};
+
 export type CrosshairOptions = {
   enabled?: boolean;
   showTooltip?: boolean;
+  tooltipBackgroundOpacity?: number;
+  lineStyle?: CrosshairLineStyle;
+  tooltipLabels?: CrosshairTooltipLabels;
 };
 
 export type VisibleRangeChangeEvent = {
@@ -97,20 +117,24 @@ export type TradingChartsViewProps = ViewProps & {
   chartId: string;
   timeframeMs?: number;
   initialVisibleCount?: number;
+  defaultScale?: number;
   theme?: ChartTheme;
   xAxis?: XAxisOptions;
   yAxis?: YAxisOptions;
   gestures?: GestureOptions;
   currentPrice?: CurrentPriceOptions;
+  priceExtremes?: PriceExtremesOptions;
   crosshair?: CrosshairOptions;
   onVisibleRangeChange?: (
     event: NativeSyntheticEvent<VisibleRangeChangeEvent>
   ) => void;
+  onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
 };
 
 export type ResolvedChartConfig = {
   timeframeMs: number;
   initialVisibleCount: number;
+  defaultScale: number;
   theme: Required<ChartTheme>;
   xAxis: Required<XAxisOptions>;
   yAxis: Omit<Required<YAxisOptions>, 'valueFormat'> & {
@@ -118,5 +142,8 @@ export type ResolvedChartConfig = {
   };
   gestures: Required<GestureOptions>;
   currentPrice: Required<CurrentPriceOptions>;
-  crosshair: Required<CrosshairOptions>;
+  priceExtremes: Required<PriceExtremesOptions>;
+  crosshair: Omit<Required<CrosshairOptions>, 'tooltipLabels'> & {
+    tooltipLabels: Required<CrosshairTooltipLabels>;
+  };
 };
