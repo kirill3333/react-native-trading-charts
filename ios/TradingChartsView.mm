@@ -15,6 +15,7 @@
 #import "TradingChartsRegistry.h"
 #import "../cpp/ChartEngine.h"
 
+#include <array>
 #include <cmath>
 
 using namespace facebook::react;
@@ -228,14 +229,22 @@ NSString *TCMetalShaderSource(void) {
 @interface TCTextLayout : NSObject
 @property(nonatomic, strong, readonly) NSAttributedString *attributedString;
 @property(nonatomic, assign, readonly) CGSize size;
-- (instancetype)initWithText:(NSString *)text attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes;
+- (instancetype)initWithText:(NSString *)text
+                  attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes;
+- (instancetype)initWithAttributedString:(NSAttributedString *)attributedString;
 @end
 
 @implementation TCTextLayout
 
-- (instancetype)initWithText:(NSString *)text attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes {
+- (instancetype)initWithText:(NSString *)text
+                  attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes {
+  return [self initWithAttributedString:[[NSAttributedString alloc] initWithString:text
+                                                                        attributes:attributes]];
+}
+
+- (instancetype)initWithAttributedString:(NSAttributedString *)attributedString {
   if (self = [super init]) {
-    _attributedString = [[NSAttributedString alloc] initWithString:text attributes:attributes];
+    _attributedString = [attributedString copy];
     CGSize measured = _attributedString.size;
     _size = CGSizeMake(ceil(measured.width), ceil(measured.height));
   }
@@ -355,6 +364,9 @@ struct TCTextPresentation {
   NSDictionary<NSAttributedStringKey, id> *_tooltipAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipUpAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipDownAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_tooltipBlockAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_tooltipBlockUpAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_tooltipBlockDownAttributes;
   TCColor _axisTextColorKey;
   TCColor _tooltipTextColorKey;
   TCColor _tooltipUpColorKey;
@@ -370,11 +382,21 @@ struct TCTextPresentation {
   NSCache<NSString *, TCTextLayout *> *_badgeLayoutCache;
   NSCache<NSString *, TCTextLayout *> *_timeBadgeLayoutCache;
   NSCache<NSString *, TCTextLayout *> *_tooltipLayoutCache;
-  NSCache<NSString *, TCTextLayout *> *_tooltipUpLayoutCache;
-  NSCache<NSString *, TCTextLayout *> *_tooltipDownLayoutCache;
+  NSCache<NSString *, TCTextLayout *> *_tooltipBlockLayoutCache;
+  TCTextLayout *_tooltipLabelsLayout;
+  std::array<std::string, 8> _tooltipLabelKeys;
+  CGFloat _tooltipMaxLabelWidth;
+  bool _tooltipLabelsReady;
 
   uint64_t _appliedRevision;
+  uint64_t _appliedContentRevision;
+  Candle _appliedSelectedCandle;
+  NSUInteger _visibleStaticLabels;
+  NSUInteger _visibleSelectionLabels;
   bool _hasAppliedRevision;
+  bool _hasAppliedContentRevision;
+  bool _hasAppliedSelection;
+  bool _appliedCrosshairVisible;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -425,10 +447,8 @@ struct TCTextPresentation {
     _timeBadgeLayoutCache.countLimit = 128;
     _tooltipLayoutCache = [NSCache new];
     _tooltipLayoutCache.countLimit = 256;
-    _tooltipUpLayoutCache = [NSCache new];
-    _tooltipUpLayoutCache.countLimit = 128;
-    _tooltipDownLayoutCache = [NSCache new];
-    _tooltipDownLayoutCache.countLimit = 128;
+    _tooltipBlockLayoutCache = [NSCache new];
+    _tooltipBlockLayoutCache.countLimit = 256;
 
     _badgeAttributes = @{
       NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightSemibold],
@@ -538,21 +558,97 @@ struct TCTextPresentation {
     _tooltipStyleReady = true;
     UIFont *tooltipFont = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium];
     _tooltipAttributes = @{
-      NSFontAttributeName: tooltipFont,
-      NSForegroundColorAttributeName: TCUIColor(config.tooltipText),
+      NSFontAttributeName : tooltipFont,
+      NSForegroundColorAttributeName : TCUIColor(config.tooltipText),
     };
     _tooltipUpAttributes = @{
-      NSFontAttributeName: tooltipFont,
-      NSForegroundColorAttributeName: TCUIColor(config.up),
+      NSFontAttributeName : tooltipFont,
+      NSForegroundColorAttributeName : TCUIColor(config.up),
     };
     _tooltipDownAttributes = @{
-      NSFontAttributeName: tooltipFont,
-      NSForegroundColorAttributeName: TCUIColor(config.down),
+      NSFontAttributeName : tooltipFont,
+      NSForegroundColorAttributeName : TCUIColor(config.down),
     };
+    NSMutableParagraphStyle *tooltipBlockParagraph = [NSMutableParagraphStyle new];
+    tooltipBlockParagraph.lineSpacing = MAX(0.0, 17.0 - tooltipFont.lineHeight);
+    NSMutableDictionary<NSAttributedStringKey, id> *blockAttributes =
+        [_tooltipAttributes mutableCopy];
+    blockAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
+    _tooltipBlockAttributes = blockAttributes;
+    NSMutableDictionary<NSAttributedStringKey, id> *blockUpAttributes =
+        [_tooltipUpAttributes mutableCopy];
+    blockUpAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
+    _tooltipBlockUpAttributes = blockUpAttributes;
+    NSMutableDictionary<NSAttributedStringKey, id> *blockDownAttributes =
+        [_tooltipDownAttributes mutableCopy];
+    blockDownAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
+    _tooltipBlockDownAttributes = blockDownAttributes;
     [_tooltipLayoutCache removeAllObjects];
-    [_tooltipUpLayoutCache removeAllObjects];
-    [_tooltipDownLayoutCache removeAllObjects];
+    [_tooltipBlockLayoutCache removeAllObjects];
+    _tooltipLabelsReady = false;
   }
+}
+
+- (void)prepareTooltipLabels:(const ChartConfig &)config metrics:(TCOverlayUpdateMetrics *)metrics {
+  const std::array<std::string, 8> keys = {
+      config.tooltipLabelOpen,   config.tooltipLabelClose,     config.tooltipLabelHigh,
+      config.tooltipLabelLow,    config.tooltipLabelAmplitude, config.tooltipLabelChangePercent,
+      config.tooltipLabelChange, config.tooltipLabelVolume,
+  };
+  if (_tooltipLabelsReady && _tooltipLabelKeys == keys) return;
+
+  NSMutableArray<NSString *> *labels = [NSMutableArray arrayWithCapacity:keys.size()];
+  for (const std::string &key : keys) {
+    [labels addObject:[NSString stringWithUTF8String:key.c_str()] ?: @""];
+  }
+  NSString *text = [labels componentsJoinedByString:@"\n"];
+  NSString *cacheKey = [@"labels\x1f" stringByAppendingString:text];
+  TCTextLayout *layout = [_tooltipBlockLayoutCache objectForKey:cacheKey];
+  if (layout) {
+    ++metrics->layoutCacheHits;
+  } else {
+    ++metrics->layoutCacheMisses;
+    layout = [[TCTextLayout alloc] initWithText:text attributes:_tooltipBlockAttributes];
+    [_tooltipBlockLayoutCache setObject:layout forKey:cacheKey];
+  }
+  _tooltipLabelKeys = keys;
+  _tooltipLabelsLayout = layout;
+  _tooltipMaxLabelWidth = layout.size.width;
+  _tooltipLabelsReady = true;
+}
+
+- (TCTextLayout *)tooltipValuesLayout:(NSArray<NSString *> *)values
+                      changeDirection:(NSInteger)changeDirection
+                              metrics:(TCOverlayUpdateMetrics *)metrics {
+  NSString *text = [values componentsJoinedByString:@"\n"];
+  NSString *cacheKey =
+      [NSString stringWithFormat:@"values:%ld\x1f%@", static_cast<long>(changeDirection), text];
+  TCTextLayout *layout = [_tooltipBlockLayoutCache objectForKey:cacheKey];
+  if (layout) {
+    ++metrics->layoutCacheHits;
+    return layout;
+  }
+
+  ++metrics->layoutCacheMisses;
+  NSDictionary<NSAttributedStringKey, id> *changeAttributes = _tooltipBlockAttributes;
+  if (changeDirection > 0) {
+    changeAttributes = _tooltipBlockUpAttributes;
+  } else if (changeDirection < 0) {
+    changeAttributes = _tooltipBlockDownAttributes;
+  }
+  NSMutableAttributedString *attributedString = [NSMutableAttributedString new];
+  for (NSUInteger index = 0; index < values.count; ++index) {
+    const BOOL changeRow = index == 5 || index == 6;
+    NSString *line = index == 0 ? values[index] : [@"\n" stringByAppendingString:values[index]];
+    [attributedString
+        appendAttributedString:[[NSAttributedString alloc]
+                                   initWithString:line
+                                       attributes:changeRow ? changeAttributes
+                                                            : _tooltipBlockAttributes]];
+  }
+  layout = [[TCTextLayout alloc] initWithAttributedString:attributedString];
+  [_tooltipBlockLayoutCache setObject:layout forKey:cacheKey];
+  return layout;
 }
 
 - (NSString *)formatValue:(double)value snapshot:(const RenderSnapshot &)snapshot {
@@ -860,6 +956,10 @@ struct TCTextPresentation {
     [self hideAllLayers];
     [CATransaction commit];
     _hasAppliedRevision = false;
+    _hasAppliedContentRevision = false;
+    _hasAppliedSelection = false;
+    _visibleStaticLabels = 0;
+    _visibleSelectionLabels = 0;
     return;
   }
 
@@ -867,276 +967,317 @@ struct TCTextPresentation {
   os_log_t performanceLog = TCPerformanceLog();
   os_signpost_id_t updateSignpostID = os_signpost_id_generate(performanceLog);
   os_signpost_interval_begin(performanceLog, updateSignpostID, "Overlay Update Layers",
-                             "revision=%{public}llu xTicks=%{public}lu yTicks=%{public}lu",
+                             "revision=%{public}llu contentRevision=%{public}llu "
+                             "xTicks=%{public}lu yTicks=%{public}lu",
                              static_cast<unsigned long long>(current.revision),
+                             static_cast<unsigned long long>(current.contentRevision),
                              static_cast<unsigned long>(current.xTicks.size()),
                              static_cast<unsigned long>(current.yTicks.size()));
   if (_hasAppliedRevision && _appliedRevision == current.revision) {
     os_signpost_interval_end(performanceLog, updateSignpostID, "Overlay Update Layers",
                              "cached=1 visible=0 textUpdates=0 xTextUpdates=0 yTextUpdates=0 "
                              "layoutCacheHits=0 layoutCacheMisses=0 layerReassignments=0 "
-                             "frameUpdates=0");
+                             "frameUpdates=0 staticUpdated=0 selectionUpdated=0 "
+                             "crosshairTextUpdates=0 selectionTextUpdates=0");
     return;
   }
 
-  [self prepareFormatters:current];
-  [self prepareStyles:current];
+  const bool staticUpdated = !_hasAppliedContentRevision ||
+      _appliedContentRevision != current.contentRevision;
+  const bool selectionUpdated = staticUpdated || !_hasAppliedSelection ||
+      _appliedCrosshairVisible != current.crosshairVisible ||
+      (current.crosshairVisible &&
+       !TCCandleEqual(_appliedSelectedCandle, current.selectedCandle));
+  if (staticUpdated) {
+    [self prepareFormatters:current];
+    [self prepareStyles:current];
+  }
   const ChartConfig &config = current.config;
-  const NSUInteger timeFormatIndex = [self timeFormatIndexForSnapshot:current];
+  const NSUInteger timeFormatIndex = staticUpdated || selectionUpdated
+      ? [self timeFormatIndexForSnapshot:current]
+      : 0;
   TCOverlayUpdateMetrics metrics;
-  NSUInteger visibleLabels = 0;
+  NSUInteger crosshairTextUpdates = 0;
+  NSUInteger selectionTextUpdates = 0;
 
   [CATransaction begin];
   [CATransaction setDisableActions:YES];
-  _axisContainer.hidden = NO;
   _badgeContainer.hidden = NO;
-  _extremaContainer.hidden = NO;
+  if (staticUpdated) {
+    NSUInteger visibleStaticLabels = 0;
+    _axisContainer.hidden = NO;
+    _extremaContainer.hidden = NO;
 
-  _xAxisPresentations.clear();
-  _xAxisPresentations.reserve(current.xTicks.size());
-  if (config.showXAxis) {
-    CGFloat lastRight = -CGFLOAT_MAX;
-    for (const auto &tick : current.xTicks) {
-      NSString *label = [self formatTime:tick.value formatIndex:timeFormatIndex full:NO];
+    _xAxisPresentations.clear();
+    _xAxisPresentations.reserve(current.xTicks.size());
+    if (config.showXAxis) {
+      CGFloat lastRight = -CGFLOAT_MAX;
+      for (const auto &tick : current.xTicks) {
+        NSString *label = [self formatTime:tick.value formatIndex:timeFormatIndex full:NO];
+        TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
+                                             cache:_axisLayoutCache metrics:&metrics];
+        CGFloat x = MAX(2, MIN(current.width - layout.size.width - 2,
+                              tick.position - layout.size.width / 2));
+        if (x < lastRight + 8) continue;
+        CGRect frame = CGRectMake(x, current.plot.bottom + 5,
+                                  layout.size.width, layout.size.height);
+        _xAxisPresentations.emplace_back(layout, frame);
+        lastRight = x + layout.size.width;
+        ++visibleStaticLabels;
+      }
+    }
+    [self applyPresentations:_xAxisPresentations toPool:_xAxisLayers
+                 parentLayer:_axisContainer metrics:&metrics
+             axisTextUpdates:&metrics.xTextUpdates];
+
+    _yAxisPresentations.clear();
+    _yAxisPresentations.reserve(current.yTicks.size());
+    if (config.showYAxis) {
+      for (const auto &tick : current.yTicks) {
+        NSString *label = [self formatValue:tick.value snapshot:current];
+        TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
+                                             cache:_axisLayoutCache metrics:&metrics];
+        CGFloat x = config.yAxisOnRight ? current.plot.right + 6
+                                        : current.plot.left - layout.size.width - 6;
+        CGRect frame = CGRectMake(MAX(2, x), tick.position - layout.size.height / 2,
+                                  layout.size.width, layout.size.height);
+        _yAxisPresentations.emplace_back(layout, frame);
+        ++visibleStaticLabels;
+      }
+    }
+    [self applyPresentations:_yAxisPresentations toPool:_yAxisLayers
+                 parentLayer:_axisContainer metrics:&metrics
+             axisTextUpdates:&metrics.yTextUpdates];
+
+    _extremaPresentations.clear();
+    _extremaConnectorFrames.clear();
+    _extremaPresentations.reserve(2);
+    _extremaConnectorFrames.reserve(2);
+    const auto addExtremum = [&](const PriceExtremum &extremum) {
+      if (!extremum.visible) return;
+      NSString *label = [self formatValue:extremum.value snapshot:current];
       TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
                                            cache:_axisLayoutCache metrics:&metrics];
-      CGFloat x = MAX(2, MIN(current.width - layout.size.width - 2,
-                            tick.position - layout.size.width / 2));
-      if (x < lastRight + 8) continue;
-      CGRect frame = CGRectMake(x, current.plot.bottom + 5, layout.size.width, layout.size.height);
-      _xAxisPresentations.emplace_back(layout, frame);
-      lastRight = x + layout.size.width;
-      ++visibleLabels;
+      const CGFloat direction = extremum.labelOnRight ? 1.0 : -1.0;
+      const CGFloat lineEndX = MAX(
+          current.plot.left,
+          MIN(current.plot.right, extremum.x + direction * 20.0));
+      const CGFloat unclampedX = extremum.labelOnRight
+          ? lineEndX + 4.0
+          : lineEndX - 4.0 - layout.size.width;
+      const CGFloat maximumX = MAX(current.plot.left, current.plot.right - layout.size.width);
+      const CGFloat textX = MAX(current.plot.left, MIN(maximumX, unclampedX));
+      const CGFloat maximumY = MAX(current.plot.top, current.plot.bottom - layout.size.height);
+      const CGFloat textY = MAX(
+          current.plot.top,
+          MIN(maximumY, extremum.y - layout.size.height * 0.5));
+      _extremaPresentations.emplace_back(
+          layout, CGRectMake(textX, textY, layout.size.width, layout.size.height));
+      _extremaConnectorFrames.push_back(CGRectMake(
+          MIN(extremum.x, lineEndX), extremum.y - 0.5,
+          fabs(lineEndX - extremum.x), 1.0));
+      ++visibleStaticLabels;
+    };
+    addExtremum(current.visibleMaximum);
+    addExtremum(current.visibleMinimum);
+    [self applyExtremumPresentations:_extremaPresentations
+                     connectorFrames:_extremaConnectorFrames
+                            snapshot:current metrics:&metrics];
+
+    if (current.currentPriceVisible && config.showCurrentPriceLabel) {
+      NSString *text = [self formatValue:current.currentPrice snapshot:current];
+      CGFloat badgeY = MAX(10, MIN(MAX(10, current.height - 10), current.currentPriceY));
+      [self setBadge:_currentPriceBadge
+                text:text
+                   y:badgeY
+               color:current.currentPriceColor
+            snapshot:current
+             metrics:&metrics];
+      ++visibleStaticLabels;
+    } else {
+      [self hideBadge:_currentPriceBadge];
     }
-  }
-  [self applyPresentations:_xAxisPresentations toPool:_xAxisLayers
-               parentLayer:_axisContainer metrics:&metrics
-           axisTextUpdates:&metrics.xTextUpdates];
-
-  _yAxisPresentations.clear();
-  _yAxisPresentations.reserve(current.yTicks.size());
-  if (config.showYAxis) {
-    for (const auto &tick : current.yTicks) {
-      NSString *label = [self formatValue:tick.value snapshot:current];
-      TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
-                                           cache:_axisLayoutCache metrics:&metrics];
-      CGFloat x = config.yAxisOnRight ? current.plot.right + 6
-                                      : current.plot.left - layout.size.width - 6;
-      CGRect frame = CGRectMake(MAX(2, x), tick.position - layout.size.height / 2,
-                                layout.size.width, layout.size.height);
-      _yAxisPresentations.emplace_back(layout, frame);
-      ++visibleLabels;
-    }
-  }
-  [self applyPresentations:_yAxisPresentations toPool:_yAxisLayers
-               parentLayer:_axisContainer metrics:&metrics
-           axisTextUpdates:&metrics.yTextUpdates];
-
-  _extremaPresentations.clear();
-  _extremaConnectorFrames.clear();
-  _extremaPresentations.reserve(2);
-  _extremaConnectorFrames.reserve(2);
-  const auto addExtremum = [&](const PriceExtremum &extremum) {
-    if (!extremum.visible) return;
-    NSString *label = [self formatValue:extremum.value snapshot:current];
-    TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
-                                         cache:_axisLayoutCache metrics:&metrics];
-    const CGFloat direction = extremum.labelOnRight ? 1.0 : -1.0;
-    const CGFloat lineEndX = MAX(
-        current.plot.left,
-        MIN(current.plot.right, extremum.x + direction * 20.0));
-    const CGFloat unclampedX = extremum.labelOnRight
-        ? lineEndX + 4.0
-        : lineEndX - 4.0 - layout.size.width;
-    const CGFloat maximumX = MAX(current.plot.left, current.plot.right - layout.size.width);
-    const CGFloat textX = MAX(current.plot.left, MIN(maximumX, unclampedX));
-    const CGFloat maximumY = MAX(current.plot.top, current.plot.bottom - layout.size.height);
-    const CGFloat textY = MAX(
-        current.plot.top,
-        MIN(maximumY, extremum.y - layout.size.height * 0.5));
-    _extremaPresentations.emplace_back(
-        layout, CGRectMake(textX, textY, layout.size.width, layout.size.height));
-    _extremaConnectorFrames.push_back(CGRectMake(
-        MIN(extremum.x, lineEndX), extremum.y - 0.5,
-        fabs(lineEndX - extremum.x), 1.0));
-    ++visibleLabels;
-  };
-  addExtremum(current.visibleMaximum);
-  addExtremum(current.visibleMinimum);
-  [self applyExtremumPresentations:_extremaPresentations
-                   connectorFrames:_extremaConnectorFrames
-                          snapshot:current metrics:&metrics];
-
-  if (current.currentPriceVisible && config.showCurrentPriceLabel) {
-    NSString *text = [self formatValue:current.currentPrice snapshot:current];
-    CGFloat badgeY = MAX(10, MIN(MAX(10, current.height - 10), current.currentPriceY));
-    [self setBadge:_currentPriceBadge text:text y:badgeY
-             color:current.currentPriceColor snapshot:current
-           metrics:&metrics];
-    ++visibleLabels;
-  } else {
-    [self hideBadge:_currentPriceBadge];
+    _visibleStaticLabels = visibleStaticLabels;
+    _appliedContentRevision = current.contentRevision;
+    _hasAppliedContentRevision = true;
   }
 
+  const NSUInteger crosshairTextUpdatesBefore = metrics.textUpdates;
   if (current.crosshairVisible) {
     NSString *price = [self formatValue:current.crosshairPrice snapshot:current];
-    [self setBadge:_crosshairPriceBadge text:price y:current.crosshairY
-             color:config.crosshair snapshot:current
+    [self setBadge:_crosshairPriceBadge
+              text:price
+                 y:current.crosshairY
+             color:config.crosshair
+          snapshot:current
            metrics:&metrics];
-    ++visibleLabels;
-
-    NSString *time = [self formatTime:current.selectedCandle.timestamp
-                          formatIndex:timeFormatIndex full:YES];
-    TCTextLayout *timeLayout = [self layoutForText:time attributes:_timeBadgeAttributes
-                                             cache:_timeBadgeLayoutCache metrics:&metrics];
-    CGRect timeFrame = CGRectMake(
-        MAX(current.plot.left, MIN(current.plot.right - timeLayout.size.width - 12,
-                                   current.crosshairX - timeLayout.size.width / 2 - 6)),
-        current.plot.bottom, timeLayout.size.width + 12, 20);
-    if (!CGRectEqualToRect(_crosshairTimeBadge.backgroundLayer.frame, timeFrame)) {
-      _crosshairTimeBadge.backgroundLayer.frame = timeFrame;
-      ++metrics.frameUpdates;
-    }
-    UIColor *crosshairColor = TCUIColor(config.crosshair);
-    if (!_crosshairTimeBadge.backgroundLayer.backgroundColor ||
-        !CGColorEqualToColor(_crosshairTimeBadge.backgroundLayer.backgroundColor,
-                             crosshairColor.CGColor)) {
-      _crosshairTimeBadge.backgroundLayer.backgroundColor = crosshairColor.CGColor;
-    }
-    _crosshairTimeBadge.backgroundLayer.hidden = NO;
-    CGRect timeTextFrame = CGRectMake(timeFrame.origin.x + 6, timeFrame.origin.y + 3,
-                                      timeLayout.size.width, timeLayout.size.height);
-    [self applyLayout:timeLayout toItem:_crosshairTimeBadge.textItem
-                frame:timeTextFrame metrics:&metrics];
-    ++visibleLabels;
-
-    if (config.showTooltip) {
-      const auto &c = current.selectedCandle;
-      const auto stringFromConfig = [](const std::string &value) {
-        return [NSString stringWithUTF8String:value.c_str()] ?: @"";
-      };
-      NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES];
-      NSArray<NSString *> *labels = @[
-        stringFromConfig(config.tooltipLabelOpen),
-        stringFromConfig(config.tooltipLabelClose),
-        stringFromConfig(config.tooltipLabelHigh),
-        stringFromConfig(config.tooltipLabelLow),
-        stringFromConfig(config.tooltipLabelAmplitude),
-        stringFromConfig(config.tooltipLabelChangePercent),
-        stringFromConfig(config.tooltipLabelChange),
-        stringFromConfig(config.tooltipLabelVolume),
-      ];
-      NSArray<NSString *> *values = @[
-        [self formatValue:c.open snapshot:current],
-        [self formatValue:c.close snapshot:current],
-        [self formatValue:c.high snapshot:current],
-        [self formatValue:c.low snapshot:current],
-        [self formatPercentage:current.selectedAmplitudePercent
-                         valid:current.selectedPercentagesValid],
-        [self formatPercentage:current.selectedChangePercent
-                         valid:current.selectedPercentagesValid],
-        [self formatValue:current.selectedChange snapshot:current],
-        [self formatVolume:c.volume],
-      ];
-      NSDictionary<NSAttributedStringKey, id> *changeAttributes = _tooltipAttributes;
-      NSCache<NSString *, TCTextLayout *> *changeCache = _tooltipLayoutCache;
-      if (current.selectedChange > 0.0) {
-        changeAttributes = _tooltipUpAttributes;
-        changeCache = _tooltipUpLayoutCache;
-      } else if (current.selectedChange < 0.0) {
-        changeAttributes = _tooltipDownAttributes;
-        changeCache = _tooltipDownLayoutCache;
-      }
-      TCTextLayout *headerLayout = [self layoutForText:header attributes:_tooltipAttributes
-                                                 cache:_tooltipLayoutCache metrics:&metrics];
-      NSMutableArray<TCTextLayout *> *labelLayouts =
-          [NSMutableArray arrayWithCapacity:labels.count];
-      NSMutableArray<TCTextLayout *> *valueLayouts =
-          [NSMutableArray arrayWithCapacity:values.count];
-      CGFloat maxLabelWidth = 0;
-      CGFloat maxValueWidth = 0;
-      for (NSUInteger index = 0; index < labels.count; ++index) {
-        TCTextLayout *labelLayout = [self layoutForText:labels[index]
-                                             attributes:_tooltipAttributes
-                                                  cache:_tooltipLayoutCache metrics:&metrics];
-        const BOOL changeRow = index == 5 || index == 6;
-        TCTextLayout *valueLayout = [self layoutForText:values[index]
-                                             attributes:changeRow ? changeAttributes : _tooltipAttributes
-                                                  cache:changeRow ? changeCache : _tooltipLayoutCache
-                                                metrics:&metrics];
-        [labelLayouts addObject:labelLayout];
-        [valueLayouts addObject:valueLayout];
-        maxLabelWidth = MAX(maxLabelWidth, labelLayout.size.width);
-        maxValueWidth = MAX(maxValueWidth, valueLayout.size.width);
-      }
-      CGFloat boxWidth = MAX(headerLayout.size.width, maxLabelWidth + 12 + maxValueWidth) + 20;
-      CGFloat boxHeight = (labels.count + 1) * 17 + 18;
-      CGFloat boxX = current.crosshairX > current.width / 2
-          ? current.plot.left + 8
-          : current.plot.right - boxWidth - 8;
-      CGRect box = CGRectMake(boxX, current.plot.top + 8, boxWidth, boxHeight);
-      if (!CGRectEqualToRect(_tooltipBackgroundLayer.frame, box)) {
-        _tooltipBackgroundLayer.frame = box;
-        ++metrics.frameUpdates;
-      }
-      TCColor tooltipBackground = config.tooltipBackground;
-      tooltipBackground.a *= config.tooltipBackgroundOpacity;
-      UIColor *tooltipBackgroundColor = TCUIColor(tooltipBackground);
-      if (!_tooltipBackgroundLayer.backgroundColor ||
-          !CGColorEqualToColor(_tooltipBackgroundLayer.backgroundColor,
-                               tooltipBackgroundColor.CGColor)) {
-        _tooltipBackgroundLayer.backgroundColor = tooltipBackgroundColor.CGColor;
-      }
-      _tooltipContainer.hidden = NO;
-      _tooltipBackgroundLayer.hidden = NO;
-      CGFloat y = box.origin.y + 9;
-      TCTextLayerItem *headerItem = [self itemAtIndex:0 inPool:_tooltipLineLayers
-                                      parentLayer:_tooltipContainer];
-      [self applyLayout:headerLayout toItem:headerItem
-                  frame:CGRectMake(box.origin.x + 10, y,
-                                   headerLayout.size.width, headerLayout.size.height)
-                metrics:&metrics];
-      y += 17;
-      ++visibleLabels;
-      const CGFloat valueX = box.origin.x + 10 + maxLabelWidth + 12;
-      for (NSUInteger lineIndex = 0; lineIndex < labelLayouts.count; ++lineIndex) {
-        TCTextLayout *labelLayout = labelLayouts[lineIndex];
-        TCTextLayerItem *labelItem = [self itemAtIndex:lineIndex + 1
-                                               inPool:_tooltipLineLayers
-                                          parentLayer:_tooltipContainer];
-        [self applyLayout:labelLayout toItem:labelItem
-                    frame:CGRectMake(box.origin.x + 10, y,
-                                     labelLayout.size.width, labelLayout.size.height)
-                  metrics:&metrics];
-        TCTextLayout *valueLayout = valueLayouts[lineIndex];
-        TCTextLayerItem *valueItem = [self itemAtIndex:lineIndex
-                                               inPool:_tooltipValueLayers
-                                          parentLayer:_tooltipContainer];
-        [self applyLayout:valueLayout toItem:valueItem
-                    frame:CGRectMake(valueX, y, valueLayout.size.width, valueLayout.size.height)
-                  metrics:&metrics];
-        y += 17;
-        visibleLabels += 2;
-      }
-      [self hideItemsInPool:_tooltipLineLayers fromIndex:labelLayouts.count + 1];
-      [self hideItemsInPool:_tooltipValueLayers fromIndex:valueLayouts.count];
-    } else {
-      _tooltipContainer.hidden = YES;
-    }
   } else {
     [self hideBadge:_crosshairPriceBadge];
-    [self hideBadge:_crosshairTimeBadge];
-    _tooltipContainer.hidden = YES;
+  }
+  crosshairTextUpdates = metrics.textUpdates - crosshairTextUpdatesBefore;
+
+  const NSUInteger selectionTextUpdatesBefore = metrics.textUpdates;
+  if (selectionUpdated) {
+    const NSUInteger selectionFrameUpdatesBefore = metrics.frameUpdates;
+    os_signpost_id_t selectionSignpostID = os_signpost_id_generate(performanceLog);
+    os_signpost_interval_begin(performanceLog, selectionSignpostID, "Overlay Selection Update",
+                               "revision=%{public}llu contentRevision=%{public}llu "
+                               "crosshairVisible=%{public}d",
+                               static_cast<unsigned long long>(current.revision),
+                               static_cast<unsigned long long>(current.contentRevision),
+                               current.crosshairVisible);
+    NSUInteger visibleSelectionLabels = 0;
+    if (current.crosshairVisible) {
+      NSString *time = [self formatTime:current.selectedCandle.timestamp
+                            formatIndex:timeFormatIndex
+                                   full:YES];
+      TCTextLayout *timeLayout = [self layoutForText:time
+                                          attributes:_timeBadgeAttributes
+                                               cache:_timeBadgeLayoutCache
+                                             metrics:&metrics];
+      CGRect timeFrame = CGRectMake(
+          MAX(current.plot.left, MIN(current.plot.right - timeLayout.size.width - 12,
+                                     current.crosshairX - timeLayout.size.width / 2 - 6)),
+          current.plot.bottom, timeLayout.size.width + 12, 20);
+      if (!CGRectEqualToRect(_crosshairTimeBadge.backgroundLayer.frame, timeFrame)) {
+        _crosshairTimeBadge.backgroundLayer.frame = timeFrame;
+        ++metrics.frameUpdates;
+      }
+      UIColor *crosshairColor = TCUIColor(config.crosshair);
+      if (!_crosshairTimeBadge.backgroundLayer.backgroundColor ||
+          !CGColorEqualToColor(_crosshairTimeBadge.backgroundLayer.backgroundColor,
+                               crosshairColor.CGColor)) {
+        _crosshairTimeBadge.backgroundLayer.backgroundColor = crosshairColor.CGColor;
+      }
+      _crosshairTimeBadge.backgroundLayer.hidden = NO;
+      CGRect timeTextFrame = CGRectMake(timeFrame.origin.x + 6, timeFrame.origin.y + 3,
+                                        timeLayout.size.width, timeLayout.size.height);
+      [self applyLayout:timeLayout
+                 toItem:_crosshairTimeBadge.textItem
+                  frame:timeTextFrame
+                metrics:&metrics];
+      ++visibleSelectionLabels;
+
+      if (config.showTooltip) {
+        [self prepareTooltipLabels:config metrics:&metrics];
+        const auto &c = current.selectedCandle;
+        NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES];
+        NSArray<NSString *> *values = @[
+          [self formatValue:c.open snapshot:current],
+          [self formatValue:c.close snapshot:current],
+          [self formatValue:c.high snapshot:current],
+          [self formatValue:c.low snapshot:current],
+          [self formatPercentage:current.selectedAmplitudePercent
+                           valid:current.selectedPercentagesValid],
+          [self formatPercentage:current.selectedChangePercent
+                           valid:current.selectedPercentagesValid],
+          [self formatValue:current.selectedChange snapshot:current],
+          [self formatVolume:c.volume],
+        ];
+        TCTextLayout *headerLayout = [self layoutForText:header
+                                              attributes:_tooltipAttributes
+                                                   cache:_tooltipLayoutCache
+                                                 metrics:&metrics];
+        const NSInteger changeDirection = current.selectedChange > 0.0   ? 1
+                                          : current.selectedChange < 0.0 ? -1
+                                                                         : 0;
+        TCTextLayout *valuesLayout = [self tooltipValuesLayout:values
+                                               changeDirection:changeDirection
+                                                       metrics:&metrics];
+        CGFloat boxWidth =
+            MAX(headerLayout.size.width, _tooltipMaxLabelWidth + 12 + valuesLayout.size.width) + 20;
+        CGFloat boxHeight = (values.count + 1) * 17 + 18;
+        CGFloat boxX = current.crosshairX > current.width / 2 ? current.plot.left + 8
+                                                              : current.plot.right - boxWidth - 8;
+        CGRect box = CGRectMake(boxX, current.plot.top + 8, boxWidth, boxHeight);
+        if (!CGRectEqualToRect(_tooltipBackgroundLayer.frame, box)) {
+          _tooltipBackgroundLayer.frame = box;
+          ++metrics.frameUpdates;
+        }
+        TCColor tooltipBackground = config.tooltipBackground;
+        tooltipBackground.a *= config.tooltipBackgroundOpacity;
+        UIColor *tooltipBackgroundColor = TCUIColor(tooltipBackground);
+        if (!_tooltipBackgroundLayer.backgroundColor ||
+            !CGColorEqualToColor(_tooltipBackgroundLayer.backgroundColor,
+                                 tooltipBackgroundColor.CGColor)) {
+          _tooltipBackgroundLayer.backgroundColor = tooltipBackgroundColor.CGColor;
+        }
+        _tooltipContainer.hidden = NO;
+        _tooltipBackgroundLayer.hidden = NO;
+        CGFloat y = box.origin.y + 9;
+        TCTextLayerItem *headerItem = [self itemAtIndex:0
+                                                 inPool:_tooltipLineLayers
+                                            parentLayer:_tooltipContainer];
+        [self applyLayout:headerLayout
+                   toItem:headerItem
+                    frame:CGRectMake(box.origin.x + 10, y, headerLayout.size.width,
+                                     headerLayout.size.height)
+                  metrics:&metrics];
+        y += 17;
+        ++visibleSelectionLabels;
+        const CGFloat valueX = box.origin.x + 10 + _tooltipMaxLabelWidth + 12;
+        TCTextLayerItem *labelsItem = [self itemAtIndex:1
+                                                 inPool:_tooltipLineLayers
+                                            parentLayer:_tooltipContainer];
+        [self applyLayout:_tooltipLabelsLayout
+                   toItem:labelsItem
+                    frame:CGRectMake(box.origin.x + 10, y, _tooltipLabelsLayout.size.width,
+                                     _tooltipLabelsLayout.size.height)
+                  metrics:&metrics];
+        TCTextLayerItem *valuesItem = [self itemAtIndex:0
+                                                 inPool:_tooltipValueLayers
+                                            parentLayer:_tooltipContainer];
+        [self applyLayout:valuesLayout
+                   toItem:valuesItem
+                    frame:CGRectMake(valueX, y, valuesLayout.size.width, valuesLayout.size.height)
+                  metrics:&metrics];
+        visibleSelectionLabels += values.count * 2;
+        [self hideItemsInPool:_tooltipLineLayers fromIndex:2];
+        [self hideItemsInPool:_tooltipValueLayers fromIndex:1];
+      } else {
+        _tooltipContainer.hidden = YES;
+      }
+    } else {
+      [self hideBadge:_crosshairTimeBadge];
+      _tooltipContainer.hidden = YES;
+    }
+    _visibleSelectionLabels = visibleSelectionLabels;
+    _appliedSelectedCandle = current.selectedCandle;
+    _appliedCrosshairVisible = current.crosshairVisible;
+    _hasAppliedSelection = true;
+    selectionTextUpdates = metrics.textUpdates - selectionTextUpdatesBefore;
+    os_signpost_interval_end(
+        performanceLog, selectionSignpostID, "Overlay Selection Update",
+        "visible=%{public}lu textUpdates=%{public}lu "
+        "frameUpdates=%{public}lu tooltipRows=%{public}lu",
+        static_cast<unsigned long>(visibleSelectionLabels),
+        static_cast<unsigned long>(selectionTextUpdates),
+        static_cast<unsigned long>(metrics.frameUpdates - selectionFrameUpdatesBefore),
+        static_cast<unsigned long>(current.crosshairVisible && config.showTooltip ? 8 : 0));
   }
 
+  os_signpost_id_t transactionSignpostID = os_signpost_id_generate(performanceLog);
+  os_signpost_interval_begin(performanceLog, transactionSignpostID, "Overlay Transaction Commit",
+                             "revision=%{public}llu staticUpdated=%{public}d "
+                             "selectionUpdated=%{public}d",
+                             static_cast<unsigned long long>(current.revision), staticUpdated,
+                             selectionUpdated);
   [CATransaction commit];
+  os_signpost_interval_end(performanceLog, transactionSignpostID, "Overlay Transaction Commit",
+                           "textUpdates=%{public}lu frameUpdates=%{public}lu",
+                           static_cast<unsigned long>(metrics.textUpdates),
+                           static_cast<unsigned long>(metrics.frameUpdates));
   _appliedRevision = current.revision;
   _hasAppliedRevision = true;
+  const NSUInteger visibleLabels =
+      _visibleStaticLabels + _visibleSelectionLabels + (current.crosshairVisible ? 1 : 0);
   os_signpost_interval_end(performanceLog, updateSignpostID, "Overlay Update Layers",
                            "cached=0 visible=%{public}lu textUpdates=%{public}lu "
                            "xTextUpdates=%{public}lu yTextUpdates=%{public}lu "
                            "layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu "
-                           "layerReassignments=%{public}lu frameUpdates=%{public}lu",
+                           "layerReassignments=%{public}lu frameUpdates=%{public}lu "
+                           "staticUpdated=%{public}d selectionUpdated=%{public}d "
+                           "crosshairTextUpdates=%{public}lu selectionTextUpdates=%{public}lu",
                            static_cast<unsigned long>(visibleLabels),
                            static_cast<unsigned long>(metrics.textUpdates),
                            static_cast<unsigned long>(metrics.xTextUpdates),
@@ -1144,7 +1285,9 @@ struct TCTextPresentation {
                            static_cast<unsigned long>(metrics.layoutCacheHits),
                            static_cast<unsigned long>(metrics.layoutCacheMisses),
                            static_cast<unsigned long>(metrics.layerReassignments),
-                           static_cast<unsigned long>(metrics.frameUpdates));
+                           static_cast<unsigned long>(metrics.frameUpdates), staticUpdated,
+                           selectionUpdated, static_cast<unsigned long>(crosshairTextUpdates),
+                           static_cast<unsigned long>(selectionTextUpdates));
 }
 
 @end

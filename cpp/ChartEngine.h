@@ -104,6 +104,7 @@ struct PriceExtremum {
 
 struct RenderSnapshot {
   uint64_t revision = 0;
+  uint64_t contentRevision = 0;
   float width = 0.0f;
   float height = 0.0f;
   Rect plot;
@@ -186,12 +187,14 @@ class ChartEngine {
   float crosshairTouchY_ = 0.0f;
   double lastTradeTimestamp_ = -1.0;
   uint64_t revision_ = 0;
+  uint64_t contentRevision_ = 0;
   bool dirty_ = true;
   std::shared_ptr<const RenderSnapshot> snapshot_;
 
   static bool validCandle(const Candle& candle);
   static Candle candleFromValues(const double* values);
   void markDirtyLocked();
+  void markCrosshairDirtyLocked();
   double xDomainUnitLocked() const;
   double candleXLocked(size_t index) const;
   double dataXMinLocked() const;

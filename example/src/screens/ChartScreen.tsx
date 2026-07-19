@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
@@ -16,8 +16,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   TradingCharts,
-  TradingChartsView,
-  type OhlcCandle,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
 
@@ -38,6 +36,7 @@ import {
   type HyperliquidInterval,
   type HyperliquidTicker,
 } from '../hyperliquid';
+import { InteractiveChart } from '../components/InteractiveChart';
 
 type ChartRouteParams =
   | {
@@ -61,11 +60,22 @@ type PriceTicker = {
   minMove: number;
 };
 
-function formatPrice(ticker: PriceTicker): string {
-  return ticker.lastPrice.toLocaleString('en-US', {
-    minimumFractionDigits: ticker.precision,
-    maximumFractionDigits: ticker.precision,
+const priceFormatters = new Map<number, Intl.NumberFormat>();
+
+function priceFormatter(precision: number): Intl.NumberFormat {
+  const cached = priceFormatters.get(precision);
+  if (cached) return cached;
+
+  const formatter = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: precision,
+    maximumFractionDigits: precision,
   });
+  priceFormatters.set(precision, formatter);
+  return formatter;
+}
+
+function formatPrice(value: number, precision: number): string {
+  return priceFormatter(precision).format(value);
 }
 
 type ConnectionBadgeProps = {
@@ -160,13 +170,13 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   venueLabel,
 }: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
-  const [selectedCandle, setSelectedCandle] = useState<OhlcCandle | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
-
-  useEffect(() => {
-    setSelectedCandle(null);
-  }, [chartId]);
+  const timeframeMs = intervalConfig?.timeframeMs ?? 60_000;
+  const formattedPrice = useMemo(
+    () => formatPrice(ticker.lastPrice, ticker.precision),
+    [ticker.lastPrice, ticker.precision]
+  );
 
   const subscribe = useCallback(
     (listener: () => void) => controller.subscribe(ticker, interval, listener),
@@ -259,7 +269,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             <Text style={styles.chartSubtitle}>{venueLabel}</Text>
           </View>
           <View style={styles.headerPriceBlock}>
-            <Text style={styles.headerPrice}>{formatPrice(ticker)}</Text>
+            <Text style={styles.headerPrice}>{formattedPrice}</Text>
             <Text
               style={
                 ticker.change24hPercent >= 0
@@ -303,45 +313,13 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
         ) : null}
 
         <View style={styles.chartContainer}>
-          <TradingChartsView
-            accessibilityLabel="Trading chart"
-            accessibilityValue={{
-              text: selectedCandle
-                ? `Selected close ${selectedCandle.close}`
-                : 'No candle selected',
-            }}
+          <InteractiveChart
             chartId={chartId}
-            crosshair={{
-              enabled: true,
-              showTooltip: true,
-              tooltipBackgroundOpacity: 0.85,
-              lineStyle: 'dashed',
-            }}
-            currentPrice={{ visible: true, showLabel: true }}
-            priceExtremes={{ visible: true }}
-            gestures={{ pan: true, zoom: true }}
-            initialVisibleCount={48}
-            defaultScale={1.25}
             key={chartId}
-            onSelectedCandleChange={setSelectedCandle}
+            minMove={ticker.minMove}
             onVisibleRangeChange={handleVisibleRangeChange}
-            style={styles.chart}
-            timeframeMs={intervalConfig?.timeframeMs ?? 60_000}
-            xAxis={{
-              locale: 'en-GB',
-              showSeconds: (intervalConfig?.timeframeMs ?? 60_000) < 60_000,
-              spacing: 'time',
-              timeZone: 'UTC',
-            }}
-            yAxis={{
-              position: 'right',
-              valueFormat: {
-                type: 'price',
-                precision: ticker.precision,
-                minMove: ticker.minMove,
-                locale: 'en-GB',
-              },
-            }}
+            precision={ticker.precision}
+            timeframeMs={timeframeMs}
           />
           <ConnectionBadge status={status} />
         </View>
@@ -515,7 +493,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   chartContainer: { flex: 1, position: 'relative' },
-  chart: { flex: 1 },
   chartControls: {
     alignItems: 'center',
     borderTopColor: '#292431',

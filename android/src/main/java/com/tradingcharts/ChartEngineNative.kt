@@ -12,6 +12,7 @@ internal data class PriceExtremumSnapshot(
 
 internal data class ChartSnapshot(
   val revision: Long,
+  val contentRevision: Long,
   val config: ChartConfig,
   val width: Float,
   val height: Float,
@@ -77,6 +78,7 @@ internal object ChartEngineNative {
   @JvmStatic private external fun nativeAcquireSnapshot(handle: Long): Long
   @JvmStatic private external fun nativeReleaseSnapshot(handle: Long)
   @JvmStatic private external fun nativeSnapshotRevision(handle: Long): Long
+  @JvmStatic private external fun nativeSnapshotContentRevision(handle: Long): Long
   @JvmStatic private external fun nativeSnapshotVertices(handle: Long): FloatArray
   @JvmStatic private external fun nativeSnapshotXTicks(handle: Long): DoubleArray
   @JvmStatic private external fun nativeSnapshotYTicks(handle: Long): DoubleArray
@@ -96,6 +98,7 @@ internal object ChartEngineNative {
       }
       return ChartSnapshot(
         revision = nativeSnapshotRevision(snapshot),
+        contentRevision = nativeSnapshotContentRevision(snapshot),
         config = config,
         width = meta[0].toFloat(),
         height = meta[1].toFloat(),

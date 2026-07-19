@@ -137,6 +137,12 @@ Candle ChartEngine::candleFromValues(const double* values) {
 
 void ChartEngine::markDirtyLocked() {
   ++revision_;
+  ++contentRevision_;
+  dirty_ = true;
+}
+
+void ChartEngine::markCrosshairDirtyLocked() {
+  ++revision_;
   dirty_ = true;
 }
 
@@ -477,7 +483,11 @@ bool ChartEngine::pan(float deltaPixels) {
   clampViewportLocked();
   const bool viewportChanged =
       visibleXMin_ != previousXMin || visibleXMax_ != previousXMax;
-  if (viewportChanged || crosshairChanged) markDirtyLocked();
+  if (viewportChanged) {
+    markDirtyLocked();
+  } else if (crosshairChanged) {
+    markCrosshairDirtyLocked();
+  }
   return viewportChanged;
 }
 
@@ -525,7 +535,10 @@ void ChartEngine::scaleY(float deltaPixels) {
       kMinYRangeMultiplier, kMaxYRangeMultiplier);
   const bool crosshairChanged = crosshairActive_;
   crosshairActive_ = false;
-  if (next == yRangeMultiplier_ && !crosshairChanged) return;
+  if (next == yRangeMultiplier_) {
+    if (crosshairChanged) markCrosshairDirtyLocked();
+    return;
+  }
   yRangeMultiplier_ = next;
   markDirtyLocked();
 }
@@ -551,7 +564,7 @@ void ChartEngine::setCrosshair(bool active, float x, float y) {
   crosshairActive_ = next;
   crosshairTouchX_ = x;
   crosshairTouchY_ = y;
-  markDirtyLocked();
+  markCrosshairDirtyLocked();
 }
 
 size_t ChartEngine::candleCount() const {
@@ -575,6 +588,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::snapshot() {
 std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   auto result = std::make_shared<RenderSnapshot>();
   result->revision = revision_;
+  result->contentRevision = contentRevision_;
   result->width = width_;
   result->height = height_;
   result->config = config_;

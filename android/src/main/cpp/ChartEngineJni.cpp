@@ -240,6 +240,13 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRevision(JNIEnv*, jclass,
   return holder && *holder ? static_cast<jlong>((*holder)->revision) : 0;
 }
 
+JNIEXPORT jlong JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotContentRevision(
+    JNIEnv*, jclass, jlong handle) {
+  auto* holder = snapshot(handle);
+  return holder && *holder ? static_cast<jlong>((*holder)->contentRevision) : 0;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotVertices(JNIEnv* env, jclass, jlong handle) {
   auto* holder = snapshot(handle);

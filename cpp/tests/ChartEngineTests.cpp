@@ -952,6 +952,33 @@ void testCrosshairHitTesting() {
   assert(snapshot->crosshairPrice <= snapshot->visibleYMax);
 }
 
+void testCrosshairRevisionKeepsStaticContentRevision() {
+  ChartEngine engine;
+  engine.setSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      60000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+  };
+  assert(engine.setHistory(history, 12) == UpdateStatus::Applied);
+  const auto baseline = engine.snapshot();
+
+  engine.setCrosshair(true, 300.0f, 200.0f);
+  const auto activated = engine.snapshot();
+  assert(activated->revision > baseline->revision);
+  assert(activated->contentRevision == baseline->contentRevision);
+
+  engine.setCrosshair(true, 500.0f, 250.0f);
+  const auto moved = engine.snapshot();
+  assert(moved->revision > activated->revision);
+  assert(moved->contentRevision == activated->contentRevision);
+
+  const double candle[] = {60000.0, 11.0, 14.0, 10.0, 13.0, 2.0};
+  assert(engine.updateCandle(candle, 6) == UpdateStatus::Applied);
+  const auto contentChanged = engine.snapshot();
+  assert(contentChanged->revision > moved->revision);
+  assert(contentChanged->contentRevision > moved->contentRevision);
+}
+
 void testHybridHistoryUsesLocalCandleWidths() {
   ChartEngine engine;
   ChartConfig config;
@@ -1097,6 +1124,7 @@ int main() {
   testViewportCommandsHandleEmptyHistory();
   testCrosshairStatisticsAndLineStyles();
   testCrosshairHitTesting();
+  testCrosshairRevisionKeepsStaticContentRevision();
   testHybridHistoryUsesLocalCandleWidths();
   testLogicalSpacingUsesUniformCandleSlots();
   testLargeHistoryAndTradeBurst();

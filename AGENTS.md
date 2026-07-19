@@ -147,6 +147,8 @@ The `com.tradingcharts` / `Rendering` signposts are intentional:
 - `Display Link Frame`
 - `ChartEngine Snapshot`
 - `Overlay Update Layers`
+- `Overlay Selection Update`
+- `Overlay Transaction Commit`
 - `Metal Acquire Drawable`
 - `Metal Vertex Memcpy`
 - `Metal Encode Commit`
@@ -154,6 +156,9 @@ The `com.tradingcharts` / `Rendering` signposts are intentional:
 `Overlay Update Layers` reports `visible`, `textUpdates`, `xTextUpdates`,
 `yTextUpdates`, `layoutCacheHits`, `layoutCacheMisses`, `layerReassignments`, and
 `frameUpdates`. Keep payload semantics stable so traces remain comparable.
+`Overlay Selection Update` isolates time-badge and tooltip work when the selected
+candle changes. `Overlay Transaction Commit` isolates the Core Animation commit
+from layer preparation. Keep both nested inside `Overlay Update Layers`.
 Diagnostics are instrumentation, not application behavior.
 
 Current residual work is mostly layer frame mutation and occasional batches of
