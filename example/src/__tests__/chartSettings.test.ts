@@ -1,0 +1,145 @@
+import { describe, expect, it } from '@jest/globals';
+
+import {
+  DEFAULT_CHART_SETTINGS,
+  chartSettingsReducer,
+  type ChartSettings,
+} from '../chartSettingsState';
+import { buildChartViewConfig } from '../chartSettingsConfig';
+
+function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
+  return { ...DEFAULT_CHART_SETTINGS, ...patch };
+}
+
+describe('chart settings', () => {
+  it('uses the current chart defaults', () => {
+    expect(DEFAULT_CHART_SETTINGS).toMatchObject({
+      themeMode: 'default',
+      xAxisSpacing: 'time',
+      yAxisPosition: 'right',
+      yAxisScaleMargins: 'default',
+      crosshairLineStyle: 'dashed',
+      crosshairTooltipOpacity: 0.85,
+      locale: 'en-GB',
+      timeZone: 'utc',
+    });
+  });
+
+  it('updates a partial group and restores every default', () => {
+    const updated = chartSettingsReducer(DEFAULT_CHART_SETTINGS, {
+      type: 'update',
+      patch: {
+        themeMode: 'highContrast',
+        panEnabled: false,
+        yAxisPosition: 'left',
+      },
+    });
+
+    expect(updated).toMatchObject({
+      themeMode: 'highContrast',
+      panEnabled: false,
+      yAxisPosition: 'left',
+      zoomEnabled: true,
+    });
+    expect(chartSettingsReducer(updated, { type: 'reset' })).toEqual(
+      DEFAULT_CHART_SETTINGS
+    );
+  });
+
+  it('keeps market precision and minMove in the default view config', () => {
+    const config = buildChartViewConfig(
+      DEFAULT_CHART_SETTINGS,
+      { minMove: 0.001, precision: 3 },
+      'Europe/London'
+    );
+
+    expect(config.xAxis).toMatchObject({
+      locale: 'en-GB',
+      spacing: 'time',
+      timeZone: 'UTC',
+      visible: true,
+    });
+    expect(config.yAxis).toMatchObject({
+      position: 'right',
+      scaleMargins: { top: 0.2, bottom: 0.1 },
+      valueFormat: {
+        type: 'price',
+        precision: 3,
+        minMove: 0.001,
+        useGrouping: true,
+      },
+    });
+    expect(config.appearance).toMatchObject({
+      backgroundColor: '#100C18',
+      tooltip: { backgroundOpacity: 0.85 },
+    });
+    expect(config.appearance.currentPrice?.label?.border).toBeUndefined();
+    expect(config.appearance.crosshair?.priceLabel?.border).toBeUndefined();
+    expect(config.appearance.crosshair?.timeLabel?.border).toBeUndefined();
+    expect(config.appearance.tooltip?.border).toBeUndefined();
+  });
+
+  it('builds the complete high contrast and formatting presets', () => {
+    const config = buildChartViewConfig(
+      settingsWith({
+        themeMode: 'highContrast',
+        crosshairTooltipOpacity: 1,
+        currencySymbol: '$',
+        locale: 'en-US',
+        timeZone: 'device',
+        yAxisFormat: 'compact',
+        yAxisScaleMargins: 'loose',
+      }),
+      { minMove: 0.01, precision: 2 },
+      'America/New_York'
+    );
+
+    expect(config.appearance).toMatchObject({
+      backgroundColor: '#000000',
+      grid: { color: '#20242A' },
+      candles: { upColor: '#21C99A', downColor: '#E31B5F' },
+      xAxis: { text: { color: '#FFFFFF', fontWeight: 'semibold' } },
+      tooltip: {
+        backgroundColor: '#08090A',
+        backgroundOpacity: 1,
+        valueText: { color: '#FFFFFF', fontWeight: 'semibold' },
+        border: { color: '#4B5563', width: 1, radius: 8 },
+      },
+    });
+    expect(config.xAxis.timeZone).toBe('America/New_York');
+    expect(config.yAxis).toMatchObject({
+      scaleMargins: { top: 0.3, bottom: 0.2 },
+      valueFormat: {
+        type: 'compact',
+        currencySymbol: '$',
+        locale: 'en-US',
+        minMove: 0.01,
+        precision: 2,
+      },
+    });
+    expect(config.formatters.price?.tooltip).toMatchObject({
+      type: 'compact',
+      currencySymbol: '$',
+      locale: 'en-US',
+      useGrouping: true,
+    });
+    expect(config.formatters.date?.tooltipHeader).toMatchObject({
+      locale: 'en-US',
+      timeZone: 'America/New_York',
+    });
+  });
+
+  it('does not mutate a theme preset when tooltip opacity changes', () => {
+    const translucent = buildChartViewConfig(
+      settingsWith({ crosshairTooltipOpacity: 0.6 }),
+      { minMove: 1, precision: 0 }
+    );
+    const defaultOpacity = buildChartViewConfig(DEFAULT_CHART_SETTINGS, {
+      minMove: 1,
+      precision: 0,
+    });
+
+    expect(translucent.appearance.tooltip?.backgroundOpacity).toBe(0.6);
+    expect(defaultOpacity.appearance.tooltip?.backgroundOpacity).toBe(0.85);
+  });
+});

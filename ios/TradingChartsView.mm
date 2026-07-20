@@ -68,6 +68,58 @@ TCColor TCColorFromHex(NSString *value, TCColor fallback) {
                  static_cast<float>(raw & 0xFF) / 255.0f};
 }
 
+struct TCBorderConfig {
+  TCColor color;
+  CGFloat width = 0;
+  CGFloat radius = 0;
+};
+
+UIFontWeight TCFontWeightFromName(NSString *value, UIFontWeight fallback) {
+  if ([value isEqualToString:@"regular"]) return UIFontWeightRegular;
+  if ([value isEqualToString:@"medium"]) return UIFontWeightMedium;
+  if ([value isEqualToString:@"semibold"]) return UIFontWeightSemibold;
+  if ([value isEqualToString:@"bold"]) return UIFontWeightBold;
+  return fallback;
+}
+
+NSDictionary<NSAttributedStringKey, id> *TCTextAttributes(
+    NSDictionary *style, TCColor fallbackColor, CGFloat fallbackSize, UIFontWeight fallbackWeight) {
+  const CGFloat size = style[@"fontSize"] ? [style[@"fontSize"] doubleValue] : fallbackSize;
+  NSString *family = style[@"fontFamily"];
+  UIFont *font = family.length > 0 ? [UIFont fontWithName:family size:size] : nil;
+  if (!font) {
+    font = [UIFont monospacedDigitSystemFontOfSize:size
+                                           weight:TCFontWeightFromName(style[@"fontWeight"],
+                                                                        fallbackWeight)];
+  }
+  return @{
+    NSFontAttributeName : font,
+    NSForegroundColorAttributeName : TCUIColor(TCColorFromHex(style[@"color"], fallbackColor)),
+  };
+}
+
+TCBorderConfig TCBorderFromJson(NSDictionary *json, CGFloat fallbackRadius) {
+  TCBorderConfig border;
+  border.color = TCColorFromHex(json[@"color"], TCColor{0, 0, 0, 0});
+  border.width = json[@"width"] ? [json[@"width"] doubleValue] : 0;
+  border.radius = json[@"radius"] ? [json[@"radius"] doubleValue] : fallbackRadius;
+  return border;
+}
+
+NSDateFormatter *TCDateFormatter(NSString *pattern, NSString *localeName,
+                                 NSString *timeZoneName, NSString *fallbackPattern) {
+  NSDateFormatter *formatter = [NSDateFormatter new];
+  formatter.locale = [NSLocale localeWithLocaleIdentifier:localeName ?: @"en-GB"];
+  formatter.timeZone = [NSTimeZone timeZoneWithName:timeZoneName ?: @"UTC"] ?: NSTimeZone.defaultTimeZone;
+  @try {
+    formatter.dateFormat = pattern.length > 0 ? pattern : fallbackPattern;
+  } @catch (NSException *exception) {
+    NSLog(@"[TradingCharts] Invalid date pattern %@; using %@", pattern, fallbackPattern);
+    formatter.dateFormat = fallbackPattern;
+  }
+  return formatter;
+}
+
 NSArray<NSNumber *> *TCArrayOrEmpty(id value) {
   return [value isKindOfClass:NSArray.class] ? value : @[];
 }
@@ -275,6 +327,15 @@ NSString *TCMetalShaderSource(void) {
 
 @end
 
+@interface TCValueFormatter : NSObject
+@property(nonatomic, strong) NSNumberFormatter *numberFormatter;
+@property(nonatomic, copy) NSString *currencySymbol;
+@property(nonatomic, assign) BOOL compact;
+@end
+
+@implementation TCValueFormatter
+@end
+
 @interface TCBadgeLayerGroup : NSObject
 @property(nonatomic, strong, readonly) CALayer *backgroundLayer;
 @property(nonatomic, strong, readonly) TCTextLayerItem *textItem;
@@ -316,6 +377,7 @@ struct TCTextPresentation {
 
 @interface TCChartOverlayView : UIView
 - (void)setSnapshot:(std::shared_ptr<const RenderSnapshot>)snapshot;
+- (void)applyPresentationConfig:(NSDictionary *)root;
 @end
 
 @implementation TCChartOverlayView {
@@ -348,6 +410,9 @@ struct TCTextPresentation {
   NSNumberFormatter *_volumeFormatter;
   NSArray<NSDateFormatter *> *_axisDateFormatters;
   NSDateFormatter *_fullDateFormatter;
+  NSDateFormatter *_crosshairTimeDateFormatter;
+  NSDateFormatter *_tooltipHeaderDateFormatter;
+  NSDictionary<NSString *, TCValueFormatter *> *_valueFormatters;
   NSString *_currencySymbol;
   std::string _xLocaleKey;
   std::string _xTimeZoneKey;
@@ -359,12 +424,18 @@ struct TCTextPresentation {
   bool _formattersReady;
 
   NSDictionary<NSAttributedStringKey, id> *_axisAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_xAxisAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_yAxisAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_extremaAttributes;
   NSDictionary<NSAttributedStringKey, id> *_badgeAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_currentPriceBadgeAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_crosshairPriceBadgeAttributes;
   NSDictionary<NSAttributedStringKey, id> *_timeBadgeAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipUpAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipDownAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipBlockAttributes;
+  NSDictionary<NSAttributedStringKey, id> *_tooltipValueBlockAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipBlockUpAttributes;
   NSDictionary<NSAttributedStringKey, id> *_tooltipBlockDownAttributes;
   TCColor _axisTextColorKey;
@@ -373,9 +444,23 @@ struct TCTextPresentation {
   TCColor _tooltipDownColorKey;
   bool _axisStyleReady;
   bool _tooltipStyleReady;
+  NSDictionary *_appearanceConfig;
+  NSDictionary *_formattersConfig;
+  NSUInteger _presentationVersion;
+  NSUInteger _preparedFormatterVersion;
+  NSUInteger _preparedStyleVersion;
+  TCColor _extremaConnectorColor;
+  TCColor _extremaBackgroundColor;
+  TCColor _crosshairPriceBackgroundColor;
+  TCColor _crosshairTimeBackgroundColor;
+  TCColor _tooltipPresentationBackgroundColor;
+  TCBorderConfig _currentPriceBorder;
+  TCBorderConfig _crosshairPriceBorder;
+  TCBorderConfig _crosshairTimeBorder;
+  TCBorderConfig _tooltipBorder;
 
-  NSCache<NSNumber *, NSString *> *_formattedValueCache;
-  NSCache<NSNumber *, NSString *> *_formattedTimeCache;
+  NSCache<NSString *, NSString *> *_formattedValueCache;
+  NSCache<NSString *, NSString *> *_formattedTimeCache;
   NSCache<NSNumber *, NSString *> *_formattedPercentageCache;
   NSCache<NSNumber *, NSString *> *_formattedVolumeCache;
   NSCache<NSString *, TCTextLayout *> *_axisLayoutCache;
@@ -386,6 +471,7 @@ struct TCTextPresentation {
   TCTextLayout *_tooltipLabelsLayout;
   std::array<std::string, 8> _tooltipLabelKeys;
   CGFloat _tooltipMaxLabelWidth;
+  CGFloat _tooltipRowHeight;
   bool _tooltipLabelsReady;
 
   uint64_t _appliedRevision;
@@ -473,64 +559,90 @@ struct TCTextPresentation {
   [CATransaction commit];
 }
 
+- (TCValueFormatter *)valueFormatterFromJson:(NSDictionary *)json
+                                      fallback:(const ChartConfig &)config {
+  TCValueFormatter *result = [TCValueFormatter new];
+  NSString *localeName = json[@"locale"] ?:
+      ([NSString stringWithUTF8String:config.yLocale.c_str()] ?: @"en-GB");
+  const BOOL compact = json[@"type"]
+      ? [json[@"type"] isEqualToString:@"compact"]
+      : config.compactValues;
+  const NSInteger precision = json[@"precision"] ? [json[@"precision"] integerValue]
+                                                   : config.precision;
+  result.numberFormatter = [NSNumberFormatter new];
+  result.numberFormatter.locale = [NSLocale localeWithLocaleIdentifier:localeName];
+  result.numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+  result.numberFormatter.usesGroupingSeparator = json[@"useGrouping"]
+      ? [json[@"useGrouping"] boolValue]
+      : config.useGrouping;
+  result.numberFormatter.minimumFractionDigits = compact ? 0 : precision;
+  result.numberFormatter.maximumFractionDigits = precision;
+  result.currencySymbol = json[@"currencySymbol"] ?:
+      ([NSString stringWithUTF8String:config.currencySymbol.c_str()] ?: @"");
+  result.compact = compact;
+  return result;
+}
+
+- (void)applyPresentationConfig:(NSDictionary *)root {
+  _appearanceConfig = [root[@"appearance"] isKindOfClass:NSDictionary.class]
+      ? root[@"appearance"] : @{};
+  _formattersConfig = [root[@"formatters"] isKindOfClass:NSDictionary.class]
+      ? root[@"formatters"] : @{};
+  ++_presentationVersion;
+}
+
 - (void)prepareFormatters:(const RenderSnapshot &)snapshot {
+  if (_formattersReady && _preparedFormatterVersion == _presentationVersion) return;
   const ChartConfig &config = snapshot.config;
-  const bool unchanged = _formattersReady &&
-      _xLocaleKey == config.xLocale && _xTimeZoneKey == config.xTimeZone &&
-      _yLocaleKey == config.yLocale && _currencySymbolKey == config.currencySymbol &&
-      _precisionKey == config.precision && _compactValuesKey == config.compactValues &&
-      _useGroupingKey == config.useGrouping;
-  if (unchanged) return;
-
-  _xLocaleKey = config.xLocale;
-  _xTimeZoneKey = config.xTimeZone;
-  _yLocaleKey = config.yLocale;
-  _currencySymbolKey = config.currencySymbol;
-  _precisionKey = config.precision;
-  _compactValuesKey = config.compactValues;
-  _useGroupingKey = config.useGrouping;
+  _preparedFormatterVersion = _presentationVersion;
   _formattersReady = true;
-  _currencySymbol = [NSString stringWithUTF8String:config.currencySymbol.c_str()] ?: @"";
 
-  _numberFormatter = [NSNumberFormatter new];
-  _numberFormatter.locale = [NSLocale localeWithLocaleIdentifier:
-      [NSString stringWithUTF8String:config.yLocale.c_str()]];
-  _numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
-  _numberFormatter.usesGroupingSeparator = config.useGrouping;
-  _numberFormatter.minimumFractionDigits = config.compactValues ? 0 : config.precision;
-  _numberFormatter.maximumFractionDigits = config.precision;
+  NSDictionary *price = _formattersConfig[@"price"] ?: @{};
+  _valueFormatters = @{
+    @"yAxis" : [self valueFormatterFromJson:price[@"yAxis"] ?: @{} fallback:config],
+    @"priceExtremes" : [self valueFormatterFromJson:price[@"priceExtremes"] ?: @{} fallback:config],
+    @"currentPrice" : [self valueFormatterFromJson:price[@"currentPrice"] ?: @{} fallback:config],
+    @"crosshairPrice" : [self valueFormatterFromJson:price[@"crosshairPrice"] ?: @{} fallback:config],
+    @"tooltip" : [self valueFormatterFromJson:price[@"tooltip"] ?: @{} fallback:config],
+  };
 
+  TCValueFormatter *axisFormatter = _valueFormatters[@"yAxis"];
+  _numberFormatter = axisFormatter.numberFormatter;
   _percentageFormatter = [NSNumberFormatter new];
-  _percentageFormatter.locale = _numberFormatter.locale;
+  _percentageFormatter.locale = axisFormatter.numberFormatter.locale;
   _percentageFormatter.numberStyle = NSNumberFormatterDecimalStyle;
   _percentageFormatter.usesGroupingSeparator = NO;
   _percentageFormatter.minimumFractionDigits = 2;
   _percentageFormatter.maximumFractionDigits = 2;
 
   _volumeFormatter = [NSNumberFormatter new];
-  _volumeFormatter.locale = _numberFormatter.locale;
+  _volumeFormatter.locale = axisFormatter.numberFormatter.locale;
   _volumeFormatter.numberStyle = NSNumberFormatterDecimalStyle;
-  _volumeFormatter.usesGroupingSeparator = config.useGrouping;
+  _volumeFormatter.usesGroupingSeparator = axisFormatter.numberFormatter.usesGroupingSeparator;
   _volumeFormatter.minimumFractionDigits = 0;
   _volumeFormatter.maximumFractionDigits = 2;
 
-  NSTimeZone *zone = [NSTimeZone timeZoneWithName:
-      [NSString stringWithUTF8String:config.xTimeZone.c_str()]] ?: NSTimeZone.defaultTimeZone;
-  NSLocale *locale = [NSLocale localeWithLocaleIdentifier:
-      [NSString stringWithUTF8String:config.xLocale.c_str()]];
-  NSMutableArray<NSDateFormatter *> *formatters = [NSMutableArray arrayWithCapacity:5];
-  for (NSString *format in @[@"HH:mm:ss", @"HH:mm", @"d MMM", @"MMM yyyy", @"yyyy"]) {
-    NSDateFormatter *formatter = [NSDateFormatter new];
-    formatter.locale = locale;
-    formatter.timeZone = zone;
-    formatter.dateFormat = format;
-    [formatters addObject:formatter];
+  NSDictionary *date = _formattersConfig[@"date"] ?: @{};
+  NSDictionary *axisDate = date[@"xAxis"] ?: @{};
+  NSString *axisLocale = axisDate[@"locale"] ?: @"en-GB";
+  NSString *axisZone = axisDate[@"timeZone"] ?: @"UTC";
+  NSArray<NSString *> *keys = @[@"seconds", @"time", @"day", @"month", @"year"];
+  NSArray<NSString *> *fallbacks = @[@"HH:mm:ss", @"HH:mm", @"d MMM", @"MMM yyyy", @"yyyy"];
+  NSMutableArray<NSDateFormatter *> *axisFormatters = [NSMutableArray arrayWithCapacity:5];
+  for (NSUInteger index = 0; index < keys.count; ++index) {
+    [axisFormatters addObject:TCDateFormatter(axisDate[keys[index]], axisLocale, axisZone,
+                                               fallbacks[index])];
   }
-  _axisDateFormatters = formatters;
-  _fullDateFormatter = [NSDateFormatter new];
-  _fullDateFormatter.locale = locale;
-  _fullDateFormatter.timeZone = zone;
-  _fullDateFormatter.dateFormat = @"d MMM yyyy HH:mm:ss";
+  _axisDateFormatters = axisFormatters;
+  NSDictionary *crosshairDate = date[@"crosshairTimeBadge"] ?: @{};
+  _crosshairTimeDateFormatter = TCDateFormatter(
+      crosshairDate[@"pattern"], crosshairDate[@"locale"] ?: axisLocale,
+      crosshairDate[@"timeZone"] ?: axisZone, @"d MMM yyyy HH:mm:ss");
+  NSDictionary *tooltipDate = date[@"tooltipHeader"] ?: @{};
+  _tooltipHeaderDateFormatter = TCDateFormatter(
+      tooltipDate[@"pattern"], tooltipDate[@"locale"] ?: axisLocale,
+      tooltipDate[@"timeZone"] ?: axisZone, @"d MMM yyyy HH:mm:ss");
+  _fullDateFormatter = _crosshairTimeDateFormatter;
 
   [_formattedValueCache removeAllObjects];
   [_formattedTimeCache removeAllObjects];
@@ -540,41 +652,87 @@ struct TCTextPresentation {
 
 - (void)prepareStyles:(const RenderSnapshot &)snapshot {
   const ChartConfig &config = snapshot.config;
-  if (!_axisStyleReady || !TCColorEqual(_axisTextColorKey, config.axisText)) {
-    _axisTextColorKey = config.axisText;
-    _axisStyleReady = true;
-    _axisAttributes = @{
-      NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:10.5 weight:UIFontWeightRegular],
-      NSForegroundColorAttributeName: TCUIColor(config.axisText),
-    };
-    [_axisLayoutCache removeAllObjects];
-  }
-  if (!_tooltipStyleReady || !TCColorEqual(_tooltipTextColorKey, config.tooltipText) ||
-      !TCColorEqual(_tooltipUpColorKey, config.up) ||
-      !TCColorEqual(_tooltipDownColorKey, config.down)) {
-    _tooltipTextColorKey = config.tooltipText;
-    _tooltipUpColorKey = config.up;
-    _tooltipDownColorKey = config.down;
-    _tooltipStyleReady = true;
-    UIFont *tooltipFont = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium];
-    _tooltipAttributes = @{
-      NSFontAttributeName : tooltipFont,
-      NSForegroundColorAttributeName : TCUIColor(config.tooltipText),
-    };
-    _tooltipUpAttributes = @{
-      NSFontAttributeName : tooltipFont,
-      NSForegroundColorAttributeName : TCUIColor(config.up),
-    };
-    _tooltipDownAttributes = @{
-      NSFontAttributeName : tooltipFont,
-      NSForegroundColorAttributeName : TCUIColor(config.down),
-    };
+  if (_preparedStyleVersion == _presentationVersion && _axisStyleReady && _tooltipStyleReady) return;
+  _preparedStyleVersion = _presentationVersion;
+  _axisStyleReady = true;
+  _tooltipStyleReady = true;
+  NSDictionary *appearance = _appearanceConfig ?: @{};
+  NSDictionary *xAxis = appearance[@"xAxis"] ?: @{};
+  NSDictionary *yAxis = appearance[@"yAxis"] ?: @{};
+  NSDictionary *extrema = appearance[@"priceExtremes"] ?: @{};
+  NSDictionary *current = appearance[@"currentPrice"] ?: @{};
+  NSDictionary *currentLabel = current[@"label"] ?: @{};
+  NSDictionary *crosshair = appearance[@"crosshair"] ?: @{};
+  NSDictionary *crosshairPrice = crosshair[@"priceLabel"] ?: @{};
+  NSDictionary *crosshairTime = crosshair[@"timeLabel"] ?: @{};
+  NSDictionary *tooltip = appearance[@"tooltip"] ?: @{};
+
+  _xAxisAttributes = TCTextAttributes(xAxis[@"text"] ?: @{}, config.axisText, 10.5,
+                                      UIFontWeightRegular);
+  _yAxisAttributes = TCTextAttributes(yAxis[@"text"] ?: @{}, config.axisText, 10.5,
+                                      UIFontWeightRegular);
+  _extremaAttributes = TCTextAttributes(extrema[@"text"] ?: @{}, config.axisText, 10.5,
+                                        UIFontWeightRegular);
+  _axisAttributes = _yAxisAttributes;
+  _currentPriceBadgeAttributes = TCTextAttributes(
+      currentLabel[@"text"] ?: @{}, TCColor{0, 0, 0, 1}, 11, UIFontWeightSemibold);
+  _crosshairPriceBadgeAttributes = TCTextAttributes(
+      crosshairPrice[@"text"] ?: @{}, TCColor{0, 0, 0, 1}, 11, UIFontWeightSemibold);
+  _timeBadgeAttributes = TCTextAttributes(
+      crosshairTime[@"text"] ?: @{}, TCColor{0, 0, 0, 1}, 10.5, UIFontWeightSemibold);
+  _badgeAttributes = _currentPriceBadgeAttributes;
+  _tooltipAttributes = TCTextAttributes(
+      tooltip[@"headerText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+  NSDictionary *tooltipLabelAttributes = TCTextAttributes(
+      tooltip[@"labelText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+  NSDictionary *tooltipValueAttributes = TCTextAttributes(
+      tooltip[@"valueText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+  TCColor positive = TCColorFromHex(tooltip[@"positiveValueColor"], config.up);
+  TCColor negative = TCColorFromHex(tooltip[@"negativeValueColor"], config.down);
+  NSMutableDictionary *positiveAttributes = [tooltipValueAttributes mutableCopy];
+  positiveAttributes[NSForegroundColorAttributeName] = TCUIColor(positive);
+  _tooltipUpAttributes = positiveAttributes;
+  NSMutableDictionary *negativeAttributes = [tooltipValueAttributes mutableCopy];
+  negativeAttributes[NSForegroundColorAttributeName] = TCUIColor(negative);
+  _tooltipDownAttributes = negativeAttributes;
+
+  _extremaConnectorColor = TCColorFromHex(extrema[@"connectorColor"], config.axisText);
+  _extremaBackgroundColor = TCColorFromHex(extrema[@"backgroundColor"], config.background);
+  _crosshairPriceBackgroundColor = TCColorFromHex(crosshairPrice[@"backgroundColor"], config.crosshair);
+  _crosshairTimeBackgroundColor = TCColorFromHex(crosshairTime[@"backgroundColor"], config.crosshair);
+  _tooltipPresentationBackgroundColor = TCColorFromHex(tooltip[@"backgroundColor"],
+                                                        config.tooltipBackground);
+  _currentPriceBorder = TCBorderFromJson(currentLabel[@"border"] ?: @{}, 4);
+  _crosshairPriceBorder = TCBorderFromJson(crosshairPrice[@"border"] ?: @{}, 4);
+  _crosshairTimeBorder = TCBorderFromJson(crosshairTime[@"border"] ?: @{}, 4);
+  _tooltipBorder = TCBorderFromJson(tooltip[@"border"] ?: @{}, 8);
+
+  [_axisLayoutCache removeAllObjects];
+  [_badgeLayoutCache removeAllObjects];
+  [_timeBadgeLayoutCache removeAllObjects];
+  [_tooltipLayoutCache removeAllObjects];
+  [_tooltipBlockLayoutCache removeAllObjects];
+  _tooltipLabelsReady = false;
+
+  UIFont *labelFont = tooltipLabelAttributes[NSFontAttributeName];
+  UIFont *valueFont = tooltipValueAttributes[NSFontAttributeName];
+  const CGFloat rowHeight = MAX(labelFont.lineHeight, valueFont.lineHeight);
+  _tooltipRowHeight = rowHeight;
+  {
     NSMutableParagraphStyle *tooltipBlockParagraph = [NSMutableParagraphStyle new];
-    tooltipBlockParagraph.lineSpacing = MAX(0.0, 17.0 - tooltipFont.lineHeight);
+    tooltipBlockParagraph.lineSpacing = MAX(0.0, rowHeight - labelFont.lineHeight);
     NSMutableDictionary<NSAttributedStringKey, id> *blockAttributes =
-        [_tooltipAttributes mutableCopy];
+        [tooltipLabelAttributes mutableCopy];
     blockAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
     _tooltipBlockAttributes = blockAttributes;
+  }
+  {
+    NSMutableParagraphStyle *tooltipBlockParagraph = [NSMutableParagraphStyle new];
+    tooltipBlockParagraph.lineSpacing = MAX(0.0, rowHeight - valueFont.lineHeight);
+    NSMutableDictionary<NSAttributedStringKey, id> *blockValueAttributes =
+        [tooltipValueAttributes mutableCopy];
+    blockValueAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
+    _tooltipValueBlockAttributes = blockValueAttributes;
     NSMutableDictionary<NSAttributedStringKey, id> *blockUpAttributes =
         [_tooltipUpAttributes mutableCopy];
     blockUpAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
@@ -583,9 +741,6 @@ struct TCTextPresentation {
         [_tooltipDownAttributes mutableCopy];
     blockDownAttributes[NSParagraphStyleAttributeName] = tooltipBlockParagraph;
     _tooltipBlockDownAttributes = blockDownAttributes;
-    [_tooltipLayoutCache removeAllObjects];
-    [_tooltipBlockLayoutCache removeAllObjects];
-    _tooltipLabelsReady = false;
   }
 }
 
@@ -630,7 +785,7 @@ struct TCTextPresentation {
   }
 
   ++metrics->layoutCacheMisses;
-  NSDictionary<NSAttributedStringKey, id> *changeAttributes = _tooltipBlockAttributes;
+  NSDictionary<NSAttributedStringKey, id> *changeAttributes = _tooltipValueBlockAttributes;
   if (changeDirection > 0) {
     changeAttributes = _tooltipBlockUpAttributes;
   } else if (changeDirection < 0) {
@@ -644,30 +799,33 @@ struct TCTextPresentation {
         appendAttributedString:[[NSAttributedString alloc]
                                    initWithString:line
                                        attributes:changeRow ? changeAttributes
-                                                            : _tooltipBlockAttributes]];
+                                                            : _tooltipValueBlockAttributes]];
   }
   layout = [[TCTextLayout alloc] initWithAttributedString:attributedString];
   [_tooltipBlockLayoutCache setObject:layout forKey:cacheKey];
   return layout;
 }
 
-- (NSString *)formatValue:(double)value snapshot:(const RenderSnapshot &)snapshot {
-  NSNumber *cacheKey = @(value);
+- (NSString *)formatValue:(double)value
+                     role:(NSString *)role
+                 snapshot:(const RenderSnapshot &)snapshot {
+  NSString *cacheKey = [NSString stringWithFormat:@"%@\x1f%@", role, @(value).stringValue];
   NSString *cached = [_formattedValueCache objectForKey:cacheKey];
   if (cached) return cached;
 
-  const ChartConfig &config = snapshot.config;
+  TCValueFormatter *formatter = _valueFormatters[role] ?: _valueFormatters[@"yAxis"];
   double scaled = value;
   NSString *suffix = @"";
-  if (config.compactValues) {
+  if (formatter.compact) {
     const double magnitude = fabs(value);
     if (magnitude >= 1e12) { scaled = value / 1e12; suffix = @"T"; }
     else if (magnitude >= 1e9) { scaled = value / 1e9; suffix = @"B"; }
     else if (magnitude >= 1e6) { scaled = value / 1e6; suffix = @"M"; }
     else if (magnitude >= 1e3) { scaled = value / 1e3; suffix = @"K"; }
   }
-  NSString *number = [_numberFormatter stringFromNumber:@(scaled)] ?: [NSString stringWithFormat:@"%g", scaled];
-  NSString *result = [NSString stringWithFormat:@"%@%@%@", _currencySymbol, number, suffix];
+  NSString *number = [formatter.numberFormatter stringFromNumber:@(scaled)] ?:
+      [NSString stringWithFormat:@"%g", scaled];
+  NSString *result = [NSString stringWithFormat:@"%@%@%@", formatter.currencySymbol, number, suffix];
   [_formattedValueCache setObject:result forKey:cacheKey];
   return result;
 }
@@ -713,15 +871,20 @@ struct TCTextPresentation {
   return 4;
 }
 
-- (NSString *)formatTime:(double)timestamp formatIndex:(NSUInteger)formatIndex full:(BOOL)full {
+- (NSString *)formatTime:(double)timestamp
+             formatIndex:(NSUInteger)formatIndex
+                    full:(BOOL)full
+                 tooltip:(BOOL)tooltip {
   const long long milliseconds = llround(timestamp);
-  const long long cacheValue = milliseconds * 8 + static_cast<long long>(full ? 7 : formatIndex);
-  NSNumber *cacheKey = @(cacheValue);
+  NSString *cacheKey = [NSString stringWithFormat:@"%lld\x1f%lu\x1f%d\x1f%d", milliseconds,
+                        static_cast<unsigned long>(formatIndex), full, tooltip];
   NSString *cached = [_formattedTimeCache objectForKey:cacheKey];
   if (cached) return cached;
 
   NSDate *date = [NSDate dateWithTimeIntervalSince1970:timestamp / 1000.0];
-  NSDateFormatter *formatter = full ? _fullDateFormatter : _axisDateFormatters[formatIndex];
+  NSDateFormatter *formatter = full
+      ? (tooltip ? _tooltipHeaderDateFormatter : _crosshairTimeDateFormatter)
+      : _axisDateFormatters[formatIndex];
   NSString *result = [formatter stringFromDate:date] ?: @"";
   [_formattedTimeCache setObject:result forKey:cacheKey];
   return result;
@@ -731,13 +894,14 @@ struct TCTextPresentation {
                      attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes
                           cache:(NSCache<NSString *, TCTextLayout *> *)cache
                         metrics:(TCOverlayUpdateMetrics *)metrics {
-  TCTextLayout *layout = [cache objectForKey:text];
+  NSString *cacheKey = [NSString stringWithFormat:@"%p\x1f%@", attributes, text];
+  TCTextLayout *layout = [cache objectForKey:cacheKey];
   if (layout) {
     ++metrics->layoutCacheHits;
   } else {
     ++metrics->layoutCacheMisses;
     layout = [[TCTextLayout alloc] initWithText:text attributes:attributes];
-    [cache setObject:layout forKey:text];
+    [cache setObject:layout forKey:cacheKey];
   }
   return layout;
 }
@@ -859,8 +1023,8 @@ struct TCTextPresentation {
                parentLayer:_extremaContainer metrics:metrics
            axisTextUpdates:&extremaTextUpdates];
 
-  UIColor *lineColor = TCUIColor(snapshot.config.axisText);
-  UIColor *backgroundColor = TCUIColor(snapshot.config.background);
+  UIColor *lineColor = TCUIColor(_extremaConnectorColor);
+  UIColor *backgroundColor = TCUIColor(_extremaBackgroundColor);
   for (NSUInteger presentationIndex = 0; presentationIndex < presentations.size();
        ++presentationIndex) {
     const NSUInteger poolIndex = _presentationAssignments[presentationIndex];
@@ -914,13 +1078,18 @@ struct TCTextPresentation {
              text:(NSString *)text
                 y:(CGFloat)y
             color:(TCColor)color
+       attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes
+            border:(const TCBorderConfig &)border
          snapshot:(const RenderSnapshot &)snapshot
           metrics:(TCOverlayUpdateMetrics *)metrics {
-  TCTextLayout *layout = [self layoutForText:text attributes:_badgeAttributes
+  TCTextLayout *layout = [self layoutForText:text attributes:attributes
                                        cache:_badgeLayoutCache metrics:metrics];
   CGFloat width = MIN(snapshot.config.yAxisWidth, layout.size.width + 12);
   CGFloat x = snapshot.config.yAxisOnRight ? snapshot.plot.right : MAX(0, snapshot.plot.left - width);
-  CGRect backgroundFrame = CGRectMake(x, y - 10, width, 20);
+  CGFloat height = MAX(20, layout.size.height + 6);
+  CGFloat halfHeight = height * 0.5;
+  CGFloat badgeY = MAX(halfHeight, MIN(MAX(halfHeight, snapshot.height - halfHeight), y));
+  CGRect backgroundFrame = CGRectMake(x, badgeY - halfHeight, width, height);
   if (!CGRectEqualToRect(badge.backgroundLayer.frame, backgroundFrame)) {
     badge.backgroundLayer.frame = backgroundFrame;
     ++metrics->frameUpdates;
@@ -930,8 +1099,12 @@ struct TCTextPresentation {
       !CGColorEqualToColor(badge.backgroundLayer.backgroundColor, backgroundColor.CGColor)) {
     badge.backgroundLayer.backgroundColor = backgroundColor.CGColor;
   }
+  badge.backgroundLayer.borderWidth = border.width;
+  badge.backgroundLayer.borderColor = TCUIColor(border.color).CGColor;
+  badge.backgroundLayer.cornerRadius = border.radius;
   badge.backgroundLayer.hidden = NO;
-  CGRect textFrame = CGRectMake(backgroundFrame.origin.x + 6, backgroundFrame.origin.y + 3,
+  CGRect textFrame = CGRectMake(backgroundFrame.origin.x + 6,
+                                backgroundFrame.origin.y + (height - layout.size.height) * 0.5,
                                 layout.size.width, layout.size.height);
   [self applyLayout:layout toItem:badge.textItem frame:textFrame metrics:metrics];
 }
@@ -1013,8 +1186,8 @@ struct TCTextPresentation {
     if (config.showXAxis) {
       CGFloat lastRight = -CGFLOAT_MAX;
       for (const auto &tick : current.xTicks) {
-        NSString *label = [self formatTime:tick.value formatIndex:timeFormatIndex full:NO];
-        TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
+        NSString *label = [self formatTime:tick.value formatIndex:timeFormatIndex full:NO tooltip:NO];
+        TCTextLayout *layout = [self layoutForText:label attributes:_xAxisAttributes
                                              cache:_axisLayoutCache metrics:&metrics];
         CGFloat x = MAX(2, MIN(current.width - layout.size.width - 2,
                               tick.position - layout.size.width / 2));
@@ -1034,8 +1207,8 @@ struct TCTextPresentation {
     _yAxisPresentations.reserve(current.yTicks.size());
     if (config.showYAxis) {
       for (const auto &tick : current.yTicks) {
-        NSString *label = [self formatValue:tick.value snapshot:current];
-        TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
+        NSString *label = [self formatValue:tick.value role:@"yAxis" snapshot:current];
+        TCTextLayout *layout = [self layoutForText:label attributes:_yAxisAttributes
                                              cache:_axisLayoutCache metrics:&metrics];
         CGFloat x = config.yAxisOnRight ? current.plot.right + 6
                                         : current.plot.left - layout.size.width - 6;
@@ -1055,8 +1228,8 @@ struct TCTextPresentation {
     _extremaConnectorFrames.reserve(2);
     const auto addExtremum = [&](const PriceExtremum &extremum) {
       if (!extremum.visible) return;
-      NSString *label = [self formatValue:extremum.value snapshot:current];
-      TCTextLayout *layout = [self layoutForText:label attributes:_axisAttributes
+      NSString *label = [self formatValue:extremum.value role:@"priceExtremes" snapshot:current];
+      TCTextLayout *layout = [self layoutForText:label attributes:_extremaAttributes
                                            cache:_axisLayoutCache metrics:&metrics];
       const CGFloat direction = extremum.labelOnRight ? 1.0 : -1.0;
       const CGFloat lineEndX = MAX(
@@ -1085,12 +1258,14 @@ struct TCTextPresentation {
                             snapshot:current metrics:&metrics];
 
     if (current.currentPriceVisible && config.showCurrentPriceLabel) {
-      NSString *text = [self formatValue:current.currentPrice snapshot:current];
+      NSString *text = [self formatValue:current.currentPrice role:@"currentPrice" snapshot:current];
       CGFloat badgeY = MAX(10, MIN(MAX(10, current.height - 10), current.currentPriceY));
       [self setBadge:_currentPriceBadge
                 text:text
                    y:badgeY
-               color:current.currentPriceColor
+               color:current.currentPriceLabelColor
+          attributes:_currentPriceBadgeAttributes
+              border:_currentPriceBorder
             snapshot:current
              metrics:&metrics];
       ++visibleStaticLabels;
@@ -1104,11 +1279,13 @@ struct TCTextPresentation {
 
   const NSUInteger crosshairTextUpdatesBefore = metrics.textUpdates;
   if (current.crosshairVisible) {
-    NSString *price = [self formatValue:current.crosshairPrice snapshot:current];
+    NSString *price = [self formatValue:current.crosshairPrice role:@"crosshairPrice" snapshot:current];
     [self setBadge:_crosshairPriceBadge
               text:price
                  y:current.crosshairY
-             color:config.crosshair
+             color:_crosshairPriceBackgroundColor
+        attributes:_crosshairPriceBadgeAttributes
+            border:_crosshairPriceBorder
           snapshot:current
            metrics:&metrics];
   } else {
@@ -1130,27 +1307,33 @@ struct TCTextPresentation {
     if (current.crosshairVisible) {
       NSString *time = [self formatTime:current.selectedCandle.timestamp
                             formatIndex:timeFormatIndex
-                                   full:YES];
+                                   full:YES
+                                tooltip:NO];
       TCTextLayout *timeLayout = [self layoutForText:time
                                           attributes:_timeBadgeAttributes
                                                cache:_timeBadgeLayoutCache
                                              metrics:&metrics];
+      const CGFloat timeHeight = MAX(20, timeLayout.size.height + 6);
       CGRect timeFrame = CGRectMake(
           MAX(current.plot.left, MIN(current.plot.right - timeLayout.size.width - 12,
                                      current.crosshairX - timeLayout.size.width / 2 - 6)),
-          current.plot.bottom, timeLayout.size.width + 12, 20);
+          current.plot.bottom, timeLayout.size.width + 12, timeHeight);
       if (!CGRectEqualToRect(_crosshairTimeBadge.backgroundLayer.frame, timeFrame)) {
         _crosshairTimeBadge.backgroundLayer.frame = timeFrame;
         ++metrics.frameUpdates;
       }
-      UIColor *crosshairColor = TCUIColor(config.crosshair);
+      UIColor *crosshairColor = TCUIColor(_crosshairTimeBackgroundColor);
       if (!_crosshairTimeBadge.backgroundLayer.backgroundColor ||
           !CGColorEqualToColor(_crosshairTimeBadge.backgroundLayer.backgroundColor,
                                crosshairColor.CGColor)) {
         _crosshairTimeBadge.backgroundLayer.backgroundColor = crosshairColor.CGColor;
       }
+      _crosshairTimeBadge.backgroundLayer.borderWidth = _crosshairTimeBorder.width;
+      _crosshairTimeBadge.backgroundLayer.borderColor = TCUIColor(_crosshairTimeBorder.color).CGColor;
+      _crosshairTimeBadge.backgroundLayer.cornerRadius = _crosshairTimeBorder.radius;
       _crosshairTimeBadge.backgroundLayer.hidden = NO;
-      CGRect timeTextFrame = CGRectMake(timeFrame.origin.x + 6, timeFrame.origin.y + 3,
+      CGRect timeTextFrame = CGRectMake(timeFrame.origin.x + 6,
+                                        timeFrame.origin.y + (timeHeight - timeLayout.size.height) * 0.5,
                                         timeLayout.size.width, timeLayout.size.height);
       [self applyLayout:timeLayout
                  toItem:_crosshairTimeBadge.textItem
@@ -1161,17 +1344,17 @@ struct TCTextPresentation {
       if (config.showTooltip) {
         [self prepareTooltipLabels:config metrics:&metrics];
         const auto &c = current.selectedCandle;
-        NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES];
+        NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES tooltip:YES];
         NSArray<NSString *> *values = @[
-          [self formatValue:c.open snapshot:current],
-          [self formatValue:c.close snapshot:current],
-          [self formatValue:c.high snapshot:current],
-          [self formatValue:c.low snapshot:current],
+          [self formatValue:c.open role:@"tooltip" snapshot:current],
+          [self formatValue:c.close role:@"tooltip" snapshot:current],
+          [self formatValue:c.high role:@"tooltip" snapshot:current],
+          [self formatValue:c.low role:@"tooltip" snapshot:current],
           [self formatPercentage:current.selectedAmplitudePercent
                            valid:current.selectedPercentagesValid],
           [self formatPercentage:current.selectedChangePercent
                            valid:current.selectedPercentagesValid],
-          [self formatValue:current.selectedChange snapshot:current],
+          [self formatValue:current.selectedChange role:@"tooltip" snapshot:current],
           [self formatVolume:c.volume],
         ];
         TCTextLayout *headerLayout = [self layoutForText:header
@@ -1186,7 +1369,13 @@ struct TCTextPresentation {
                                                        metrics:&metrics];
         CGFloat boxWidth =
             MAX(headerLayout.size.width, _tooltipMaxLabelWidth + 12 + valuesLayout.size.width) + 20;
-        CGFloat boxHeight = (values.count + 1) * 17 + 18;
+        CGFloat headerHeight = MAX(17, headerLayout.size.height);
+        // NSAttributedString.size can include extra paragraph-layout height for
+        // multiline strings. The rows themselves use this exact line height,
+        // so derive the background from the row count to keep 9pt padding at
+        // the bottom instead of extending the tooltip beyond its content.
+        CGFloat rowsHeight = values.count * _tooltipRowHeight;
+        CGFloat boxHeight = headerHeight + rowsHeight + 18;
         CGFloat boxX = current.crosshairX > current.width / 2 ? current.plot.left + 8
                                                               : current.plot.right - boxWidth - 8;
         CGRect box = CGRectMake(boxX, current.plot.top + 8, boxWidth, boxHeight);
@@ -1194,7 +1383,7 @@ struct TCTextPresentation {
           _tooltipBackgroundLayer.frame = box;
           ++metrics.frameUpdates;
         }
-        TCColor tooltipBackground = config.tooltipBackground;
+        TCColor tooltipBackground = _tooltipPresentationBackgroundColor;
         tooltipBackground.a *= config.tooltipBackgroundOpacity;
         UIColor *tooltipBackgroundColor = TCUIColor(tooltipBackground);
         if (!_tooltipBackgroundLayer.backgroundColor ||
@@ -1202,6 +1391,9 @@ struct TCTextPresentation {
                                  tooltipBackgroundColor.CGColor)) {
           _tooltipBackgroundLayer.backgroundColor = tooltipBackgroundColor.CGColor;
         }
+        _tooltipBackgroundLayer.borderWidth = _tooltipBorder.width;
+        _tooltipBackgroundLayer.borderColor = TCUIColor(_tooltipBorder.color).CGColor;
+        _tooltipBackgroundLayer.cornerRadius = _tooltipBorder.radius;
         _tooltipContainer.hidden = NO;
         _tooltipBackgroundLayer.hidden = NO;
         CGFloat y = box.origin.y + 9;
@@ -1213,7 +1405,7 @@ struct TCTextPresentation {
                     frame:CGRectMake(box.origin.x + 10, y, headerLayout.size.width,
                                      headerLayout.size.height)
                   metrics:&metrics];
-        y += 17;
+        y += headerHeight;
         ++visibleSelectionLabels;
         const CGFloat valueX = box.origin.x + 10 + _tooltipMaxLabelWidth + 12;
         TCTextLayerItem *labelsItem = [self itemAtIndex:1
@@ -1222,14 +1414,14 @@ struct TCTextPresentation {
         [self applyLayout:_tooltipLabelsLayout
                    toItem:labelsItem
                     frame:CGRectMake(box.origin.x + 10, y, _tooltipLabelsLayout.size.width,
-                                     _tooltipLabelsLayout.size.height)
+                                     rowsHeight)
                   metrics:&metrics];
         TCTextLayerItem *valuesItem = [self itemAtIndex:0
                                                  inPool:_tooltipValueLayers
                                             parentLayer:_tooltipContainer];
         [self applyLayout:valuesLayout
                    toItem:valuesItem
-                    frame:CGRectMake(valueX, y, valuesLayout.size.width, valuesLayout.size.height)
+                    frame:CGRectMake(valueX, y, valuesLayout.size.width, rowsHeight)
                   metrics:&metrics];
         visibleSelectionLabels += values.count * 2;
         [self hideItemsInPool:_tooltipLineLayers fromIndex:2];
@@ -1550,7 +1742,17 @@ struct TCTextPresentation {
   NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
   NSDictionary *root = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
   if (![root isKindOfClass:NSDictionary.class]) return;
+  [_overlay applyPresentationConfig:root];
   NSDictionary *theme = root[@"theme"];
+  NSDictionary *appearance = root[@"appearance"];
+  NSDictionary *gridAppearance = appearance[@"grid"];
+  NSDictionary *candlesAppearance = appearance[@"candles"];
+  NSDictionary *currentAppearance = appearance[@"currentPrice"];
+  NSDictionary *currentLineAppearance = currentAppearance[@"line"];
+  NSDictionary *currentLabelAppearance = currentAppearance[@"label"];
+  NSDictionary *crosshairAppearance = appearance[@"crosshair"];
+  NSDictionary *crosshairLineAppearance = crosshairAppearance[@"line"];
+  NSDictionary *tooltipAppearance = appearance[@"tooltip"];
   NSDictionary *xAxis = root[@"xAxis"];
   NSDictionary *yAxis = root[@"yAxis"];
   NSDictionary *format = yAxis[@"valueFormat"];
@@ -1564,14 +1766,21 @@ struct TCTextPresentation {
   _config.defaultScale = root[@"defaultScale"]
       ? [root[@"defaultScale"] doubleValue]
       : 1.0;
-  _config.background = TCColorFromHex(theme[@"backgroundColor"], _config.background);
-  _config.grid = TCColorFromHex(theme[@"gridColor"], _config.grid);
+  _config.background = TCColorFromHex(appearance[@"backgroundColor"], _config.background);
+  _config.grid = TCColorFromHex(gridAppearance[@"color"], _config.grid);
   _config.axisText = TCColorFromHex(theme[@"axisTextColor"], _config.axisText);
-  _config.up = TCColorFromHex(theme[@"upColor"], _config.up);
-  _config.down = TCColorFromHex(theme[@"downColor"], _config.down);
-  _config.crosshair = TCColorFromHex(theme[@"crosshairColor"], _config.crosshair);
-  _config.tooltipBackground = TCColorFromHex(theme[@"tooltipBackgroundColor"], _config.tooltipBackground);
-  _config.tooltipText = TCColorFromHex(theme[@"tooltipTextColor"], _config.tooltipText);
+  _config.up = TCColorFromHex(candlesAppearance[@"upColor"], _config.up);
+  _config.down = TCColorFromHex(candlesAppearance[@"downColor"], _config.down);
+  _config.crosshair = TCColorFromHex(crosshairLineAppearance[@"color"], _config.crosshair);
+  _config.tooltipBackground = TCColorFromHex(tooltipAppearance[@"backgroundColor"], _config.tooltipBackground);
+  _config.tooltipText = TCColorFromHex(tooltipAppearance[@"valueText"][@"color"], _config.tooltipText);
+  _config.gridOpacity = gridAppearance[@"opacity"] ? [gridAppearance[@"opacity"] floatValue] : 0.75f;
+  _config.crosshairOpacity = crosshairLineAppearance[@"opacity"]
+      ? [crosshairLineAppearance[@"opacity"] floatValue] : 0.85f;
+  _config.currentPriceLineUp = TCColorFromHex(currentLineAppearance[@"upColor"], _config.up);
+  _config.currentPriceLineDown = TCColorFromHex(currentLineAppearance[@"downColor"], _config.down);
+  _config.currentPriceLabelUp = TCColorFromHex(currentLabelAppearance[@"upBackgroundColor"], _config.up);
+  _config.currentPriceLabelDown = TCColorFromHex(currentLabelAppearance[@"downBackgroundColor"], _config.down);
   _config.showXAxis = [xAxis[@"visible"] boolValue];
   _config.xAxisHeight = [xAxis[@"height"] floatValue];
   _config.xLocale = [xAxis[@"locale"] UTF8String] ?: "en-GB";
@@ -1602,8 +1811,8 @@ struct TCTextPresentation {
       : true;
   _config.crosshairEnabled = [crosshair[@"enabled"] boolValue];
   _config.showTooltip = [crosshair[@"showTooltip"] boolValue];
-  _config.tooltipBackgroundOpacity = crosshair[@"tooltipBackgroundOpacity"]
-      ? [crosshair[@"tooltipBackgroundOpacity"] floatValue]
+  _config.tooltipBackgroundOpacity = tooltipAppearance[@"backgroundOpacity"]
+      ? [tooltipAppearance[@"backgroundOpacity"] floatValue]
       : 1.0f;
   _config.crosshairDashed = [crosshair[@"lineStyle"] isEqualToString:@"dashed"];
   _config.tooltipLabelOpen = [tooltipLabels[@"open"] UTF8String] ?: "Open";

@@ -12,6 +12,35 @@ internal data class ValueFormat(
   val useGrouping: Boolean = true,
 )
 
+internal data class TextStyleConfig(
+  val color: Int,
+  val fontFamily: String? = null,
+  val fontSizePx: Float? = null,
+  val fontWeight: String? = null,
+)
+
+internal data class BorderStyleConfig(
+  val color: Int = Color.TRANSPARENT,
+  val widthPx: Float = 0f,
+  val radiusPx: Float,
+)
+
+internal data class DatePatternConfig(
+  val pattern: String,
+  val locale: String,
+  val timeZone: String,
+)
+
+internal data class XAxisDateFormatConfig(
+  val locale: String,
+  val timeZone: String,
+  val seconds: String,
+  val time: String,
+  val day: String,
+  val month: String,
+  val year: String,
+)
+
 internal data class CrosshairTooltipLabels(
   val open: String = "Open",
   val close: String = "Close",
@@ -36,6 +65,31 @@ internal data class ChartConfig(
   val crosshairColor: Int = Color.rgb(168, 162, 179),
   val tooltipBackgroundColor: Int = Color.rgb(27, 23, 35),
   val tooltipTextColor: Int = Color.rgb(245, 242, 250),
+  val gridOpacity: Float = 0.75f,
+  val currentPriceLineUpColor: Int = Color.rgb(56, 217, 138),
+  val currentPriceLineDownColor: Int = Color.rgb(255, 59, 100),
+  val currentPriceLabelUpColor: Int = Color.rgb(56, 217, 138),
+  val currentPriceLabelDownColor: Int = Color.rgb(255, 59, 100),
+  val crosshairOpacity: Float = 0.85f,
+  val xAxisTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(151, 145, 165)),
+  val yAxisTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(151, 145, 165)),
+  val extremaTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(151, 145, 165)),
+  val extremaConnectorColor: Int = Color.rgb(151, 145, 165),
+  val extremaBackgroundColor: Int = Color.rgb(16, 12, 24),
+  val currentPriceTextStyle: TextStyleConfig = TextStyleConfig(Color.BLACK),
+  val currentPriceBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 4f),
+  val crosshairPriceBackgroundColor: Int = Color.rgb(168, 162, 179),
+  val crosshairPriceTextStyle: TextStyleConfig = TextStyleConfig(Color.BLACK),
+  val crosshairPriceBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 4f),
+  val crosshairTimeBackgroundColor: Int = Color.rgb(168, 162, 179),
+  val crosshairTimeTextStyle: TextStyleConfig = TextStyleConfig(Color.BLACK),
+  val crosshairTimeBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 4f),
+  val tooltipHeaderTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(245, 242, 250)),
+  val tooltipLabelTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(245, 242, 250)),
+  val tooltipValueTextStyle: TextStyleConfig = TextStyleConfig(Color.rgb(245, 242, 250)),
+  val tooltipPositiveValueColor: Int = Color.rgb(56, 217, 138),
+  val tooltipNegativeValueColor: Int = Color.rgb(255, 59, 100),
+  val tooltipBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 8f),
   val showXAxis: Boolean = true,
   val xAxisHeight: Float = 26f,
   val xLocale: String = "en-GB",
@@ -48,6 +102,19 @@ internal data class ChartConfig(
   val yScaleMarginTop: Double = 0.2,
   val yScaleMarginBottom: Double = 0.1,
   val valueFormat: ValueFormat = ValueFormat(),
+  val extremaValueFormat: ValueFormat = ValueFormat(),
+  val currentPriceValueFormat: ValueFormat = ValueFormat(),
+  val crosshairPriceValueFormat: ValueFormat = ValueFormat(),
+  val tooltipValueFormat: ValueFormat = ValueFormat(),
+  val xAxisDateFormats: XAxisDateFormatConfig = XAxisDateFormatConfig(
+    "en-GB", "UTC", "HH:mm:ss", "HH:mm", "d MMM", "MMM yyyy", "yyyy",
+  ),
+  val crosshairTimeDateFormat: DatePatternConfig = DatePatternConfig(
+    "d MMM yyyy HH:mm:ss", "en-GB", "UTC",
+  ),
+  val tooltipHeaderDateFormat: DatePatternConfig = DatePatternConfig(
+    "d MMM yyyy HH:mm:ss", "en-GB", "UTC",
+  ),
   val allowPan: Boolean = true,
   val allowZoom: Boolean = true,
   val showCurrentPrice: Boolean = true,
@@ -61,9 +128,80 @@ internal data class ChartConfig(
   val tooltipLabels: CrosshairTooltipLabels = CrosshairTooltipLabels(),
 ) {
   companion object {
-    fun fromJson(json: String, density: Float): ChartConfig {
+    private fun textStyle(
+      json: JSONObject,
+      defaultColor: Int,
+      scaledDensity: Float,
+    ) = TextStyleConfig(
+      color = if (json.has("color")) chartColor(json.getString("color")) else defaultColor,
+      fontFamily = if (json.has("fontFamily")) json.getString("fontFamily") else null,
+      fontSizePx = if (json.has("fontSize")) {
+        json.getDouble("fontSize").toFloat() * scaledDensity
+      } else null,
+      fontWeight = if (json.has("fontWeight")) json.getString("fontWeight") else null,
+    )
+
+    private fun border(json: JSONObject, density: Float, defaultRadius: Float) =
+      BorderStyleConfig(
+        color = chartColor(json.optString("color", "#00000000")),
+        widthPx = json.optDouble("width", 0.0).toFloat() * density,
+        radiusPx = json.optDouble("radius", defaultRadius.toDouble()).toFloat() * density,
+      )
+
+    private fun valueFormat(json: JSONObject) = ValueFormat(
+      compact = json.getString("type") == "compact",
+      precision = json.getInt("precision"),
+      minMove = json.optDouble("minMove", 0.01),
+      locale = json.getString("locale"),
+      currencySymbol = json.getString("currencySymbol"),
+      useGrouping = json.optBoolean("useGrouping", true),
+    )
+
+    private fun datePattern(json: JSONObject) = DatePatternConfig(
+      pattern = json.getString("pattern"),
+      locale = json.getString("locale"),
+      timeZone = json.getString("timeZone"),
+    )
+
+    private fun chartColor(value: String): Int {
+      val raw = value.removePrefix("#").toLong(16)
+      return if (value.length == 7) {
+        Color.rgb(
+          ((raw shr 16) and 0xff).toInt(),
+          ((raw shr 8) and 0xff).toInt(),
+          (raw and 0xff).toInt(),
+        )
+      } else {
+        Color.argb(
+          (raw and 0xff).toInt(),
+          ((raw shr 24) and 0xff).toInt(),
+          ((raw shr 16) and 0xff).toInt(),
+          ((raw shr 8) and 0xff).toInt(),
+        )
+      }
+    }
+
+    fun fromJson(json: String, density: Float, scaledDensity: Float): ChartConfig {
       val root = JSONObject(json)
       val theme = root.getJSONObject("theme")
+      val appearance = root.getJSONObject("appearance")
+      val gridAppearance = appearance.getJSONObject("grid")
+      val candlesAppearance = appearance.getJSONObject("candles")
+      val xAxisAppearance = appearance.getJSONObject("xAxis")
+      val yAxisAppearance = appearance.getJSONObject("yAxis")
+      val extremaAppearance = appearance.getJSONObject("priceExtremes")
+      val currentAppearance = appearance.getJSONObject("currentPrice")
+      val currentLineAppearance = currentAppearance.getJSONObject("line")
+      val currentLabelAppearance = currentAppearance.getJSONObject("label")
+      val crosshairAppearance = appearance.getJSONObject("crosshair")
+      val crosshairLineAppearance = crosshairAppearance.getJSONObject("line")
+      val crosshairPriceAppearance = crosshairAppearance.getJSONObject("priceLabel")
+      val crosshairTimeAppearance = crosshairAppearance.getJSONObject("timeLabel")
+      val tooltipAppearance = appearance.getJSONObject("tooltip")
+      val formatters = root.getJSONObject("formatters")
+      val dateFormatters = formatters.getJSONObject("date")
+      val priceFormatters = formatters.getJSONObject("price")
+      val xDateFormatters = dateFormatters.getJSONObject("xAxis")
       val xAxis = root.getJSONObject("xAxis")
       val yAxis = root.getJSONObject("yAxis")
       val scaleMargins = yAxis.getJSONObject("scaleMargins")
@@ -78,14 +216,85 @@ internal data class ChartConfig(
         initialVisibleCount = root.getInt("initialVisibleCount"),
         defaultScale = root.optDouble("defaultScale", 1.0),
         displayScale = density,
-        backgroundColor = Color.parseColor(theme.getString("backgroundColor")),
-        gridColor = Color.parseColor(theme.getString("gridColor")),
-        axisTextColor = Color.parseColor(theme.getString("axisTextColor")),
-        upColor = Color.parseColor(theme.getString("upColor")),
-        downColor = Color.parseColor(theme.getString("downColor")),
-        crosshairColor = Color.parseColor(theme.getString("crosshairColor")),
-        tooltipBackgroundColor = Color.parseColor(theme.getString("tooltipBackgroundColor")),
-        tooltipTextColor = Color.parseColor(theme.getString("tooltipTextColor")),
+        backgroundColor = chartColor(appearance.getString("backgroundColor")),
+        gridColor = chartColor(gridAppearance.getString("color")),
+        axisTextColor = chartColor(theme.getString("axisTextColor")),
+        upColor = chartColor(candlesAppearance.getString("upColor")),
+        downColor = chartColor(candlesAppearance.getString("downColor")),
+        crosshairColor = chartColor(crosshairLineAppearance.getString("color")),
+        tooltipBackgroundColor = chartColor(tooltipAppearance.getString("backgroundColor")),
+        tooltipTextColor = chartColor(tooltipAppearance.getJSONObject("valueText").getString("color")),
+        gridOpacity = gridAppearance.getDouble("opacity").toFloat(),
+        currentPriceLineUpColor = chartColor(currentLineAppearance.getString("upColor")),
+        currentPriceLineDownColor = chartColor(currentLineAppearance.getString("downColor")),
+        currentPriceLabelUpColor = chartColor(currentLabelAppearance.getString("upBackgroundColor")),
+        currentPriceLabelDownColor = chartColor(currentLabelAppearance.getString("downBackgroundColor")),
+        crosshairOpacity = crosshairLineAppearance.getDouble("opacity").toFloat(),
+        xAxisTextStyle = textStyle(
+          xAxisAppearance.getJSONObject("text"),
+          Color.rgb(151, 145, 165),
+          scaledDensity,
+        ),
+        yAxisTextStyle = textStyle(
+          yAxisAppearance.getJSONObject("text"),
+          Color.rgb(151, 145, 165),
+          scaledDensity,
+        ),
+        extremaTextStyle = textStyle(
+          extremaAppearance.getJSONObject("text"),
+          Color.rgb(151, 145, 165),
+          scaledDensity,
+        ),
+        extremaConnectorColor = chartColor(extremaAppearance.getString("connectorColor")),
+        extremaBackgroundColor = chartColor(extremaAppearance.getString("backgroundColor")),
+        currentPriceTextStyle = textStyle(
+          currentLabelAppearance.getJSONObject("text"),
+          Color.BLACK,
+          scaledDensity,
+        ),
+        currentPriceBorder = border(
+          currentLabelAppearance.getJSONObject("border"), density, 4f,
+        ),
+        crosshairPriceBackgroundColor = chartColor(
+          crosshairPriceAppearance.getString("backgroundColor"),
+        ),
+        crosshairPriceTextStyle = textStyle(
+          crosshairPriceAppearance.getJSONObject("text"), Color.BLACK, scaledDensity,
+        ),
+        crosshairPriceBorder = border(
+          crosshairPriceAppearance.getJSONObject("border"), density, 4f,
+        ),
+        crosshairTimeBackgroundColor = chartColor(
+          crosshairTimeAppearance.getString("backgroundColor"),
+        ),
+        crosshairTimeTextStyle = textStyle(
+          crosshairTimeAppearance.getJSONObject("text"), Color.BLACK, scaledDensity,
+        ),
+        crosshairTimeBorder = border(
+          crosshairTimeAppearance.getJSONObject("border"), density, 4f,
+        ),
+        tooltipHeaderTextStyle = textStyle(
+          tooltipAppearance.getJSONObject("headerText"),
+          Color.rgb(245, 242, 250),
+          scaledDensity,
+        ),
+        tooltipLabelTextStyle = textStyle(
+          tooltipAppearance.getJSONObject("labelText"),
+          Color.rgb(245, 242, 250),
+          scaledDensity,
+        ),
+        tooltipValueTextStyle = textStyle(
+          tooltipAppearance.getJSONObject("valueText"),
+          Color.rgb(245, 242, 250),
+          scaledDensity,
+        ),
+        tooltipPositiveValueColor = chartColor(
+          tooltipAppearance.getString("positiveValueColor"),
+        ),
+        tooltipNegativeValueColor = chartColor(
+          tooltipAppearance.getString("negativeValueColor"),
+        ),
+        tooltipBorder = border(tooltipAppearance.getJSONObject("border"), density, 8f),
         showXAxis = xAxis.getBoolean("visible"),
         xAxisHeight = xAxis.getDouble("height").toFloat() * density,
         xLocale = xAxis.getString("locale"),
@@ -97,13 +306,25 @@ internal data class ChartConfig(
         yAxisWidth = yAxis.getDouble("width").toFloat() * density,
         yScaleMarginTop = scaleMargins.getDouble("top"),
         yScaleMarginBottom = scaleMargins.getDouble("bottom"),
-        valueFormat = ValueFormat(
-          compact = format.getString("type") == "compact",
-          precision = format.getInt("precision"),
-          minMove = format.optDouble("minMove", 0.01),
-          locale = format.getString("locale"),
-          currencySymbol = format.getString("currencySymbol"),
-          useGrouping = format.optBoolean("useGrouping", true),
+        valueFormat = valueFormat(format),
+        extremaValueFormat = valueFormat(priceFormatters.getJSONObject("priceExtremes")),
+        currentPriceValueFormat = valueFormat(priceFormatters.getJSONObject("currentPrice")),
+        crosshairPriceValueFormat = valueFormat(priceFormatters.getJSONObject("crosshairPrice")),
+        tooltipValueFormat = valueFormat(priceFormatters.getJSONObject("tooltip")),
+        xAxisDateFormats = XAxisDateFormatConfig(
+          locale = xDateFormatters.getString("locale"),
+          timeZone = xDateFormatters.getString("timeZone"),
+          seconds = xDateFormatters.getString("seconds"),
+          time = xDateFormatters.getString("time"),
+          day = xDateFormatters.getString("day"),
+          month = xDateFormatters.getString("month"),
+          year = xDateFormatters.getString("year"),
+        ),
+        crosshairTimeDateFormat = datePattern(
+          dateFormatters.getJSONObject("crosshairTimeBadge"),
+        ),
+        tooltipHeaderDateFormat = datePattern(
+          dateFormatters.getJSONObject("tooltipHeader"),
         ),
         allowPan = gestures.getBoolean("pan"),
         allowZoom = gestures.getBoolean("zoom"),
@@ -113,8 +334,7 @@ internal data class ChartConfig(
         showPriceExtremes = priceExtremes?.optBoolean("visible", true) ?: true,
         crosshairEnabled = crosshair.getBoolean("enabled"),
         showTooltip = crosshair.getBoolean("showTooltip"),
-        tooltipBackgroundOpacity =
-          crosshair.optDouble("tooltipBackgroundOpacity", 1.0).toFloat(),
+        tooltipBackgroundOpacity = tooltipAppearance.getDouble("backgroundOpacity").toFloat(),
         crosshairDashed = crosshair.optString("lineStyle", "solid") == "dashed",
         tooltipLabels = CrosshairTooltipLabels(
           open = tooltipLabels?.optString("open", "Open") ?: "Open",
@@ -159,12 +379,16 @@ internal data class ChartConfig(
     defaultScale,
     if (crosshairDashed) 1.0 else 0.0,
     tooltipBackgroundOpacity.toDouble(),
+    gridOpacity.toDouble(),
+    crosshairOpacity.toDouble(),
   )
 
   fun nativeColors(): FloatArray {
     val values = intArrayOf(
       backgroundColor, gridColor, axisTextColor, upColor, downColor,
       crosshairColor, tooltipBackgroundColor, tooltipTextColor,
+      currentPriceLineUpColor, currentPriceLineDownColor,
+      currentPriceLabelUpColor, currentPriceLabelDownColor,
     )
     return FloatArray(values.size * 4).also { output ->
       values.forEachIndexed { index, color ->

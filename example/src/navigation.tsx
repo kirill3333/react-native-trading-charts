@@ -9,6 +9,7 @@ import {
   chartDataController,
   hyperliquidChartDataController,
 } from './chartDataController';
+import { SettingsScreen } from './components/settings/SettingsScreen';
 import { ChartScreen } from './screens/ChartScreen';
 import { MarketsScreen } from './screens/MarketsScreen';
 
@@ -19,9 +20,19 @@ const RootStack = createNativeStackNavigator({
     contentStyle: { backgroundColor: '#100C18' },
     headerShown: false,
   },
-  screens: {
-    Markets: MarketsScreen,
-    Chart: ChartScreen,
+  groups: {
+    Main: {
+      screens: {
+        Markets: MarketsScreen,
+        Chart: ChartScreen,
+      },
+    },
+    Modals: {
+      screenOptions: { presentation: 'modal' },
+      screens: {
+        ChartSettings: SettingsScreen,
+      },
+    },
   },
 });
 
@@ -38,7 +49,11 @@ const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function synchronizeChartSession() {
   const route = navigationRef.getCurrentRoute();
-  if (route?.name !== 'Chart') {
+  const routeName = route?.name;
+  if (routeName === 'ChartSettings') {
+    return;
+  }
+  if (!route || routeName !== 'Chart') {
     chartDataController.deactivate();
     hyperliquidChartDataController.deactivate();
     return;

@@ -320,6 +320,153 @@ describe('chart config', () => {
       })
     ).toThrow('yAxis.valueFormat.minMove');
   });
+
+  it('resolves role-specific appearance over legacy theme values', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'appearance',
+      theme: {
+        backgroundColor: '#111111',
+        upColor: '#00AA00',
+        crosshairColor: '#777777',
+      },
+      crosshair: { tooltipBackgroundOpacity: 0.4 },
+      appearance: {
+        backgroundColor: '#FAFAFA',
+        grid: { color: '#CCCCCC80', opacity: 0.5 },
+        candles: { upColor: '#008800' },
+        xAxis: {
+          text: {
+            color: '#222222',
+            fontFamily: 'Inter',
+            fontSize: 12,
+            fontWeight: 'medium',
+          },
+        },
+        currentPrice: {
+          label: {
+            upBackgroundColor: '#123456',
+            border: { color: '#654321', width: 2, radius: 6 },
+          },
+        },
+        crosshair: {
+          priceLabel: { backgroundColor: '#ABCDEF' },
+        },
+        tooltip: { backgroundOpacity: 0.75 },
+      },
+    });
+
+    expect(resolved.appearance).toMatchObject({
+      backgroundColor: '#FAFAFA',
+      grid: { color: '#CCCCCC80', opacity: 0.5 },
+      candles: { upColor: '#008800', downColor: '#FF3B64' },
+      xAxis: {
+        text: {
+          color: '#222222',
+          fontFamily: 'Inter',
+          fontSize: 12,
+          fontWeight: 'medium',
+        },
+      },
+      currentPrice: {
+        label: {
+          upBackgroundColor: '#123456',
+          border: { color: '#654321', width: 2, radius: 6 },
+        },
+      },
+      crosshair: { priceLabel: { backgroundColor: '#ABCDEF' } },
+      tooltip: { backgroundOpacity: 0.75 },
+    });
+  });
+
+  it('resolves independent native date and price formatters', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'formatters',
+      yAxis: {
+        valueFormat: {
+          type: 'price',
+          precision: 4,
+          minMove: 0.0001,
+          currencySymbol: '$',
+        },
+      },
+      formatters: {
+        date: {
+          xAxis: { seconds: 'HH:mm:ss.SSS', day: 'dd/MM', timeZone: 'Europe/London' },
+          crosshairTimeBadge: { pattern: 'HH:mm:ss', locale: 'ru-RU' },
+          tooltipHeader: { pattern: 'dd MMM yyyy' },
+        },
+        price: {
+          currentPrice: { type: 'price', precision: 2, currencySymbol: '£' },
+          crosshairPrice: { type: 'compact', precision: 1 },
+          tooltip: { type: 'price', precision: 6, useGrouping: false },
+        },
+      },
+    });
+
+    expect(resolved.formatters.date.xAxis).toMatchObject({
+      seconds: 'HH:mm:ss.SSS',
+      time: 'HH:mm',
+      day: 'dd/MM',
+      timeZone: 'Europe/London',
+    });
+    expect(resolved.formatters.date.crosshairTimeBadge).toEqual({
+      pattern: 'HH:mm:ss',
+      locale: 'ru-RU',
+      timeZone: 'Europe/London',
+    });
+    expect(resolved.formatters.price.currentPrice).toMatchObject({
+      type: 'price',
+      precision: 2,
+      currencySymbol: '£',
+    });
+    expect(resolved.formatters.price.crosshairPrice).toMatchObject({
+      type: 'compact',
+      precision: 1,
+    });
+    expect(resolved.formatters.price.tooltip.useGrouping).toBe(false);
+    expect(resolved.formatters.price.priceExtremes).toMatchObject({
+      type: 'price',
+      precision: 4,
+      currencySymbol: '$',
+    });
+  });
+
+  it('validates appearance and formatter values before native serialization', () => {
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-color',
+        appearance: { backgroundColor: 'red' },
+      })
+    ).toThrow('appearance.backgroundColor');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-opacity',
+        appearance: { grid: { opacity: 2 } },
+      })
+    ).toThrow('appearance.grid.opacity');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-font',
+        appearance: { yAxis: { text: { fontSize: 0 } } },
+      })
+    ).toThrow('appearance.yAxis.text.fontSize');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-border',
+        appearance: {
+          crosshair: { timeLabel: { border: { width: -1 } } },
+        },
+      })
+    ).toThrow('appearance.crosshair.timeLabel.border.width');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-pattern',
+        formatters: {
+          date: { tooltipHeader: { pattern: '   ' } },
+        },
+      })
+    ).toThrow('formatters.date.tooltipHeader.pattern');
+  });
 });
 
 describe('selected candle events', () => {

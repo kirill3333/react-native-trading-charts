@@ -35,6 +35,7 @@ internal data class ChartSnapshot(
   val currentPrice: Double,
   val currentPriceY: Float,
   val currentPriceColor: FloatArray,
+  val currentPriceLabelColor: FloatArray,
   val visibleMaximum: PriceExtremumSnapshot,
   val visibleMinimum: PriceExtremumSnapshot,
   val crosshairVisible: Boolean,
@@ -122,6 +123,9 @@ internal object ChartEngineNative {
         currentPriceY = meta[12].toFloat(),
         currentPriceColor = floatArrayOf(
           meta[13].toFloat(), meta[14].toFloat(), meta[15].toFloat(), meta[16].toFloat(),
+        ),
+        currentPriceLabelColor = floatArrayOf(
+          meta[45].toFloat(), meta[46].toFloat(), meta[47].toFloat(), meta[48].toFloat(),
         ),
         visibleMaximum = PriceExtremumSnapshot(
           visible = meta[31] != 0.0,

@@ -26,6 +26,83 @@ export type ChartTheme = {
   tooltipTextColor?: string;
 };
 
+export type ChartFontWeight =
+  | 'regular'
+  | 'medium'
+  | 'semibold'
+  | 'bold';
+
+export type ChartTextStyle = {
+  color?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: ChartFontWeight;
+};
+
+export type ChartBorderStyle = {
+  color?: string;
+  width?: number;
+  radius?: number;
+};
+
+export type ChartBadgeStyle = {
+  backgroundColor?: string;
+  text?: ChartTextStyle;
+  border?: ChartBorderStyle;
+};
+
+export type ChartDirectionalBadgeStyle = Omit<
+  ChartBadgeStyle,
+  'backgroundColor'
+> & {
+  upBackgroundColor?: string;
+  downBackgroundColor?: string;
+};
+
+export type ChartAppearance = {
+  backgroundColor?: string;
+  grid?: {
+    color?: string;
+    opacity?: number;
+  };
+  candles?: {
+    upColor?: string;
+    downColor?: string;
+  };
+  xAxis?: { text?: ChartTextStyle };
+  yAxis?: { text?: ChartTextStyle };
+  priceExtremes?: {
+    text?: ChartTextStyle;
+    connectorColor?: string;
+    backgroundColor?: string;
+  };
+  currentPrice?: {
+    line?: {
+      upColor?: string;
+      downColor?: string;
+    };
+    label?: ChartDirectionalBadgeStyle;
+  };
+  crosshair?: {
+    line?: {
+      color?: string;
+      opacity?: number;
+    };
+    priceLabel?: ChartBadgeStyle;
+    timeLabel?: ChartBadgeStyle;
+  };
+  tooltip?: {
+    backgroundColor?: string;
+    backgroundOpacity?: number;
+    headerText?: ChartTextStyle;
+    labelText?: ChartTextStyle;
+    valueText?: ChartTextStyle;
+    positiveValueColor?: string;
+    negativeValueColor?: string;
+    border?: ChartBorderStyle;
+  };
+};
+
 export type PriceValueFormat = {
   type: 'price';
   precision?: number;
@@ -44,6 +121,41 @@ export type CompactValueFormat = {
 };
 
 export type YAxisValueFormat = PriceValueFormat | CompactValueFormat;
+
+export type PriceDisplayFormat =
+  | Omit<PriceValueFormat, 'minMove'>
+  | (Omit<CompactValueFormat, 'minMove'> & { useGrouping?: boolean });
+
+export type DatePatternFormat = {
+  pattern: string;
+  locale?: string;
+  timeZone?: string;
+};
+
+export type XAxisDateFormats = {
+  locale?: string;
+  timeZone?: string;
+  seconds?: string;
+  time?: string;
+  day?: string;
+  month?: string;
+  year?: string;
+};
+
+export type ChartFormatters = {
+  date?: {
+    xAxis?: XAxisDateFormats;
+    crosshairTimeBadge?: DatePatternFormat;
+    tooltipHeader?: DatePatternFormat;
+  };
+  price?: {
+    yAxis?: YAxisValueFormat;
+    priceExtremes?: PriceDisplayFormat;
+    currentPrice?: PriceDisplayFormat;
+    crosshairPrice?: PriceDisplayFormat;
+    tooltip?: PriceDisplayFormat;
+  };
+};
 
 export type XAxisOptions = {
   visible?: boolean;
@@ -119,6 +231,8 @@ export type TradingChartsViewProps = ViewProps & {
   initialVisibleCount?: number;
   defaultScale?: number;
   theme?: ChartTheme;
+  appearance?: ChartAppearance;
+  formatters?: ChartFormatters;
   xAxis?: XAxisOptions;
   yAxis?: YAxisOptions;
   gestures?: GestureOptions;
@@ -136,6 +250,8 @@ export type ResolvedChartConfig = {
   initialVisibleCount: number;
   defaultScale: number;
   theme: Required<ChartTheme>;
+  appearance: ResolvedChartAppearance;
+  formatters: ResolvedChartFormatters;
   xAxis: Required<XAxisOptions>;
   yAxis: Omit<Required<YAxisOptions>, 'valueFormat'> & {
     valueFormat: Required<PriceValueFormat> | Required<CompactValueFormat>;
@@ -145,5 +261,84 @@ export type ResolvedChartConfig = {
   priceExtremes: Required<PriceExtremesOptions>;
   crosshair: Omit<Required<CrosshairOptions>, 'tooltipLabels'> & {
     tooltipLabels: Required<CrosshairTooltipLabels>;
+  };
+};
+
+export type ResolvedChartTextStyle = {
+  color: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: ChartFontWeight;
+};
+
+export type ResolvedChartBorderStyle = Required<ChartBorderStyle>;
+
+export type ResolvedChartAppearance = {
+  backgroundColor: string;
+  grid: { color: string; opacity: number };
+  candles: { upColor: string; downColor: string };
+  xAxis: { text: ResolvedChartTextStyle };
+  yAxis: { text: ResolvedChartTextStyle };
+  priceExtremes: {
+    text: ResolvedChartTextStyle;
+    connectorColor: string;
+    backgroundColor: string;
+  };
+  currentPrice: {
+    line: { upColor: string; downColor: string };
+    label: {
+      upBackgroundColor: string;
+      downBackgroundColor: string;
+      text: ResolvedChartTextStyle;
+      border: ResolvedChartBorderStyle;
+    };
+  };
+  crosshair: {
+    line: { color: string; opacity: number };
+    priceLabel: {
+      backgroundColor: string;
+      text: ResolvedChartTextStyle;
+      border: ResolvedChartBorderStyle;
+    };
+    timeLabel: {
+      backgroundColor: string;
+      text: ResolvedChartTextStyle;
+      border: ResolvedChartBorderStyle;
+    };
+  };
+  tooltip: {
+    backgroundColor: string;
+    backgroundOpacity: number;
+    headerText: ResolvedChartTextStyle;
+    labelText: ResolvedChartTextStyle;
+    valueText: ResolvedChartTextStyle;
+    positiveValueColor: string;
+    negativeValueColor: string;
+    border: ResolvedChartBorderStyle;
+  };
+};
+
+export type ResolvedPriceDisplayFormat = {
+  type: 'price' | 'compact';
+  precision: number;
+  locale: string;
+  currencySymbol: string;
+  useGrouping: boolean;
+};
+
+export type ResolvedDatePatternFormat = Required<DatePatternFormat>;
+
+export type ResolvedChartFormatters = {
+  date: {
+    xAxis: Required<XAxisDateFormats>;
+    crosshairTimeBadge: ResolvedDatePatternFormat;
+    tooltipHeader: ResolvedDatePatternFormat;
+  };
+  price: {
+    yAxis: Required<PriceValueFormat> | Required<CompactValueFormat>;
+    priceExtremes: ResolvedPriceDisplayFormat;
+    currentPrice: ResolvedPriceDisplayFormat;
+    crosshairPrice: ResolvedPriceDisplayFormat;
+    tooltip: ResolvedPriceDisplayFormat;
   };
 };

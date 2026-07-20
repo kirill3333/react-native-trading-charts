@@ -166,6 +166,10 @@ void ChartEngine::setConfig(const ChartConfig& config) {
   }
   config_.tooltipBackgroundOpacity =
       std::clamp(config_.tooltipBackgroundOpacity, 0.0f, 1.0f);
+  if (!finite(config_.gridOpacity)) config_.gridOpacity = 0.75f;
+  if (!finite(config_.crosshairOpacity)) config_.crosshairOpacity = 0.85f;
+  config_.gridOpacity = std::clamp(config_.gridOpacity, 0.0f, 1.0f);
+  config_.crosshairOpacity = std::clamp(config_.crosshairOpacity, 0.0f, 1.0f);
   config_.xAxisHeight = std::max(config_.xAxisHeight, 1.0f);
   config_.yAxisWidth = std::max(config_.yAxisWidth, 1.0f);
   config_.precision = std::max(0, std::min(config_.precision, 12));
@@ -757,7 +761,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
       (result->xTicks.size() + result->yTicks.size()) * 6 * kFloatsPerVertex +
       static_cast<size_t>(std::distance(lower, upper)) * 12 * kFloatsPerVertex);
 
-  const Color grid = alpha(config_.grid, 0.75f);
+  const Color grid = alpha(config_.grid, config_.gridOpacity);
   for (const AxisTick& tick : result->xTicks) {
     emitQuad(result->vertices, tick.position - 0.5f, result->plot.top,
              tick.position + 0.5f, result->plot.bottom, grid);
@@ -819,7 +823,13 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   const Candle& current = candles_.back();
   if (config_.showCurrentPrice) {
     result->currentPrice = current.close;
-    result->currentPriceColor = current.close >= current.open ? config_.up : config_.down;
+    const bool currentPriceUp = current.close >= current.open;
+    result->currentPriceColor = currentPriceUp
+        ? config_.currentPriceLineUp
+        : config_.currentPriceLineDown;
+    result->currentPriceLabelColor = currentPriceUp
+        ? config_.currentPriceLabelUp
+        : config_.currentPriceLabelDown;
 
     const bool priceInRange = current.close >= yMin && current.close <= yMax;
     if (priceInRange || config_.pinCurrentPriceToEdge) {
@@ -878,7 +888,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
           (nearest->high - nearest->low) / denominator * 100.0;
       result->selectedPercentagesValid = true;
     }
-    const Color lineColor = alpha(config_.crosshair, 0.85f);
+    const Color lineColor = alpha(config_.crosshair, config_.crosshairOpacity);
     if (config_.crosshairDashed) {
       emitDashedVertical(result->vertices, result->crosshairX, result->plot.top,
                          result->plot.bottom, config_.displayScale, lineColor);

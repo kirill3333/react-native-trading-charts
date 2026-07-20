@@ -39,6 +39,12 @@ struct ChartConfig {
   Color crosshair{168.0f / 255.0f, 162.0f / 255.0f, 179.0f / 255.0f, 1.0f};
   Color tooltipBackground{27.0f / 255.0f, 23.0f / 255.0f, 35.0f / 255.0f, 1.0f};
   Color tooltipText{245.0f / 255.0f, 242.0f / 255.0f, 250.0f / 255.0f, 1.0f};
+  Color currentPriceLineUp{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
+  Color currentPriceLineDown{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  Color currentPriceLabelUp{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
+  Color currentPriceLabelDown{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  float gridOpacity = 0.75f;
+  float crosshairOpacity = 0.85f;
 
   bool showXAxis = true;
   float xAxisHeight = 26.0f;
@@ -125,6 +131,7 @@ struct RenderSnapshot {
   double currentPrice = 0.0;
   float currentPriceY = 0.0f;
   Color currentPriceColor;
+  Color currentPriceLabelColor;
 
   PriceExtremum visibleMaximum;
   PriceExtremum visibleMinimum;

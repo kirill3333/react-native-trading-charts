@@ -1,7 +1,17 @@
 import {
+  type ChartAppearance,
+  type ChartBorderStyle,
+  type ChartFormatters,
+  type ChartTheme,
+  type ChartTextStyle,
   type CompactValueFormat,
+  type PriceDisplayFormat,
   type PriceValueFormat,
+  type ResolvedChartAppearance,
   type ResolvedChartConfig,
+  type ResolvedChartFormatters,
+  type ResolvedChartTextStyle,
+  type ResolvedPriceDisplayFormat,
   type TradingChartsViewProps,
   type YAxisValueFormat,
 } from './types';
@@ -33,6 +43,77 @@ function finitePositive(value: number, name: string): number {
     throw new TypeError(`${name} must be a positive finite number`);
   }
   return value;
+}
+
+function finiteNonNegative(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new TypeError(`${name} must be a non-negative finite number`);
+  }
+  return value;
+}
+
+function opacity(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`${name} must be a finite number from 0 to 1`);
+  }
+  return value;
+}
+
+function color(value: string, name: string): string {
+  if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)) {
+    throw new TypeError(`${name} must be #RRGGBB or #RRGGBBAA`);
+  }
+  return value;
+}
+
+function nonEmpty(value: string, name: string): string {
+  if (value.trim().length === 0) {
+    throw new TypeError(`${name} must be a non-empty string`);
+  }
+  return value;
+}
+
+function resolveTextStyle(
+  input: ChartTextStyle | undefined,
+  fallbackColor: string,
+  name: string
+): ResolvedChartTextStyle {
+  const result: ResolvedChartTextStyle = {
+    color: color(input?.color ?? fallbackColor, `${name}.color`),
+  };
+  if (input?.fontFamily !== undefined) {
+    result.fontFamily = nonEmpty(input.fontFamily, `${name}.fontFamily`);
+  }
+  if (input?.fontSize !== undefined) {
+    result.fontSize = finitePositive(input.fontSize, `${name}.fontSize`);
+  }
+  if (input?.fontWeight !== undefined) {
+    if (
+      input.fontWeight !== 'regular' &&
+      input.fontWeight !== 'medium' &&
+      input.fontWeight !== 'semibold' &&
+      input.fontWeight !== 'bold'
+    ) {
+      throw new TypeError(`${name}.fontWeight is invalid`);
+    }
+    result.fontWeight = input.fontWeight;
+  }
+  return result;
+}
+
+function resolveBorder(
+  input: ChartBorderStyle | undefined,
+  defaultRadius: number,
+  name: string
+) {
+  return {
+    color: color(input?.color ?? '#00000000', `${name}.color`),
+    width: finiteNonNegative(input?.width ?? 0, `${name}.width`),
+    radius: finiteNonNegative(
+      input?.radius ?? defaultRadius,
+      `${name}.radius`
+    ),
+  };
 }
 
 function resolveValueFormat(input?: YAxisValueFormat) {
@@ -79,6 +160,313 @@ function resolveValueFormat(input?: YAxisValueFormat) {
   return format;
 }
 
+function resolveDisplayFormat(
+  input: PriceDisplayFormat | undefined,
+  fallback: ReturnType<typeof resolveValueFormat>,
+  name: string
+): ResolvedPriceDisplayFormat {
+  const type = input?.type ?? fallback.type;
+  const precision = input?.precision ?? fallback.precision;
+  const maximumPrecision = type === 'compact' ? 8 : 12;
+  if (
+    !Number.isInteger(precision) ||
+    precision < 0 ||
+    precision > maximumPrecision
+  ) {
+    throw new TypeError(
+      `${name}.precision must be an integer from 0 to ${maximumPrecision}`
+    );
+  }
+  return {
+    type,
+    precision,
+    locale: nonEmpty(input?.locale ?? fallback.locale, `${name}.locale`),
+    currencySymbol: input?.currencySymbol ?? fallback.currencySymbol,
+    useGrouping:
+      input?.useGrouping ??
+      ('useGrouping' in fallback ? fallback.useGrouping : true),
+  };
+}
+
+function resolveAppearance(
+  input: ChartAppearance | undefined,
+  theme: Required<ChartTheme>,
+  legacyTooltipOpacity: number
+): ResolvedChartAppearance {
+  const backgroundColor = color(
+    input?.backgroundColor ?? theme.backgroundColor,
+    'appearance.backgroundColor'
+  );
+  const gridColor = color(
+    input?.grid?.color ?? theme.gridColor,
+    'appearance.grid.color'
+  );
+  const upColor = color(
+    input?.candles?.upColor ?? theme.upColor,
+    'appearance.candles.upColor'
+  );
+  const downColor = color(
+    input?.candles?.downColor ?? theme.downColor,
+    'appearance.candles.downColor'
+  );
+  const axisColor = color(theme.axisTextColor, 'theme.axisTextColor');
+  const crosshairColor = color(
+    input?.crosshair?.line?.color ?? theme.crosshairColor,
+    'appearance.crosshair.line.color'
+  );
+  const tooltipTextColor = color(
+    theme.tooltipTextColor,
+    'theme.tooltipTextColor'
+  );
+  const badgeFallback = '#000000';
+
+  return {
+    backgroundColor,
+    grid: {
+      color: gridColor,
+      opacity: opacity(
+        input?.grid?.opacity ?? 0.75,
+        'appearance.grid.opacity'
+      ),
+    },
+    candles: { upColor, downColor },
+    xAxis: {
+      text: resolveTextStyle(
+        input?.xAxis?.text,
+        axisColor,
+        'appearance.xAxis.text'
+      ),
+    },
+    yAxis: {
+      text: resolveTextStyle(
+        input?.yAxis?.text,
+        axisColor,
+        'appearance.yAxis.text'
+      ),
+    },
+    priceExtremes: {
+      text: resolveTextStyle(
+        input?.priceExtremes?.text,
+        axisColor,
+        'appearance.priceExtremes.text'
+      ),
+      connectorColor: color(
+        input?.priceExtremes?.connectorColor ?? axisColor,
+        'appearance.priceExtremes.connectorColor'
+      ),
+      backgroundColor: color(
+        input?.priceExtremes?.backgroundColor ?? backgroundColor,
+        'appearance.priceExtremes.backgroundColor'
+      ),
+    },
+    currentPrice: {
+      line: {
+        upColor: color(
+          input?.currentPrice?.line?.upColor ?? upColor,
+          'appearance.currentPrice.line.upColor'
+        ),
+        downColor: color(
+          input?.currentPrice?.line?.downColor ?? downColor,
+          'appearance.currentPrice.line.downColor'
+        ),
+      },
+      label: {
+        upBackgroundColor: color(
+          input?.currentPrice?.label?.upBackgroundColor ?? upColor,
+          'appearance.currentPrice.label.upBackgroundColor'
+        ),
+        downBackgroundColor: color(
+          input?.currentPrice?.label?.downBackgroundColor ?? downColor,
+          'appearance.currentPrice.label.downBackgroundColor'
+        ),
+        text: resolveTextStyle(
+          input?.currentPrice?.label?.text,
+          badgeFallback,
+          'appearance.currentPrice.label.text'
+        ),
+        border: resolveBorder(
+          input?.currentPrice?.label?.border,
+          4,
+          'appearance.currentPrice.label.border'
+        ),
+      },
+    },
+    crosshair: {
+      line: {
+        color: crosshairColor,
+        opacity: opacity(
+          input?.crosshair?.line?.opacity ?? 0.85,
+          'appearance.crosshair.line.opacity'
+        ),
+      },
+      priceLabel: {
+        backgroundColor: color(
+          input?.crosshair?.priceLabel?.backgroundColor ?? crosshairColor,
+          'appearance.crosshair.priceLabel.backgroundColor'
+        ),
+        text: resolveTextStyle(
+          input?.crosshair?.priceLabel?.text,
+          badgeFallback,
+          'appearance.crosshair.priceLabel.text'
+        ),
+        border: resolveBorder(
+          input?.crosshair?.priceLabel?.border,
+          4,
+          'appearance.crosshair.priceLabel.border'
+        ),
+      },
+      timeLabel: {
+        backgroundColor: color(
+          input?.crosshair?.timeLabel?.backgroundColor ?? crosshairColor,
+          'appearance.crosshair.timeLabel.backgroundColor'
+        ),
+        text: resolveTextStyle(
+          input?.crosshair?.timeLabel?.text,
+          badgeFallback,
+          'appearance.crosshair.timeLabel.text'
+        ),
+        border: resolveBorder(
+          input?.crosshair?.timeLabel?.border,
+          4,
+          'appearance.crosshair.timeLabel.border'
+        ),
+      },
+    },
+    tooltip: {
+      backgroundColor: color(
+        input?.tooltip?.backgroundColor ?? theme.tooltipBackgroundColor,
+        'appearance.tooltip.backgroundColor'
+      ),
+      backgroundOpacity: opacity(
+        input?.tooltip?.backgroundOpacity ?? legacyTooltipOpacity,
+        'appearance.tooltip.backgroundOpacity'
+      ),
+      headerText: resolveTextStyle(
+        input?.tooltip?.headerText,
+        tooltipTextColor,
+        'appearance.tooltip.headerText'
+      ),
+      labelText: resolveTextStyle(
+        input?.tooltip?.labelText,
+        tooltipTextColor,
+        'appearance.tooltip.labelText'
+      ),
+      valueText: resolveTextStyle(
+        input?.tooltip?.valueText,
+        tooltipTextColor,
+        'appearance.tooltip.valueText'
+      ),
+      positiveValueColor: color(
+        input?.tooltip?.positiveValueColor ?? upColor,
+        'appearance.tooltip.positiveValueColor'
+      ),
+      negativeValueColor: color(
+        input?.tooltip?.negativeValueColor ?? downColor,
+        'appearance.tooltip.negativeValueColor'
+      ),
+      border: resolveBorder(
+        input?.tooltip?.border,
+        8,
+        'appearance.tooltip.border'
+      ),
+    },
+  };
+}
+
+function resolveFormatters(
+  input: ChartFormatters | undefined,
+  xAxis: { locale?: string; timeZone?: string },
+  yAxisValueFormat: ReturnType<typeof resolveValueFormat>
+): ResolvedChartFormatters {
+  const xInput = input?.date?.xAxis;
+  const xLocale = nonEmpty(
+    xInput?.locale ?? xAxis.locale ?? 'en-GB',
+    'formatters.date.xAxis.locale'
+  );
+  const xTimeZone = nonEmpty(
+    xInput?.timeZone ?? xAxis.timeZone ?? 'UTC',
+    'formatters.date.xAxis.timeZone'
+  );
+  const pattern = (value: string | undefined, fallback: string, name: string) =>
+    nonEmpty(value ?? fallback, name);
+  const datePattern = (
+    value: { pattern: string; locale?: string; timeZone?: string } | undefined,
+    fallbackPattern: string,
+    name: string
+  ) => ({
+    pattern: pattern(value?.pattern, fallbackPattern, `${name}.pattern`),
+    locale: nonEmpty(value?.locale ?? xLocale, `${name}.locale`),
+    timeZone: nonEmpty(value?.timeZone ?? xTimeZone, `${name}.timeZone`),
+  });
+
+  return {
+    date: {
+      xAxis: {
+        locale: xLocale,
+        timeZone: xTimeZone,
+        seconds: pattern(
+          xInput?.seconds,
+          'HH:mm:ss',
+          'formatters.date.xAxis.seconds'
+        ),
+        time: pattern(
+          xInput?.time,
+          'HH:mm',
+          'formatters.date.xAxis.time'
+        ),
+        day: pattern(
+          xInput?.day,
+          'd MMM',
+          'formatters.date.xAxis.day'
+        ),
+        month: pattern(
+          xInput?.month,
+          'MMM yyyy',
+          'formatters.date.xAxis.month'
+        ),
+        year: pattern(
+          xInput?.year,
+          'yyyy',
+          'formatters.date.xAxis.year'
+        ),
+      },
+      crosshairTimeBadge: datePattern(
+        input?.date?.crosshairTimeBadge,
+        'd MMM yyyy HH:mm:ss',
+        'formatters.date.crosshairTimeBadge'
+      ),
+      tooltipHeader: datePattern(
+        input?.date?.tooltipHeader,
+        'd MMM yyyy HH:mm:ss',
+        'formatters.date.tooltipHeader'
+      ),
+    },
+    price: {
+      yAxis: yAxisValueFormat,
+      priceExtremes: resolveDisplayFormat(
+        input?.price?.priceExtremes,
+        yAxisValueFormat,
+        'formatters.price.priceExtremes'
+      ),
+      currentPrice: resolveDisplayFormat(
+        input?.price?.currentPrice,
+        yAxisValueFormat,
+        'formatters.price.currentPrice'
+      ),
+      crosshairPrice: resolveDisplayFormat(
+        input?.price?.crosshairPrice,
+        yAxisValueFormat,
+        'formatters.price.crosshairPrice'
+      ),
+      tooltip: resolveDisplayFormat(
+        input?.price?.tooltip,
+        yAxisValueFormat,
+        'formatters.price.tooltip'
+      ),
+    },
+  };
+}
+
 export function resolveChartConfig(
   props: TradingChartsViewProps
 ): ResolvedChartConfig {
@@ -97,17 +485,10 @@ export function resolveChartConfig(
     throw new TypeError('initialVisibleCount must be a positive integer');
   }
   const defaultScale = finitePositive(props.defaultScale ?? 1, 'defaultScale');
-  const tooltipBackgroundOpacity =
-    props.crosshair?.tooltipBackgroundOpacity ?? 1;
-  if (
-    !Number.isFinite(tooltipBackgroundOpacity) ||
-    tooltipBackgroundOpacity < 0 ||
-    tooltipBackgroundOpacity > 1
-  ) {
-    throw new TypeError(
-      'crosshair.tooltipBackgroundOpacity must be a finite number from 0 to 1'
-    );
-  }
+  const tooltipBackgroundOpacity = opacity(
+    props.crosshair?.tooltipBackgroundOpacity ?? 1,
+    'crosshair.tooltipBackgroundOpacity'
+  );
   const crosshairLineStyle = props.crosshair?.lineStyle ?? 'solid';
   if (crosshairLineStyle !== 'solid' && crosshairLineStyle !== 'dashed') {
     throw new TypeError("crosshair.lineStyle must be 'solid' or 'dashed'");
@@ -135,11 +516,28 @@ export function resolveChartConfig(
     );
   }
 
+  const theme = { ...DEFAULT_THEME, ...props.theme };
+  const valueFormat = resolveValueFormat(
+    props.formatters?.price?.yAxis ?? props.yAxis?.valueFormat
+  );
+  const appearance = resolveAppearance(
+    props.appearance,
+    theme,
+    tooltipBackgroundOpacity
+  );
+  const formatters = resolveFormatters(
+    props.formatters,
+    props.xAxis ?? {},
+    valueFormat
+  );
+
   return {
     timeframeMs,
     initialVisibleCount,
     defaultScale,
-    theme: { ...DEFAULT_THEME, ...props.theme },
+    theme,
+    appearance,
+    formatters,
     xAxis: {
       visible: props.xAxis?.visible ?? true,
       height: axisHeight,
@@ -153,7 +551,7 @@ export function resolveChartConfig(
       position: props.yAxis?.position ?? 'right',
       width: axisWidth,
       scaleMargins: { ...scaleMargins },
-      valueFormat: resolveValueFormat(props.yAxis?.valueFormat),
+      valueFormat,
     },
     gestures: {
       pan: props.gestures?.pan ?? true,

@@ -1087,6 +1087,22 @@ void testLargeHistoryAndTradeBurst() {
   assert(snapshot->vertices.size() < 1200000);
 }
 
+void testCurrentPriceLineAndLabelColorsAreIndependent() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.currentPriceLineUp = {0.1f, 0.2f, 0.3f, 0.4f};
+  config.currentPriceLabelUp = {0.5f, 0.6f, 0.7f, 0.8f};
+  engine.setConfig(config);
+  engine.setSize(400.0f, 240.0f);
+  const double candle[] = {0.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  assert(engine.setHistory(candle, 6) == UpdateStatus::Applied);
+  const auto snapshot = engine.snapshot();
+  expectNear(snapshot->currentPriceColor.r, 0.1f);
+  expectNear(snapshot->currentPriceColor.a, 0.4f);
+  expectNear(snapshot->currentPriceLabelColor.r, 0.5f);
+  expectNear(snapshot->currentPriceLabelColor.a, 0.8f);
+}
+
 }  // namespace
 
 int main() {
@@ -1127,6 +1143,7 @@ int main() {
   testCrosshairRevisionKeepsStaticContentRevision();
   testHybridHistoryUsesLocalCandleWidths();
   testLogicalSpacingUsesUniformCandleSlots();
+  testCurrentPriceLineAndLabelColorsAreIndependent();
   testLargeHistoryAndTradeBurst();
   std::cout << "ChartEngineTests passed\n";
   return 0;

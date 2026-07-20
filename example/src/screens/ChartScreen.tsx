@@ -358,6 +358,18 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
           >
             <Text style={styles.chartResetText}>Reset</Text>
           </Pressable>
+          <Pressable
+            accessibilityLabel="Open chart settings"
+            accessibilityRole="button"
+            onPress={() => navigation.navigate('ChartSettings')}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              styles.chartSettingsButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartResetText}>Settings</Text>
+          </Pressable>
         </View>
       </View>
     </SafeAreaView>
@@ -521,6 +533,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   chartResetButton: { minWidth: 84 },
+  chartSettingsButton: { minWidth: 76, paddingHorizontal: 10 },
   chartResetText: { color: '#C2B9FF', fontSize: 13, fontWeight: '800' },
   liveBadge: {
     alignItems: 'center',

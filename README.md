@@ -148,6 +148,92 @@ through `crosshair.tooltipLabels`. Use `crosshair.tooltipBackgroundOpacity` for
 background alpha and `crosshair.lineStyle` to select solid or dashed lines; line
 and tooltip colors remain in `theme`.
 
+## Appearance and formatters
+
+Use `appearance` for role-specific native styling. Colors accept `#RRGGBB` or
+`#RRGGBBAA`; font sizes use points on iOS and scaled pixels on Android. A custom
+`fontFamily` must already be bundled by the consuming application. Missing
+families fall back to the platform monospace font.
+
+```tsx
+<TradingChartsView
+  chartId="styled"
+  appearance={{
+    backgroundColor: '#FAFAFC',
+    grid: { color: '#D9DCE4', opacity: 0.7 },
+    candles: { upColor: '#159A68', downColor: '#D6455D' },
+    xAxis: { text: { color: '#596173', fontSize: 11 } },
+    yAxis: { text: { color: '#303747', fontSize: 11 } },
+    priceExtremes: {
+      text: { color: '#596173' },
+      connectorColor: '#9097A6',
+      backgroundColor: '#FAFAFC',
+    },
+    currentPrice: {
+      line: { upColor: '#159A68', downColor: '#D6455D' },
+      label: {
+        upBackgroundColor: '#159A68',
+        downBackgroundColor: '#D6455D',
+        text: { color: '#FFFFFF', fontWeight: 'semibold' },
+        border: { color: '#FFFFFF80', width: 1, radius: 5 },
+      },
+    },
+    crosshair: {
+      line: { color: '#596173', opacity: 0.8 },
+      priceLabel: {
+        backgroundColor: '#303747',
+        text: { color: '#FFFFFF' },
+        border: { color: '#9097A6', width: 1, radius: 5 },
+      },
+      timeLabel: {
+        backgroundColor: '#303747',
+        text: { color: '#FFFFFF' },
+        border: { color: '#9097A6', width: 1, radius: 5 },
+      },
+    },
+    tooltip: {
+      backgroundColor: '#FFFFFF',
+      backgroundOpacity: 0.96,
+      headerText: { color: '#171B24', fontWeight: 'semibold' },
+      labelText: { color: '#71798A' },
+      valueText: { color: '#171B24' },
+      positiveValueColor: '#159A68',
+      negativeValueColor: '#D6455D',
+      border: { color: '#D9DCE4', width: 1, radius: 8 },
+    },
+  }}
+  formatters={{
+    date: {
+      xAxis: {
+        locale: 'en-GB',
+        timeZone: 'UTC',
+        seconds: 'HH:mm:ss',
+        time: 'HH:mm',
+        day: 'dd MMM',
+        month: 'MMM yyyy',
+        year: 'yyyy',
+      },
+      crosshairTimeBadge: { pattern: 'dd MMM HH:mm:ss' },
+      tooltipHeader: { pattern: 'dd MMM yyyy HH:mm:ss' },
+    },
+    price: {
+      yAxis: { type: 'price', precision: 2, minMove: 0.01 },
+      priceExtremes: { type: 'price', precision: 2 },
+      currentPrice: { type: 'price', precision: 2, currencySymbol: '$' },
+      crosshairPrice: { type: 'price', precision: 4 },
+      tooltip: { type: 'price', precision: 4, useGrouping: false },
+    },
+  }}
+/>
+```
+
+Date patterns use Unicode/ICU syntax. The X-axis keeps its adaptive span-based
+selection and substitutes the configured five patterns. `theme`,
+`yAxis.valueFormat`, and `crosshair.tooltipBackgroundOpacity` remain supported;
+role-specific values in `appearance` and `formatters` take precedence. Axis
+regions do not auto-grow for larger fonts, so adjust `xAxis.height` or
+`yAxis.width` when necessary.
+
 `xAxis.spacing` defaults to `'time'`, where horizontal distance represents
 elapsed time. Use `'logical'` to give every candle one uniform slot regardless
 of timestamp gaps. Logical spacing keeps timestamps for axis labels and the

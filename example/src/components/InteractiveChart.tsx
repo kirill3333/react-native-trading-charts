@@ -2,27 +2,11 @@ import { memo, useMemo } from 'react';
 import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
 import {
   TradingChartsView,
-  type CrosshairOptions,
-  type CurrentPriceOptions,
-  type GestureOptions,
-  type PriceExtremesOptions,
   type VisibleRangeChangeEvent,
-  type XAxisOptions,
-  type YAxisOptions,
 } from 'react-native-trading-charts';
 
-const CROSSHAIR_OPTIONS: CrosshairOptions = {
-  enabled: true,
-  showTooltip: true,
-  tooltipBackgroundOpacity: 0.85,
-  lineStyle: 'dashed',
-};
-const CURRENT_PRICE_OPTIONS: CurrentPriceOptions = {
-  visible: true,
-  showLabel: true,
-};
-const PRICE_EXTREMES_OPTIONS: PriceExtremesOptions = { visible: true };
-const GESTURE_OPTIONS: GestureOptions = { pan: true, zoom: true };
+import { useChartSettings } from '../chartSettings';
+import { buildChartViewConfig } from '../chartSettingsConfig';
 
 type InteractiveChartProps = {
   chartId: string;
@@ -41,42 +25,28 @@ export const InteractiveChart = memo(function InteractiveChart({
   minMove,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
-  const xAxis = useMemo<XAxisOptions>(
-    () => ({
-      locale: 'en-GB',
-      showSeconds: timeframeMs < 60_000,
-      spacing: 'time',
-      timeZone: 'UTC',
-    }),
-    [timeframeMs]
-  );
-  const yAxis = useMemo<YAxisOptions>(
-    () => ({
-      position: 'right',
-      valueFormat: {
-        type: 'price',
-        precision,
-        minMove,
-        locale: 'en-GB',
-      },
-    }),
-    [minMove, precision]
+  const { settings } = useChartSettings();
+  const chartConfig = useMemo(
+    () => buildChartViewConfig(settings, { minMove, precision }),
+    [minMove, precision, settings]
   );
 
   return (
     <TradingChartsView
       chartId={chartId}
-      crosshair={CROSSHAIR_OPTIONS}
-      currentPrice={CURRENT_PRICE_OPTIONS}
-      priceExtremes={PRICE_EXTREMES_OPTIONS}
-      gestures={GESTURE_OPTIONS}
+      appearance={chartConfig.appearance}
+      crosshair={chartConfig.crosshair}
+      currentPrice={chartConfig.currentPrice}
+      priceExtremes={chartConfig.priceExtremes}
+      gestures={chartConfig.gestures}
+      formatters={chartConfig.formatters}
       initialVisibleCount={48}
       defaultScale={1.25}
       onVisibleRangeChange={onVisibleRangeChange}
       style={styles.chart}
       timeframeMs={timeframeMs}
-      xAxis={xAxis}
-      yAxis={yAxis}
+      xAxis={chartConfig.xAxis}
+      yAxis={chartConfig.yAxis}
     />
   );
 });

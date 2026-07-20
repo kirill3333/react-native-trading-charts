@@ -241,7 +241,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun setConfigJson(value: String?) {
     if (value.isNullOrBlank()) return
     try {
-      config = ChartConfig.fromJson(value, resources.displayMetrics.density)
+      config = ChartConfig.fromJson(
+        value,
+        resources.displayMetrics.density,
+        resources.displayMetrics.scaledDensity,
+      )
       if (!config.allowPan) stopFling()
       if (!config.crosshairEnabled) crosshairPinned = false
       ChartEngineNative.setConfig(engineHandle, config)
