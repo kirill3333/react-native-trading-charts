@@ -4,13 +4,17 @@ import android.graphics.Color
 import org.json.JSONObject
 
 internal data class ValueFormat(
-  val compact: Boolean = false,
+  val type: String = "price",
   val precision: Int = 2,
+  val significantDigits: Int = 3,
   val minMove: Double = 0.01,
   val locale: String = "en-GB",
   val currencySymbol: String = "",
   val useGrouping: Boolean = true,
-)
+) {
+  val compact: Boolean get() = type == "compact"
+  val significant: Boolean get() = type == "significant"
+}
 
 internal data class TextStyleConfig(
   val color: Int,
@@ -151,8 +155,9 @@ internal data class ChartConfig(
       )
 
     private fun valueFormat(json: JSONObject) = ValueFormat(
-      compact = json.getString("type") == "compact",
-      precision = json.getInt("precision"),
+      type = json.getString("type"),
+      precision = json.optInt("precision", 2),
+      significantDigits = json.optInt("significantDigits", 3),
       minMove = json.optDouble("minMove", 0.01),
       locale = json.getString("locale"),
       currencySymbol = json.getString("currencySymbol"),

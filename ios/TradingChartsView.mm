@@ -331,10 +331,59 @@ NSString *TCMetalShaderSource(void) {
 @property(nonatomic, strong) NSNumberFormatter *numberFormatter;
 @property(nonatomic, copy) NSString *currencySymbol;
 @property(nonatomic, assign) BOOL compact;
+@property(nonatomic, assign) BOOL significant;
+@property(nonatomic, assign) NSInteger significantDigits;
 @end
 
 @implementation TCValueFormatter
 @end
+
+static double TCRoundToSignificant(double value, NSInteger digits) {
+  const double magnitude = fabs(value);
+  if (magnitude == 0.0 || !std::isfinite(magnitude)) return value;
+  double exponent = floor(log10(magnitude));
+  const double multiplier = pow(10.0, digits - 1);
+  double normalized = magnitude / pow(10.0, exponent);
+  normalized = round(normalized * multiplier) / multiplier;
+  if (normalized >= 10.0) {
+    normalized = 1.0;
+    exponent += 1.0;
+  }
+  const double rounded = normalized * pow(10.0, exponent);
+  return value < 0.0 ? -rounded : rounded;
+}
+
+static NSString *TCSubscriptInteger(NSUInteger value) {
+  static NSString *const subscripts = @"₀₁₂₃₄₅₆₇₈₉";
+  NSString *digits = [NSString stringWithFormat:@"%lu", (unsigned long)value];
+  NSMutableString *result = [NSMutableString stringWithCapacity:digits.length];
+  for (NSUInteger index = 0; index < digits.length; ++index) {
+    const unichar digit = [digits characterAtIndex:index];
+    [result appendString:[subscripts substringWithRange:NSMakeRange(digit - '0', 1)]];
+  }
+  return result;
+}
+
+static NSString *TCCryptoZeroCount(double value, TCValueFormatter *formatter) {
+  constexpr NSInteger kMinimumZeroCount = 1;
+  const double magnitude = fabs(value);
+  if (magnitude == 0.0 || !std::isfinite(magnitude)) return nil;
+  const NSInteger exponent = static_cast<NSInteger>(floor(log10(magnitude)));
+  const NSInteger zeroCount = -exponent - 1;
+  if (zeroCount < kMinimumZeroCount) return nil;
+
+  const double multiplier = pow(10.0, formatter.significantDigits - 1);
+  const double normalized = magnitude / pow(10.0, exponent);
+  NSMutableString *significant = [[NSString
+      stringWithFormat:@"%lld", llround(normalized * multiplier)] mutableCopy];
+  while (significant.length > 1 && [significant hasSuffix:@"0"]) {
+    [significant deleteCharactersInRange:NSMakeRange(significant.length - 1, 1)];
+  }
+  NSString *sign = value < 0.0 ? @"-" : @"";
+  NSString *separator = formatter.numberFormatter.decimalSeparator ?: @".";
+  return [NSString stringWithFormat:@"%@0%@0%@%@", sign, separator,
+                                    TCSubscriptInteger(zeroCount), significant];
+}
 
 @interface TCBadgeLayerGroup : NSObject
 @property(nonatomic, strong, readonly) CALayer *backgroundLayer;
@@ -567,6 +616,7 @@ struct TCTextPresentation {
   const BOOL compact = json[@"type"]
       ? [json[@"type"] isEqualToString:@"compact"]
       : config.compactValues;
+  const BOOL significant = [json[@"type"] isEqualToString:@"significant"];
   const NSInteger precision = json[@"precision"] ? [json[@"precision"] integerValue]
                                                    : config.precision;
   result.numberFormatter = [NSNumberFormatter new];
@@ -575,11 +625,15 @@ struct TCTextPresentation {
   result.numberFormatter.usesGroupingSeparator = json[@"useGrouping"]
       ? [json[@"useGrouping"] boolValue]
       : config.useGrouping;
-  result.numberFormatter.minimumFractionDigits = compact ? 0 : precision;
-  result.numberFormatter.maximumFractionDigits = precision;
+  result.numberFormatter.minimumFractionDigits = compact || significant ? 0 : precision;
+  result.numberFormatter.maximumFractionDigits = significant ? 12 : precision;
   result.currencySymbol = json[@"currencySymbol"] ?:
       ([NSString stringWithUTF8String:config.currencySymbol.c_str()] ?: @"");
   result.compact = compact;
+  result.significant = significant;
+  result.significantDigits = json[@"significantDigits"]
+      ? [json[@"significantDigits"] integerValue]
+      : 3;
   return result;
 }
 
@@ -814,6 +868,16 @@ struct TCTextPresentation {
   if (cached) return cached;
 
   TCValueFormatter *formatter = _valueFormatters[role] ?: _valueFormatters[@"yAxis"];
+  if (formatter.significant) {
+    const double rounded = TCRoundToSignificant(value, formatter.significantDigits);
+    NSString *number = TCCryptoZeroCount(rounded, formatter) ?:
+        ([formatter.numberFormatter stringFromNumber:@(rounded)] ?:
+         [NSString stringWithFormat:@"%g", rounded]);
+    NSString *result = [formatter.currencySymbol stringByAppendingString:number];
+    [_formattedValueCache setObject:result forKey:cacheKey];
+    return result;
+  }
+
   double scaled = value;
   NSString *suffix = @"";
   if (formatter.compact) {

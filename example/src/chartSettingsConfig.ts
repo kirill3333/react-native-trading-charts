@@ -111,9 +111,15 @@ const DEVICE_TIME_ZONE =
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 type MarketChartFormat = {
+  useSignificantPriceFormat: boolean;
   precision: number;
   minMove: number;
 };
+
+export function shouldUseSignificantPriceFormat(lastPrice: number): boolean {
+  const magnitude = Math.abs(lastPrice);
+  return magnitude > 0 && magnitude < 1;
+}
 
 export type ChartViewConfig = {
   appearance: ChartAppearance;
@@ -146,6 +152,25 @@ export function buildChartViewConfig(
     };
     displayFormat = {
       type: 'compact',
+      precision: market.precision,
+      locale: settings.locale,
+      currencySymbol,
+      useGrouping: settings.yAxisUseGrouping,
+    };
+  } else if (
+    settings.yAxisFormat === 'auto' &&
+    market.useSignificantPriceFormat
+  ) {
+    yAxisValueFormat = {
+      type: 'significant',
+      significantDigits: 3,
+      minMove: market.minMove,
+      locale: settings.locale,
+      currencySymbol,
+      useGrouping: settings.yAxisUseGrouping,
+    };
+    displayFormat = {
+      type: 'price',
       precision: market.precision,
       locale: settings.locale,
       currencySymbol,

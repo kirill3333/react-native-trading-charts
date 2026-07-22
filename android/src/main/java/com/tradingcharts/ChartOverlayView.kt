@@ -8,21 +8,28 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
 import android.view.View
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.round
 import kotlin.math.roundToInt
 
 internal class ChartOverlayView(context: Context) : View(context) {
   private data class PreparedValueFormat(
     val number: NumberFormat,
     val currencySymbol: String,
-    val compact: Boolean,
+    val decimalSeparator: String,
+    val type: String,
+    val significantDigits: Int,
   )
 
   private class ExtremumLabelCache {
@@ -158,12 +165,19 @@ internal class ChartOverlayView(context: Context) : View(context) {
   }
 
   private fun prepareValueFormat(format: ValueFormat): PreparedValueFormat {
-    val number = NumberFormat.getNumberInstance(Locale.forLanguageTag(format.locale)).apply {
+    val locale = Locale.forLanguageTag(format.locale)
+    val number = NumberFormat.getNumberInstance(locale).apply {
       isGroupingUsed = format.useGrouping
-      minimumFractionDigits = if (format.compact) 0 else format.precision
-      maximumFractionDigits = format.precision
+      minimumFractionDigits = if (format.type == "price") format.precision else 0
+      maximumFractionDigits = if (format.significant) 12 else format.precision
     }
-    return PreparedValueFormat(number, format.currencySymbol, format.compact)
+    return PreparedValueFormat(
+      number = number,
+      currencySymbol = format.currencySymbol,
+      decimalSeparator = DecimalFormatSymbols.getInstance(locale).decimalSeparator.toString(),
+      type = format.type,
+      significantDigits = format.significantDigits,
+    )
   }
 
   private fun safeDateFormat(config: DatePatternConfig, fallback: String) =
@@ -181,9 +195,15 @@ internal class ChartOverlayView(context: Context) : View(context) {
   }
 
   private fun formatValue(value: Double, format: PreparedValueFormat): String {
+    if (format.type == "significant") {
+      val rounded = roundToSignificant(value, format.significantDigits)
+      val compact = cryptoZeroCount(rounded, format)
+      return format.currencySymbol + (compact ?: format.number.format(rounded))
+    }
+
     var scaled = value
     var suffix = ""
-    if (format.compact) {
+    if (format.type == "compact") {
       when {
         abs(value) >= 1e12 -> { scaled = value / 1e12; suffix = "T" }
         abs(value) >= 1e9 -> { scaled = value / 1e9; suffix = "B" }
@@ -192,6 +212,43 @@ internal class ChartOverlayView(context: Context) : View(context) {
       }
     }
     return format.currencySymbol + format.number.format(scaled) + suffix
+  }
+
+  private fun roundToSignificant(value: Double, digits: Int): Double {
+    val magnitude = abs(value)
+    if (magnitude == 0.0 || !magnitude.isFinite()) return value
+    var exponent = floor(log10(magnitude))
+    val multiplier = 10.0.pow(digits - 1)
+    var normalized = magnitude / 10.0.pow(exponent)
+    normalized = round(normalized * multiplier) / multiplier
+    if (normalized >= 10.0) {
+      normalized = 1.0
+      exponent += 1.0
+    }
+    val rounded = normalized * 10.0.pow(exponent)
+    return if (value < 0.0) -rounded else rounded
+  }
+
+  private fun cryptoZeroCount(value: Double, format: PreparedValueFormat): String? {
+    val magnitude = abs(value)
+    if (magnitude == 0.0 || !magnitude.isFinite()) return null
+    val exponent = floor(log10(magnitude)).toInt()
+    val zeroCount = -exponent - 1
+    if (zeroCount < MIN_CRYPTO_ZERO_COUNT) return null
+
+    val multiplier = 10.0.pow(format.significantDigits - 1)
+    val normalized = magnitude / 10.0.pow(exponent)
+    val significant = round(normalized * multiplier)
+      .toLong()
+      .toString()
+      .trimEnd('0')
+      .ifEmpty { "0" }
+    val sign = if (value < 0.0) "-" else ""
+    return "${sign}0${format.decimalSeparator}0${subscript(zeroCount)}$significant"
+  }
+
+  private fun subscript(value: Int): String = buildString {
+    value.toString().forEach { digit -> append(SUBSCRIPT_DIGITS[digit - '0']) }
   }
 
   private fun timeFormatIndex(frame: ChartSnapshot): Int {
@@ -467,5 +524,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
     (value[1] * 255).toInt(), (value[2] * 255).toInt(),
   )
 
-  companion object { private const val TAG = "TradingCharts" }
+  companion object {
+    private const val TAG = "TradingCharts"
+    private const val MIN_CRYPTO_ZERO_COUNT = 1
+    private const val SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
+  }
 }

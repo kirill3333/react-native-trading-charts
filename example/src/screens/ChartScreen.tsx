@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
@@ -11,6 +11,7 @@ import {
   Text,
   View,
   type ListRenderItem,
+  type LayoutChangeEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +31,7 @@ import {
   hyperliquidChartDataController,
   hyperliquidChartIdFor,
   type ChartConnectionStatus,
+  type ChartConnectionSnapshot,
 } from '../chartDataController';
 import {
   HYPERLIQUID_INTERVALS,
@@ -139,10 +141,7 @@ type ChartController<TTicker, TInterval extends string> = {
     interval: TInterval,
     listener: () => void
   ): () => void;
-  getSnapshot(
-    ticker: TTicker,
-    interval: TInterval
-  ): { status: ChartConnectionStatus; error: string | null };
+  getSnapshot(ticker: TTicker, interval: TInterval): ChartConnectionSnapshot;
 };
 
 type ChartContentProps<
@@ -170,13 +169,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   venueLabel,
 }: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
+  const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
+  const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const timeframeMs = intervalConfig?.timeframeMs ?? 60_000;
-  const formattedPrice = useMemo(
-    () => formatPrice(ticker.lastPrice, ticker.precision),
-    [ticker.lastPrice, ticker.precision]
-  );
 
   const subscribe = useCallback(
     (listener: () => void) => controller.subscribe(ticker, interval, listener),
@@ -186,11 +183,23 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
     () => controller.getSnapshot(ticker, interval),
     [controller, interval, ticker]
   );
-  const { status, error } = useSyncExternalStore(
+  const { status, error, lastPrice } = useSyncExternalStore(
     subscribe,
     getSnapshot,
     getSnapshot
   );
+  const displayedPrice = lastPrice ?? ticker.lastPrice;
+  const formattedPrice = useMemo(
+    () => formatPrice(displayedPrice, ticker.precision),
+    [displayedPrice, ticker.precision]
+  );
+
+  const handleChartViewportLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setFullChartHeight((currentHeight) =>
+      currentHeight === nextHeight ? currentHeight : nextHeight
+    );
+  }, []);
 
   const changeInterval = useCallback(
     (nextInterval: TInterval) => {
@@ -312,16 +321,28 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
           </Pressable>
         ) : null}
 
-        <View style={styles.chartContainer}>
-          <InteractiveChart
-            chartId={chartId}
-            key={chartId}
-            minMove={ticker.minMove}
-            onVisibleRangeChange={handleVisibleRangeChange}
-            precision={ticker.precision}
-            timeframeMs={timeframeMs}
-          />
-          <ConnectionBadge status={status} />
+        <View onLayout={handleChartViewportLayout} style={styles.chartViewport}>
+          <View
+            style={
+              isChartHalfHeight && fullChartHeight != null
+                ? [
+                    styles.chartContainer,
+                    { height: Math.max(1, fullChartHeight / 2) },
+                  ]
+                : styles.chartContainerExpanded
+            }
+          >
+            <InteractiveChart
+              chartId={chartId}
+              key={chartId}
+              lastPrice={ticker.lastPrice}
+              minMove={ticker.minMove}
+              onVisibleRangeChange={handleVisibleRangeChange}
+              precision={ticker.precision}
+              timeframeMs={timeframeMs}
+            />
+            <ConnectionBadge status={status} />
+          </View>
         </View>
         <View style={styles.chartControls}>
           <Pressable
@@ -369,6 +390,39 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             ]}
           >
             <Text style={styles.chartResetText}>Settings</Text>
+          </Pressable>
+        </View>
+        <View style={styles.chartSizeControls}>
+          <Pressable
+            accessibilityLabel="Reduce chart to half height"
+            accessibilityRole="button"
+            accessibilityState={{
+              disabled: isChartHalfHeight || fullChartHeight == null,
+            }}
+            disabled={isChartHalfHeight || fullChartHeight == null}
+            onPress={() => setIsChartHalfHeight(true)}
+            style={({ pressed }) => [
+              styles.chartSizeButton,
+              (isChartHalfHeight || fullChartHeight == null) &&
+                styles.chartSizeButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartSizeButtonText}>½ height</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Restore full chart height"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !isChartHalfHeight }}
+            disabled={!isChartHalfHeight}
+            onPress={() => setIsChartHalfHeight(false)}
+            style={({ pressed }) => [
+              styles.chartSizeButton,
+              !isChartHalfHeight && styles.chartSizeButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartSizeButtonText}>Full height</Text>
           </Pressable>
         </View>
       </View>
@@ -504,7 +558,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginLeft: 12,
   },
-  chartContainer: { flex: 1, position: 'relative' },
+  chartViewport: { flex: 1 },
+  chartContainer: { position: 'relative' },
+  chartContainerExpanded: { flex: 1, position: 'relative' },
   chartControls: {
     alignItems: 'center',
     borderTopColor: '#292431',
@@ -535,6 +591,30 @@ const styles = StyleSheet.create({
   chartResetButton: { minWidth: 84 },
   chartSettingsButton: { minWidth: 76, paddingHorizontal: 10 },
   chartResetText: { color: '#C2B9FF', fontSize: 13, fontWeight: '800' },
+  chartSizeControls: {
+    borderTopColor: '#292431',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  chartSizeButton: {
+    alignItems: 'center',
+    backgroundColor: '#211B2B',
+    borderColor: '#393242',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    height: 40,
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  chartSizeButtonDisabled: { opacity: 0.4 },
+  chartSizeButtonText: {
+    color: '#C2B9FF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   liveBadge: {
     alignItems: 'center',
     backgroundColor: 'rgba(20, 40, 33, 0.9)',

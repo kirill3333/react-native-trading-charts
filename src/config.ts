@@ -12,6 +12,7 @@ import {
   type ResolvedChartFormatters,
   type ResolvedChartTextStyle,
   type ResolvedPriceDisplayFormat,
+  type SignificantValueFormat,
   type TradingChartsViewProps,
   type YAxisValueFormat,
 } from './types';
@@ -117,6 +118,28 @@ function resolveBorder(
 }
 
 function resolveValueFormat(input?: YAxisValueFormat) {
+  if (input?.type === 'significant') {
+    const format: Required<SignificantValueFormat> = {
+      type: 'significant',
+      significantDigits: input.significantDigits ?? 3,
+      minMove: input.minMove ?? 0.01,
+      locale: input.locale ?? 'en-GB',
+      currencySymbol: input.currencySymbol ?? '',
+      useGrouping: input.useGrouping ?? true,
+    };
+    if (
+      !Number.isInteger(format.significantDigits) ||
+      format.significantDigits < 1 ||
+      format.significantDigits > 8
+    ) {
+      throw new TypeError(
+        'yAxis.valueFormat.significantDigits must be an integer from 1 to 8'
+      );
+    }
+    finitePositive(format.minMove, 'yAxis.valueFormat.minMove');
+    return format;
+  }
+
   if (input?.type === 'compact') {
     const format: Required<CompactValueFormat> = {
       type: 'compact',
@@ -166,7 +189,35 @@ function resolveDisplayFormat(
   name: string
 ): ResolvedPriceDisplayFormat {
   const type = input?.type ?? fallback.type;
-  const precision = input?.precision ?? fallback.precision;
+  if (type === 'significant') {
+    const significantDigits =
+      (input?.type === 'significant' ? input.significantDigits : undefined) ??
+      (fallback.type === 'significant'
+        ? fallback.significantDigits
+        : 3);
+    if (
+      !Number.isInteger(significantDigits) ||
+      significantDigits < 1 ||
+      significantDigits > 8
+    ) {
+      throw new TypeError(
+        `${name}.significantDigits must be an integer from 1 to 8`
+      );
+    }
+    return {
+      type,
+      significantDigits,
+      locale: nonEmpty(input?.locale ?? fallback.locale, `${name}.locale`),
+      currencySymbol: input?.currencySymbol ?? fallback.currencySymbol,
+      useGrouping:
+        input?.useGrouping ??
+        ('useGrouping' in fallback ? fallback.useGrouping : true),
+    };
+  }
+
+  const precision =
+    (input?.type !== 'significant' ? input?.precision : undefined) ??
+    ('precision' in fallback ? fallback.precision : 2);
   const maximumPrecision = type === 'compact' ? 8 : 12;
   if (
     !Number.isInteger(precision) ||

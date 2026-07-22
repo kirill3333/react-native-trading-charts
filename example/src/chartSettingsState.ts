@@ -1,7 +1,7 @@
 export type ChartThemeMode = 'default' | 'highContrast';
 export type AxisSpacing = 'time' | 'logical';
 export type AxisPosition = 'left' | 'right';
-export type PriceFormat = 'price' | 'compact';
+export type PriceFormat = 'auto' | 'price' | 'compact';
 export type ScaleMarginPreset = 'tight' | 'default' | 'loose';
 export type CrosshairLineStyleSetting = 'solid' | 'dashed';
 export type ChartLocale = 'en-GB' | 'en-US';
@@ -39,7 +39,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   xAxisSpacing: 'time',
   yAxisVisible: true,
   yAxisPosition: 'right',
-  yAxisFormat: 'price',
+  yAxisFormat: 'auto',
   yAxisUseGrouping: true,
   yAxisScaleMargins: 'default',
   panEnabled: true,

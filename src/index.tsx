@@ -20,6 +20,7 @@ export type {
   PriceExtremesOptions,
   PriceScaleMargins,
   ScaleChangeEvent,
+  SignificantValueFormat,
   PriceValueFormat,
   PriceDisplayFormat,
   TradeEvent,

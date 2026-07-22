@@ -6,11 +6,15 @@ import {
 } from 'react-native-trading-charts';
 
 import { useChartSettings } from '../chartSettings';
-import { buildChartViewConfig } from '../chartSettingsConfig';
+import {
+  buildChartViewConfig,
+  shouldUseSignificantPriceFormat,
+} from '../chartSettingsConfig';
 
 type InteractiveChartProps = {
   chartId: string;
   timeframeMs: number;
+  lastPrice: number;
   precision: number;
   minMove: number;
   onVisibleRangeChange: (
@@ -21,14 +25,21 @@ type InteractiveChartProps = {
 export const InteractiveChart = memo(function InteractiveChart({
   chartId,
   timeframeMs,
+  lastPrice,
   precision,
   minMove,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
+  const useSignificantPriceFormat = shouldUseSignificantPriceFormat(lastPrice);
   const chartConfig = useMemo(
-    () => buildChartViewConfig(settings, { minMove, precision }),
-    [minMove, precision, settings]
+    () =>
+      buildChartViewConfig(settings, {
+        useSignificantPriceFormat,
+        minMove,
+        precision,
+      }),
+    [minMove, precision, settings, useSignificantPriceFormat]
   );
 
   return (

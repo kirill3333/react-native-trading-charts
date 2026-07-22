@@ -38,6 +38,13 @@ export type ChartConnectionStatus =
 export type ChartConnectionSnapshot = Readonly<{
   status: ChartConnectionStatus;
   error: string | null;
+  lastPrice: number | null;
+}>;
+
+type ChartConnectionSnapshotUpdate = Readonly<{
+  status: ChartConnectionStatus;
+  error: string | null;
+  lastPrice?: number | null;
 }>;
 
 type TradingChartsApi = Pick<
@@ -111,6 +118,7 @@ type TransportStatus = 'connecting' | 'reconnecting' | 'paused' | 'offline';
 const EMPTY_SNAPSHOT: ChartConnectionSnapshot = Object.freeze({
   status: 'loading',
   error: null,
+  lastPrice: null,
 });
 
 function messageFromError(error: unknown): string {
@@ -267,15 +275,39 @@ class ChartDataSession<TInterval extends string, TMessage> {
     this.options.charts.clear(this.chartId);
   }
 
-  private setSnapshot(next: ChartConnectionSnapshot): void {
+  private setSnapshot(next: ChartConnectionSnapshotUpdate): void {
+    const lastPrice =
+      next.lastPrice === undefined ? this.snapshot.lastPrice : next.lastPrice;
     if (
       this.snapshot.status === next.status &&
-      this.snapshot.error === next.error
+      this.snapshot.error === next.error &&
+      this.snapshot.lastPrice === lastPrice
     ) {
       return;
     }
-    this.snapshot = Object.freeze(next);
+    this.snapshot = Object.freeze({
+      status: next.status,
+      error: next.error,
+      lastPrice,
+    });
     this.listeners.forEach((listener) => listener());
+  }
+
+  private publishLatestPrice(candles: ReadonlyArray<OhlcCandle>): void {
+    let latest: OhlcCandle | undefined;
+    candles.forEach((candle) => {
+      if (latest == null || candle.timestamp >= latest.timestamp) {
+        latest = candle;
+      }
+    });
+    if (latest == null) {
+      return;
+    }
+    this.setSnapshot({
+      status: this.snapshot.status,
+      error: this.snapshot.error,
+      lastPrice: latest.close,
+    });
   }
 
   private abortSynchronization(): void {
@@ -495,6 +527,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
       } else {
         this.bufferCandles(event.generation, candles);
       }
+      this.publishLatestPrice(candles);
     } catch (error) {
       this.options.websocketClient.reportProtocolError(event.generation, error);
     }

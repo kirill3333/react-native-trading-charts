@@ -24,6 +24,7 @@ const POSITION_OPTIONS = [
   { label: 'Right', value: 'right' },
 ] as const;
 const FORMAT_OPTIONS = [
+  { label: 'Auto', value: 'auto' },
   { label: 'Price', value: 'price' },
   { label: 'Compact', value: 'compact' },
 ] as const;
@@ -134,6 +135,7 @@ export function SettingsScreen() {
             value={settings.yAxisPosition}
           />
           <SettingSegments
+            description="Uses significant digits below 1 and zero-count for tiny prices"
             disabled={!settings.yAxisVisible}
             label="Value format"
             onValueChange={(yAxisFormat) => updateSettings({ yAxisFormat })}

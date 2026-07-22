@@ -5,7 +5,10 @@ import {
   chartSettingsReducer,
   type ChartSettings,
 } from '../chartSettingsState';
-import { buildChartViewConfig } from '../chartSettingsConfig';
+import {
+  buildChartViewConfig,
+  shouldUseSignificantPriceFormat,
+} from '../chartSettingsConfig';
 
 function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
   return { ...DEFAULT_CHART_SETTINGS, ...patch };
@@ -22,6 +25,7 @@ describe('chart settings', () => {
       crosshairTooltipOpacity: 0.85,
       locale: 'en-GB',
       timeZone: 'utc',
+      yAxisFormat: 'auto',
     });
   });
 
@@ -49,7 +53,7 @@ describe('chart settings', () => {
   it('keeps market precision and minMove in the default view config', () => {
     const config = buildChartViewConfig(
       DEFAULT_CHART_SETTINGS,
-      { minMove: 0.001, precision: 3 },
+      { useSignificantPriceFormat: false, minMove: 0.001, precision: 3 },
       'Europe/London'
     );
 
@@ -90,7 +94,7 @@ describe('chart settings', () => {
         yAxisFormat: 'compact',
         yAxisScaleMargins: 'loose',
       }),
-      { minMove: 0.01, precision: 2 },
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 },
       'America/New_York'
     );
 
@@ -132,14 +136,47 @@ describe('chart settings', () => {
   it('does not mutate a theme preset when tooltip opacity changes', () => {
     const translucent = buildChartViewConfig(
       settingsWith({ crosshairTooltipOpacity: 0.6 }),
-      { minMove: 1, precision: 0 }
+      { useSignificantPriceFormat: false, minMove: 1, precision: 0 }
     );
     const defaultOpacity = buildChartViewConfig(DEFAULT_CHART_SETTINGS, {
+      useSignificantPriceFormat: false,
       minMove: 1,
       precision: 0,
     });
 
     expect(translucent.appearance.tooltip?.backgroundOpacity).toBe(0.6);
     expect(defaultOpacity.appearance.tooltip?.backgroundOpacity).toBe(0.85);
+  });
+
+  it('uses zero-count formatting only for the Y axis of tiny markets', () => {
+    const config = buildChartViewConfig(
+      DEFAULT_CHART_SETTINGS,
+      { useSignificantPriceFormat: true, minMove: 0.00000001, precision: 8 }
+    );
+
+    expect(config.yAxis.valueFormat).toEqual({
+      type: 'significant',
+      significantDigits: 3,
+      minMove: 0.00000001,
+      locale: 'en-GB',
+      currencySymbol: '',
+      useGrouping: true,
+    });
+    expect(config.formatters.price?.currentPrice).toMatchObject({
+      type: 'price',
+      precision: 8,
+    });
+    expect(config.formatters.price?.tooltip).toMatchObject({
+      type: 'price',
+      precision: 8,
+    });
+  });
+
+  it('selects significant formatting for non-zero prices below one', () => {
+    expect(shouldUseSignificantPriceFormat(0.056602)).toBe(true);
+    expect(shouldUseSignificantPriceFormat(0.0000058)).toBe(true);
+    expect(shouldUseSignificantPriceFormat(-0.5)).toBe(true);
+    expect(shouldUseSignificantPriceFormat(0)).toBe(false);
+    expect(shouldUseSignificantPriceFormat(1)).toBe(false);
   });
 });

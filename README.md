@@ -288,6 +288,35 @@ yAxis={{
 }}
 ```
 
+For very small crypto prices, use the significant formatter:
+
+```tsx
+yAxis={{
+  valueFormat: {
+    type: 'significant',
+    significantDigits: 3,
+    minMove: 0.00000001,
+    currencySymbol: '$',
+    locale: 'en-GB',
+  },
+}}
+```
+
+`significantDigits` accepts values from `1` through `8`. Values with one or more
+zeros after the decimal separator use crypto zero-count notation, where the
+subscript is the number of zeros before the first significant digit:
+`0.056602` becomes `$0.0₁566`, `0.001898` becomes `$0.0₂19`, and `0.0000058`
+becomes `$0.0₅58`. Other values use ordinary localized significant digits, so
+the same formatter remains usable while the market crosses price magnitudes.
+`minMove` remains the instrument's real tick size; it does not control when
+zero-count notation is selected.
+
+The example app's `Auto` Y-axis format selects `significant` when the current
+market price is below `1`. This keeps sub-unit axes concise at prices such as
+`0.056602`; zero-count notation starts as soon as there is a leading fractional
+zero. Current-price, crosshair, extrema, and tooltip values keep the full
+`price` format so exact executable prices remain visible.
+
 `scaleMargins` reserves a fraction of the plot above and below the visible price
 range. Both values must be non-negative and their sum must be less than `1`.
 Defaults are `top: 0.2` and `bottom: 0.1`. When all visible values are equal,

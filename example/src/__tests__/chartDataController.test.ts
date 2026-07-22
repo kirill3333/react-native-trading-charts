@@ -192,6 +192,9 @@ describe('ChartDataController with Binance native klines', () => {
     });
     emit({ type: 'ready', topic: 'btcusdt@kline_1s', generation: 1 });
     expect(charts.updateCandle).not.toHaveBeenCalled();
+    expect(controller.getSnapshot(ticker, '1s').lastPrice).toBe(
+      secondCandle.close
+    );
 
     initial.resolve([firstCandle]);
     await flushPromises();
@@ -225,6 +228,9 @@ describe('ChartDataController with Binance native klines', () => {
     expect(charts.updateCandle).toHaveBeenCalledWith(
       chartIdFor('BTCUSDT', '1s'),
       secondCandle
+    );
+    expect(controller.getSnapshot(ticker, '1s').lastPrice).toBe(
+      secondCandle.close
     );
   });
 

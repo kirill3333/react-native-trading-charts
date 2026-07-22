@@ -120,11 +120,24 @@ export type CompactValueFormat = {
   currencySymbol?: string;
 };
 
-export type YAxisValueFormat = PriceValueFormat | CompactValueFormat;
+export type SignificantValueFormat = {
+  type: 'significant';
+  significantDigits?: number;
+  minMove?: number;
+  locale?: string;
+  currencySymbol?: string;
+  useGrouping?: boolean;
+};
+
+export type YAxisValueFormat =
+  | PriceValueFormat
+  | CompactValueFormat
+  | SignificantValueFormat;
 
 export type PriceDisplayFormat =
   | Omit<PriceValueFormat, 'minMove'>
-  | (Omit<CompactValueFormat, 'minMove'> & { useGrouping?: boolean });
+  | (Omit<CompactValueFormat, 'minMove'> & { useGrouping?: boolean })
+  | Omit<SignificantValueFormat, 'minMove'>;
 
 export type DatePatternFormat = {
   pattern: string;
@@ -264,7 +277,7 @@ export type ResolvedChartConfig = {
   formatters: ResolvedChartFormatters;
   xAxis: Required<XAxisOptions>;
   yAxis: Omit<Required<YAxisOptions>, 'valueFormat'> & {
-    valueFormat: Required<PriceValueFormat> | Required<CompactValueFormat>;
+    valueFormat: ResolvedYAxisValueFormat;
   };
   gestures: Required<GestureOptions>;
   currentPrice: Required<CurrentPriceOptions>;
@@ -328,13 +341,26 @@ export type ResolvedChartAppearance = {
   };
 };
 
-export type ResolvedPriceDisplayFormat = {
-  type: 'price' | 'compact';
-  precision: number;
-  locale: string;
-  currencySymbol: string;
-  useGrouping: boolean;
-};
+export type ResolvedYAxisValueFormat =
+  | Required<PriceValueFormat>
+  | Required<CompactValueFormat>
+  | Required<SignificantValueFormat>;
+
+export type ResolvedPriceDisplayFormat =
+  | {
+      type: 'price' | 'compact';
+      precision: number;
+      locale: string;
+      currencySymbol: string;
+      useGrouping: boolean;
+    }
+  | {
+      type: 'significant';
+      significantDigits: number;
+      locale: string;
+      currencySymbol: string;
+      useGrouping: boolean;
+    };
 
 export type ResolvedDatePatternFormat = Required<DatePatternFormat>;
 
@@ -345,7 +371,7 @@ export type ResolvedChartFormatters = {
     tooltipHeader: ResolvedDatePatternFormat;
   };
   price: {
-    yAxis: Required<PriceValueFormat> | Required<CompactValueFormat>;
+    yAxis: ResolvedYAxisValueFormat;
     priceExtremes: ResolvedPriceDisplayFormat;
     currentPrice: ResolvedPriceDisplayFormat;
     crosshairPrice: ResolvedPriceDisplayFormat;

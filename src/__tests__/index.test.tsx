@@ -224,6 +224,29 @@ describe('chart config', () => {
       minMove: 0.01,
       currencySymbol: '$',
     });
+    const significant = resolveChartConfig({
+      chartId: 'micro-price',
+      yAxis: {
+        valueFormat: {
+          type: 'significant',
+          significantDigits: 3,
+          minMove: 0.00000001,
+        },
+      },
+    });
+    expect(significant.yAxis.valueFormat).toMatchObject({
+      type: 'significant',
+      significantDigits: 3,
+      minMove: 0.00000001,
+      useGrouping: true,
+    });
+    expect(significant.formatters.price.yAxis).toEqual(
+      significant.yAxis.valueFormat
+    );
+    expect(significant.formatters.price.currentPrice).toMatchObject({
+      type: 'significant',
+      significantDigits: 3,
+    });
     expect(() =>
       resolveChartConfig({ chartId: 'bad', timeframeMs: 1.5 })
     ).toThrow('timeframeMs must be a positive integer');
@@ -412,6 +435,27 @@ describe('chart config', () => {
         yAxis: { valueFormat: { type: 'compact', minMove: 0 } },
       })
     ).toThrow('yAxis.valueFormat.minMove');
+  });
+
+  it('validates significant price formats', () => {
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-significant-digits',
+        yAxis: {
+          valueFormat: { type: 'significant', significantDigits: 0 },
+        },
+      })
+    ).toThrow('yAxis.valueFormat.significantDigits');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-significant-display',
+        formatters: {
+          price: {
+            tooltip: { type: 'significant', significantDigits: 9 },
+          },
+        },
+      })
+    ).toThrow('formatters.price.tooltip.significantDigits');
   });
 
   it('resolves role-specific appearance over legacy theme values', () => {
