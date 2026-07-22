@@ -175,6 +175,7 @@ export type YAxisOptions = {
   visible?: boolean;
   position?: 'left' | 'right';
   width?: number;
+  defaultScale?: number;
   scaleMargins?: PriceScaleMargins;
   valueFormat?: YAxisValueFormat;
 };
@@ -182,6 +183,7 @@ export type YAxisOptions = {
 export type GestureOptions = {
   pan?: boolean;
   zoom?: boolean;
+  yAxisScale?: boolean;
 };
 
 export type CurrentPriceOptions = {
@@ -225,6 +227,10 @@ export type VisibleRangeChangeEvent = {
   atEnd: boolean;
 };
 
+export type ScaleChangeEvent = {
+  scale: number;
+};
+
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
   timeframeMs?: number;
@@ -241,6 +247,10 @@ export type TradingChartsViewProps = ViewProps & {
   crosshair?: CrosshairOptions;
   onVisibleRangeChange?: (
     event: NativeSyntheticEvent<VisibleRangeChangeEvent>
+  ) => void;
+  onScaleChange?: (event: NativeSyntheticEvent<ScaleChangeEvent>) => void;
+  onYAxisScaleChange?: (
+    event: NativeSyntheticEvent<ScaleChangeEvent>
   ) => void;
   onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
 };

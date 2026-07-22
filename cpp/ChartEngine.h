@@ -29,6 +29,7 @@ struct ChartConfig {
   double timeframeMs = 60000.0;
   int initialVisibleCount = 100;
   double defaultScale = 1.0;
+  double defaultYScale = 1.0;
   float displayScale = 1.0f;
 
   Color background{16.0f / 255.0f, 12.0f / 255.0f, 24.0f / 255.0f, 1.0f};
@@ -67,6 +68,7 @@ struct ChartConfig {
 
   bool allowPan = true;
   bool allowZoom = true;
+  bool allowYAxisScale = true;
   bool showCurrentPrice = true;
   bool showCurrentPriceLabel = true;
   bool pinCurrentPriceToEdge = true;
@@ -120,12 +122,14 @@ struct RenderSnapshot {
   std::vector<AxisTick> yTicks;
   double visibleXMin = 0.0;
   double visibleXMax = 1.0;
+  double horizontalScale = 1.0;
   size_t firstVisibleIndex = 0;
   size_t lastVisibleIndex = 0;
   size_t totalCandleCount = 0;
   bool hasVisibleCandles = false;
   double visibleYMin = 0.0;
   double visibleYMax = 1.0;
+  double yAxisScale = 1.0;
 
   bool currentPriceVisible = false;
   double currentPrice = 0.0;
@@ -168,15 +172,16 @@ class ChartEngine {
   void clear();
 
   bool pan(float deltaPixels);
-  void zoom(double scale, float focusX);
+  bool zoom(double scale, float focusX);
   void zoomAtRightEdge(double scale);
-  void scaleY(float deltaPixels);
+  bool scaleY(float deltaPixels);
   void resetViewport();
   void fitContent();
   void setCrosshair(bool active, float x, float y);
 
   size_t candleCount() const;
   Candle candleAt(size_t index) const;
+  std::vector<Candle> candles() const;
   std::shared_ptr<const RenderSnapshot> snapshot();
 
  private:
@@ -187,6 +192,7 @@ class ChartEngine {
   float height_ = 0.0f;
   double visibleXMin_ = 0.0;
   double visibleXMax_ = 1.0;
+  double horizontalScaleBaseSpan_ = 1.0;
   bool viewportInitialized_ = false;
   double yRangeMultiplier_ = 1.0;
   bool crosshairActive_ = false;

@@ -9,6 +9,7 @@ const mockNativeModule = {
   updateCandle: jest.fn(),
   updateTrade: jest.fn(),
   updateTrades: jest.fn(),
+  getCandles: jest.fn<(chartId: string) => Promise<ReadonlyArray<number>>>(),
   zoom: jest.fn(),
   fitContent: jest.fn(),
   clear: jest.fn(),
@@ -89,6 +90,49 @@ describe('TradingCharts data API', () => {
     );
   });
 
+  it('reads and unpacks the current native candle store', async () => {
+    mockNativeModule.getCandles.mockResolvedValue([
+      0, 10, 12, 9, 11, 2, 60_000, 11, 14, 10, 13, 4,
+    ]);
+
+    await expect(TradingCharts.getCandles('main')).resolves.toEqual([
+      { timestamp: 0, open: 10, high: 12, low: 9, close: 11, volume: 2 },
+      {
+        timestamp: 60_000,
+        open: 11,
+        high: 14,
+        low: 10,
+        close: 13,
+        volume: 4,
+      },
+    ]);
+    expect(mockNativeModule.getCandles).toHaveBeenCalledWith('main');
+  });
+
+  it('returns an empty candle array from a mounted empty chart', async () => {
+    mockNativeModule.getCandles.mockResolvedValue([]);
+
+    await expect(TradingCharts.getCandles('empty')).resolves.toEqual([]);
+  });
+
+  it('validates getCandles and forwards native rejections', async () => {
+    await expect(TradingCharts.getCandles('')).rejects.toThrow(
+      'chartId must be a non-empty string'
+    );
+    const error = Object.assign(new Error('Chart is not mounted'), {
+      code: 'E_CHART_NOT_MOUNTED',
+    });
+    mockNativeModule.getCandles.mockRejectedValue(error);
+    await expect(TradingCharts.getCandles('missing')).rejects.toMatchObject({
+      code: 'E_CHART_NOT_MOUNTED',
+    });
+
+    mockNativeModule.getCandles.mockResolvedValue([0, 1]);
+    await expect(TradingCharts.getCandles('invalid')).rejects.toThrow(
+      'complete OHLCV records'
+    );
+  });
+
   it('forwards viewport commands to the native module', () => {
     TradingCharts.zoom('main', 1.25);
     TradingCharts.fitContent('main');
@@ -131,6 +175,12 @@ describe('chart config', () => {
       minMove: 0.01,
     });
     expect(price.yAxis.scaleMargins).toEqual({ top: 0.2, bottom: 0.1 });
+    expect(price.yAxis.defaultScale).toBe(1);
+    expect(price.gestures).toEqual({
+      pan: true,
+      zoom: true,
+      yAxisScale: true,
+    });
     expect(price.currentPrice.pinToEdge).toBe(true);
     expect(price.priceExtremes.visible).toBe(true);
     expect(price.crosshair).toEqual({
@@ -284,11 +334,54 @@ describe('chart config', () => {
       JSON.stringify(
         resolveChartConfig({
           chartId: 'callback-is-not-config',
+          onScaleChange: jest.fn(),
+          onYAxisScaleChange: jest.fn(),
           onSelectedCandleChange: jest.fn(),
         })
       )
     ) as Record<string, unknown>;
     expect(serialized).not.toHaveProperty('onSelectedCandleChange');
+    expect(serialized).not.toHaveProperty('onScaleChange');
+    expect(serialized).not.toHaveProperty('onYAxisScaleChange');
+  });
+
+  it('validates Y-axis default scale and resolves gesture compatibility', () => {
+    expect(
+      resolveChartConfig({
+        chartId: 'scaled-y',
+        yAxis: { defaultScale: 2.5 },
+      }).yAxis.defaultScale
+    ).toBe(2.5);
+    expect(
+      resolveChartConfig({
+        chartId: 'zoom-disabled',
+        gestures: { zoom: false },
+      }).gestures.yAxisScale
+    ).toBe(false);
+    expect(
+      resolveChartConfig({
+        chartId: 'independent-y-scale',
+        gestures: { zoom: false, yAxisScale: true },
+      }).gestures
+    ).toEqual({ pan: true, zoom: false, yAxisScale: true });
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'small-y-scale',
+        yAxis: { defaultScale: 0.09 },
+      })
+    ).toThrow('yAxis.defaultScale must be between 0.1 and 10');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'large-y-scale',
+        yAxis: { defaultScale: 10.01 },
+      })
+    ).toThrow('yAxis.defaultScale must be between 0.1 and 10');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'nan-y-scale',
+        yAxis: { defaultScale: Number.NaN },
+      })
+    ).toThrow('yAxis.defaultScale must be a positive finite number');
   });
 
   it('serializes price-extreme visibility into the native JSON config', () => {

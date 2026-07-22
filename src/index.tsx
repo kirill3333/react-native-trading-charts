@@ -19,6 +19,7 @@ export type {
   OhlcCandle,
   PriceExtremesOptions,
   PriceScaleMargins,
+  ScaleChangeEvent,
   PriceValueFormat,
   PriceDisplayFormat,
   TradeEvent,

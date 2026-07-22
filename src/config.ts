@@ -500,6 +500,13 @@ export function resolveChartConfig(
     throw new TypeError("xAxis.spacing must be 'time' or 'logical'");
   }
   const axisWidth = finitePositive(props.yAxis?.width ?? 64, 'yAxis.width');
+  const yAxisDefaultScale = finitePositive(
+    props.yAxis?.defaultScale ?? 1,
+    'yAxis.defaultScale'
+  );
+  if (yAxisDefaultScale < 0.1 || yAxisDefaultScale > 10) {
+    throw new TypeError('yAxis.defaultScale must be between 0.1 and 10');
+  }
   const scaleMargins = props.yAxis?.scaleMargins ?? {
     top: 0.2,
     bottom: 0.1,
@@ -550,12 +557,15 @@ export function resolveChartConfig(
       visible: props.yAxis?.visible ?? true,
       position: props.yAxis?.position ?? 'right',
       width: axisWidth,
+      defaultScale: yAxisDefaultScale,
       scaleMargins: { ...scaleMargins },
       valueFormat,
     },
     gestures: {
       pan: props.gestures?.pan ?? true,
       zoom: props.gestures?.zoom ?? true,
+      yAxisScale:
+        props.gestures?.yAxisScale ?? props.gestures?.zoom ?? true,
     },
     currentPrice: {
       visible: props.currentPrice?.visible ?? true,

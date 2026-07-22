@@ -45,6 +45,7 @@ export function Chart() {
       xAxis={{ locale: 'en-GB', timeZone: 'UTC', spacing: 'time' }}
       yAxis={{
         position: 'right',
+        defaultScale: 1,
         scaleMargins: { top: 0.2, bottom: 0.1 },
         valueFormat: {
           type: 'price',
@@ -53,7 +54,7 @@ export function Chart() {
           locale: 'en-GB',
         },
       }}
-      gestures={{ pan: true, zoom: true }}
+      gestures={{ pan: true, zoom: true, yAxisScale: true }}
       currentPrice={{ visible: true, showLabel: true, pinToEdge: true }}
       priceExtremes={{ visible: true }}
       theme={{
@@ -80,6 +81,12 @@ export function Chart() {
       onSelectedCandleChange={(candle) => {
         // `null` is emitted once when the crosshair selection is cleared.
         console.log('Selected candle', candle);
+      }}
+      onScaleChange={({ nativeEvent }) => {
+        console.log('Horizontal scale', nativeEvent.scale);
+      }}
+      onYAxisScaleChange={({ nativeEvent }) => {
+        console.log('Y-axis scale', nativeEvent.scale);
       }}
     />
   );
@@ -113,6 +120,9 @@ TradingCharts.zoom('btc-1m', 1.25);
 
 // Show the complete loaded history and restore automatic Y scaling.
 TradingCharts.fitContent('btc-1m');
+
+// Read an atomic copy of every candle currently stored by the native engine.
+const currentCandles = await TradingCharts.getCandles('btc-1m');
 ```
 
 `chartId` must be unique and stable while the view is mounted. Calls made before
@@ -126,19 +136,31 @@ candle; an older trade is ignored with a development warning.
 
 `defaultScale` defaults to `1` and scales the initial horizontal viewport after
 `initialVisibleCount` is applied. Values greater than `1` zoom in; values between
-`0` and `1` zoom out. The scale is restored by a double-tap reset and by the next
-`setHistory`. Changing the prop on a populated chart does not move the current
-viewport until one of those resets occurs.
+`0` and `1` zoom out. The scale is restored by the next `setHistory`. Changing
+the prop on a populated chart does not move the current viewport until then.
 
 `onSelectedCandleChange` receives the selected OHLCV candle when the crosshair
 moves to a different candle or that candle's values change. It receives `null`
 once when the selection is cleared; moving within the same unchanged candle does
 not emit another callback.
 
+`onScaleChange` reports horizontal pinch changes and `onYAxisScaleChange`
+reports vertical drags that start in the Y-axis lane. Both callbacks receive an
+absolute `{ scale }`: `1` is the baseline, values above `1` make candles
+visually wider or taller, and values below `1` make them narrower or shorter.
+Only user gestures emit these events. Native code coalesces gesture updates to
+at most one event of each type per rendered frame; `TradingCharts.zoom`,
+`fitContent`, and `setHistory` do not emit them.
+
+`TradingCharts.getCandles(chartId)` asynchronously returns an atomic copy of all
+OHLCV candles in the native store, including changes produced by candle/trade
+updates and prepended history. A mounted empty chart returns `[]`. The Promise
+rejects with code `E_CHART_NOT_MOUNTED` when `chartId` is not mounted; unlike
+write commands, reads are not retained for later replay.
+
 A single tap immediately pins the crosshair to the nearest candle. While pinned,
 a one-finger drag moves the selection and another single tap clears it. Long
 press still tracks the finger, but releasing it now leaves the selection pinned.
-Double-tap continues to reset the viewport and clears the selection.
 
 The tooltip shows Open, Close, High, Low, amplitude, absolute and percentage
 change, and volume. Amplitude and percentage change use the candle open as the
@@ -274,15 +296,21 @@ size instead of deriving it from the latest price.
 
 With `gestures.zoom` enabled, pinch gestures scale the visible time range and a
 one-finger vertical drag that starts on the Y axis scales the visible price
-range. Drag up to narrow the range or down to expand it. The selected Y scale is
-preserved while autoscale follows the visible candles; double-tap the chart to
-reset both axes to their default viewport and autoscale.
+range. Set `gestures.yAxisScale` independently to enable or disable that Y-axis
+gesture. When omitted, it inherits `gestures.zoom` for backward compatibility;
+a disabled Y-axis gesture consumes the axis-lane drag without turning it into a
+horizontal pan. Drag up to narrow the range or down to expand it.
+
+`yAxis.defaultScale` defaults to `1` and accepts values from `0.1` through `10`.
+It is restored on the first history load, every `setHistory`, and
+`TradingCharts.fitContent`. The selected Y scale is otherwise preserved while
+autoscale follows the visible candles.
 
 `TradingCharts.zoom(chartId, scale)` provides the same horizontal scaling from
 application controls, anchored to the right edge of the current viewport. A
 scale greater than `1` zooms in and a scale between `0` and `1` zooms out.
 `TradingCharts.fitContent(chartId)` shows the full loaded history and restores
-automatic Y scaling. These programmatic commands work even when
+the configured `yAxis.defaultScale`. These programmatic commands work even when
 `gestures.zoom` is disabled; the option controls touch gestures only.
 
 With `gestures.pan` enabled, a quick horizontal swipe continues scrolling with

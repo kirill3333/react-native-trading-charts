@@ -1504,6 +1504,10 @@ struct TCTextPresentation {
     std::shared_ptr<const RenderSnapshot> snapshot);
 @property(nonatomic, copy, nullable) void (^selectedCandleDidChange)(
     std::shared_ptr<const RenderSnapshot> snapshot);
+@property(nonatomic, copy, nullable) void (^scaleDidChange)(
+    std::shared_ptr<const RenderSnapshot> snapshot);
+@property(nonatomic, copy, nullable) void (^yAxisScaleDidChange)(
+    std::shared_ptr<const RenderSnapshot> snapshot);
 - (void)applyConfigJson:(NSString *)json;
 - (void)applyHistory:(NSArray<NSNumber *> *)data;
 - (void)prependHistory:(NSArray<NSNumber *> *)data;
@@ -1513,6 +1517,7 @@ struct TCTextPresentation {
 - (void)zoomByScale:(double)scale;
 - (void)fitContent;
 - (void)clearData;
+- (NSArray<NSNumber *> *)candleData;
 - (void)startDecelerationWithVelocity:(CGFloat)velocity;
 - (void)stopDeceleration;
 @end
@@ -1533,13 +1538,14 @@ struct TCTextPresentation {
   CGFloat _horizontalVelocity;
   CFTimeInterval _lastDecelerationTimestamp;
   CFTimeInterval _pastEdgeWaitStartedAt;
-  CFTimeInterval _lastDoubleTapTimestamp;
   ChartConfig _config;
   NSInteger _lastFirstVisibleIndex;
   NSInteger _lastLastVisibleIndex;
   NSInteger _lastTotalCandleCount;
   BOOL _lastSelectedCandleActive;
   Candle _lastSelectedCandle;
+  BOOL _pendingScaleChange;
+  BOOL _pendingYAxisScaleChange;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -1586,14 +1592,9 @@ struct TCTextPresentation {
     longPress.minimumPressDuration = 0.28;
     longPress.delegate = self;
     [self addGestureRecognizer:longPress];
-    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc]
-        initWithTarget:self action:@selector(handleDoubleTap:)];
-    doubleTap.numberOfTapsRequired = 2;
-    [self addGestureRecognizer:doubleTap];
     UITapGestureRecognizer *singleTap = [[UITapGestureRecognizer alloc]
         initWithTarget:self action:@selector(handleSingleTap:)];
     singleTap.delegate = self;
-    doubleTap.delegate = self;
     [self addGestureRecognizer:singleTap];
   }
   return self;
@@ -1704,6 +1705,14 @@ struct TCTextPresentation {
     _lastSelectedCandle = Candle{};
     if (self.selectedCandleDidChange) self.selectedCandleDidChange(snapshot);
   }
+  if (_pendingScaleChange) {
+    _pendingScaleChange = NO;
+    if (self.scaleDidChange) self.scaleDidChange(snapshot);
+  }
+  if (_pendingYAxisScaleChange) {
+    _pendingYAxisScaleChange = NO;
+    if (self.yAxisScaleDidChange) self.yAxisScaleDidChange(snapshot);
+  }
   if (_decelerating) [self requestFrame];
   os_signpost_interval_end(performanceLog, frameSignpostID, "Display Link Frame",
                            "revision=%{public}llu",
@@ -1766,6 +1775,9 @@ struct TCTextPresentation {
   _config.defaultScale = root[@"defaultScale"]
       ? [root[@"defaultScale"] doubleValue]
       : 1.0;
+  _config.defaultYScale = yAxis[@"defaultScale"]
+      ? [yAxis[@"defaultScale"] doubleValue]
+      : 1.0;
   _config.background = TCColorFromHex(appearance[@"backgroundColor"], _config.background);
   _config.grid = TCColorFromHex(gridAppearance[@"color"], _config.grid);
   _config.axisText = TCColorFromHex(theme[@"axisTextColor"], _config.axisText);
@@ -1801,6 +1813,9 @@ struct TCTextPresentation {
   _config.useGrouping = format[@"useGrouping"] ? [format[@"useGrouping"] boolValue] : true;
   _config.allowPan = [gestures[@"pan"] boolValue];
   _config.allowZoom = [gestures[@"zoom"] boolValue];
+  _config.allowYAxisScale = gestures[@"yAxisScale"]
+      ? [gestures[@"yAxisScale"] boolValue]
+      : _config.allowZoom;
   _config.showCurrentPrice = [current[@"visible"] boolValue];
   _config.showCurrentPriceLabel = [current[@"showLabel"] boolValue];
   _config.pinCurrentPriceToEdge = current[@"pinToEdge"]
@@ -1829,6 +1844,8 @@ struct TCTextPresentation {
     _crosshairGestureActive = NO;
   }
   if (!_config.allowPan) [self stopDeceleration];
+  _pendingScaleChange = NO;
+  _pendingYAxisScaleChange = NO;
   _engine->setConfig(_config);
   [self requestFrame];
 }
@@ -1836,6 +1853,8 @@ struct TCTextPresentation {
 - (void)applyHistory:(NSArray<NSNumber *> *)data {
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
+  _pendingScaleChange = NO;
+  _pendingYAxisScaleChange = NO;
   auto values = TCDoubles(data);
   TCLogStatus(_engine->setHistory(values.data(), values.size()), @"setHistory");
   [self requestFrame];
@@ -1866,6 +1885,7 @@ struct TCTextPresentation {
   [self stopDeceleration];
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
+  _pendingScaleChange = NO;
   _engine->zoomAtRightEdge(scale);
   [self requestFrame];
 }
@@ -1873,6 +1893,8 @@ struct TCTextPresentation {
   [self stopDeceleration];
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
+  _pendingScaleChange = NO;
+  _pendingYAxisScaleChange = NO;
   _engine->fitContent();
   [self requestFrame];
 }
@@ -1880,6 +1902,8 @@ struct TCTextPresentation {
   [self stopDeceleration];
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
+  _pendingScaleChange = NO;
+  _pendingYAxisScaleChange = NO;
   _engine->clear();
   _lastFirstVisibleIndex = -1;
   _lastLastVisibleIndex = -1;
@@ -1887,8 +1911,23 @@ struct TCTextPresentation {
   [self requestFrame];
 }
 
+- (NSArray<NSNumber *> *)candleData {
+  const auto candles = _engine->candles();
+  NSMutableArray<NSNumber *> *result =
+      [NSMutableArray arrayWithCapacity:candles.size() * 6];
+  for (const Candle &candle : candles) {
+    [result addObject:@(candle.timestamp)];
+    [result addObject:@(candle.open)];
+    [result addObject:@(candle.high)];
+    [result addObject:@(candle.low)];
+    [result addObject:@(candle.close)];
+    [result addObject:@(candle.volume)];
+  }
+  return result;
+}
+
 - (BOOL)isPointInYAxis:(CGPoint)point {
-  if (!_config.showYAxis || !_config.allowZoom) return NO;
+  if (!_config.showYAxis) return NO;
   if (_config.yAxisOnRight) {
     return point.x >= self.bounds.size.width - _config.yAxisWidth;
   }
@@ -1914,7 +1953,7 @@ struct TCTextPresentation {
     _scalingYAxis = [self isPointInYAxis:[recognizer locationInView:self]];
     _suppressMomentum = _scalingYAxis;
     [recognizer setTranslation:CGPointZero inView:self];
-    if (_scalingYAxis) {
+    if (_scalingYAxis && _config.allowYAxisScale) {
       _engine->scaleY(0.0f);
       [self requestFrame];
     }
@@ -1929,9 +1968,15 @@ struct TCTextPresentation {
     }
     CGPoint translation = [recognizer translationInView:self];
     [recognizer setTranslation:CGPointZero inView:self];
-    if (_scalingYAxis) _engine->scaleY(translation.y);
-    else if (_config.allowPan) _engine->pan(translation.x);
-    [self requestFrame];
+    if (_scalingYAxis) {
+      if (_config.allowYAxisScale && _engine->scaleY(translation.y)) {
+        _pendingYAxisScaleChange = YES;
+        [self requestFrame];
+      }
+    } else if (_config.allowPan) {
+      _engine->pan(translation.x);
+      [self requestFrame];
+    }
     return;
   }
   if (recognizer.state == UIGestureRecognizerStateEnded ||
@@ -1960,7 +2005,9 @@ struct TCTextPresentation {
   }
   if (recognizer.state != UIGestureRecognizerStateChanged) return;
   CGPoint focus = [recognizer locationInView:self];
-  _engine->zoom(recognizer.scale, focus.x);
+  if (_engine->zoom(recognizer.scale, focus.x)) {
+    _pendingScaleChange = YES;
+  }
   recognizer.scale = 1.0;
   [self requestFrame];
 }
@@ -1994,10 +2041,6 @@ struct TCTextPresentation {
       (!_config.crosshairEnabled || ![self isPointInPlot:point])) {
     return;
   }
-  const CFTimeInterval now = CACurrentMediaTime();
-  if (_lastDoubleTapTimestamp > 0.0 && now - _lastDoubleTapTimestamp < 0.1) {
-    return;
-  }
   if (_crosshairPinned) {
     _crosshairPinned = NO;
     _crosshairGestureActive = NO;
@@ -2011,21 +2054,8 @@ struct TCTextPresentation {
   _engine->setCrosshair(true, point.x, point.y);
   [self requestFrame];
 }
-- (void)handleDoubleTap:(UITapGestureRecognizer *)recognizer {
-  _lastDoubleTapTimestamp = CACurrentMediaTime();
-  _suppressMomentum = YES;
-  [self stopDeceleration];
-  _crosshairPinned = NO;
-  _crosshairGestureActive = NO;
-  _engine->resetViewport();
-  [self requestFrame];
-}
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
     shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
-  if ([gestureRecognizer isKindOfClass:UITapGestureRecognizer.class] &&
-      [other isKindOfClass:UITapGestureRecognizer.class]) {
-    return YES;
-  }
   return [gestureRecognizer isKindOfClass:UIPinchGestureRecognizer.class] ||
       [other isKindOfClass:UIPinchGestureRecognizer.class];
 }
@@ -2078,6 +2108,20 @@ struct TCTextPresentation {
           candle.volume,
       });
     };
+    _host.scaleDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
+      TradingChartsView *strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf->_eventEmitter) return;
+      auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+          strongSelf->_eventEmitter);
+      emitter->onScaleChange({snapshot->horizontalScale});
+    };
+    _host.yAxisScaleDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
+      TradingChartsView *strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf->_eventEmitter) return;
+      auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+          strongSelf->_eventEmitter);
+      emitter->onYAxisScaleChange({snapshot->yAxisScale});
+    };
     self.contentView = _host;
   }
   return self;
@@ -2120,5 +2164,6 @@ struct TCTextPresentation {
 - (void)zoomByScale:(double)scale { [_host zoomByScale:scale]; }
 - (void)fitChartContent { [_host fitContent]; }
 - (void)clearChartData { [_host clearData]; }
+- (NSArray<NSNumber *> *)candleData { return [_host candleData]; }
 
 @end

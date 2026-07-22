@@ -37,6 +37,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var pastEdgeWaitStartedAtMs = 0L
   private var lastVisibleRangeKey: Triple<Int, Int, Int>? = null
   private var lastSelectedCandle: DoubleArray? = null
+  private var pendingScaleChange = false
+  private var pendingYAxisScaleChange = false
 
   private val flingFrame = object : Runnable {
     override fun run() {
@@ -87,11 +89,15 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
       override fun onScale(detector: ScaleGestureDetector): Boolean {
         if (!config.allowZoom) return false
-        ChartEngineNative.nativeZoom(
-          engineHandle,
-          detector.scaleFactor.toDouble(),
-          detector.focusX,
-        )
+        if (
+          ChartEngineNative.nativeZoom(
+            engineHandle,
+            detector.scaleFactor.toDouble(),
+            detector.focusX,
+          )
+        ) {
+          pendingScaleChange = true
+        }
         scheduleFrame()
         return true
       }
@@ -112,16 +118,24 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         distanceX: Float,
         distanceY: Float,
       ): Boolean {
+        var shouldScheduleFrame = false
         if (crosshairPinned) {
           ChartEngineNative.nativeSetCrosshair(engineHandle, true, current.x, current.y)
+          shouldScheduleFrame = true
         } else if (!scaleDetector.isInProgress) {
-          if (isYAxisGesture(first)) {
-            ChartEngineNative.nativeScaleY(engineHandle, -distanceY)
+          if (isPointInYAxis(first)) {
+            if (
+              config.allowYAxisScale &&
+              ChartEngineNative.nativeScaleY(engineHandle, -distanceY)
+            ) {
+              pendingYAxisScaleChange = true
+              shouldScheduleFrame = true
+            }
           } else if (config.allowPan) {
-            ChartEngineNative.nativePan(engineHandle, -distanceX)
+            shouldScheduleFrame = ChartEngineNative.nativePan(engineHandle, -distanceX)
           }
         }
-        scheduleFrame()
+        if (shouldScheduleFrame) scheduleFrame()
         return true
       }
 
@@ -161,7 +175,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
           first == null ||
           suppressFlingForTouch ||
           crosshairPinned ||
-          isYAxisGesture(first) ||
+          isPointInYAxis(first) ||
           !config.allowPan
         ) {
           return false
@@ -169,20 +183,13 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         startFling(velocityX)
         return true
       }
-
-      override fun onDoubleTap(event: MotionEvent): Boolean {
-        suppressFlingForTouch = true
-        stopFling()
-        crosshairPinned = false
-        ChartEngineNative.nativeResetViewport(engineHandle)
-        scheduleFrame()
-        return true
-      }
     },
-  )
+  ).also { detector ->
+    detector.setOnDoubleTapListener(null)
+  }
 
-  private fun isYAxisGesture(first: MotionEvent?): Boolean {
-    if (first == null || !config.showYAxis || !config.allowZoom) return false
+  private fun isPointInYAxis(first: MotionEvent?): Boolean {
+    if (first == null || !config.showYAxis) return false
     return if (config.yAxisOnRight) {
       first.x >= width - config.yAxisWidth
     } else {
@@ -248,6 +255,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       )
       if (!config.allowPan) stopFling()
       if (!config.crosshairEnabled) crosshairPinned = false
+      pendingScaleChange = false
+      pendingYAxisScaleChange = false
       ChartEngineNative.setConfig(engineHandle, config)
       scheduleFrame()
     } catch (error: Exception) {
@@ -257,6 +266,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   fun applyHistory(values: DoubleArray) {
     crosshairPinned = false
+    pendingScaleChange = false
+    pendingYAxisScaleChange = false
     logStatus("setHistory", ChartEngineNative.nativeSetHistory(engineHandle, values))
     scheduleFrame()
   }
@@ -285,6 +296,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun zoom(scale: Double) {
     stopFling()
     crosshairPinned = false
+    pendingScaleChange = false
     ChartEngineNative.nativeZoomAtRightEdge(engineHandle, scale)
     scheduleFrame()
   }
@@ -292,6 +304,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun fitContent() {
     stopFling()
     crosshairPinned = false
+    pendingScaleChange = false
+    pendingYAxisScaleChange = false
     ChartEngineNative.nativeFitContent(engineHandle)
     scheduleFrame()
   }
@@ -299,10 +313,14 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun clearData() {
     stopFling()
     crosshairPinned = false
+    pendingScaleChange = false
+    pendingYAxisScaleChange = false
     ChartEngineNative.nativeClear(engineHandle)
     lastVisibleRangeKey = null
     scheduleFrame()
   }
+
+  fun candles(): DoubleArray = ChartEngineNative.nativeCandles(engineHandle)
 
   private fun logStatus(operation: String, status: Int) {
     when (status) {
@@ -322,6 +340,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       plotView.requestRender()
       emitVisibleRangeChange(snapshot)
       emitSelectedCandleChange(snapshot)
+      emitScaleChanges(snapshot)
     }
   }
 
@@ -359,6 +378,37 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         selected ?: DoubleArray(6),
       )
     )
+  }
+
+  private fun emitScaleChanges(snapshot: ChartSnapshot) {
+    val emitHorizontal = pendingScaleChange
+    val emitYAxis = pendingYAxisScaleChange
+    pendingScaleChange = false
+    pendingYAxisScaleChange = false
+    if ((!emitHorizontal && !emitYAxis) || id == NO_ID) return
+    val reactContext = context as? ReactContext ?: return
+    val dispatcher = UIManagerHelper.getEventDispatcher(reactContext) ?: return
+    val surfaceId = UIManagerHelper.getSurfaceId(this)
+    if (emitHorizontal) {
+      dispatcher.dispatchEvent(
+        ScaleChangeEvent(
+          surfaceId,
+          id,
+          ScaleChangeEvent.HORIZONTAL_EVENT_NAME,
+          snapshot.horizontalScale,
+        )
+      )
+    }
+    if (emitYAxis) {
+      dispatcher.dispatchEvent(
+        ScaleChangeEvent(
+          surfaceId,
+          id,
+          ScaleChangeEvent.Y_AXIS_EVENT_NAME,
+          snapshot.yAxisScale,
+        )
+      )
+    }
   }
 
   override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {

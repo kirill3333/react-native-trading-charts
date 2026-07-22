@@ -53,6 +53,24 @@ function packCandle(candle: OhlcCandle, target: number[]) {
   );
 }
 
+function unpackCandles(values: ReadonlyArray<number>): OhlcCandle[] {
+  if (values.length % 6 !== 0) {
+    throw new Error('Native candle data must contain complete OHLCV records');
+  }
+  const candles: OhlcCandle[] = [];
+  for (let index = 0; index < values.length; index += 6) {
+    candles.push({
+      timestamp: values[index]!,
+      open: values[index + 1]!,
+      high: values[index + 2]!,
+      low: values[index + 3]!,
+      close: values[index + 4]!,
+      volume: values[index + 5]!,
+    });
+  }
+  return candles;
+}
+
 function validateTrade(trade: TradeEvent, index?: number) {
   const prefix = index == null ? 'trade' : `trades[${index}]`;
   assertFinite(trade.timestamp, `${prefix}.timestamp`);
@@ -135,6 +153,11 @@ export const TradingCharts = {
       packed.push(trade.timestamp, trade.price, trade.size ?? 0);
     });
     NativeTradingCharts.updateTrades(chartId, packed);
+  },
+
+  async getCandles(chartId: string): Promise<OhlcCandle[]> {
+    assertChartId(chartId);
+    return unpackCandles(await NativeTradingCharts.getCandles(chartId));
   },
 
   zoom(chartId: string, scale: number) {

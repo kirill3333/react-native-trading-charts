@@ -50,6 +50,19 @@ internal object TradingChartsRegistry {
   fun zoom(chartId: String, scale: Double) = enqueue(chartId, Command.Zoom(scale))
   fun fitContent(chartId: String) = enqueue(chartId, Command.FitContent)
 
+  fun getCandles(
+    chartId: String,
+    onSuccess: (DoubleArray) -> Unit,
+    onError: () -> Unit,
+  ) = onMain {
+    val view = entries[chartId]?.view?.get()
+    if (view == null) {
+      onError()
+    } else {
+      onSuccess(view.candles())
+    }
+  }
+
   fun clear(chartId: String) = onMain {
     val entry = entries[chartId] ?: return@onMain
     entry.pending.clear()

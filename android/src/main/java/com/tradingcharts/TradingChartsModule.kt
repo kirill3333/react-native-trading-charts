@@ -1,5 +1,7 @@
 package com.tradingcharts
 
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.module.annotations.ReactModule
@@ -24,6 +26,19 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
 
   override fun updateTrades(chartId: String, trades: ReadableArray) {
     TradingChartsRegistry.updateTrades(chartId, trades.toDoubles())
+  }
+
+  override fun getCandles(chartId: String, promise: Promise) {
+    TradingChartsRegistry.getCandles(
+      chartId,
+      onSuccess = { promise.resolve(Arguments.fromArray(it)) },
+      onError = {
+        promise.reject(
+          "E_CHART_NOT_MOUNTED",
+          "No mounted chart found for chartId '$chartId'",
+        )
+      },
+    )
   }
 
   override fun zoom(chartId: String, scale: Double) {

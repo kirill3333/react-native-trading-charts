@@ -76,7 +76,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   if (!instance || !numbers || env->GetArrayLength(numbers) < 22 ||
       !colors || env->GetArrayLength(colors) < 32) return;
   const jsize numberCount = env->GetArrayLength(numbers);
-  jdouble n[29] = {};
+  jdouble n[31] = {};
   jfloat c[48] = {};
   env->GetDoubleArrayRegion(numbers, 0, 22, n);
   if (numberCount >= 23) env->GetDoubleArrayRegion(numbers, 22, 1, n + 22);
@@ -85,6 +85,8 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   if (numberCount >= 26) env->GetDoubleArrayRegion(numbers, 25, 1, n + 25);
   if (numberCount >= 27) env->GetDoubleArrayRegion(numbers, 26, 1, n + 26);
   if (numberCount >= 29) env->GetDoubleArrayRegion(numbers, 27, 2, n + 27);
+  if (numberCount >= 30) env->GetDoubleArrayRegion(numbers, 29, 1, n + 29);
+  if (numberCount >= 31) env->GetDoubleArrayRegion(numbers, 30, 1, n + 30);
   env->GetFloatArrayRegion(colors, 0, 32, c);
   const jsize colorCount = env->GetArrayLength(colors);
   if (colorCount >= 48) env->GetFloatArrayRegion(colors, 32, 16, c + 32);
@@ -122,6 +124,8 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       numberCount < 27 ? 1.0f : static_cast<float>(n[26]);
   config.gridOpacity = numberCount < 29 ? 0.75f : static_cast<float>(n[27]);
   config.crosshairOpacity = numberCount < 29 ? 0.85f : static_cast<float>(n[28]);
+  config.defaultYScale = numberCount < 30 ? 1.0 : n[29];
+  config.allowYAxisScale = numberCount < 31 ? config.allowZoom : n[30] != 0;
   config.background = colorAt(0);
   config.grid = colorAt(4);
   config.axisText = colorAt(8);
@@ -202,10 +206,13 @@ Java_com_tradingcharts_ChartEngineNative_nativePan(JNIEnv*, jclass, jlong handle
   return JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeZoom(
     JNIEnv*, jclass, jlong handle, jdouble scale, jfloat focusX) {
-  if (auto* instance = engine(handle)) instance->zoom(scale, focusX);
+  if (auto* instance = engine(handle)) {
+    return instance->zoom(scale, focusX) ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -214,15 +221,35 @@ Java_com_tradingcharts_ChartEngineNative_nativeZoomAtRightEdge(
   if (auto* instance = engine(handle)) instance->zoomAtRightEdge(scale);
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeScaleY(
     JNIEnv*, jclass, jlong handle, jfloat delta) {
-  if (auto* instance = engine(handle)) instance->scaleY(delta);
+  if (auto* instance = engine(handle)) {
+    return instance->scaleY(delta) ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeResetViewport(JNIEnv*, jclass, jlong handle) {
-  if (auto* instance = engine(handle)) instance->resetViewport();
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeCandles(JNIEnv* env, jclass, jlong handle) {
+  std::vector<double> packed;
+  if (auto* instance = engine(handle)) {
+    const auto candles = instance->candles();
+    packed.reserve(candles.size() * 6);
+    for (const auto& candle : candles) {
+      packed.push_back(candle.timestamp);
+      packed.push_back(candle.open);
+      packed.push_back(candle.high);
+      packed.push_back(candle.low);
+      packed.push_back(candle.close);
+      packed.push_back(candle.volume);
+    }
+  }
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
+  if (!packed.empty()) {
+    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()), packed.data());
+  }
+  return result;
 }
 
 JNIEXPORT void JNICALL
@@ -311,7 +338,7 @@ JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass, jlong handle) {
   auto* holder = snapshot(handle);
   const auto* s = holder && *holder ? holder->get() : nullptr;
-  double m[49] = {};
+  double m[51] = {};
   if (s) {
     m[0] = s->width;
     m[1] = s->height;
@@ -362,9 +389,11 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass,
     m[46] = s->currentPriceLabelColor.g;
     m[47] = s->currentPriceLabelColor.b;
     m[48] = s->currentPriceLabelColor.a;
+    m[49] = s->horizontalScale;
+    m[50] = s->yAxisScale;
   }
-  jdoubleArray result = env->NewDoubleArray(49);
-  env->SetDoubleArrayRegion(result, 0, 49, m);
+  jdoubleArray result = env->NewDoubleArray(51);
+  env->SetDoubleArrayRegion(result, 0, 51, m);
   return result;
 }
 

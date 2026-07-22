@@ -117,6 +117,16 @@
   [self enqueue:@"trades" data:data chartId:chartId];
 }
 
+- (void)getCandlesForChart:(NSString *)chartId
+                   success:(void (^)(NSArray<NSNumber *> *candles))success
+                   failure:(void (^)(void))failure {
+  [self onMain:^{
+    TradingChartsView *view = [self entryFor:chartId create:NO].view;
+    if (view) success([view candleData]);
+    else failure();
+  }];
+}
+
 - (void)zoomChart:(NSString *)chartId scale:(double)scale {
   if (chartId.length == 0) return;
   [self onMain:^{

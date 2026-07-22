@@ -22,12 +22,14 @@ internal data class ChartSnapshot(
   val plotBottom: Float,
   val visibleXMin: Double,
   val visibleXMax: Double,
+  val horizontalScale: Double,
   val firstVisibleIndex: Int,
   val lastVisibleIndex: Int,
   val totalCandleCount: Int,
   val hasVisibleCandles: Boolean,
   val visibleYMin: Double,
   val visibleYMax: Double,
+  val yAxisScale: Double,
   val vertices: FloatArray,
   val xTicks: List<AxisTick>,
   val yTicks: List<AxisTick>,
@@ -70,10 +72,10 @@ internal object ChartEngineNative {
   @JvmStatic external fun nativeUpdateTrades(handle: Long, values: DoubleArray): Int
   @JvmStatic external fun nativeClear(handle: Long)
   @JvmStatic external fun nativePan(handle: Long, delta: Float): Boolean
-  @JvmStatic external fun nativeZoom(handle: Long, scale: Double, focusX: Float)
+  @JvmStatic external fun nativeZoom(handle: Long, scale: Double, focusX: Float): Boolean
   @JvmStatic external fun nativeZoomAtRightEdge(handle: Long, scale: Double)
-  @JvmStatic external fun nativeScaleY(handle: Long, delta: Float)
-  @JvmStatic external fun nativeResetViewport(handle: Long)
+  @JvmStatic external fun nativeScaleY(handle: Long, delta: Float): Boolean
+  @JvmStatic external fun nativeCandles(handle: Long): DoubleArray
   @JvmStatic external fun nativeFitContent(handle: Long)
   @JvmStatic external fun nativeSetCrosshair(handle: Long, active: Boolean, x: Float, y: Float)
   @JvmStatic private external fun nativeAcquireSnapshot(handle: Long): Long
@@ -109,12 +111,14 @@ internal object ChartEngineNative {
         plotBottom = meta[5].toFloat(),
         visibleXMin = meta[6],
         visibleXMax = meta[7],
+        horizontalScale = meta[49],
         firstVisibleIndex = meta[27].toInt(),
         lastVisibleIndex = meta[28].toInt(),
         totalCandleCount = meta[29].toInt(),
         hasVisibleCandles = meta[30] != 0.0,
         visibleYMin = meta[8],
         visibleYMax = meta[9],
+        yAxisScale = meta[50],
         vertices = nativeSnapshotVertices(snapshot),
         xTicks = ticks(nativeSnapshotXTicks(snapshot)),
         yTicks = ticks(nativeSnapshotYTicks(snapshot)),

@@ -56,6 +56,7 @@ internal data class ChartConfig(
   val timeframeMs: Double = 60_000.0,
   val initialVisibleCount: Int = 100,
   val defaultScale: Double = 1.0,
+  val defaultYScale: Double = 1.0,
   val displayScale: Float = 1f,
   val backgroundColor: Int = Color.rgb(16, 12, 24),
   val gridColor: Int = Color.rgb(41, 36, 49),
@@ -117,6 +118,7 @@ internal data class ChartConfig(
   ),
   val allowPan: Boolean = true,
   val allowZoom: Boolean = true,
+  val allowYAxisScale: Boolean = true,
   val showCurrentPrice: Boolean = true,
   val showCurrentPriceLabel: Boolean = true,
   val pinCurrentPriceToEdge: Boolean = true,
@@ -215,6 +217,7 @@ internal data class ChartConfig(
         timeframeMs = root.getDouble("timeframeMs"),
         initialVisibleCount = root.getInt("initialVisibleCount"),
         defaultScale = root.optDouble("defaultScale", 1.0),
+        defaultYScale = yAxis.optDouble("defaultScale", 1.0),
         displayScale = density,
         backgroundColor = chartColor(appearance.getString("backgroundColor")),
         gridColor = chartColor(gridAppearance.getString("color")),
@@ -328,6 +331,10 @@ internal data class ChartConfig(
         ),
         allowPan = gestures.getBoolean("pan"),
         allowZoom = gestures.getBoolean("zoom"),
+        allowYAxisScale = gestures.optBoolean(
+          "yAxisScale",
+          gestures.getBoolean("zoom"),
+        ),
         showCurrentPrice = current.getBoolean("visible"),
         showCurrentPriceLabel = current.getBoolean("showLabel"),
         pinCurrentPriceToEdge = current.optBoolean("pinToEdge", true),
@@ -381,6 +388,8 @@ internal data class ChartConfig(
     tooltipBackgroundOpacity.toDouble(),
     gridOpacity.toDouble(),
     crosshairOpacity.toDouble(),
+    defaultYScale,
+    if (allowYAxisScale) 1.0 else 0.0,
   )
 
   fun nativeColors(): FloatArray {

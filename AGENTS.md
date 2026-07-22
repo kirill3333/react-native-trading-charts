@@ -212,7 +212,7 @@ Metal glyph atlas is a larger architectural change, not a routine optimization.
   an idle chart should not continuously consume CPU/GPU.
 - Keep visible output and gesture semantics identical when optimizing. Verify
   axis labels, current-price badge, crosshair, tooltip, pan, pinch/Y scaling,
-  double-tap reset, momentum, lifecycle resume, and both axis sides.
+  momentum, lifecycle resume, and both axis sides.
 - Do not infer that an optimization from one platform applies to the other;
   they share snapshots but use different text and GPU stacks.
 

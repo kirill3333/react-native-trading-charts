@@ -146,7 +146,41 @@ void testPrependHistoryPreservesViewport() {
     assert(after->lastVisibleIndex == before->lastVisibleIndex + 2);
     expectNear(after->visibleXMin, before->visibleXMin);
     expectNear(after->visibleXMax, before->visibleXMax);
+    expectNear(after->horizontalScale, before->horizontalScale);
   }
+}
+
+void testCandlesReturnsAtomicCopyOfCurrentStore() {
+  ChartEngine engine;
+  const double history[] = {
+      60000.0, 10.0, 12.0, 9.0, 11.0, 2.0,
+      120000.0, 11.0, 13.0, 10.0, 12.0, 3.0,
+  };
+  const double older[] = {0.0, 8.0, 10.0, 7.0, 9.0, 1.0};
+  const double updated[] = {120000.0, 11.0, 14.0, 10.0, 13.0, 4.0};
+  const double trade[] = {120500.0, 14.5, 1.0};
+  const double trades[] = {
+      121000.0, 15.0, 2.0,
+      180000.0, 16.0, 1.0,
+  };
+  assert(engine.setHistory(history, 12) == UpdateStatus::Applied);
+  assert(engine.prependHistory(older, 6) == UpdateStatus::Applied);
+  assert(engine.updateCandle(updated, 6) == UpdateStatus::Applied);
+  assert(engine.updateTrade(trade, 3) == UpdateStatus::Applied);
+  assert(engine.updateTrades(trades, 6) == UpdateStatus::Applied);
+
+  const auto copy = engine.candles();
+  assert(copy.size() == 4);
+  expectNear(copy[0].timestamp, 0.0);
+  expectNear(copy[2].high, 15.0);
+  expectNear(copy[2].close, 15.0);
+  expectNear(copy[2].volume, 7.0);
+  expectNear(copy[3].timestamp, 180000.0);
+  expectNear(copy[3].open, 16.0);
+
+  engine.clear();
+  assert(engine.candles().empty());
+  assert(copy.size() == 4);
 }
 
 void testPrependHistoryRejectsOverlap() {
@@ -393,6 +427,7 @@ void testCrosshairUsesAutoscaleInverse() {
   const double history[] = {0.0, 1.0004, 1.0005, 1.0004, 1.00045, 1.0};
   assert(engine.setHistory(history, 6) == UpdateStatus::Applied);
   const auto initial = engine.snapshot();
+  expectNear(initial->yAxisScale, 1.0);
 
   engine.setCrosshair(true, 400.0f, initial->currentPriceY);
   const auto snapshot = engine.snapshot();
@@ -412,6 +447,7 @@ void testYAxisScaleDirectionLimitsAndCrosshair() {
   engine.scaleY(halfScaleDrag);
 
   const auto zoomed = engine.snapshot();
+  expectNear(zoomed->yAxisScale, 2.0, 1e-6);
   expectNear(zoomed->visibleYMax - zoomed->visibleYMin, initialSpan * 0.5, 1e-6);
   expectNear((zoomed->visibleYMax + zoomed->visibleYMin) * 0.5, initialCenter, 1e-9);
 
@@ -425,14 +461,16 @@ void testYAxisScaleDirectionLimitsAndCrosshair() {
   assert(!engine.snapshot()->crosshairVisible);
 
   engine.resetViewport();
-  engine.scaleY(-initial->plot.height() * 100.0f);
+  assert(engine.scaleY(-initial->plot.height() * 100.0f));
   const auto minimum = engine.snapshot();
   expectNear(minimum->visibleYMax - minimum->visibleYMin, initialSpan * 0.1, 1e-6);
+  assert(!engine.scaleY(-initial->plot.height()));
 
   engine.resetViewport();
-  engine.scaleY(initial->plot.height() * 100.0f);
+  assert(engine.scaleY(initial->plot.height() * 100.0f));
   const auto maximum = engine.snapshot();
   expectNear(maximum->visibleYMax - maximum->visibleYMin, initialSpan * 10.0, 1e-6);
+  assert(!engine.scaleY(initial->plot.height()));
 }
 
 void testYAxisScalePersistsAcrossHorizontalPanAndResets() {
@@ -484,20 +522,36 @@ void testYAxisScalePersistsAcrossHorizontalPanAndResets() {
       autoscale.snapshot()->visibleYMax - autoscale.snapshot()->visibleYMin);
 }
 
-void testYAxisScaleRespectsZoomOption() {
+void testYAxisScaleHasIndependentOptionAndDefault() {
   ChartEngine engine;
   ChartConfig config;
   config.allowZoom = false;
+  config.allowYAxisScale = true;
+  config.defaultYScale = 2.0;
   engine.setConfig(config);
   engine.setSize(800.0f, 500.0f);
   const double history[] = {0.0, 10.0, 20.0, 10.0, 15.0, 1.0};
   assert(engine.setHistory(history, 6) == UpdateStatus::Applied);
 
   const auto initial = engine.snapshot();
-  engine.scaleY(-initial->plot.height());
+  expectNear(initial->yAxisScale, 2.0);
+  assert(engine.scaleY(-initial->plot.height() * 0.25f));
+  assert(engine.snapshot()->yAxisScale > initial->yAxisScale);
+
+  engine.resetViewport();
+  expectNear(engine.snapshot()->yAxisScale, 2.0);
+  engine.scaleY(initial->plot.height() * 0.25f);
+  engine.fitContent();
+  expectNear(engine.snapshot()->yAxisScale, 2.0);
+
+  config.allowZoom = true;
+  config.allowYAxisScale = false;
+  engine.setConfig(config);
+  const auto disabled = engine.snapshot();
+  assert(!engine.scaleY(-disabled->plot.height()));
   const auto unchanged = engine.snapshot();
-  expectNear(unchanged->visibleYMin, initial->visibleYMin);
-  expectNear(unchanged->visibleYMax, initial->visibleYMax);
+  expectNear(unchanged->visibleYMin, disabled->visibleYMin);
+  expectNear(unchanged->visibleYMax, disabled->visibleYMax);
 }
 
 void testCurrentPriceRemainsVisibleOutsideHorizontalViewport() {
@@ -609,12 +663,19 @@ void testDefaultScaleControlsResetViewport() {
   const double scaledSpan = scaled->visibleXMax - scaled->visibleXMin;
   expectNear(scaled->visibleXMax, base->visibleXMax);
   expectNear(scaledSpan, baseSpan / 2.0);
+  expectNear(base->horizontalScale, 1.0);
+  expectNear(scaled->horizontalScale, 2.0);
+
+  assert(scaledEngine.zoom(2.0, 400.0f));
+  expectNear(scaledEngine.snapshot()->horizontalScale, 4.0);
+  scaledEngine.resetViewport();
 
   scaledEngine.pan(100.0f);
   scaledEngine.resetViewport();
   const auto reset = scaledEngine.snapshot();
   expectNear(reset->visibleXMax, scaled->visibleXMax);
   expectNear(reset->visibleXMax - reset->visibleXMin, scaledSpan);
+  expectNear(reset->horizontalScale, 2.0);
 
   ChartConfig nextConfig = scaledConfig;
   nextConfig.defaultScale = 4.0;
@@ -625,6 +686,7 @@ void testDefaultScaleControlsResetViewport() {
   scaledEngine.resetViewport();
   const auto nextReset = scaledEngine.snapshot();
   expectNear(nextReset->visibleXMax - nextReset->visibleXMin, baseSpan / 4.0);
+  expectNear(nextReset->horizontalScale, 4.0);
 }
 
 void testCurrentPriceLineIsOneUnitThick() {
@@ -791,6 +853,35 @@ void testPanReportsViewportMovementAndBounds() {
   assert(engine.pan(100.0f));
   assert(engine.pan(100000.0f));
   assert(!engine.pan(100.0f));
+}
+
+void testGestureZoomReportsAbsoluteScaleAndClamps() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initialVisibleCount = 4;
+  engine.setConfig(config);
+  engine.setSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0,
+      60000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+      120000.0, 12.0, 14.0, 11.0, 13.0, 1.0,
+      180000.0, 13.0, 15.0, 12.0, 14.0, 1.0,
+      240000.0, 14.0, 16.0, 13.0, 15.0, 1.0,
+      300000.0, 15.0, 17.0, 14.0, 16.0, 1.0,
+  };
+  assert(engine.setHistory(history, 36) == UpdateStatus::Applied);
+  expectNear(engine.snapshot()->horizontalScale, 1.0);
+
+  assert(engine.zoom(1e12, 400.0f));
+  expectNear(engine.snapshot()->horizontalScale, 2.0);
+  assert(!engine.zoom(2.0, 400.0f));
+
+  assert(engine.pan(100.0f));
+  expectNear(engine.snapshot()->horizontalScale, 2.0);
+
+  assert(engine.zoom(1e-12, 400.0f));
+  expectNear(engine.snapshot()->horizontalScale, 0.75);
+  assert(!engine.zoom(0.5, 400.0f));
 }
 
 void testProgrammaticZoomUsesRightEdgeAndClampsToHistory() {
@@ -1110,6 +1201,7 @@ int main() {
   testBucketTransitionAndNoGaps();
   testHistoryContinuation();
   testPrependHistoryPreservesViewport();
+  testCandlesReturnsAtomicCopyOfCurrentStore();
   testPrependHistoryRejectsOverlap();
   testOldTradeIgnored();
   testRejectsUnalignedHistory();
@@ -1123,7 +1215,7 @@ int main() {
   testCrosshairUsesAutoscaleInverse();
   testYAxisScaleDirectionLimitsAndCrosshair();
   testYAxisScalePersistsAcrossHorizontalPanAndResets();
-  testYAxisScaleRespectsZoomOption();
+  testYAxisScaleHasIndependentOptionAndDefault();
   testCurrentPriceRemainsVisibleOutsideHorizontalViewport();
   testCurrentPricePinsToVerticalViewportEdges();
   testDefaultScaleControlsResetViewport();
@@ -1135,6 +1227,7 @@ int main() {
   testViewportFollowsNewTradeBucketAtLiveEdge();
   testViewportResumesFollowingAfterReturningToLiveEdge();
   testPanReportsViewportMovementAndBounds();
+  testGestureZoomReportsAbsoluteScaleAndClamps();
   testProgrammaticZoomUsesRightEdgeAndClampsToHistory();
   testFitContentShowsHistoryAndResetsYScale();
   testViewportCommandsHandleEmptyHistory();

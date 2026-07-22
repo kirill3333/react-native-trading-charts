@@ -158,6 +158,10 @@ void ChartEngine::setConfig(const ChartConfig& config) {
   if (!finite(config_.defaultScale) || !(config_.defaultScale > 0.0)) {
     config_.defaultScale = 1.0;
   }
+  if (!finite(config_.defaultYScale)) config_.defaultYScale = 1.0;
+  config_.defaultYScale =
+      std::clamp(config_.defaultYScale, 1.0 / kMaxYRangeMultiplier,
+                 1.0 / kMinYRangeMultiplier);
   if (!finite(config_.displayScale) || !(config_.displayScale > 0.0f)) {
     config_.displayScale = 1.0f;
   }
@@ -397,18 +401,20 @@ void ChartEngine::clear() {
   lastTradeTimestamp_ = -1.0;
   crosshairActive_ = false;
   viewportInitialized_ = false;
-  yRangeMultiplier_ = 1.0;
+  yRangeMultiplier_ = 1.0 / config_.defaultYScale;
   visibleXMin_ = 0.0;
   visibleXMax_ = 1.0;
+  horizontalScaleBaseSpan_ = 1.0;
   markDirtyLocked();
 }
 
 void ChartEngine::resetViewportLocked() {
-  yRangeMultiplier_ = 1.0;
+  yRangeMultiplier_ = 1.0 / config_.defaultYScale;
   if (candles_.empty()) {
     viewportInitialized_ = false;
     visibleXMin_ = 0.0;
     visibleXMax_ = 1.0;
+    horizontalScaleBaseSpan_ = 1.0;
     return;
   }
   const size_t count = std::min(
@@ -418,6 +424,7 @@ void ChartEngine::resetViewportLocked() {
   visibleXMin_ = candleXLocked(begin) - unit * 0.5;
   visibleXMax_ = candleXLocked(candles_.size() - 1) + unit * 2.5;
   if (!(visibleXMax_ > visibleXMin_)) visibleXMax_ = visibleXMin_ + unit * 3.0;
+  horizontalScaleBaseSpan_ = visibleXMax_ - visibleXMin_;
   visibleXMin_ = visibleXMax_ -
       (visibleXMax_ - visibleXMin_) / config_.defaultScale;
   viewportInitialized_ = true;
@@ -425,7 +432,7 @@ void ChartEngine::resetViewportLocked() {
 }
 
 void ChartEngine::fitContentLocked() {
-  yRangeMultiplier_ = 1.0;
+  yRangeMultiplier_ = 1.0 / config_.defaultYScale;
   if (candles_.empty()) {
     viewportInitialized_ = false;
     visibleXMin_ = 0.0;
@@ -495,9 +502,15 @@ bool ChartEngine::pan(float deltaPixels) {
   return viewportChanged;
 }
 
-void ChartEngine::zoom(double scale, float focusX) {
+bool ChartEngine::zoom(double scale, float focusX) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!config_.allowZoom || !viewportInitialized_ || !(scale > 0.0) || candles_.empty()) return;
+  if (!config_.allowZoom || !viewportInitialized_ || !(scale > 0.0) ||
+      !finite(scale) || candles_.empty()) {
+    return false;
+  }
+  const double previousXMin = visibleXMin_;
+  const double previousXMax = visibleXMax_;
+  const bool crosshairChanged = crosshairActive_;
   const float left = config_.showYAxis && !config_.yAxisOnRight ? config_.yAxisWidth : 0.0f;
   const float right = width_ - (config_.showYAxis && config_.yAxisOnRight ? config_.yAxisWidth : 0.0f);
   const float plotWidth = std::max(right - left, 1.0f);
@@ -510,7 +523,14 @@ void ChartEngine::zoom(double scale, float focusX) {
   visibleXMax_ = visibleXMin_ + newSpan;
   crosshairActive_ = false;
   clampViewportLocked();
-  markDirtyLocked();
+  const bool viewportChanged =
+      visibleXMin_ != previousXMin || visibleXMax_ != previousXMax;
+  if (viewportChanged) {
+    markDirtyLocked();
+  } else if (crosshairChanged) {
+    markCrosshairDirtyLocked();
+  }
+  return viewportChanged;
 }
 
 void ChartEngine::zoomAtRightEdge(double scale) {
@@ -526,11 +546,11 @@ void ChartEngine::zoomAtRightEdge(double scale) {
   markDirtyLocked();
 }
 
-void ChartEngine::scaleY(float deltaPixels) {
+bool ChartEngine::scaleY(float deltaPixels) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!config_.allowZoom || !config_.showYAxis || !viewportInitialized_ ||
+  if (!config_.allowYAxisScale || !config_.showYAxis || !viewportInitialized_ ||
       height_ <= 0.0f || candles_.empty() || !std::isfinite(deltaPixels)) {
-    return;
+    return false;
   }
   const float axisHeight = config_.showXAxis ? config_.xAxisHeight : 0.0f;
   const float plotHeight = std::max(height_ - axisHeight - kTopInset, 1.0f);
@@ -541,10 +561,11 @@ void ChartEngine::scaleY(float deltaPixels) {
   crosshairActive_ = false;
   if (next == yRangeMultiplier_) {
     if (crosshairChanged) markCrosshairDirtyLocked();
-    return;
+    return false;
   }
   yRangeMultiplier_ = next;
   markDirtyLocked();
+  return true;
 }
 
 void ChartEngine::resetViewport() {
@@ -581,6 +602,11 @@ Candle ChartEngine::candleAt(size_t index) const {
   return index < candles_.size() ? candles_[index] : Candle{};
 }
 
+std::vector<Candle> ChartEngine::candles() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return candles_;
+}
+
 std::shared_ptr<const RenderSnapshot> ChartEngine::snapshot() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!dirty_ && snapshot_) return snapshot_;
@@ -598,7 +624,12 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::buildSnapshotLocked() const {
   result->config = config_;
   result->visibleXMin = visibleXMin_;
   result->visibleXMax = visibleXMax_;
+  const double visibleXSpan = visibleXMax_ - visibleXMin_;
+  result->horizontalScale = viewportInitialized_ && visibleXSpan > 0.0
+      ? horizontalScaleBaseSpan_ / visibleXSpan
+      : 1.0;
   result->totalCandleCount = candles_.size();
+  result->yAxisScale = 1.0 / yRangeMultiplier_;
 
   const float yLane = config_.showYAxis ? config_.yAxisWidth : 0.0f;
   const float xLane = config_.showXAxis ? config_.xAxisHeight : 0.0f;

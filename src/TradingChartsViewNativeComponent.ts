@@ -24,10 +24,16 @@ export type SelectedCandleChangeNativeEvent = Readonly<{
   volume: CodegenTypes.Double;
 }>;
 
+export type ScaleChangeNativeEvent = Readonly<{
+  scale: CodegenTypes.Double;
+}>;
+
 export interface NativeProps extends ViewProps {
   chartId: string;
   configJson: string;
   onVisibleRangeChange?: CodegenTypes.DirectEventHandler<VisibleRangeChangeNativeEvent>;
+  onScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
+  onYAxisScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
   onSelectedCandleChange?: CodegenTypes.DirectEventHandler<SelectedCandleChangeNativeEvent>;
 }
 

@@ -34,6 +34,22 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] updateTrades:trades chartId:chartId];
 }
 
+- (void)getCandles:(NSString *)chartId
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject {
+  [[TradingChartsRegistry shared]
+      getCandlesForChart:chartId
+                 success:^(NSArray<NSNumber *> *candles) {
+                   resolve(candles);
+                 }
+                 failure:^{
+                   reject(@"E_CHART_NOT_MOUNTED",
+                          [NSString stringWithFormat:
+                              @"No mounted chart found for chartId '%@'", chartId],
+                          nil);
+                 }];
+}
+
 - (void)zoom:(NSString *)chartId scale:(double)scale {
   [[TradingChartsRegistry shared] zoomChart:chartId scale:scale];
 }
