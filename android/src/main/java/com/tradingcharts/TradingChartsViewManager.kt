@@ -9,12 +9,15 @@ import com.facebook.react.viewmanagers.TradingChartsViewManagerDelegate
 import com.facebook.react.viewmanagers.TradingChartsViewManagerInterface
 
 @ReactModule(name = TradingChartsViewManager.NAME)
-class TradingChartsViewManager : SimpleViewManager<TradingChartsView>(),
-  TradingChartsViewManagerInterface<TradingChartsView> {
-  private val delegate: ViewManagerDelegate<TradingChartsView> = TradingChartsViewManagerDelegate(this)
+class TradingChartsViewManager :
+    SimpleViewManager<TradingChartsView>(), TradingChartsViewManagerInterface<TradingChartsView> {
+  private val delegate: ViewManagerDelegate<TradingChartsView> =
+      TradingChartsViewManagerDelegate(this)
 
   override fun getDelegate(): ViewManagerDelegate<TradingChartsView> = delegate
+
   override fun getName(): String = NAME
+
   override fun createViewInstance(context: ThemedReactContext) = TradingChartsView(context)
 
   @ReactProp(name = "chartId")

@@ -20,14 +20,15 @@ class TradingChartsViewPackage : BaseReactPackage() {
 
   override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
     mapOf(
-      NativeTradingChartsSpec.NAME to ReactModuleInfo(
-        NativeTradingChartsSpec.NAME,
-        TradingChartsModule::class.java.name,
-        false,
-        false,
-        false,
-        true,
-      ),
+        NativeTradingChartsSpec.NAME to
+            ReactModuleInfo(
+                NativeTradingChartsSpec.NAME,
+                TradingChartsModule::class.java.name,
+                false,
+                false,
+                false,
+                true,
+            ),
     )
   }
 }

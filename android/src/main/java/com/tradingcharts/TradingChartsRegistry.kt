@@ -8,17 +8,23 @@ import java.lang.ref.WeakReference
 internal object TradingChartsRegistry {
   private sealed interface Command {
     data class History(val values: DoubleArray) : Command
+
     data class PrependHistory(val values: DoubleArray) : Command
+
     data class Candle(val values: DoubleArray) : Command
+
     data class Trade(val values: DoubleArray) : Command
+
     data class Trades(val values: DoubleArray) : Command
+
     data class Zoom(val scale: Double) : Command
+
     data object FitContent : Command
   }
 
   private data class Entry(
-    var view: WeakReference<TradingChartsView>? = null,
-    val pending: MutableList<Command> = mutableListOf(),
+      var view: WeakReference<TradingChartsView>? = null,
+      val pending: MutableList<Command> = mutableListOf(),
   )
 
   private val handler = Handler(Looper.getMainLooper())
@@ -41,19 +47,29 @@ internal object TradingChartsRegistry {
     if (entry.view?.get() == null && entry.pending.isEmpty()) entries.remove(chartId)
   }
 
-  fun setHistory(chartId: String, values: DoubleArray) = enqueue(chartId, Command.History(values.copyOf()))
+  fun setHistory(chartId: String, values: DoubleArray) =
+      enqueue(chartId, Command.History(values.copyOf()))
+
   fun prependHistory(chartId: String, values: DoubleArray) =
-    enqueue(chartId, Command.PrependHistory(values.copyOf()))
-  fun updateCandle(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Candle(values.copyOf()))
-  fun updateTrade(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Trade(values.copyOf()))
-  fun updateTrades(chartId: String, values: DoubleArray) = enqueue(chartId, Command.Trades(values.copyOf()))
+      enqueue(chartId, Command.PrependHistory(values.copyOf()))
+
+  fun updateCandle(chartId: String, values: DoubleArray) =
+      enqueue(chartId, Command.Candle(values.copyOf()))
+
+  fun updateTrade(chartId: String, values: DoubleArray) =
+      enqueue(chartId, Command.Trade(values.copyOf()))
+
+  fun updateTrades(chartId: String, values: DoubleArray) =
+      enqueue(chartId, Command.Trades(values.copyOf()))
+
   fun zoom(chartId: String, scale: Double) = enqueue(chartId, Command.Zoom(scale))
+
   fun fitContent(chartId: String) = enqueue(chartId, Command.FitContent)
 
   fun getCandles(
-    chartId: String,
-    onSuccess: (DoubleArray) -> Unit,
-    onError: () -> Unit,
+      chartId: String,
+      onSuccess: (DoubleArray) -> Unit,
+      onError: () -> Unit,
   ) = onMain {
     val view = entries[chartId]?.view?.get()
     if (view == null) {

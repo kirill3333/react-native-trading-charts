@@ -13,17 +13,24 @@ import com.facebook.react.bridge.ReactContext
 import com.facebook.react.uimanager.UIManagerHelper
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
+import org.json.JSONException
+
+private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
+  if (other == null) return this == null
+  return this?.contentEquals(other) == true
+}
 
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
   private val renderer = ChartRenderer()
-  private val plotView = GLSurfaceView(context).apply {
-    setEGLContextClientVersion(3)
-    setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-    setRenderer(renderer)
-    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
-    isClickable = false
-  }
+  private val plotView =
+      GLSurfaceView(context).apply {
+        setEGLContextClientVersion(3)
+        setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+        setRenderer(renderer)
+        renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        isClickable = false
+      }
   private val overlay = ChartOverlayView(context)
   private val frameScheduled = AtomicBoolean(false)
   private val flingScroller = OverScroller(context)
@@ -40,152 +47,157 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var pendingScaleChange = false
   private var pendingYAxisScaleChange = false
 
-  private val flingFrame = object : Runnable {
-    override fun run() {
-      if (disposed || !isAttachedToWindow || !flingScroller.computeScrollOffset()) return
-      val currentX = flingScroller.currX
-      val deltaX = currentX - lastFlingX
-      lastFlingX = currentX
-      if (deltaX != 0) {
-        val moved = ChartEngineNative.nativePan(engineHandle, deltaX.toFloat())
-        if (!moved) {
-          val now = SystemClock.uptimeMillis()
-          if (deltaX > 0 && pastEdgeWaitStartedAtMs == 0L) {
-            // A positive delta moves toward older candles. Allow an in-flight
-            // prepend to extend the viewport before abandoning the fling.
-            pastEdgeWaitStartedAtMs = now
-          }
-          val waitingForPastData =
-            deltaX > 0 && now - pastEdgeWaitStartedAtMs < PAST_EDGE_DATA_WAIT_MS
-          if (!waitingForPastData) {
-            stopFling()
-            return
-          }
-        } else {
-          pastEdgeWaitStartedAtMs = 0L
-          scheduleFrame()
-        }
-      }
-      if (!flingScroller.isFinished) postOnAnimation(this)
-    }
-  }
-
-  private val scaleDetector = ScaleGestureDetector(
-    context,
-    object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-      override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-        if (!config.allowZoom) return false
-        suppressFlingForTouch = true
-        stopFling()
-        crosshairPinned = false
-        ChartEngineNative.nativeSetCrosshair(
-          engineHandle,
-          false,
-          detector.focusX,
-          detector.focusY,
-        )
-        return true
-      }
-
-      override fun onScale(detector: ScaleGestureDetector): Boolean {
-        if (!config.allowZoom) return false
-        if (
-          ChartEngineNative.nativeZoom(
-            engineHandle,
-            detector.scaleFactor.toDouble(),
-            detector.focusX,
-          )
-        ) {
-          pendingScaleChange = true
-        }
-        scheduleFrame()
-        return true
-      }
-    },
-  )
-
-  private val gestureDetector = GestureDetector(
-    context,
-    object : GestureDetector.SimpleOnGestureListener() {
-      override fun onDown(event: MotionEvent): Boolean {
-        stopFling()
-        return true
-      }
-
-      override fun onScroll(
-        first: MotionEvent?,
-        current: MotionEvent,
-        distanceX: Float,
-        distanceY: Float,
-      ): Boolean {
-        var shouldScheduleFrame = false
-        if (crosshairPinned) {
-          ChartEngineNative.nativeSetCrosshair(engineHandle, true, current.x, current.y)
-          shouldScheduleFrame = true
-        } else if (!scaleDetector.isInProgress) {
-          if (isPointInYAxis(first)) {
-            if (
-              config.allowYAxisScale &&
-              ChartEngineNative.nativeScaleY(engineHandle, -distanceY)
-            ) {
-              pendingYAxisScaleChange = true
-              shouldScheduleFrame = true
+  private val flingFrame =
+      object : Runnable {
+        override fun run() {
+          if (disposed || !isAttachedToWindow || !flingScroller.computeScrollOffset()) return
+          val currentX = flingScroller.currX
+          val deltaX = currentX - lastFlingX
+          lastFlingX = currentX
+          if (deltaX != 0) {
+            val moved = ChartEngineNative.nativePan(engineHandle, deltaX.toFloat())
+            if (!moved) {
+              val now = SystemClock.uptimeMillis()
+              if (deltaX > 0 && pastEdgeWaitStartedAtMs == 0L) {
+                // A positive delta moves toward older candles. Allow an in-flight
+                // prepend to extend the viewport before abandoning the fling.
+                pastEdgeWaitStartedAtMs = now
+              }
+              val waitingForPastData =
+                  deltaX > 0 && now - pastEdgeWaitStartedAtMs < PAST_EDGE_DATA_WAIT_MS
+              if (!waitingForPastData) {
+                stopFling()
+                return
+              }
+            } else {
+              pastEdgeWaitStartedAtMs = 0L
+              scheduleFrame()
             }
-          } else if (config.allowPan) {
-            shouldScheduleFrame = ChartEngineNative.nativePan(engineHandle, -distanceX)
           }
+          if (!flingScroller.isFinished) postOnAnimation(this)
         }
-        if (shouldScheduleFrame) scheduleFrame()
-        return true
       }
 
-      override fun onLongPress(event: MotionEvent) {
-        if (!config.crosshairEnabled || (!crosshairPinned && !isPointInPlot(event.x, event.y))) return
-        suppressFlingForTouch = true
-        stopFling()
-        crosshairPinned = true
-        ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
-        scheduleFrame()
-      }
+  private val scaleDetector =
+      ScaleGestureDetector(
+          context,
+          object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+              if (!config.allowZoom) return false
+              suppressFlingForTouch = true
+              stopFling()
+              crosshairPinned = false
+              ChartEngineNative.nativeSetCrosshair(
+                  engineHandle,
+                  false,
+                  detector.focusX,
+                  detector.focusY,
+              )
+              return true
+            }
 
-      override fun onSingleTapUp(event: MotionEvent): Boolean {
-        performClick()
-        if (crosshairPinned) {
-          crosshairPinned = false
-          ChartEngineNative.nativeSetCrosshair(engineHandle, false, event.x, event.y)
-          scheduleFrame()
-          return true
-        }
-        if (!config.crosshairEnabled || !isPointInPlot(event.x, event.y)) return true
-        suppressFlingForTouch = true
-        stopFling()
-        crosshairPinned = true
-        ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
-        scheduleFrame()
-        return true
-      }
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+              if (!config.allowZoom) return false
+              if (
+                  ChartEngineNative.nativeZoom(
+                      engineHandle,
+                      detector.scaleFactor.toDouble(),
+                      detector.focusX,
+                  )
+              ) {
+                pendingScaleChange = true
+              }
+              scheduleFrame()
+              return true
+            }
+          },
+      )
 
-      override fun onFling(
-        first: MotionEvent?,
-        current: MotionEvent,
-        velocityX: Float,
-        velocityY: Float,
-      ): Boolean {
-        if (
-          first == null ||
-          suppressFlingForTouch ||
-          crosshairPinned ||
-          isPointInYAxis(first) ||
-          !config.allowPan
-        ) {
-          return false
-        }
-        startFling(velocityX)
-        return true
-      }
-    },
-  ).also { detector ->
-    detector.setOnDoubleTapListener(null)
+  private val gestureDetector =
+      GestureDetector(
+              context,
+              object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(event: MotionEvent): Boolean {
+                  stopFling()
+                  return true
+                }
+
+                override fun onScroll(
+                    first: MotionEvent?,
+                    current: MotionEvent,
+                    distanceX: Float,
+                    distanceY: Float,
+                ): Boolean {
+                  var shouldScheduleFrame = false
+                  if (crosshairPinned) {
+                    ChartEngineNative.nativeSetCrosshair(engineHandle, true, current.x, current.y)
+                    shouldScheduleFrame = true
+                  } else if (!scaleDetector.isInProgress) {
+                    if (isPointInYAxis(first)) {
+                      if (
+                          config.allowYAxisScale &&
+                              ChartEngineNative.nativeScaleY(engineHandle, -distanceY)
+                      ) {
+                        pendingYAxisScaleChange = true
+                        shouldScheduleFrame = true
+                      }
+                    } else if (config.allowPan) {
+                      shouldScheduleFrame = ChartEngineNative.nativePan(engineHandle, -distanceX)
+                    }
+                  }
+                  if (shouldScheduleFrame) scheduleFrame()
+                  return true
+                }
+
+                override fun onLongPress(event: MotionEvent) {
+                  if (
+                      !config.crosshairEnabled ||
+                          (!crosshairPinned && !isPointInPlot(event.x, event.y))
+                  )
+                      return
+                  suppressFlingForTouch = true
+                  stopFling()
+                  crosshairPinned = true
+                  ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
+                  scheduleFrame()
+                }
+
+                override fun onSingleTapUp(event: MotionEvent): Boolean {
+                  performClick()
+                  if (crosshairPinned) {
+                    crosshairPinned = false
+                    ChartEngineNative.nativeSetCrosshair(engineHandle, false, event.x, event.y)
+                    scheduleFrame()
+                    return true
+                  }
+                  if (!config.crosshairEnabled || !isPointInPlot(event.x, event.y)) return true
+                  suppressFlingForTouch = true
+                  stopFling()
+                  crosshairPinned = true
+                  ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
+                  scheduleFrame()
+                  return true
+                }
+
+                override fun onFling(
+                    first: MotionEvent?,
+                    current: MotionEvent,
+                    velocityX: Float,
+                    velocityY: Float,
+                ): Boolean {
+                  if (!canStartFling(first)) return false
+                  startFling(velocityX)
+                  return true
+                }
+              },
+          )
+          .also { detector ->
+            detector.setOnDoubleTapListener(null)
+          }
+
+  private fun canStartFling(first: MotionEvent?): Boolean {
+    if (first == null || suppressFlingForTouch || crosshairPinned) return false
+    return config.allowPan && !isPointInYAxis(first)
   }
 
   private fun isPointInYAxis(first: MotionEvent?): Boolean {
@@ -199,22 +211,24 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun isPointInPlot(x: Float, y: Float): Boolean {
     val frame = overlay.snapshot ?: return false
-    return x >= frame.plotLeft && x <= frame.plotRight &&
-      y >= frame.plotTop && y <= frame.plotBottom
+    return x >= frame.plotLeft &&
+        x <= frame.plotRight &&
+        y >= frame.plotTop &&
+        y <= frame.plotBottom
   }
 
   private fun startFling(velocityX: Float) {
     stopFling()
     lastFlingX = 0
     flingScroller.fling(
-      0,
-      0,
-      velocityX.roundToInt(),
-      0,
-      -FLING_DISTANCE_LIMIT,
-      FLING_DISTANCE_LIMIT,
-      0,
-      0,
+        0,
+        0,
+        velocityX.roundToInt(),
+        0,
+        -FLING_DISTANCE_LIMIT,
+        FLING_DISTANCE_LIMIT,
+        0,
+        0,
     )
     postOnAnimation(flingFrame)
   }
@@ -248,20 +262,27 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun setConfigJson(value: String?) {
     if (value.isNullOrBlank()) return
     try {
-      config = ChartConfig.fromJson(
-        value,
-        resources.displayMetrics.density,
-        resources.displayMetrics.scaledDensity,
-      )
+      config =
+          ChartConfig.fromJson(
+              value,
+              resources.displayMetrics.density,
+              resources.displayMetrics.scaledDensity,
+          )
       if (!config.allowPan) stopFling()
       if (!config.crosshairEnabled) crosshairPinned = false
       pendingScaleChange = false
       pendingYAxisScaleChange = false
       ChartEngineNative.setConfig(engineHandle, config)
       scheduleFrame()
-    } catch (error: Exception) {
-      Log.e(TAG, "Invalid configJson", error)
+    } catch (error: JSONException) {
+      logInvalidConfig(error)
+    } catch (error: IllegalArgumentException) {
+      logInvalidConfig(error)
     }
+  }
+
+  private fun logInvalidConfig(error: Exception) {
+    Log.e(TAG, "Invalid configJson", error)
   }
 
   fun applyHistory(values: DoubleArray) {
@@ -346,38 +367,34 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun emitVisibleRangeChange(snapshot: ChartSnapshot) {
     if (!snapshot.hasVisibleCandles || id == NO_ID) return
-    val key = Triple(
-      snapshot.firstVisibleIndex,
-      snapshot.lastVisibleIndex,
-      snapshot.totalCandleCount,
-    )
+    val key =
+        Triple(
+            snapshot.firstVisibleIndex,
+            snapshot.lastVisibleIndex,
+            snapshot.totalCandleCount,
+        )
     if (key == lastVisibleRangeKey) return
     lastVisibleRangeKey = key
     val reactContext = context as? ReactContext ?: return
-    UIManagerHelper.getEventDispatcher(reactContext)?.dispatchEvent(
-      VisibleRangeChangeEvent(UIManagerHelper.getSurfaceId(this), id, snapshot)
-    )
+    UIManagerHelper.getEventDispatcher(reactContext)
+        ?.dispatchEvent(VisibleRangeChangeEvent(UIManagerHelper.getSurfaceId(this), id, snapshot))
   }
 
   private fun emitSelectedCandleChange(snapshot: ChartSnapshot) {
     if (id == NO_ID) return
     val selected = snapshot.selectedCandle.takeIf { snapshot.crosshairVisible }
-    if (
-      (selected == null && lastSelectedCandle == null) ||
-      (selected != null && lastSelectedCandle?.contentEquals(selected) == true)
-    ) {
-      return
-    }
+    if (lastSelectedCandle.hasSameContentAs(selected)) return
     lastSelectedCandle = selected?.copyOf()
     val reactContext = context as? ReactContext ?: return
-    UIManagerHelper.getEventDispatcher(reactContext)?.dispatchEvent(
-      SelectedCandleChangeEvent(
-        UIManagerHelper.getSurfaceId(this),
-        id,
-        selected != null,
-        selected ?: DoubleArray(6),
-      )
-    )
+    UIManagerHelper.getEventDispatcher(reactContext)
+        ?.dispatchEvent(
+            SelectedCandleChangeEvent(
+                UIManagerHelper.getSurfaceId(this),
+                id,
+                selected != null,
+                selected ?: DoubleArray(6),
+            )
+        )
   }
 
   private fun emitScaleChanges(snapshot: ChartSnapshot) {
@@ -391,22 +408,22 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     val surfaceId = UIManagerHelper.getSurfaceId(this)
     if (emitHorizontal) {
       dispatcher.dispatchEvent(
-        ScaleChangeEvent(
-          surfaceId,
-          id,
-          ScaleChangeEvent.HORIZONTAL_EVENT_NAME,
-          snapshot.horizontalScale,
-        )
+          ScaleChangeEvent(
+              surfaceId,
+              id,
+              ScaleChangeEvent.HORIZONTAL_EVENT_NAME,
+              snapshot.horizontalScale,
+          )
       )
     }
     if (emitYAxis) {
       dispatcher.dispatchEvent(
-        ScaleChangeEvent(
-          surfaceId,
-          id,
-          ScaleChangeEvent.Y_AXIS_EVENT_NAME,
-          snapshot.yAxisScale,
-        )
+          ScaleChangeEvent(
+              surfaceId,
+              id,
+              ScaleChangeEvent.Y_AXIS_EVENT_NAME,
+              snapshot.yAxisScale,
+          )
       )
     }
   }
@@ -423,7 +440,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       stopFling()
     }
     parent?.requestDisallowInterceptTouchEvent(
-      event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL
+        event.actionMasked != MotionEvent.ACTION_UP &&
+            event.actionMasked != MotionEvent.ACTION_CANCEL
     )
     scaleDetector.onTouchEvent(event)
     gestureDetector.onTouchEvent(event)

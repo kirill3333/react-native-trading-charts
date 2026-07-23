@@ -1,0 +1,17 @@
+complexity:
+  LongMethod:
+    threshold: 80
+  TooManyFunctions:
+    thresholdInFiles: 30
+    thresholdInClasses: 30
+    thresholdInInterfaces: 30
+    thresholdInObjects: 30
+    thresholdInEnums: 30
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 100
+  ReturnCount:
+    max: 3

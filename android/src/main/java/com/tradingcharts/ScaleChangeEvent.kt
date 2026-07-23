@@ -5,10 +5,10 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.events.Event
 
 internal class ScaleChangeEvent(
-  surfaceId: Int,
-  viewId: Int,
-  private val nativeEventName: String,
-  private val scale: Double,
+    surfaceId: Int,
+    viewId: Int,
+    private val nativeEventName: String,
+    private val scale: Double,
 ) : Event<ScaleChangeEvent>(surfaceId, viewId) {
   override fun getEventName(): String = nativeEventName
 
@@ -16,9 +16,10 @@ internal class ScaleChangeEvent(
 
   override fun getCoalescingKey(): Short = 0
 
-  override fun getEventData(): WritableMap = Arguments.createMap().apply {
-    putDouble("scale", scale)
-  }
+  override fun getEventData(): WritableMap =
+      Arguments.createMap().apply {
+        putDouble("scale", scale)
+      }
 
   companion object {
     const val HORIZONTAL_EVENT_NAME = "topScaleChange"

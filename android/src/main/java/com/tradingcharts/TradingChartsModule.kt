@@ -30,14 +30,14 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
 
   override fun getCandles(chartId: String, promise: Promise) {
     TradingChartsRegistry.getCandles(
-      chartId,
-      onSuccess = { promise.resolve(Arguments.fromArray(it)) },
-      onError = {
-        promise.reject(
-          "E_CHART_NOT_MOUNTED",
-          "No mounted chart found for chartId '$chartId'",
-        )
-      },
+        chartId,
+        onSuccess = { promise.resolve(Arguments.fromArray(it)) },
+        onError = {
+          promise.reject(
+              "E_CHART_NOT_MOUNTED",
+              "No mounted chart found for chartId '$chartId'",
+          )
+        },
     )
   }
 
