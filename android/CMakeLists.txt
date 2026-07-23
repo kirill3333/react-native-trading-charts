@@ -4,8 +4,9 @@ project(tradingcharts LANGUAGES CXX)
 add_library(
   tradingcharts
   SHARED
-  ../cpp/ChartEngine.cpp
-  src/main/cpp/ChartEngineJni.cpp
+  ../cpp/chart_engine.cc
+  ../cpp/internal/render_snapshot_builder.cc
+  src/main/cpp/chart_engine_jni.cc
 )
 
 set_target_properties(
@@ -18,7 +19,7 @@ set_target_properties(
 target_include_directories(
   tradingcharts
   PRIVATE
-  ../cpp
+  ..
 )
 
 find_library(log-lib log)

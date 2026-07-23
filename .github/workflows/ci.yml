@@ -15,6 +15,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cpp:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install LLVM 22
+        run: |
+          wget -qO /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key
+          sudo install -m 0644 /tmp/llvm-snapshot.gpg.key /usr/share/keyrings/llvm-snapshot.gpg.key
+          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] https://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm-22.list
+          sudo apt-get update
+          sudo apt-get install --yes clang-22
+
+      - name: Install pinned style tools
+        run: bash tools/cpp/bootstrap.sh
+
+      - name: Install JDK for JNI analysis
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Check C++ formatting
+        run: bash tools/cpp/format.sh --dry-run --Werror
+
+      - name: Run cpplint
+        run: bash tools/cpp/lint.sh
+
+      - name: Run clang-tidy
+        run: bash tools/cpp/tidy.sh
+
+      - name: Run C++ tests
+        run: bash tools/cpp/test.sh
+
   lint:
     runs-on: ubuntu-latest
 

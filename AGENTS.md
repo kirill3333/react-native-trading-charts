@@ -22,13 +22,13 @@ formatting, and React Native integration in the iOS and Android layers.
 - `src/TradingChartsViewNativeComponent.ts`: Fabric view codegen contract.
 - `src/NativeTradingCharts.ts`: TurboModule command contract.
 - `src/TradingCharts.ts`: public imperative API.
-- `cpp/ChartEngine.{h,cpp}`: shared candle store, trade aggregation, viewport,
+- `cpp/chart_engine.{h,cc}`: shared candle store, trade aggregation, viewport,
   autoscale, ticks, crosshair selection, and triangle generation.
 - `ios/TradingChartsView.mm`: Fabric view, gestures, on-demand frame scheduling,
   Metal renderer, and Core Animation text overlay.
 - `ios/TradingChartsRegistry.mm`: main-thread command routing and pending-command
   replay for views identified by `chartId`.
-- `android/src/main/cpp/ChartEngineJni.cpp`: JNI bridge to the shared engine and
+- `android/src/main/cpp/chart_engine_jni.cc`: JNI bridge to the shared engine and
   snapshot serialization.
 - `android/src/main/java/com/tradingcharts/TradingChartsView.kt`: native view,
   gestures, frame coalescing, and lifecycle.
@@ -37,7 +37,7 @@ formatting, and React Native integration in the iOS and Android layers.
   badges, and tooltip overlay.
 - `android/src/main/java/com/tradingcharts/TradingChartsRegistry.kt`: Android
   equivalent of the iOS registry.
-- `cpp/tests/ChartEngineTests.cpp`: platform-independent behavior tests.
+- `cpp/tests/chart_engine_test.cc`: platform-independent behavior tests.
 
 ## End-to-end data and frame flow
 

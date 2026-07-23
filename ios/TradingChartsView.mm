@@ -13,19 +13,25 @@
 
 #import "RCTFabricComponentsPlugins.h"
 #import "TradingChartsRegistry.h"
-#import "../cpp/ChartEngine.h"
+
+#include "cpp/chart_engine.h"
 
 #include <array>
 #include <cmath>
 
-using namespace facebook::react;
-using tradingcharts::Candle;
-using tradingcharts::ChartConfig;
-using tradingcharts::ChartEngine;
-using tradingcharts::PriceExtremum;
-using tradingcharts::RenderSnapshot;
-using tradingcharts::UpdateStatus;
-using TCColor = tradingcharts::Color;
+using facebook::react::ComponentDescriptorProvider;
+using facebook::react::Props;
+using facebook::react::TradingChartsViewComponentDescriptor;
+using facebook::react::TradingChartsViewEventEmitter;
+using facebook::react::TradingChartsViewProps;
+using facebook::react::concreteComponentDescriptorProvider;
+using trading_charts::Candle;
+using trading_charts::ChartConfig;
+using trading_charts::ChartEngine;
+using trading_charts::PriceExtremum;
+using trading_charts::RenderSnapshot;
+using trading_charts::UpdateStatus;
+using TCColor = trading_charts::Color;
 
 static bool TCCandleEqual(const Candle &left, const Candle &right) {
   return left.timestamp == right.timestamp && left.open == right.open &&
@@ -132,9 +138,9 @@ std::vector<double> TCDoubles(NSArray<NSNumber *> *values) {
 }
 
 void TCLogStatus(UpdateStatus status, NSString *operation) {
-  if (status == UpdateStatus::IgnoredOldTimestamp) {
+  if (status == UpdateStatus::kIgnoredOldTimestamp) {
     NSLog(@"[TradingCharts] %@ ignored an out-of-order timestamp", operation);
-  } else if (status == UpdateStatus::InvalidInput) {
+  } else if (status == UpdateStatus::kInvalidInput) {
     NSLog(@"[TradingCharts] %@ received invalid data", operation);
   }
 }
@@ -612,10 +618,10 @@ struct TCTextPresentation {
                                       fallback:(const ChartConfig &)config {
   TCValueFormatter *result = [TCValueFormatter new];
   NSString *localeName = json[@"locale"] ?:
-      ([NSString stringWithUTF8String:config.yLocale.c_str()] ?: @"en-GB");
+      ([NSString stringWithUTF8String:config.y_locale.c_str()] ?: @"en-GB");
   const BOOL compact = json[@"type"]
       ? [json[@"type"] isEqualToString:@"compact"]
-      : config.compactValues;
+      : config.compact_values;
   const BOOL significant = [json[@"type"] isEqualToString:@"significant"];
   const NSInteger precision = json[@"precision"] ? [json[@"precision"] integerValue]
                                                    : config.precision;
@@ -624,11 +630,11 @@ struct TCTextPresentation {
   result.numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
   result.numberFormatter.usesGroupingSeparator = json[@"useGrouping"]
       ? [json[@"useGrouping"] boolValue]
-      : config.useGrouping;
+      : config.use_grouping;
   result.numberFormatter.minimumFractionDigits = compact || significant ? 0 : precision;
   result.numberFormatter.maximumFractionDigits = significant ? 12 : precision;
   result.currencySymbol = json[@"currencySymbol"] ?:
-      ([NSString stringWithUTF8String:config.currencySymbol.c_str()] ?: @"");
+      ([NSString stringWithUTF8String:config.currency_symbol.c_str()] ?: @"");
   result.compact = compact;
   result.significant = significant;
   result.significantDigits = json[@"significantDigits"]
@@ -721,11 +727,11 @@ struct TCTextPresentation {
   NSDictionary *crosshairTime = crosshair[@"timeLabel"] ?: @{};
   NSDictionary *tooltip = appearance[@"tooltip"] ?: @{};
 
-  _xAxisAttributes = TCTextAttributes(xAxis[@"text"] ?: @{}, config.axisText, 10.5,
+  _xAxisAttributes = TCTextAttributes(xAxis[@"text"] ?: @{}, config.axis_text, 10.5,
                                       UIFontWeightRegular);
-  _yAxisAttributes = TCTextAttributes(yAxis[@"text"] ?: @{}, config.axisText, 10.5,
+  _yAxisAttributes = TCTextAttributes(yAxis[@"text"] ?: @{}, config.axis_text, 10.5,
                                       UIFontWeightRegular);
-  _extremaAttributes = TCTextAttributes(extrema[@"text"] ?: @{}, config.axisText, 10.5,
+  _extremaAttributes = TCTextAttributes(extrema[@"text"] ?: @{}, config.axis_text, 10.5,
                                         UIFontWeightRegular);
   _axisAttributes = _yAxisAttributes;
   _currentPriceBadgeAttributes = TCTextAttributes(
@@ -736,11 +742,11 @@ struct TCTextPresentation {
       crosshairTime[@"text"] ?: @{}, TCColor{0, 0, 0, 1}, 10.5, UIFontWeightSemibold);
   _badgeAttributes = _currentPriceBadgeAttributes;
   _tooltipAttributes = TCTextAttributes(
-      tooltip[@"headerText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+      tooltip[@"headerText"] ?: @{}, config.tooltip_text, 11, UIFontWeightMedium);
   NSDictionary *tooltipLabelAttributes = TCTextAttributes(
-      tooltip[@"labelText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+      tooltip[@"labelText"] ?: @{}, config.tooltip_text, 11, UIFontWeightMedium);
   NSDictionary *tooltipValueAttributes = TCTextAttributes(
-      tooltip[@"valueText"] ?: @{}, config.tooltipText, 11, UIFontWeightMedium);
+      tooltip[@"valueText"] ?: @{}, config.tooltip_text, 11, UIFontWeightMedium);
   TCColor positive = TCColorFromHex(tooltip[@"positiveValueColor"], config.up);
   TCColor negative = TCColorFromHex(tooltip[@"negativeValueColor"], config.down);
   NSMutableDictionary *positiveAttributes = [tooltipValueAttributes mutableCopy];
@@ -750,12 +756,12 @@ struct TCTextPresentation {
   negativeAttributes[NSForegroundColorAttributeName] = TCUIColor(negative);
   _tooltipDownAttributes = negativeAttributes;
 
-  _extremaConnectorColor = TCColorFromHex(extrema[@"connectorColor"], config.axisText);
+  _extremaConnectorColor = TCColorFromHex(extrema[@"connectorColor"], config.axis_text);
   _extremaBackgroundColor = TCColorFromHex(extrema[@"backgroundColor"], config.background);
   _crosshairPriceBackgroundColor = TCColorFromHex(crosshairPrice[@"backgroundColor"], config.crosshair);
   _crosshairTimeBackgroundColor = TCColorFromHex(crosshairTime[@"backgroundColor"], config.crosshair);
   _tooltipPresentationBackgroundColor = TCColorFromHex(tooltip[@"backgroundColor"],
-                                                        config.tooltipBackground);
+                                                        config.tooltip_background);
   _currentPriceBorder = TCBorderFromJson(currentLabel[@"border"] ?: @{}, 4);
   _crosshairPriceBorder = TCBorderFromJson(crosshairPrice[@"border"] ?: @{}, 4);
   _crosshairTimeBorder = TCBorderFromJson(crosshairTime[@"border"] ?: @{}, 4);
@@ -800,9 +806,9 @@ struct TCTextPresentation {
 
 - (void)prepareTooltipLabels:(const ChartConfig &)config metrics:(TCOverlayUpdateMetrics *)metrics {
   const std::array<std::string, 8> keys = {
-      config.tooltipLabelOpen,   config.tooltipLabelClose,     config.tooltipLabelHigh,
-      config.tooltipLabelLow,    config.tooltipLabelAmplitude, config.tooltipLabelChangePercent,
-      config.tooltipLabelChange, config.tooltipLabelVolume,
+      config.tooltip_label_open,   config.tooltip_label_close,     config.tooltip_label_high,
+      config.tooltip_label_low,    config.tooltip_label_amplitude, config.tooltip_label_change_percent,
+      config.tooltip_label_change, config.tooltip_label_volume,
   };
   if (_tooltipLabelsReady && _tooltipLabelKeys == keys) return;
 
@@ -925,9 +931,9 @@ struct TCTextPresentation {
 }
 
 - (NSUInteger)timeFormatIndexForSnapshot:(const RenderSnapshot &)snapshot {
-  const double span = snapshot.visibleXMax - snapshot.visibleXMin;
+  const double span = snapshot.visible_x_max - snapshot.visible_x_min;
   if (span <= 5.0 * 60.0 * 1000.0 ||
-      (snapshot.config.showSeconds && span <= 2.0 * 60.0 * 60.0 * 1000.0))
+      (snapshot.config.show_seconds && span <= 2.0 * 60.0 * 60.0 * 1000.0))
     return 0;
   if (span <= 2.0 * 24.0 * 60.0 * 60.0 * 1000.0) return 1;
   if (span <= 180.0 * 24.0 * 60.0 * 60.0 * 1000.0) return 2;
@@ -1148,8 +1154,8 @@ struct TCTextPresentation {
           metrics:(TCOverlayUpdateMetrics *)metrics {
   TCTextLayout *layout = [self layoutForText:text attributes:attributes
                                        cache:_badgeLayoutCache metrics:metrics];
-  CGFloat width = MIN(snapshot.config.yAxisWidth, layout.size.width + 12);
-  CGFloat x = snapshot.config.yAxisOnRight ? snapshot.plot.right : MAX(0, snapshot.plot.left - width);
+  CGFloat width = MIN(snapshot.config.y_axis_width, layout.size.width + 12);
+  CGFloat x = snapshot.config.y_axis_on_right ? snapshot.plot.right : MAX(0, snapshot.plot.left - width);
   CGFloat height = MAX(20, layout.size.height + 6);
   CGFloat halfHeight = height * 0.5;
   CGFloat badgeY = MAX(halfHeight, MIN(MAX(halfHeight, snapshot.height - halfHeight), y));
@@ -1207,9 +1213,9 @@ struct TCTextPresentation {
                              "revision=%{public}llu contentRevision=%{public}llu "
                              "xTicks=%{public}lu yTicks=%{public}lu",
                              static_cast<unsigned long long>(current.revision),
-                             static_cast<unsigned long long>(current.contentRevision),
-                             static_cast<unsigned long>(current.xTicks.size()),
-                             static_cast<unsigned long>(current.yTicks.size()));
+                             static_cast<unsigned long long>(current.content_revision),
+                             static_cast<unsigned long>(current.x_ticks.size()),
+                             static_cast<unsigned long>(current.y_ticks.size()));
   if (_hasAppliedRevision && _appliedRevision == current.revision) {
     os_signpost_interval_end(performanceLog, updateSignpostID, "Overlay Update Layers",
                              "cached=1 visible=0 textUpdates=0 xTextUpdates=0 yTextUpdates=0 "
@@ -1220,11 +1226,11 @@ struct TCTextPresentation {
   }
 
   const bool staticUpdated = !_hasAppliedContentRevision ||
-      _appliedContentRevision != current.contentRevision;
+      _appliedContentRevision != current.content_revision;
   const bool selectionUpdated = staticUpdated || !_hasAppliedSelection ||
-      _appliedCrosshairVisible != current.crosshairVisible ||
-      (current.crosshairVisible &&
-       !TCCandleEqual(_appliedSelectedCandle, current.selectedCandle));
+      _appliedCrosshairVisible != current.crosshair_visible ||
+      (current.crosshair_visible &&
+       !TCCandleEqual(_appliedSelectedCandle, current.selected_candle));
   if (staticUpdated) {
     [self prepareFormatters:current];
     [self prepareStyles:current];
@@ -1246,10 +1252,10 @@ struct TCTextPresentation {
     _extremaContainer.hidden = NO;
 
     _xAxisPresentations.clear();
-    _xAxisPresentations.reserve(current.xTicks.size());
-    if (config.showXAxis) {
+    _xAxisPresentations.reserve(current.x_ticks.size());
+    if (config.show_x_axis) {
       CGFloat lastRight = -CGFLOAT_MAX;
-      for (const auto &tick : current.xTicks) {
+      for (const auto &tick : current.x_ticks) {
         NSString *label = [self formatTime:tick.value formatIndex:timeFormatIndex full:NO tooltip:NO];
         TCTextLayout *layout = [self layoutForText:label attributes:_xAxisAttributes
                                              cache:_axisLayoutCache metrics:&metrics];
@@ -1268,13 +1274,13 @@ struct TCTextPresentation {
              axisTextUpdates:&metrics.xTextUpdates];
 
     _yAxisPresentations.clear();
-    _yAxisPresentations.reserve(current.yTicks.size());
-    if (config.showYAxis) {
-      for (const auto &tick : current.yTicks) {
+    _yAxisPresentations.reserve(current.y_ticks.size());
+    if (config.show_y_axis) {
+      for (const auto &tick : current.y_ticks) {
         NSString *label = [self formatValue:tick.value role:@"yAxis" snapshot:current];
         TCTextLayout *layout = [self layoutForText:label attributes:_yAxisAttributes
                                              cache:_axisLayoutCache metrics:&metrics];
-        CGFloat x = config.yAxisOnRight ? current.plot.right + 6
+        CGFloat x = config.y_axis_on_right ? current.plot.right + 6
                                         : current.plot.left - layout.size.width - 6;
         CGRect frame = CGRectMake(MAX(2, x), tick.position - layout.size.height / 2,
                                   layout.size.width, layout.size.height);
@@ -1295,11 +1301,11 @@ struct TCTextPresentation {
       NSString *label = [self formatValue:extremum.value role:@"priceExtremes" snapshot:current];
       TCTextLayout *layout = [self layoutForText:label attributes:_extremaAttributes
                                            cache:_axisLayoutCache metrics:&metrics];
-      const CGFloat direction = extremum.labelOnRight ? 1.0 : -1.0;
+      const CGFloat direction = extremum.label_on_right ? 1.0 : -1.0;
       const CGFloat lineEndX = MAX(
           current.plot.left,
           MIN(current.plot.right, extremum.x + direction * 20.0));
-      const CGFloat unclampedX = extremum.labelOnRight
+      const CGFloat unclampedX = extremum.label_on_right
           ? lineEndX + 4.0
           : lineEndX - 4.0 - layout.size.width;
       const CGFloat maximumX = MAX(current.plot.left, current.plot.right - layout.size.width);
@@ -1315,19 +1321,19 @@ struct TCTextPresentation {
           fabs(lineEndX - extremum.x), 1.0));
       ++visibleStaticLabels;
     };
-    addExtremum(current.visibleMaximum);
-    addExtremum(current.visibleMinimum);
+    addExtremum(current.visible_maximum);
+    addExtremum(current.visible_minimum);
     [self applyExtremumPresentations:_extremaPresentations
                      connectorFrames:_extremaConnectorFrames
                             snapshot:current metrics:&metrics];
 
-    if (current.currentPriceVisible && config.showCurrentPriceLabel) {
-      NSString *text = [self formatValue:current.currentPrice role:@"currentPrice" snapshot:current];
-      CGFloat badgeY = MAX(10, MIN(MAX(10, current.height - 10), current.currentPriceY));
+    if (current.current_price_visible && config.show_current_price_label) {
+      NSString *text = [self formatValue:current.current_price role:@"currentPrice" snapshot:current];
+      CGFloat badgeY = MAX(10, MIN(MAX(10, current.height - 10), current.current_price_y));
       [self setBadge:_currentPriceBadge
                 text:text
                    y:badgeY
-               color:current.currentPriceLabelColor
+               color:current.current_price_label_color
           attributes:_currentPriceBadgeAttributes
               border:_currentPriceBorder
             snapshot:current
@@ -1337,16 +1343,16 @@ struct TCTextPresentation {
       [self hideBadge:_currentPriceBadge];
     }
     _visibleStaticLabels = visibleStaticLabels;
-    _appliedContentRevision = current.contentRevision;
+    _appliedContentRevision = current.content_revision;
     _hasAppliedContentRevision = true;
   }
 
   const NSUInteger crosshairTextUpdatesBefore = metrics.textUpdates;
-  if (current.crosshairVisible) {
-    NSString *price = [self formatValue:current.crosshairPrice role:@"crosshairPrice" snapshot:current];
+  if (current.crosshair_visible) {
+    NSString *price = [self formatValue:current.crosshair_price role:@"crosshairPrice" snapshot:current];
     [self setBadge:_crosshairPriceBadge
               text:price
-                 y:current.crosshairY
+                 y:current.crosshair_y
              color:_crosshairPriceBackgroundColor
         attributes:_crosshairPriceBadgeAttributes
             border:_crosshairPriceBorder
@@ -1365,11 +1371,11 @@ struct TCTextPresentation {
                                "revision=%{public}llu contentRevision=%{public}llu "
                                "crosshairVisible=%{public}d",
                                static_cast<unsigned long long>(current.revision),
-                               static_cast<unsigned long long>(current.contentRevision),
-                               current.crosshairVisible);
+                               static_cast<unsigned long long>(current.content_revision),
+                               current.crosshair_visible);
     NSUInteger visibleSelectionLabels = 0;
-    if (current.crosshairVisible) {
-      NSString *time = [self formatTime:current.selectedCandle.timestamp
+    if (current.crosshair_visible) {
+      NSString *time = [self formatTime:current.selected_candle.timestamp
                             formatIndex:timeFormatIndex
                                    full:YES
                                 tooltip:NO];
@@ -1380,7 +1386,7 @@ struct TCTextPresentation {
       const CGFloat timeHeight = MAX(20, timeLayout.size.height + 6);
       CGRect timeFrame = CGRectMake(
           MAX(current.plot.left, MIN(current.plot.right - timeLayout.size.width - 12,
-                                     current.crosshairX - timeLayout.size.width / 2 - 6)),
+                                     current.crosshair_x - timeLayout.size.width / 2 - 6)),
           current.plot.bottom, timeLayout.size.width + 12, timeHeight);
       if (!CGRectEqualToRect(_crosshairTimeBadge.backgroundLayer.frame, timeFrame)) {
         _crosshairTimeBadge.backgroundLayer.frame = timeFrame;
@@ -1405,28 +1411,28 @@ struct TCTextPresentation {
                 metrics:&metrics];
       ++visibleSelectionLabels;
 
-      if (config.showTooltip) {
+      if (config.show_tooltip) {
         [self prepareTooltipLabels:config metrics:&metrics];
-        const auto &c = current.selectedCandle;
+        const auto &c = current.selected_candle;
         NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES tooltip:YES];
         NSArray<NSString *> *values = @[
           [self formatValue:c.open role:@"tooltip" snapshot:current],
           [self formatValue:c.close role:@"tooltip" snapshot:current],
           [self formatValue:c.high role:@"tooltip" snapshot:current],
           [self formatValue:c.low role:@"tooltip" snapshot:current],
-          [self formatPercentage:current.selectedAmplitudePercent
-                           valid:current.selectedPercentagesValid],
-          [self formatPercentage:current.selectedChangePercent
-                           valid:current.selectedPercentagesValid],
-          [self formatValue:current.selectedChange role:@"tooltip" snapshot:current],
+          [self formatPercentage:current.selected_amplitude_percent
+                           valid:current.selected_percentages_valid],
+          [self formatPercentage:current.selected_change_percent
+                           valid:current.selected_percentages_valid],
+          [self formatValue:current.selected_change role:@"tooltip" snapshot:current],
           [self formatVolume:c.volume],
         ];
         TCTextLayout *headerLayout = [self layoutForText:header
                                               attributes:_tooltipAttributes
                                                    cache:_tooltipLayoutCache
                                                  metrics:&metrics];
-        const NSInteger changeDirection = current.selectedChange > 0.0   ? 1
-                                          : current.selectedChange < 0.0 ? -1
+        const NSInteger changeDirection = current.selected_change > 0.0   ? 1
+                                          : current.selected_change < 0.0 ? -1
                                                                          : 0;
         TCTextLayout *valuesLayout = [self tooltipValuesLayout:values
                                                changeDirection:changeDirection
@@ -1440,7 +1446,7 @@ struct TCTextPresentation {
         // the bottom instead of extending the tooltip beyond its content.
         CGFloat rowsHeight = values.count * _tooltipRowHeight;
         CGFloat boxHeight = headerHeight + rowsHeight + 18;
-        CGFloat boxX = current.crosshairX > current.width / 2 ? current.plot.left + 8
+        CGFloat boxX = current.crosshair_x > current.width / 2 ? current.plot.left + 8
                                                               : current.plot.right - boxWidth - 8;
         CGRect box = CGRectMake(boxX, current.plot.top + 8, boxWidth, boxHeight);
         if (!CGRectEqualToRect(_tooltipBackgroundLayer.frame, box)) {
@@ -1448,7 +1454,7 @@ struct TCTextPresentation {
           ++metrics.frameUpdates;
         }
         TCColor tooltipBackground = _tooltipPresentationBackgroundColor;
-        tooltipBackground.a *= config.tooltipBackgroundOpacity;
+        tooltipBackground.a *= config.tooltip_background_opacity;
         UIColor *tooltipBackgroundColor = TCUIColor(tooltipBackground);
         if (!_tooltipBackgroundLayer.backgroundColor ||
             !CGColorEqualToColor(_tooltipBackgroundLayer.backgroundColor,
@@ -1498,8 +1504,8 @@ struct TCTextPresentation {
       _tooltipContainer.hidden = YES;
     }
     _visibleSelectionLabels = visibleSelectionLabels;
-    _appliedSelectedCandle = current.selectedCandle;
-    _appliedCrosshairVisible = current.crosshairVisible;
+    _appliedSelectedCandle = current.selected_candle;
+    _appliedCrosshairVisible = current.crosshair_visible;
     _hasAppliedSelection = true;
     selectionTextUpdates = metrics.textUpdates - selectionTextUpdatesBefore;
     os_signpost_interval_end(
@@ -1509,7 +1515,7 @@ struct TCTextPresentation {
         static_cast<unsigned long>(visibleSelectionLabels),
         static_cast<unsigned long>(selectionTextUpdates),
         static_cast<unsigned long>(metrics.frameUpdates - selectionFrameUpdatesBefore),
-        static_cast<unsigned long>(current.crosshairVisible && config.showTooltip ? 8 : 0));
+        static_cast<unsigned long>(current.crosshair_visible && config.show_tooltip ? 8 : 0));
   }
 
   os_signpost_id_t transactionSignpostID = os_signpost_id_generate(performanceLog);
@@ -1526,7 +1532,7 @@ struct TCTextPresentation {
   _appliedRevision = current.revision;
   _hasAppliedRevision = true;
   const NSUInteger visibleLabels =
-      _visibleStaticLabels + _visibleSelectionLabels + (current.crosshairVisible ? 1 : 0);
+      _visibleStaticLabels + _visibleSelectionLabels + (current.crosshair_visible ? 1 : 0);
   os_signpost_interval_end(performanceLog, updateSignpostID, "Overlay Update Layers",
                            "cached=0 visible=%{public}lu textUpdates=%{public}lu "
                            "xTextUpdates=%{public}lu yTextUpdates=%{public}lu "
@@ -1618,7 +1624,7 @@ struct TCTextPresentation {
     _lastFirstVisibleIndex = -1;
     _lastLastVisibleIndex = -1;
     _lastTotalCandleCount = -1;
-    _engine->setConfig(_config);
+    _engine->SetConfig(_config);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     _metalView = [[MTKView alloc] initWithFrame:self.bounds device:device];
     _metalView.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
@@ -1668,7 +1674,7 @@ struct TCTextPresentation {
   [super layoutSubviews];
   _metalView.frame = self.bounds;
   _overlay.frame = self.bounds;
-  _engine->setSize(self.bounds.size.width, self.bounds.size.height);
+  _engine->SetSize(self.bounds.size.width, self.bounds.size.height);
   [self requestFrame];
 }
 
@@ -1718,7 +1724,7 @@ struct TCTextPresentation {
     const CFTimeInterval deltaTime =
         std::min(std::max(elapsed, 1.0 / 240.0), 1.0 / 30.0);
     _lastDecelerationTimestamp = displayLink.timestamp;
-    const bool moved = _engine->pan(_horizontalVelocity * deltaTime);
+    const bool moved = _engine->Pan(_horizontalVelocity * deltaTime);
     if (moved) {
       _pastEdgeWaitStartedAt = 0.0;
     } else if (_horizontalVelocity > 0.0 && _pastEdgeWaitStartedAt <= 0.0) {
@@ -1737,7 +1743,7 @@ struct TCTextPresentation {
 
   os_signpost_id_t snapshotSignpostID = os_signpost_id_generate(performanceLog);
   os_signpost_interval_begin(performanceLog, snapshotSignpostID, "ChartEngine Snapshot");
-  auto snapshot = _engine->snapshot();
+  auto snapshot = _engine->Snapshot();
   os_signpost_interval_end(performanceLog, snapshotSignpostID, "ChartEngine Snapshot",
                            "revision=%{public}llu vertices=%{public}lu",
                            static_cast<unsigned long long>(snapshot->revision),
@@ -1745,10 +1751,10 @@ struct TCTextPresentation {
   [_renderer setSnapshot:snapshot];
   [_overlay setSnapshot:snapshot];
   [_metalView draw];
-  if (snapshot->hasVisibleCandles) {
-    NSInteger first = static_cast<NSInteger>(snapshot->firstVisibleIndex);
-    NSInteger last = static_cast<NSInteger>(snapshot->lastVisibleIndex);
-    NSInteger total = static_cast<NSInteger>(snapshot->totalCandleCount);
+  if (snapshot->has_visible_candles) {
+    NSInteger first = static_cast<NSInteger>(snapshot->first_visible_index);
+    NSInteger last = static_cast<NSInteger>(snapshot->last_visible_index);
+    NSInteger total = static_cast<NSInteger>(snapshot->total_candle_count);
     if (first != _lastFirstVisibleIndex || last != _lastLastVisibleIndex ||
         total != _lastTotalCandleCount) {
       _lastFirstVisibleIndex = first;
@@ -1757,11 +1763,11 @@ struct TCTextPresentation {
       if (self.visibleRangeDidChange) self.visibleRangeDidChange(snapshot);
     }
   }
-  if (snapshot->crosshairVisible) {
+  if (snapshot->crosshair_visible) {
     if (!_lastSelectedCandleActive ||
-        !TCCandleEqual(_lastSelectedCandle, snapshot->selectedCandle)) {
+        !TCCandleEqual(_lastSelectedCandle, snapshot->selected_candle)) {
       _lastSelectedCandleActive = YES;
-      _lastSelectedCandle = snapshot->selectedCandle;
+      _lastSelectedCandle = snapshot->selected_candle;
       if (self.selectedCandleDidChange) self.selectedCandleDidChange(snapshot);
     }
   } else if (_lastSelectedCandleActive) {
@@ -1785,7 +1791,7 @@ struct TCTextPresentation {
 
 - (void)startDecelerationWithVelocity:(CGFloat)velocity {
   [self stopDeceleration];
-  if (!_config.allowPan || std::abs(velocity) <= 5.0) return;
+  if (!_config.allow_pan || std::abs(velocity) <= 5.0) return;
   _horizontalVelocity = velocity;
   _lastDecelerationTimestamp = 0.0;
   _pastEdgeWaitStartedAt = 0.0;
@@ -1834,83 +1840,83 @@ struct TCTextPresentation {
   NSDictionary *priceExtremes = root[@"priceExtremes"];
   NSDictionary *crosshair = root[@"crosshair"];
   NSDictionary *tooltipLabels = crosshair[@"tooltipLabels"];
-  _config.timeframeMs = [root[@"timeframeMs"] doubleValue];
-  _config.initialVisibleCount = [root[@"initialVisibleCount"] intValue];
-  _config.defaultScale = root[@"defaultScale"]
+  _config.timeframe_ms = [root[@"timeframeMs"] doubleValue];
+  _config.initial_visible_count = [root[@"initialVisibleCount"] intValue];
+  _config.default_scale = root[@"defaultScale"]
       ? [root[@"defaultScale"] doubleValue]
       : 1.0;
-  _config.defaultYScale = yAxis[@"defaultScale"]
+  _config.default_y_scale = yAxis[@"defaultScale"]
       ? [yAxis[@"defaultScale"] doubleValue]
       : 1.0;
   _config.background = TCColorFromHex(appearance[@"backgroundColor"], _config.background);
   _config.grid = TCColorFromHex(gridAppearance[@"color"], _config.grid);
-  _config.axisText = TCColorFromHex(theme[@"axisTextColor"], _config.axisText);
+  _config.axis_text = TCColorFromHex(theme[@"axisTextColor"], _config.axis_text);
   _config.up = TCColorFromHex(candlesAppearance[@"upColor"], _config.up);
   _config.down = TCColorFromHex(candlesAppearance[@"downColor"], _config.down);
   _config.crosshair = TCColorFromHex(crosshairLineAppearance[@"color"], _config.crosshair);
-  _config.tooltipBackground = TCColorFromHex(tooltipAppearance[@"backgroundColor"], _config.tooltipBackground);
-  _config.tooltipText = TCColorFromHex(tooltipAppearance[@"valueText"][@"color"], _config.tooltipText);
-  _config.gridOpacity = gridAppearance[@"opacity"] ? [gridAppearance[@"opacity"] floatValue] : 0.75f;
-  _config.crosshairOpacity = crosshairLineAppearance[@"opacity"]
+  _config.tooltip_background = TCColorFromHex(tooltipAppearance[@"backgroundColor"], _config.tooltip_background);
+  _config.tooltip_text = TCColorFromHex(tooltipAppearance[@"valueText"][@"color"], _config.tooltip_text);
+  _config.grid_opacity = gridAppearance[@"opacity"] ? [gridAppearance[@"opacity"] floatValue] : 0.75f;
+  _config.crosshair_opacity = crosshairLineAppearance[@"opacity"]
       ? [crosshairLineAppearance[@"opacity"] floatValue] : 0.85f;
-  _config.currentPriceLineUp = TCColorFromHex(currentLineAppearance[@"upColor"], _config.up);
-  _config.currentPriceLineDown = TCColorFromHex(currentLineAppearance[@"downColor"], _config.down);
-  _config.currentPriceLabelUp = TCColorFromHex(currentLabelAppearance[@"upBackgroundColor"], _config.up);
-  _config.currentPriceLabelDown = TCColorFromHex(currentLabelAppearance[@"downBackgroundColor"], _config.down);
-  _config.showXAxis = [xAxis[@"visible"] boolValue];
-  _config.xAxisHeight = [xAxis[@"height"] floatValue];
-  _config.xLocale = [xAxis[@"locale"] UTF8String] ?: "en-GB";
-  _config.xTimeZone = [xAxis[@"timeZone"] UTF8String] ?: "UTC";
-  _config.showSeconds = [xAxis[@"showSeconds"] boolValue];
-  _config.logicalSpacing = [xAxis[@"spacing"] isEqualToString:@"logical"];
-  _config.showYAxis = [yAxis[@"visible"] boolValue];
-  _config.yAxisOnRight = ![yAxis[@"position"] isEqualToString:@"left"];
-  _config.yAxisWidth = [yAxis[@"width"] floatValue];
+  _config.current_price_line_up = TCColorFromHex(currentLineAppearance[@"upColor"], _config.up);
+  _config.current_price_line_down = TCColorFromHex(currentLineAppearance[@"downColor"], _config.down);
+  _config.current_price_label_up = TCColorFromHex(currentLabelAppearance[@"upBackgroundColor"], _config.up);
+  _config.current_price_label_down = TCColorFromHex(currentLabelAppearance[@"downBackgroundColor"], _config.down);
+  _config.show_x_axis = [xAxis[@"visible"] boolValue];
+  _config.x_axis_height = [xAxis[@"height"] floatValue];
+  _config.x_locale = [xAxis[@"locale"] UTF8String] ?: "en-GB";
+  _config.x_time_zone = [xAxis[@"timeZone"] UTF8String] ?: "UTC";
+  _config.show_seconds = [xAxis[@"showSeconds"] boolValue];
+  _config.logical_spacing = [xAxis[@"spacing"] isEqualToString:@"logical"];
+  _config.show_y_axis = [yAxis[@"visible"] boolValue];
+  _config.y_axis_on_right = ![yAxis[@"position"] isEqualToString:@"left"];
+  _config.y_axis_width = [yAxis[@"width"] floatValue];
   NSDictionary *scaleMargins = yAxis[@"scaleMargins"];
-  _config.yScaleMarginTop = [scaleMargins[@"top"] doubleValue];
-  _config.yScaleMarginBottom = [scaleMargins[@"bottom"] doubleValue];
-  _config.compactValues = [format[@"type"] isEqualToString:@"compact"];
+  _config.y_scale_margin_top = [scaleMargins[@"top"] doubleValue];
+  _config.y_scale_margin_bottom = [scaleMargins[@"bottom"] doubleValue];
+  _config.compact_values = [format[@"type"] isEqualToString:@"compact"];
   _config.precision = [format[@"precision"] intValue];
-  _config.minMove = format[@"minMove"] ? [format[@"minMove"] doubleValue] : 0.01;
-  _config.yLocale = [format[@"locale"] UTF8String] ?: "en-GB";
-  _config.currencySymbol = [format[@"currencySymbol"] UTF8String] ?: "";
-  _config.useGrouping = format[@"useGrouping"] ? [format[@"useGrouping"] boolValue] : true;
-  _config.allowPan = [gestures[@"pan"] boolValue];
-  _config.allowZoom = [gestures[@"zoom"] boolValue];
-  _config.allowYAxisScale = gestures[@"yAxisScale"]
+  _config.min_move = format[@"minMove"] ? [format[@"minMove"] doubleValue] : 0.01;
+  _config.y_locale = [format[@"locale"] UTF8String] ?: "en-GB";
+  _config.currency_symbol = [format[@"currencySymbol"] UTF8String] ?: "";
+  _config.use_grouping = format[@"useGrouping"] ? [format[@"useGrouping"] boolValue] : true;
+  _config.allow_pan = [gestures[@"pan"] boolValue];
+  _config.allow_zoom = [gestures[@"zoom"] boolValue];
+  _config.allow_y_axis_scale = gestures[@"yAxisScale"]
       ? [gestures[@"yAxisScale"] boolValue]
-      : _config.allowZoom;
-  _config.showCurrentPrice = [current[@"visible"] boolValue];
-  _config.showCurrentPriceLabel = [current[@"showLabel"] boolValue];
-  _config.pinCurrentPriceToEdge = current[@"pinToEdge"]
+      : _config.allow_zoom;
+  _config.show_current_price = [current[@"visible"] boolValue];
+  _config.show_current_price_label = [current[@"showLabel"] boolValue];
+  _config.pin_current_price_to_edge = current[@"pinToEdge"]
       ? [current[@"pinToEdge"] boolValue]
       : true;
-  _config.showPriceExtremes = priceExtremes[@"visible"]
+  _config.show_price_extremes = priceExtremes[@"visible"]
       ? [priceExtremes[@"visible"] boolValue]
       : true;
-  _config.crosshairEnabled = [crosshair[@"enabled"] boolValue];
-  _config.showTooltip = [crosshair[@"showTooltip"] boolValue];
-  _config.tooltipBackgroundOpacity = tooltipAppearance[@"backgroundOpacity"]
+  _config.crosshair_enabled = [crosshair[@"enabled"] boolValue];
+  _config.show_tooltip = [crosshair[@"showTooltip"] boolValue];
+  _config.tooltip_background_opacity = tooltipAppearance[@"backgroundOpacity"]
       ? [tooltipAppearance[@"backgroundOpacity"] floatValue]
       : 1.0f;
-  _config.crosshairDashed = [crosshair[@"lineStyle"] isEqualToString:@"dashed"];
-  _config.tooltipLabelOpen = [tooltipLabels[@"open"] UTF8String] ?: "Open";
-  _config.tooltipLabelClose = [tooltipLabels[@"close"] UTF8String] ?: "Close";
-  _config.tooltipLabelHigh = [tooltipLabels[@"high"] UTF8String] ?: "High";
-  _config.tooltipLabelLow = [tooltipLabels[@"low"] UTF8String] ?: "Low";
-  _config.tooltipLabelAmplitude = [tooltipLabels[@"amplitude"] UTF8String] ?: "Amplitude";
-  _config.tooltipLabelChangePercent =
+  _config.crosshair_dashed = [crosshair[@"lineStyle"] isEqualToString:@"dashed"];
+  _config.tooltip_label_open = [tooltipLabels[@"open"] UTF8String] ?: "Open";
+  _config.tooltip_label_close = [tooltipLabels[@"close"] UTF8String] ?: "Close";
+  _config.tooltip_label_high = [tooltipLabels[@"high"] UTF8String] ?: "High";
+  _config.tooltip_label_low = [tooltipLabels[@"low"] UTF8String] ?: "Low";
+  _config.tooltip_label_amplitude = [tooltipLabels[@"amplitude"] UTF8String] ?: "Amplitude";
+  _config.tooltip_label_change_percent =
       [tooltipLabels[@"changePercent"] UTF8String] ?: "Change %";
-  _config.tooltipLabelChange = [tooltipLabels[@"change"] UTF8String] ?: "Change";
-  _config.tooltipLabelVolume = [tooltipLabels[@"volume"] UTF8String] ?: "Volume";
-  if (!_config.crosshairEnabled) {
+  _config.tooltip_label_change = [tooltipLabels[@"change"] UTF8String] ?: "Change";
+  _config.tooltip_label_volume = [tooltipLabels[@"volume"] UTF8String] ?: "Volume";
+  if (!_config.crosshair_enabled) {
     _crosshairPinned = NO;
     _crosshairGestureActive = NO;
   }
-  if (!_config.allowPan) [self stopDeceleration];
+  if (!_config.allow_pan) [self stopDeceleration];
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
-  _engine->setConfig(_config);
+  _engine->SetConfig(_config);
   [self requestFrame];
 }
 
@@ -1920,29 +1926,29 @@ struct TCTextPresentation {
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->setHistory(values.data(), values.size()), @"setHistory");
+  TCLogStatus(_engine->SetHistory(values.data(), values.size()), @"setHistory");
   [self requestFrame];
 }
 - (void)prependHistory:(NSArray<NSNumber *> *)data {
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->prependHistory(values.data(), values.size()), @"prependHistory");
+  TCLogStatus(_engine->PrependHistory(values.data(), values.size()), @"prependHistory");
   [self requestFrame];
 }
 - (void)applyCandle:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->updateCandle(values.data(), values.size()), @"updateCandle");
+  TCLogStatus(_engine->UpdateCandle(values.data(), values.size()), @"updateCandle");
   [self requestFrame];
 }
 - (void)applyTrade:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->updateTrade(values.data(), values.size()), @"updateTrade");
+  TCLogStatus(_engine->UpdateTrade(values.data(), values.size()), @"updateTrade");
   [self requestFrame];
 }
 - (void)applyTrades:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->updateTrades(values.data(), values.size()), @"updateTrades");
+  TCLogStatus(_engine->UpdateTrades(values.data(), values.size()), @"updateTrades");
   [self requestFrame];
 }
 - (void)zoomByScale:(double)scale {
@@ -1950,7 +1956,7 @@ struct TCTextPresentation {
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
   _pendingScaleChange = NO;
-  _engine->zoomAtRightEdge(scale);
+  _engine->ZoomAtRightEdge(scale);
   [self requestFrame];
 }
 - (void)fitContent {
@@ -1959,7 +1965,7 @@ struct TCTextPresentation {
   _crosshairGestureActive = NO;
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
-  _engine->fitContent();
+  _engine->FitContent();
   [self requestFrame];
 }
 - (void)clearData {
@@ -1968,7 +1974,7 @@ struct TCTextPresentation {
   _crosshairGestureActive = NO;
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
-  _engine->clear();
+  _engine->Clear();
   _lastFirstVisibleIndex = -1;
   _lastLastVisibleIndex = -1;
   _lastTotalCandleCount = -1;
@@ -1976,7 +1982,7 @@ struct TCTextPresentation {
 }
 
 - (NSArray<NSNumber *> *)candleData {
-  const auto candles = _engine->candles();
+  const auto candles = _engine->Candles();
   NSMutableArray<NSNumber *> *result =
       [NSMutableArray arrayWithCapacity:candles.size() * 6];
   for (const Candle &candle : candles) {
@@ -1991,18 +1997,18 @@ struct TCTextPresentation {
 }
 
 - (BOOL)isPointInYAxis:(CGPoint)point {
-  if (!_config.showYAxis) return NO;
-  if (_config.yAxisOnRight) {
-    return point.x >= self.bounds.size.width - _config.yAxisWidth;
+  if (!_config.show_y_axis) return NO;
+  if (_config.y_axis_on_right) {
+    return point.x >= self.bounds.size.width - _config.y_axis_width;
   }
-  return point.x <= _config.yAxisWidth;
+  return point.x <= _config.y_axis_width;
 }
 
 - (BOOL)isPointInPlot:(CGPoint)point {
-  const CGFloat left = _config.showYAxis && !_config.yAxisOnRight ? _config.yAxisWidth : 0.0;
+  const CGFloat left = _config.show_y_axis && !_config.y_axis_on_right ? _config.y_axis_width : 0.0;
   const CGFloat right = self.bounds.size.width -
-      (_config.showYAxis && _config.yAxisOnRight ? _config.yAxisWidth : 0.0);
-  const CGFloat bottom = self.bounds.size.height - (_config.showXAxis ? _config.xAxisHeight : 0.0);
+      (_config.show_y_axis && _config.y_axis_on_right ? _config.y_axis_width : 0.0);
+  const CGFloat bottom = self.bounds.size.height - (_config.show_x_axis ? _config.x_axis_height : 0.0);
   return point.x >= left && point.x <= right && point.y >= 8.0 && point.y <= bottom;
 }
 
@@ -2017,8 +2023,8 @@ struct TCTextPresentation {
     _scalingYAxis = [self isPointInYAxis:[recognizer locationInView:self]];
     _suppressMomentum = _scalingYAxis;
     [recognizer setTranslation:CGPointZero inView:self];
-    if (_scalingYAxis && _config.allowYAxisScale) {
-      _engine->scaleY(0.0f);
+    if (_scalingYAxis && _config.allow_y_axis_scale) {
+      _engine->ScaleY(0.0f);
       [self requestFrame];
     }
     return;
@@ -2026,19 +2032,19 @@ struct TCTextPresentation {
   if (recognizer.state == UIGestureRecognizerStateChanged) {
     if (_crosshairPinned) {
       CGPoint point = [recognizer locationInView:self];
-      _engine->setCrosshair(true, point.x, point.y);
+      _engine->SetCrosshair(true, point.x, point.y);
       [self requestFrame];
       return;
     }
     CGPoint translation = [recognizer translationInView:self];
     [recognizer setTranslation:CGPointZero inView:self];
     if (_scalingYAxis) {
-      if (_config.allowYAxisScale && _engine->scaleY(translation.y)) {
+      if (_config.allow_y_axis_scale && _engine->ScaleY(translation.y)) {
         _pendingYAxisScaleChange = YES;
         [self requestFrame];
       }
-    } else if (_config.allowPan) {
-      _engine->pan(translation.x);
+    } else if (_config.allow_pan) {
+      _engine->Pan(translation.x);
       [self requestFrame];
     }
     return;
@@ -2048,7 +2054,7 @@ struct TCTextPresentation {
       recognizer.state == UIGestureRecognizerStateFailed) {
     const BOOL shouldDecelerate = !_crosshairPinned &&
         recognizer.state == UIGestureRecognizerStateEnded &&
-        !_scalingYAxis && !_suppressMomentum && _config.allowPan;
+        !_scalingYAxis && !_suppressMomentum && _config.allow_pan;
     const CGFloat velocity = shouldDecelerate
         ? [recognizer velocityInView:self].x
         : 0.0;
@@ -2058,18 +2064,18 @@ struct TCTextPresentation {
   }
 }
 - (void)handlePinch:(UIPinchGestureRecognizer *)recognizer {
-  if (!_config.allowZoom) return;
+  if (!_config.allow_zoom) return;
   if (recognizer.state == UIGestureRecognizerStateBegan) {
     _suppressMomentum = YES;
     [self stopDeceleration];
     _crosshairPinned = NO;
     _crosshairGestureActive = NO;
     CGPoint focus = [recognizer locationInView:self];
-    _engine->setCrosshair(false, focus.x, focus.y);
+    _engine->SetCrosshair(false, focus.x, focus.y);
   }
   if (recognizer.state != UIGestureRecognizerStateChanged) return;
   CGPoint focus = [recognizer locationInView:self];
-  if (_engine->zoom(recognizer.scale, focus.x)) {
+  if (_engine->Zoom(recognizer.scale, focus.x)) {
     _pendingScaleChange = YES;
   }
   recognizer.scale = 1.0;
@@ -2078,7 +2084,7 @@ struct TCTextPresentation {
 - (void)handleLongPress:(UILongPressGestureRecognizer *)recognizer {
   if (recognizer.state == UIGestureRecognizerStateBegan) {
     CGPoint point = [recognizer locationInView:self];
-    if (!_config.crosshairEnabled || (!_crosshairPinned && ![self isPointInPlot:point])) {
+    if (!_config.crosshair_enabled || (!_crosshairPinned && ![self isPointInPlot:point])) {
       _crosshairGestureActive = NO;
       return;
     }
@@ -2091,7 +2097,7 @@ struct TCTextPresentation {
   CGPoint point = [recognizer locationInView:self];
   if (recognizer.state == UIGestureRecognizerStateBegan ||
       recognizer.state == UIGestureRecognizerStateChanged) {
-    _engine->setCrosshair(true, point.x, point.y);
+    _engine->SetCrosshair(true, point.x, point.y);
     [self requestFrame];
   } else if (recognizer.state == UIGestureRecognizerStateEnded ||
              recognizer.state == UIGestureRecognizerStateCancelled ||
@@ -2102,20 +2108,20 @@ struct TCTextPresentation {
 - (void)handleSingleTap:(UITapGestureRecognizer *)recognizer {
   CGPoint point = [recognizer locationInView:self];
   if (!_crosshairPinned &&
-      (!_config.crosshairEnabled || ![self isPointInPlot:point])) {
+      (!_config.crosshair_enabled || ![self isPointInPlot:point])) {
     return;
   }
   if (_crosshairPinned) {
     _crosshairPinned = NO;
     _crosshairGestureActive = NO;
-    _engine->setCrosshair(false, point.x, point.y);
+    _engine->SetCrosshair(false, point.x, point.y);
     [self requestFrame];
     return;
   }
   _suppressMomentum = YES;
   [self stopDeceleration];
   _crosshairPinned = YES;
-  _engine->setCrosshair(true, point.x, point.y);
+  _engine->SetCrosshair(true, point.x, point.y);
   [self requestFrame];
 }
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
@@ -2147,13 +2153,13 @@ struct TCTextPresentation {
       auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
           strongSelf->_eventEmitter);
       emitter->onVisibleRangeChange({
-          snapshot->visibleXMin,
-          snapshot->visibleXMax,
-          static_cast<int>(snapshot->firstVisibleIndex),
-          static_cast<int>(snapshot->lastVisibleIndex),
-          static_cast<int>(snapshot->totalCandleCount),
-          snapshot->firstVisibleIndex == 0,
-          snapshot->lastVisibleIndex + 1 == snapshot->totalCandleCount,
+          snapshot->visible_x_min,
+          snapshot->visible_x_max,
+          static_cast<int>(snapshot->first_visible_index),
+          static_cast<int>(snapshot->last_visible_index),
+          static_cast<int>(snapshot->total_candle_count),
+          snapshot->first_visible_index == 0,
+          snapshot->last_visible_index + 1 == snapshot->total_candle_count,
       });
     };
     _host.selectedCandleDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
@@ -2161,9 +2167,9 @@ struct TCTextPresentation {
       if (!strongSelf || !strongSelf->_eventEmitter) return;
       auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
           strongSelf->_eventEmitter);
-      const Candle &candle = snapshot->selectedCandle;
+      const Candle &candle = snapshot->selected_candle;
       emitter->onSelectedCandleChange({
-          snapshot->crosshairVisible,
+          snapshot->crosshair_visible,
           candle.timestamp,
           candle.open,
           candle.high,
@@ -2177,14 +2183,14 @@ struct TCTextPresentation {
       if (!strongSelf || !strongSelf->_eventEmitter) return;
       auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
           strongSelf->_eventEmitter);
-      emitter->onScaleChange({snapshot->horizontalScale});
+      emitter->onScaleChange({snapshot->horizontal_scale});
     };
     _host.yAxisScaleDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
       TradingChartsView *strongSelf = weakSelf;
       if (!strongSelf || !strongSelf->_eventEmitter) return;
       auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
           strongSelf->_eventEmitter);
-      emitter->onYAxisScaleChange({snapshot->yAxisScale});
+      emitter->onYAxisScaleChange({snapshot->y_axis_scale});
     };
     self.contentView = _host;
   }

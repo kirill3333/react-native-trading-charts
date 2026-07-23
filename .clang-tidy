@@ -1,0 +1,37 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  google-*,
+  performance-*,
+  portability-*,
+  readability-braces-around-statements,
+  readability-identifier-naming
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(.*/)?(cpp|android/src/main/cpp)/.*'
+FormatStyle: file
+CheckOptions:
+  bugprone-easily-swappable-parameters.MinimumLength: '3'
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstexprVariablePrefix: k
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.EnumConstantPrefix: k
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.FunctionIgnoredRegexp: '^Java_.*'
+  readability-identifier-naming.GlobalFunctionCase: CamelCase
+  readability-identifier-naming.GlobalFunctionIgnoredRegexp: '^Java_.*'
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
+  readability-identifier-naming.PublicMemberCase: lower_case
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.VariableCase: lower_case
+...

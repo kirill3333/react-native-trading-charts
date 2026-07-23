@@ -52,6 +52,8 @@ internal data class ChartSnapshot(
 )
 
 internal object ChartEngineNative {
+  private const val SNAPSHOT_META_SIZE = 51
+
   init {
     System.loadLibrary("tradingcharts")
   }
@@ -96,6 +98,9 @@ internal object ChartEngineNative {
     check(snapshot != 0L) { "Unable to acquire chart snapshot" }
     try {
       val meta = nativeSnapshotMeta(snapshot)
+      check(meta.size == SNAPSHOT_META_SIZE) {
+        "Invalid native snapshot metadata size: ${meta.size}"
+      }
       fun ticks(values: DoubleArray) = values.asList().chunked(2).map {
         AxisTick(it[0], it[1].toFloat())
       }
