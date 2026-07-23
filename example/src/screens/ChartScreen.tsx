@@ -3,6 +3,7 @@ import {
   type StaticScreenProps,
   useNavigation,
 } from '@react-navigation/native';
+import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 import {
   ActivityIndicator,
   FlatList,
@@ -348,51 +349,51 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
           <Pressable
             accessibilityLabel="Zoom in chart"
             accessibilityRole="button"
+            hitSlop={4}
             onPress={() => TradingCharts.zoom(chartId, 1.25)}
             style={({ pressed }) => [
               styles.chartControlButton,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartControlSymbol}>+</Text>
+            <MaterialIcons color="#F6F3FA" name="zoom-in" size={24} />
           </Pressable>
           <Pressable
             accessibilityLabel="Zoom out chart"
             accessibilityRole="button"
+            hitSlop={4}
             onPress={() => TradingCharts.zoom(chartId, 0.8)}
             style={({ pressed }) => [
               styles.chartControlButton,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartControlSymbol}>−</Text>
+            <MaterialIcons color="#F6F3FA" name="zoom-out" size={24} />
           </Pressable>
           <Pressable
             accessibilityLabel="Fit entire chart"
             accessibilityRole="button"
+            hitSlop={4}
             onPress={() => TradingCharts.fitContent(chartId)}
             style={({ pressed }) => [
               styles.chartControlButton,
-              styles.chartResetButton,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartResetText}>Reset</Text>
+            <MaterialIcons color="#C2B9FF" name="zoom-out-map" size={24} />
           </Pressable>
           <Pressable
             accessibilityLabel="Open chart settings"
             accessibilityRole="button"
+            hitSlop={4}
             onPress={() => navigation.navigate('ChartSettings')}
             style={({ pressed }) => [
               styles.chartControlButton,
-              styles.chartSettingsButton,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartResetText}>Settings</Text>
+            <MaterialIcons color="#C2B9FF" name="settings" size={24} />
           </Pressable>
-        </View>
-        <View style={styles.chartSizeControls}>
           <Pressable
             accessibilityLabel="Reduce chart to half height"
             accessibilityRole="button"
@@ -408,7 +409,13 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartSizeButtonText}>½ height</Text>
+            <Text style={styles.chartSizeButtonText}>½</Text>
+            <MaterialIcons
+              color="#C2B9FF"
+              name="height"
+              size={20}
+              style={styles.chartSizeButtonIcon}
+            />
           </Pressable>
           <Pressable
             accessibilityLabel="Restore full chart height"
@@ -422,9 +429,15 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.chartSizeButtonText}>Full height</Text>
+            <MaterialIcons
+              color="#C2B9FF"
+              name="height"
+              size={20}
+              style={styles.chartSizeButtonIcon}
+            />
           </Pressable>
         </View>
+        <View style={styles.chartSizeControls}></View>
       </View>
     </SafeAreaView>
   );
@@ -580,17 +593,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 4,
     minWidth: 48,
-    paddingHorizontal: 14,
+    width: 48,
   },
-  chartControlSymbol: {
-    color: '#F6F3FA',
-    fontSize: 24,
-    fontWeight: '500',
-    lineHeight: 26,
-  },
-  chartResetButton: { minWidth: 84 },
-  chartSettingsButton: { minWidth: 76, paddingHorizontal: 10 },
-  chartResetText: { color: '#C2B9FF', fontSize: 13, fontWeight: '800' },
   chartSizeControls: {
     borderTopColor: '#292431',
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -605,11 +609,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
+    flexDirection: 'row',
     height: 40,
     justifyContent: 'center',
     marginHorizontal: 4,
   },
   chartSizeButtonDisabled: { opacity: 0.4 },
+  chartSizeButtonIcon: { marginRight: 6 },
   chartSizeButtonText: {
     color: '#C2B9FF',
     fontSize: 13,

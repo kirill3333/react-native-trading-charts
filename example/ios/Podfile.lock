@@ -1961,6 +1961,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - react-native-vector-icons-material-icons (13.1.2)
   - React-NativeModulesApple (0.85.0):
     - boost
     - DoubleConversion
@@ -2656,6 +2657,7 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - "react-native-vector-icons-material-icons (from `../node_modules/@react-native-vector-icons/material-icons`)"
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2790,6 +2792,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-vector-icons-material-icons:
+    :path: "../node_modules/@react-native-vector-icons/material-icons"
   React-NativeModulesApple:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -2909,6 +2913,7 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: f836a7408f6399adb9bf67d185679f2768ee0ae5
   react-native-netinfo: a0be8c77f8420a60ddf07eb87be1a36f02a1bd65
   react-native-safe-area-context: ebd2c2ece5e6e650a6963184039ec8cfd8960d86
+  react-native-vector-icons-material-icons: bc2d8d3847160ef62b3f66c671bcdcd50d362474
   React-NativeModulesApple: ff676581386db64f99f41ae9f2fad19c1611e45b
   React-networking: 6ad3153226e8c4d40fc0654d9a8f92721add002f
   React-oscompat: 2c4945336d3a1e509944c6a6a530bc1b6e756581
@@ -2949,4 +2954,4 @@ SPEC CHECKSUMS:
 
 PODFILE CHECKSUM: 71514ec03098a30108adae8a654a9307ce375c40
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.15.2
