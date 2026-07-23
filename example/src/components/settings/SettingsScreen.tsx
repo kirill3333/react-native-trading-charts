@@ -15,6 +15,10 @@ import { SettingsRow } from './SettingsRow';
 import { SettingsSection } from './SettingsSection';
 import { SettingSwitch } from './SettingSwitch';
 
+const SERIES_OPTIONS = [
+  { label: 'Candles', value: 'candlestick' },
+  { label: 'Bars', value: 'bar' },
+] as const;
 const SPACING_OPTIONS = [
   { label: 'Time', value: 'time' },
   { label: 'Logical', value: 'logical' },
@@ -85,9 +89,18 @@ export function SettingsScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <SettingsSection title="Series">
+          <SettingSegments
+            label="Style"
+            onValueChange={(seriesType) => updateSettings({ seriesType })}
+            options={SERIES_OPTIONS}
+            value={settings.seriesType}
+          />
+        </SettingsSection>
+
         <SettingsSection title="Theme">
           <SettingSwitch
-            description="Brighter candles and white chart labels"
+            description="Brighter price series and white chart labels"
             label="High contrast"
             onValueChange={(highContrast) =>
               updateSettings({

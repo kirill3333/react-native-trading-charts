@@ -6,6 +6,7 @@ add_library(
   STATIC
   chart_engine.cc
   internal/render_snapshot_builder.cc
+  internal/series_geometry.cc
 )
 
 target_include_directories(

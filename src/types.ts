@@ -15,6 +15,12 @@ export type TradeEvent = {
   size?: number;
 };
 
+export type ChartSeriesType = 'candlestick' | 'bar';
+
+export type ChartSeriesOptions = {
+  type?: ChartSeriesType;
+};
+
 export type ChartTheme = {
   backgroundColor?: string;
   gridColor?: string;
@@ -68,6 +74,11 @@ export type ChartAppearance = {
   candles?: {
     upColor?: string;
     downColor?: string;
+  };
+  bars?: {
+    upColor?: string;
+    downColor?: string;
+    lineWidth?: number;
   };
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
@@ -249,6 +260,7 @@ export type TradingChartsViewProps = ViewProps & {
   timeframeMs?: number;
   initialVisibleCount?: number;
   defaultScale?: number;
+  series?: ChartSeriesOptions;
   theme?: ChartTheme;
   appearance?: ChartAppearance;
   formatters?: ChartFormatters;
@@ -272,6 +284,7 @@ export type ResolvedChartConfig = {
   timeframeMs: number;
   initialVisibleCount: number;
   defaultScale: number;
+  series: Required<ChartSeriesOptions>;
   theme: Required<ChartTheme>;
   appearance: ResolvedChartAppearance;
   formatters: ResolvedChartFormatters;
@@ -300,6 +313,7 @@ export type ResolvedChartAppearance = {
   backgroundColor: string;
   grid: { color: string; opacity: number };
   candles: { upColor: string; downColor: string };
+  bars: { upColor: string; downColor: string; lineWidth: number };
   xAxis: { text: ResolvedChartTextStyle };
   yAxis: { text: ResolvedChartTextStyle };
   priceExtremes: {

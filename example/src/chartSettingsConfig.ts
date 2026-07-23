@@ -1,6 +1,7 @@
 import {
   type ChartAppearance,
   type ChartFormatters,
+  type ChartSeriesOptions,
   type CrosshairOptions,
   type CurrentPriceOptions,
   type GestureOptions,
@@ -17,6 +18,7 @@ const STANDARD_APPEARANCE: ChartAppearance = {
   backgroundColor: '#100C18',
   grid: { color: '#292431', opacity: 0.65 },
   candles: { upColor: '#38D98A', downColor: '#FF3B64' },
+  bars: { upColor: '#38D98A', downColor: '#FF3B64', lineWidth: 1 },
   xAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   yAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   priceExtremes: {
@@ -57,6 +59,7 @@ const HIGH_CONTRAST_APPEARANCE: ChartAppearance = {
   backgroundColor: '#000000',
   grid: { color: '#20242A', opacity: 0.85 },
   candles: { upColor: '#21C99A', downColor: '#E31B5F' },
+  bars: { upColor: '#21C99A', downColor: '#E31B5F', lineWidth: 1 },
   xAxis: {
     text: { color: '#FFFFFF', fontSize: 11, fontWeight: 'semibold' },
   },
@@ -123,6 +126,7 @@ export function shouldUseSignificantPriceFormat(lastPrice: number): boolean {
 
 export type ChartViewConfig = {
   appearance: ChartAppearance;
+  series: ChartSeriesOptions;
   crosshair: CrosshairOptions;
   currentPrice: CurrentPriceOptions;
   priceExtremes: PriceExtremesOptions;
@@ -200,6 +204,7 @@ export function buildChartViewConfig(
       : STANDARD_APPEARANCE;
 
   return {
+    series: { type: settings.seriesType },
     appearance: {
       ...appearancePreset,
       tooltip: {

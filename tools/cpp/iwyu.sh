@@ -11,6 +11,7 @@ cmake \
 iwyu_tool.py -p "$build_dir" \
   cpp/chart_engine.cc \
   cpp/internal/render_snapshot_builder.cc \
+  cpp/internal/series_geometry.cc \
   cpp/tests/chart_engine_test.cc \
   -- \
   -Xiwyu --error

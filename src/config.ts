@@ -2,6 +2,7 @@ import {
   type ChartAppearance,
   type ChartBorderStyle,
   type ChartFormatters,
+  type ChartSeriesType,
   type ChartTheme,
   type ChartTextStyle,
   type CompactValueFormat,
@@ -242,7 +243,8 @@ function resolveDisplayFormat(
 function resolveAppearance(
   input: ChartAppearance | undefined,
   theme: Required<ChartTheme>,
-  legacyTooltipOpacity: number
+  legacyTooltipOpacity: number,
+  seriesType: ChartSeriesType
 ): ResolvedChartAppearance {
   const backgroundColor = color(
     input?.backgroundColor ?? theme.backgroundColor,
@@ -260,6 +262,20 @@ function resolveAppearance(
     input?.candles?.downColor ?? theme.downColor,
     'appearance.candles.downColor'
   );
+  const barUpColor = color(
+    input?.bars?.upColor ?? upColor,
+    'appearance.bars.upColor'
+  );
+  const barDownColor = color(
+    input?.bars?.downColor ?? downColor,
+    'appearance.bars.downColor'
+  );
+  const barLineWidth = finitePositive(
+    input?.bars?.lineWidth ?? 1,
+    'appearance.bars.lineWidth'
+  );
+  const activeUpColor = seriesType === 'bar' ? barUpColor : upColor;
+  const activeDownColor = seriesType === 'bar' ? barDownColor : downColor;
   const axisColor = color(theme.axisTextColor, 'theme.axisTextColor');
   const crosshairColor = color(
     input?.crosshair?.line?.color ?? theme.crosshairColor,
@@ -281,6 +297,11 @@ function resolveAppearance(
       ),
     },
     candles: { upColor, downColor },
+    bars: {
+      upColor: barUpColor,
+      downColor: barDownColor,
+      lineWidth: barLineWidth,
+    },
     xAxis: {
       text: resolveTextStyle(
         input?.xAxis?.text,
@@ -313,21 +334,21 @@ function resolveAppearance(
     currentPrice: {
       line: {
         upColor: color(
-          input?.currentPrice?.line?.upColor ?? upColor,
+          input?.currentPrice?.line?.upColor ?? activeUpColor,
           'appearance.currentPrice.line.upColor'
         ),
         downColor: color(
-          input?.currentPrice?.line?.downColor ?? downColor,
+          input?.currentPrice?.line?.downColor ?? activeDownColor,
           'appearance.currentPrice.line.downColor'
         ),
       },
       label: {
         upBackgroundColor: color(
-          input?.currentPrice?.label?.upBackgroundColor ?? upColor,
+          input?.currentPrice?.label?.upBackgroundColor ?? activeUpColor,
           'appearance.currentPrice.label.upBackgroundColor'
         ),
         downBackgroundColor: color(
-          input?.currentPrice?.label?.downBackgroundColor ?? downColor,
+          input?.currentPrice?.label?.downBackgroundColor ?? activeDownColor,
           'appearance.currentPrice.label.downBackgroundColor'
         ),
         text: resolveTextStyle(
@@ -408,11 +429,11 @@ function resolveAppearance(
         'appearance.tooltip.valueText'
       ),
       positiveValueColor: color(
-        input?.tooltip?.positiveValueColor ?? upColor,
+        input?.tooltip?.positiveValueColor ?? activeUpColor,
         'appearance.tooltip.positiveValueColor'
       ),
       negativeValueColor: color(
-        input?.tooltip?.negativeValueColor ?? downColor,
+        input?.tooltip?.negativeValueColor ?? activeDownColor,
         'appearance.tooltip.negativeValueColor'
       ),
       border: resolveBorder(
@@ -536,6 +557,10 @@ export function resolveChartConfig(
     throw new TypeError('initialVisibleCount must be a positive integer');
   }
   const defaultScale = finitePositive(props.defaultScale ?? 1, 'defaultScale');
+  const seriesType = props.series?.type ?? 'candlestick';
+  if (seriesType !== 'candlestick' && seriesType !== 'bar') {
+    throw new TypeError("series.type must be 'candlestick' or 'bar'");
+  }
   const tooltipBackgroundOpacity = opacity(
     props.crosshair?.tooltipBackgroundOpacity ?? 1,
     'crosshair.tooltipBackgroundOpacity'
@@ -581,7 +606,8 @@ export function resolveChartConfig(
   const appearance = resolveAppearance(
     props.appearance,
     theme,
-    tooltipBackgroundOpacity
+    tooltipBackgroundOpacity,
+    seriesType
   );
   const formatters = resolveFormatters(
     props.formatters,
@@ -593,6 +619,7 @@ export function resolveChartConfig(
     timeframeMs,
     initialVisibleCount,
     defaultScale,
+    series: { type: seriesType },
     theme,
     appearance,
     formatters,

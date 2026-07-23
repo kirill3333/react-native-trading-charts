@@ -17,6 +17,7 @@ function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
 describe('chart settings', () => {
   it('uses the current chart defaults', () => {
     expect(DEFAULT_CHART_SETTINGS).toMatchObject({
+      seriesType: 'candlestick',
       themeMode: 'default',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',
@@ -33,6 +34,7 @@ describe('chart settings', () => {
     const updated = chartSettingsReducer(DEFAULT_CHART_SETTINGS, {
       type: 'update',
       patch: {
+        seriesType: 'bar',
         themeMode: 'highContrast',
         panEnabled: false,
         yAxisPosition: 'left',
@@ -40,6 +42,7 @@ describe('chart settings', () => {
     });
 
     expect(updated).toMatchObject({
+      seriesType: 'bar',
       themeMode: 'highContrast',
       panEnabled: false,
       yAxisPosition: 'left',
@@ -63,6 +66,7 @@ describe('chart settings', () => {
       timeZone: 'UTC',
       visible: true,
     });
+    expect(config.series).toEqual({ type: 'candlestick' });
     expect(config.yAxis).toMatchObject({
       position: 'right',
       scaleMargins: { top: 0.2, bottom: 0.1 },
@@ -86,6 +90,7 @@ describe('chart settings', () => {
   it('builds the complete high contrast and formatting presets', () => {
     const config = buildChartViewConfig(
       settingsWith({
+        seriesType: 'bar',
         themeMode: 'highContrast',
         crosshairTooltipOpacity: 1,
         currencySymbol: '$',
@@ -102,6 +107,11 @@ describe('chart settings', () => {
       backgroundColor: '#000000',
       grid: { color: '#20242A' },
       candles: { upColor: '#21C99A', downColor: '#E31B5F' },
+      bars: {
+        upColor: '#21C99A',
+        downColor: '#E31B5F',
+        lineWidth: 1,
+      },
       xAxis: { text: { color: '#FFFFFF', fontWeight: 'semibold' } },
       tooltip: {
         backgroundColor: '#08090A',
@@ -110,6 +120,7 @@ describe('chart settings', () => {
         border: { color: '#4B5563', width: 1, radius: 8 },
       },
     });
+    expect(config.series).toEqual({ type: 'bar' });
     expect(config.xAxis.timeZone).toBe('America/New_York');
     expect(config.yAxis).toMatchObject({
       scaleMargins: { top: 0.3, bottom: 0.2 },

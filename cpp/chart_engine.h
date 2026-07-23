@@ -34,12 +34,19 @@ struct Candle {
   double volume = 0.0;
 };
 
+enum class SeriesType : std::uint8_t {
+  kCandlestick,
+  kBar,
+};
+
 struct ChartConfig {
   double timeframe_ms = 60000.0;
   int initial_visible_count = 100;
   double default_scale = 1.0;
   double default_y_scale = 1.0;
   float display_scale = 1.0f;
+  SeriesType series_type = SeriesType::kCandlestick;
+  float bar_line_width = 1.0f;
 
   Color background{16.0f / 255.0f, 12.0f / 255.0f, 24.0f / 255.0f, 1.0f};
   Color grid{41.0f / 255.0f, 36.0f / 255.0f, 49.0f / 255.0f, 1.0f};

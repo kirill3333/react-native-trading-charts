@@ -1,3 +1,5 @@
+import { type ChartSeriesType } from 'react-native-trading-charts';
+
 export type ChartThemeMode = 'default' | 'highContrast';
 export type AxisSpacing = 'time' | 'logical';
 export type AxisPosition = 'left' | 'right';
@@ -8,6 +10,7 @@ export type ChartLocale = 'en-GB' | 'en-US';
 export type ChartTimeZone = 'utc' | 'device';
 
 export type ChartSettings = {
+  seriesType: ChartSeriesType;
   themeMode: ChartThemeMode;
   xAxisVisible: boolean;
   xAxisShowSeconds: boolean;
@@ -33,6 +36,7 @@ export type ChartSettings = {
 };
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  seriesType: 'candlestick',
   themeMode: 'default',
   xAxisVisible: true,
   xAxisShowSeconds: false,

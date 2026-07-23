@@ -13,6 +13,9 @@ internal class ChartConfigJsonDecoder(
   private val appearance = root.getJSONObject("appearance")
   private val gridAppearance = appearance.getJSONObject("grid")
   private val candlesAppearance = appearance.getJSONObject("candles")
+  private val barsAppearance = appearance.optJSONObject("bars") ?: candlesAppearance
+  private val seriesType = root.optJSONObject("series")?.optString("type") ?: "candlestick"
+  private val seriesAppearance = if (seriesType == "bar") barsAppearance else candlesAppearance
   private val xAxisAppearance = appearance.getJSONObject("xAxis")
   private val yAxisAppearance = appearance.getJSONObject("yAxis")
   private val extremaAppearance = appearance.getJSONObject("priceExtremes")
@@ -56,6 +59,8 @@ internal class ChartConfigJsonDecoder(
           defaultScale = root.optDouble("defaultScale", 1.0),
           defaultYScale = yAxis.optDouble("defaultScale", 1.0),
           displayScale = density,
+          seriesType = seriesType,
+          barLineWidthPx = barsAppearance.optDouble("lineWidth", 1.0).toFloat() * density,
       )
 
   private fun decodePalette(config: ChartConfig) =
@@ -63,8 +68,8 @@ internal class ChartConfigJsonDecoder(
           backgroundColor = chartColor(appearance.getString("backgroundColor")),
           gridColor = chartColor(gridAppearance.getString("color")),
           axisTextColor = chartColor(theme.getString("axisTextColor")),
-          upColor = chartColor(candlesAppearance.getString("upColor")),
-          downColor = chartColor(candlesAppearance.getString("downColor")),
+          upColor = chartColor(seriesAppearance.getString("upColor")),
+          downColor = chartColor(seriesAppearance.getString("downColor")),
           gridOpacity = gridAppearance.getDouble("opacity").toFloat(),
           currentPriceLineUpColor = chartColor(currentLineAppearance.getString("upColor")),
           currentPriceLineDownColor = chartColor(currentLineAppearance.getString("downColor")),

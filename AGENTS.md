@@ -24,6 +24,8 @@ formatting, and React Native integration in the iOS and Android layers.
 - `src/TradingCharts.ts`: public imperative API.
 - `cpp/chart_engine.{h,cc}`: shared candle store, trade aggregation, viewport,
   autoscale, ticks, crosshair selection, and triangle generation.
+- `cpp/internal/series_geometry.{h,cc}`: shared, allocation-free geometry
+  strategies for candlestick, bar, and future price-series render types.
 - `ios/TradingChartsView.mm`: Fabric view, gestures, on-demand frame scheduling,
   Metal renderer, and Core Animation text overlay.
 - `ios/TradingChartsRegistry.mm`: main-thread command routing and pending-command
@@ -69,6 +71,9 @@ formatting, and React Native integration in the iOS and Android layers.
   changes output must call `markDirtyLocked()`.
 - Geometry is interleaved as six floats per vertex: `x, y, r, g, b, a`, and is
   rendered as triangles. iOS and Android must keep this contract identical.
+- Series types tessellate into that common triangle list. Keep style selection
+  in shared C++ and avoid platform-specific candle/bar geometry or GPU line
+  primitives.
 - The engine operates in native view coordinates. iOS uses points with the
   default `displayScale` of 1. Android uses pixels and passes density as
   `displayScale`, so physical tick density stays comparable.

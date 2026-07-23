@@ -11,13 +11,12 @@
 #include <memory>
 #include <vector>
 
+#include "cpp/internal/series_geometry.h"
+#include "cpp/internal/triangle_geometry.h"
+
 namespace trading_charts::internal {
 namespace {
 
-constexpr size_t kFloatsPerVertex = 6;
-constexpr size_t kVerticesPerQuad = 6;
-constexpr size_t kQuadsPerCandle = 2;
-constexpr size_t kMaxVisibleCandles = 16384;
 constexpr int kMaxTickCount = 256;
 
 size_t SegmentCount(float start, float end, float step) {
@@ -27,28 +26,6 @@ size_t SegmentCount(float start, float end, float step) {
   return static_cast<size_t>(std::ceil((end - start) / step));
 }
 
-void EmitVertex(std::vector<float>& out, float x, float y, const Color& color) {
-  out.push_back(x);
-  out.push_back(y);
-  out.push_back(color.r);
-  out.push_back(color.g);
-  out.push_back(color.b);
-  out.push_back(color.a);
-}
-
-void EmitQuad(std::vector<float>& out, float left, float top, float right,
-              float bottom, const Color& color) {
-  if (!(right > left) || !(bottom > top)) {
-    return;
-  }
-  EmitVertex(out, left, top, color);
-  EmitVertex(out, right, top, color);
-  EmitVertex(out, right, bottom, color);
-  EmitVertex(out, left, top, color);
-  EmitVertex(out, right, bottom, color);
-  EmitVertex(out, left, bottom, color);
-}
-
 void EmitDashedVertical(std::vector<float>& out, float x, float top,
                         float bottom, float display_scale, const Color& color) {
   const float dash = 4.0f * display_scale;
@@ -56,7 +33,7 @@ void EmitDashedVertical(std::vector<float>& out, float x, float top,
   float y = top;
   const size_t segment_count = SegmentCount(top, bottom, dash + gap);
   for (size_t segment = 0; segment < segment_count; ++segment) {
-    EmitQuad(out, x - 0.5f, y, x + 0.5f, std::min(y + dash, bottom), color);
+    AppendQuad(out, x - 0.5f, y, x + 0.5f, std::min(y + dash, bottom), color);
     y += dash + gap;
   }
 }
@@ -69,7 +46,7 @@ void EmitDashedHorizontal(std::vector<float>& out, float y, float left,
   float x = left;
   const size_t segment_count = SegmentCount(left, right, dash + gap);
   for (size_t segment = 0; segment < segment_count; ++segment) {
-    EmitQuad(out, x, y - 0.5f, std::min(x + dash, right), y + 0.5f, color);
+    AppendQuad(out, x, y - 0.5f, std::min(x + dash, right), y + 0.5f, color);
     x += dash + gap;
   }
 }
@@ -154,7 +131,7 @@ class RenderSnapshotBuilder {
     AddTicks();
     ReserveGeometry();
     AddGridGeometry();
-    AddCandleGeometry();
+    AddSeriesGeometry();
     AddCurrentPriceGeometry();
     AddCrosshairGeometry();
     return snapshot_;
@@ -297,10 +274,6 @@ class RenderSnapshotBuilder {
     snapshot_->visible_y_max = y_max_;
   }
 
-  double XDomainUnit() const {
-    return input_.config.logical_spacing ? 1.0 : input_.config.timeframe_ms;
-  }
-
   double CandleX(size_t index) const {
     return input_.config.logical_spacing ? static_cast<double>(index)
                                          : input_.candles[index].timestamp;
@@ -404,96 +377,43 @@ class RenderSnapshotBuilder {
   }
 
   void ReserveGeometry() {
+    const SeriesGeometryInput series_input = BuildSeriesGeometryInput();
     snapshot_->vertices.reserve(
         (snapshot_->x_ticks.size() + snapshot_->y_ticks.size()) *
             kVerticesPerQuad * kFloatsPerVertex +
-        static_cast<size_t>(std::distance(lower_, upper_)) * kQuadsPerCandle *
-            kVerticesPerQuad * kFloatsPerVertex);
+        SeriesGeometryFloatCapacity(series_input));
   }
 
   void AddGridGeometry() {
     const Color grid =
         WithAlpha(input_.config.grid, input_.config.grid_opacity);
     for (const AxisTick& tick : snapshot_->x_ticks) {
-      EmitQuad(snapshot_->vertices, tick.position - 0.5f, snapshot_->plot.top,
-               tick.position + 0.5f, snapshot_->plot.bottom, grid);
+      AppendQuad(snapshot_->vertices, tick.position - 0.5f, snapshot_->plot.top,
+                 tick.position + 0.5f, snapshot_->plot.bottom, grid);
     }
     for (const AxisTick& tick : snapshot_->y_ticks) {
-      EmitQuad(snapshot_->vertices, snapshot_->plot.left, tick.position - 0.5f,
-               snapshot_->plot.right, tick.position + 0.5f, grid);
+      AppendQuad(snapshot_->vertices, snapshot_->plot.left,
+                 tick.position - 0.5f, snapshot_->plot.right,
+                 tick.position + 0.5f, grid);
     }
   }
 
-  void AddCandleGeometry() {
-    const size_t visible_count =
-        static_cast<size_t>(std::distance(lower_, upper_));
-    const size_t stride = std::max<size_t>(
-        1, (visible_count + kMaxVisibleCandles - 1) / kMaxVisibleCandles);
-    const double fallback_slot_domain =
-        XDomainUnit() * static_cast<double>(stride);
+  SeriesGeometryInput BuildSeriesGeometryInput() const {
+    return SeriesGeometryInput{
+        input_.config,
+        input_.candles,
+        static_cast<size_t>(std::distance(input_.candles.cbegin(), lower_)),
+        static_cast<size_t>(std::distance(input_.candles.cbegin(), upper_)),
+        snapshot_->plot,
+        input_.visible_x_min,
+        input_.visible_x_max,
+        y_min_,
+        y_max_,
+    };
+  }
 
-    size_t index =
-        static_cast<size_t>(std::distance(input_.candles.begin(), lower_));
-    const size_t end =
-        static_cast<size_t>(std::distance(input_.candles.begin(), upper_));
-    for (; index < end; index += stride) {
-      const Candle& candle = input_.candles[index];
-      double slot_domain = fallback_slot_domain;
-      if (!input_.config.logical_spacing) {
-        bool has_local_spacing = false;
-        if (index >= stride) {
-          const double previous_spacing =
-              candle.timestamp - input_.candles[index - stride].timestamp;
-          if (previous_spacing > 0.0) {
-            slot_domain = previous_spacing;
-            has_local_spacing = true;
-          }
-        }
-        if (index + stride < input_.candles.size()) {
-          const double next_spacing =
-              input_.candles[index + stride].timestamp - candle.timestamp;
-          if (next_spacing > 0.0) {
-            slot_domain = has_local_spacing
-                              ? std::min(slot_domain, next_spacing)
-                              : next_spacing;
-          }
-        }
-      }
-      const float slot_width =
-          static_cast<float>(slot_domain /
-                             (input_.visible_x_max - input_.visible_x_min)) *
-          snapshot_->plot.Width();
-      const float body_width = std::clamp(slot_width * 0.7f, 1.0f, 28.0f);
-      const float wick_width = std::clamp(body_width * 0.08f, 1.0f, 2.0f);
-      const float x = ProjectX(CandleX(index));
-      if (x + body_width < snapshot_->plot.left ||
-          x - body_width > snapshot_->plot.right) {
-        continue;
-      }
-      const Color color =
-          candle.close >= candle.open ? input_.config.up : input_.config.down;
-      const float wick_top = std::clamp(
-          ProjectY(candle.high), snapshot_->plot.top, snapshot_->plot.bottom);
-      const float wick_bottom = std::clamp(
-          ProjectY(candle.low), snapshot_->plot.top, snapshot_->plot.bottom);
-      EmitQuad(snapshot_->vertices, x - wick_width * 0.5f, wick_top,
-               x + wick_width * 0.5f, std::max(wick_bottom, wick_top + 1.0f),
-               color);
-
-      float body_top = ProjectY(std::max(candle.open, candle.close));
-      float body_bottom = ProjectY(std::min(candle.open, candle.close));
-      body_top =
-          std::clamp(body_top, snapshot_->plot.top, snapshot_->plot.bottom);
-      body_bottom =
-          std::clamp(body_bottom, snapshot_->plot.top, snapshot_->plot.bottom);
-      if (body_bottom - body_top < 1.0f) {
-        body_bottom = body_top + 1.0f;
-      }
-      EmitQuad(snapshot_->vertices,
-               std::max(snapshot_->plot.left, x - body_width * 0.5f), body_top,
-               std::min(snapshot_->plot.right, x + body_width * 0.5f),
-               body_bottom, color);
-    }
+  void AddSeriesGeometry() {
+    AppendSeriesGeometry(BuildSeriesGeometryInput(), snapshot_->vertices);
   }
 
   void AddCurrentPriceGeometry() {
@@ -525,10 +445,10 @@ class RenderSnapshotBuilder {
       const size_t segment_count =
           SegmentCount(snapshot_->plot.left, snapshot_->plot.right, 6.0f);
       for (size_t segment = 0; segment < segment_count; ++segment) {
-        EmitQuad(snapshot_->vertices, x, snapshot_->current_price_y - 0.5f,
-                 std::min(x + 3.0f, snapshot_->plot.right),
-                 snapshot_->current_price_y + 0.5f,
-                 snapshot_->current_price_color);
+        AppendQuad(snapshot_->vertices, x, snapshot_->current_price_y - 0.5f,
+                   std::min(x + 3.0f, snapshot_->plot.right),
+                   snapshot_->current_price_y + 0.5f,
+                   snapshot_->current_price_color);
         x += 6.0f;
       }
     }
@@ -606,11 +526,11 @@ class RenderSnapshotBuilder {
                            snapshot_->plot.right, input_.config.display_scale,
                            line_color);
     } else {
-      EmitQuad(snapshot_->vertices, snapshot_->crosshair_x - 0.5f,
-               snapshot_->plot.top, snapshot_->crosshair_x + 0.5f,
-               snapshot_->plot.bottom, line_color);
-      EmitQuad(snapshot_->vertices, snapshot_->plot.left, touch_y - 0.5f,
-               snapshot_->plot.right, touch_y + 0.5f, line_color);
+      AppendQuad(snapshot_->vertices, snapshot_->crosshair_x - 0.5f,
+                 snapshot_->plot.top, snapshot_->crosshair_x + 0.5f,
+                 snapshot_->plot.bottom, line_color);
+      AppendQuad(snapshot_->vertices, snapshot_->plot.left, touch_y - 0.5f,
+                 snapshot_->plot.right, touch_y + 0.5f, line_color);
     }
   }
 

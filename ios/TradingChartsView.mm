@@ -30,6 +30,7 @@ using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
+using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 using TCColor = trading_charts::Color;
 
@@ -1826,6 +1827,10 @@ struct TCTextPresentation {
   NSDictionary *appearance = root[@"appearance"];
   NSDictionary *gridAppearance = appearance[@"grid"];
   NSDictionary *candlesAppearance = appearance[@"candles"];
+  NSDictionary *barsAppearance = appearance[@"bars"];
+  NSDictionary *series = root[@"series"];
+  const bool usesBars = [series[@"type"] isEqualToString:@"bar"];
+  NSDictionary *seriesAppearance = usesBars ? barsAppearance : candlesAppearance;
   NSDictionary *currentAppearance = appearance[@"currentPrice"];
   NSDictionary *currentLineAppearance = currentAppearance[@"line"];
   NSDictionary *currentLabelAppearance = currentAppearance[@"label"];
@@ -1851,8 +1856,12 @@ struct TCTextPresentation {
   _config.background = TCColorFromHex(appearance[@"backgroundColor"], _config.background);
   _config.grid = TCColorFromHex(gridAppearance[@"color"], _config.grid);
   _config.axis_text = TCColorFromHex(theme[@"axisTextColor"], _config.axis_text);
-  _config.up = TCColorFromHex(candlesAppearance[@"upColor"], _config.up);
-  _config.down = TCColorFromHex(candlesAppearance[@"downColor"], _config.down);
+  _config.series_type = usesBars ? SeriesType::kBar : SeriesType::kCandlestick;
+  _config.bar_line_width = barsAppearance[@"lineWidth"]
+      ? [barsAppearance[@"lineWidth"] floatValue]
+      : 1.0f;
+  _config.up = TCColorFromHex(seriesAppearance[@"upColor"], _config.up);
+  _config.down = TCColorFromHex(seriesAppearance[@"downColor"], _config.down);
   _config.crosshair = TCColorFromHex(crosshairLineAppearance[@"color"], _config.crosshair);
   _config.tooltip_background = TCColorFromHex(tooltipAppearance[@"backgroundColor"], _config.tooltip_background);
   _config.tooltip_text = TCColorFromHex(tooltipAppearance[@"valueText"][@"color"], _config.tooltip_text);

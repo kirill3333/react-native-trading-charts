@@ -13,6 +13,7 @@
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 
 namespace {
@@ -23,6 +24,53 @@ void ExpectNear(double actual, double expected, double tolerance = 1e-9) {
               << " of " << expected << '\n';
     assert(false);
   }
+}
+
+struct QuadBounds {
+  float left = 0.0f;
+  float top = 0.0f;
+  float right = 0.0f;
+  float bottom = 0.0f;
+  trading_charts::Color color;
+};
+
+QuadBounds SnapshotQuad(const trading_charts::RenderSnapshot& snapshot,
+                        size_t quad_index) {
+  constexpr size_t kFloatsPerVertex = 6;
+  constexpr size_t kVerticesPerQuad = 6;
+  constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
+  const size_t offset = quad_index * kFloatsPerQuad;
+  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+
+  QuadBounds bounds{
+      snapshot.vertices[offset],
+      snapshot.vertices[offset + 1],
+      snapshot.vertices[offset],
+      snapshot.vertices[offset + 1],
+      {
+          snapshot.vertices[offset + 2],
+          snapshot.vertices[offset + 3],
+          snapshot.vertices[offset + 4],
+          snapshot.vertices[offset + 5],
+      },
+  };
+  for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
+    const size_t vertex_offset = offset + vertex * kFloatsPerVertex;
+    bounds.left = std::min(bounds.left, snapshot.vertices[vertex_offset]);
+    bounds.top = std::min(bounds.top, snapshot.vertices[vertex_offset + 1]);
+    bounds.right = std::max(bounds.right, snapshot.vertices[vertex_offset]);
+    bounds.bottom =
+        std::max(bounds.bottom, snapshot.vertices[vertex_offset + 1]);
+  }
+  return bounds;
+}
+
+float QuadCenterX(const QuadBounds& quad) {
+  return (quad.left + quad.right) * 0.5f;
+}
+
+float QuadCenterY(const QuadBounds& quad) {
+  return (quad.top + quad.bottom) * 0.5f;
 }
 
 float RenderedCandleBodyWidth(const trading_charts::RenderSnapshot& snapshot,
@@ -1133,12 +1181,157 @@ void TestLogicalSpacingUsesUniformCandleSlots() {
   }
 }
 
+void TestBarGeometryAndRuntimeSwitch() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 3;
+  config.logical_spacing = true;
+  config.show_current_price = false;
+  config.series_type = SeriesType::kBar;
+  config.bar_line_width = 2.0f;
+  config.up = {0.1f, 0.2f, 0.3f, 0.4f};
+  config.down = {0.5f, 0.6f, 0.7f, 0.8f};
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 300.0f);
+
+  const double candles[] = {
+      0.0, 10.0, 14.0, 8.0,      12.0, 1.0,  60000.0, 12.0, 15.0,
+      7.0, 9.0,  1.0,  120000.0, 10.0, 10.0, 10.0,    10.0, 1.0,
+  };
+  assert(engine.SetHistory(candles, 18) == UpdateStatus::kApplied);
+
+  engine.SetCrosshair(true, 300.0f, 150.0f);
+  const auto bars = engine.Snapshot();
+  const size_t grid_quads = bars->x_ticks.size() + bars->y_ticks.size();
+  const QuadBounds up_vertical = SnapshotQuad(*bars, grid_quads);
+  const QuadBounds up_open = SnapshotQuad(*bars, grid_quads + 1);
+  const QuadBounds up_close = SnapshotQuad(*bars, grid_quads + 2);
+  const QuadBounds down_vertical = SnapshotQuad(*bars, grid_quads + 3);
+  const QuadBounds down_open = SnapshotQuad(*bars, grid_quads + 4);
+  const QuadBounds down_close = SnapshotQuad(*bars, grid_quads + 5);
+  const QuadBounds flat_vertical = SnapshotQuad(*bars, grid_quads + 6);
+
+  ExpectNear(up_vertical.right - up_vertical.left, 2.0);
+  ExpectNear(up_open.bottom - up_open.top, 2.0);
+  ExpectNear(up_close.bottom - up_close.top, 2.0);
+  ExpectNear(up_open.right, QuadCenterX(up_vertical));
+  ExpectNear(up_close.left, QuadCenterX(up_vertical));
+  assert(QuadCenterY(up_open) > QuadCenterY(up_close));
+  assert(QuadCenterY(down_open) < QuadCenterY(down_close));
+  ExpectNear(flat_vertical.bottom - flat_vertical.top, 2.0);
+
+  const float slot_width =
+      QuadCenterX(down_vertical) - QuadCenterX(up_vertical);
+  ExpectNear(up_open.right - up_open.left, slot_width * 0.45f, 1e-4);
+  ExpectNear(up_close.right - up_close.left, slot_width * 0.45f, 1e-4);
+  ExpectNear(up_vertical.color.r, 0.1f);
+  ExpectNear(up_vertical.color.a, 0.4f);
+  ExpectNear(down_vertical.color.r, 0.5f);
+  ExpectNear(down_vertical.color.a, 0.8f);
+
+  const uint64_t bar_revision = bars->revision;
+  const double visible_x_min = bars->visible_x_min;
+  const double visible_x_max = bars->visible_x_max;
+  const double visible_y_min = bars->visible_y_min;
+  const double visible_y_max = bars->visible_y_max;
+  const double selected_timestamp = bars->selected_candle.timestamp;
+
+  config.series_type = SeriesType::kCandlestick;
+  engine.SetConfig(config);
+  const auto candlesticks = engine.Snapshot();
+  assert(candlesticks->revision > bar_revision);
+  assert(candlesticks->crosshair_visible);
+  assert(candlesticks->total_candle_count == bars->total_candle_count);
+  ExpectNear(candlesticks->visible_x_min, visible_x_min);
+  ExpectNear(candlesticks->visible_x_max, visible_x_max);
+  ExpectNear(candlesticks->visible_y_min, visible_y_min);
+  ExpectNear(candlesticks->visible_y_max, visible_y_max);
+  ExpectNear(candlesticks->selected_candle.timestamp, selected_timestamp);
+  assert(candlesticks->vertices.size() != bars->vertices.size());
+}
+
+void TestBarSpacingAndClipping() {
+  constexpr size_t kFloatsPerQuad = size_t{6} * 6;
+  const double candles[] = {
+      0.0, 10.0, 14.0, 8.0,      12.0, 1.0,  60000.0, 12.0, 15.0,
+      7.0, 9.0,  1.0,  180000.0, 10.0, 13.0, 8.0,     11.0, 1.0,
+  };
+
+  for (bool logical_spacing : {false, true}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initial_visible_count = 3;
+    config.logical_spacing = logical_spacing;
+    config.show_current_price = false;
+    config.series_type = SeriesType::kBar;
+    engine.SetConfig(config);
+    engine.SetSize(600.0f, 300.0f);
+    assert(engine.SetHistory(candles, 18) == UpdateStatus::kApplied);
+
+    const auto snapshot = engine.Snapshot();
+    const size_t grid_quads =
+        snapshot->x_ticks.size() + snapshot->y_ticks.size();
+    const QuadBounds first_vertical = SnapshotQuad(*snapshot, grid_quads);
+    const QuadBounds first_open = SnapshotQuad(*snapshot, grid_quads + 1);
+    const QuadBounds second_vertical = SnapshotQuad(*snapshot, grid_quads + 3);
+    const QuadBounds second_open = SnapshotQuad(*snapshot, grid_quads + 4);
+    const QuadBounds third_vertical = SnapshotQuad(*snapshot, grid_quads + 6);
+    const QuadBounds third_open = SnapshotQuad(*snapshot, grid_quads + 7);
+
+    const float first_step =
+        QuadCenterX(second_vertical) - QuadCenterX(first_vertical);
+    const float second_step =
+        QuadCenterX(third_vertical) - QuadCenterX(second_vertical);
+    if (logical_spacing) {
+      ExpectNear(first_step, second_step, 1e-4);
+    } else {
+      ExpectNear(second_step, first_step * 2.0f, 1e-4);
+    }
+    ExpectNear(first_open.right - first_open.left, first_step * 0.45f, 1e-4);
+    ExpectNear(second_open.right - second_open.left,
+               std::min(first_step, second_step) * 0.45f, 1e-4);
+    ExpectNear(third_open.right - third_open.left, second_step * 0.45f, 1e-4);
+
+    const auto project_y = [&](double price) {
+      return snapshot->plot.bottom -
+             static_cast<float>(
+                 (price - snapshot->visible_y_min) /
+                 (snapshot->visible_y_max - snapshot->visible_y_min)) *
+                 snapshot->plot.Height();
+    };
+    ExpectNear(first_vertical.top, project_y(14.0), 1e-4);
+    ExpectNear(first_vertical.bottom, project_y(8.0), 1e-4);
+
+    if (logical_spacing) {
+      assert(engine.Zoom(2.0, snapshot->plot.right));
+      assert(engine.Pan(snapshot->plot.Width() * 0.2f));
+      const auto clipped = engine.Snapshot();
+      const size_t clipped_grid_quads =
+          clipped->x_ticks.size() + clipped->y_ticks.size();
+      const size_t total_quads = clipped->vertices.size() / kFloatsPerQuad;
+      assert(total_quads - clipped_grid_quads == 6);
+      const QuadBounds clipped_open =
+          SnapshotQuad(*clipped, clipped_grid_quads + 1);
+      ExpectNear(clipped_open.left, clipped->plot.left, 1e-4);
+      for (size_t index = clipped_grid_quads; index < total_quads; ++index) {
+        const QuadBounds quad = SnapshotQuad(*clipped, index);
+        assert(quad.left >= clipped->plot.left);
+        assert(quad.right <= clipped->plot.right);
+        assert(quad.top >= clipped->plot.top);
+        assert(quad.bottom <= clipped->plot.bottom);
+      }
+    }
+  }
+}
+
 void TestLargeHistoryAndTradeBurst() {
   constexpr size_t kCandleCount = 50000;
   constexpr size_t kTradeCount = 1000;
   ChartEngine engine;
   ChartConfig config;
   config.initial_visible_count = static_cast<int>(kCandleCount);
+  config.series_type = SeriesType::kBar;
+  config.show_current_price = false;
   engine.SetConfig(config);
   engine.SetSize(1200.0f, 700.0f);
 
@@ -1176,7 +1369,7 @@ void TestLargeHistoryAndTradeBurst() {
   assert(!snapshot->vertices.empty());
   // Geometry remains capped by LOD instead of growing linearly with 50k
   // candles.
-  assert(snapshot->vertices.size() < 1200000);
+  assert(snapshot->vertices.size() < 1500000);
 }
 
 void TestCurrentPriceLineAndLabelColorsAreIndependent() {
@@ -1238,6 +1431,8 @@ int main() noexcept {
     TestCrosshairRevisionKeepsStaticContentRevision();
     TestHybridHistoryUsesLocalCandleWidths();
     TestLogicalSpacingUsesUniformCandleSlots();
+    TestBarGeometryAndRuntimeSwitch();
+    TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestLargeHistoryAndTradeBurst();
     std::cout << "ChartEngineTests passed\n";

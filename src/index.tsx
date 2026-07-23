@@ -8,6 +8,8 @@ export type {
   ChartDirectionalBadgeStyle,
   ChartFontWeight,
   ChartFormatters,
+  ChartSeriesOptions,
+  ChartSeriesType,
   ChartTextStyle,
   CompactValueFormat,
   CrosshairLineStyle,

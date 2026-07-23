@@ -168,6 +168,12 @@ describe('chart config', () => {
     const price = resolveChartConfig({ chartId: 'price' });
     expect(price.timeframeMs).toBe(60_000);
     expect(price.defaultScale).toBe(1);
+    expect(price.series).toEqual({ type: 'candlestick' });
+    expect(price.appearance.bars).toEqual({
+      upColor: price.appearance.candles.upColor,
+      downColor: price.appearance.candles.downColor,
+      lineWidth: 1,
+    });
     expect(price.xAxis.spacing).toBe('time');
     expect(price.yAxis.valueFormat).toMatchObject({
       type: 'price',
@@ -515,6 +521,45 @@ describe('chart config', () => {
     });
   });
 
+  it('resolves and serializes bar series appearance with active colors', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'bars',
+      series: { type: 'bar' },
+      appearance: {
+        candles: { upColor: '#008800', downColor: '#880000' },
+        bars: {
+          upColor: '#00A88F',
+          downColor: '#FF334F',
+          lineWidth: 1.5,
+        },
+      },
+    });
+
+    expect(resolved.series).toEqual({ type: 'bar' });
+    expect(resolved.appearance.bars).toEqual({
+      upColor: '#00A88F',
+      downColor: '#FF334F',
+      lineWidth: 1.5,
+    });
+    expect(resolved.appearance.currentPrice).toMatchObject({
+      line: { upColor: '#00A88F', downColor: '#FF334F' },
+      label: {
+        upBackgroundColor: '#00A88F',
+        downBackgroundColor: '#FF334F',
+      },
+    });
+    expect(resolved.appearance.tooltip).toMatchObject({
+      positiveValueColor: '#00A88F',
+      negativeValueColor: '#FF334F',
+    });
+
+    const serialized = JSON.parse(
+      JSON.stringify(resolved)
+    ) as typeof resolved;
+    expect(serialized.series).toEqual({ type: 'bar' });
+    expect(serialized.appearance.bars.lineWidth).toBe(1.5);
+  });
+
   it('resolves independent native date and price formatters', () => {
     const resolved = resolveChartConfig({
       chartId: 'formatters',
@@ -569,6 +614,18 @@ describe('chart config', () => {
   });
 
   it('validates appearance and formatter values before native serialization', () => {
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-series',
+        series: { type: 'line' as never },
+      })
+    ).toThrow('series.type');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-bar-width',
+        appearance: { bars: { lineWidth: 0 } },
+      })
+    ).toThrow('appearance.bars.lineWidth');
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-color',

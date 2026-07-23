@@ -64,6 +64,8 @@ internal data class ChartConfig(
     val defaultScale: Double = 1.0,
     val defaultYScale: Double = 1.0,
     val displayScale: Float = 1f,
+    val seriesType: String = "candlestick",
+    val barLineWidthPx: Float = 1f,
     val backgroundColor: Int = Color.rgb(16, 12, 24),
     val gridColor: Int = Color.rgb(41, 36, 49),
     val axisTextColor: Int = Color.rgb(151, 145, 165),
@@ -181,6 +183,8 @@ internal data class ChartConfig(
           crosshairOpacity.toDouble(),
           defaultYScale,
           allowYAxisScale.nativeDouble(),
+          (seriesType == "bar").nativeDouble(),
+          barLineWidthPx.toDouble(),
       )
 
   fun nativeColors(): FloatArray {

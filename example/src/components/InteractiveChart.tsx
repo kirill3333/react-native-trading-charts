@@ -46,6 +46,7 @@ export const InteractiveChart = memo(function InteractiveChart({
     <TradingChartsView
       chartId={chartId}
       appearance={chartConfig.appearance}
+      series={chartConfig.series}
       crosshair={chartConfig.crosshair}
       currentPrice={chartConfig.currentPrice}
       priceExtremes={chartConfig.priceExtremes}

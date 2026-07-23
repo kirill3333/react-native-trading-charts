@@ -17,6 +17,7 @@ using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
 using trading_charts::RenderSnapshot;
+using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 
 namespace {
@@ -58,6 +59,8 @@ enum class ConfigNumberIndex : std::uint8_t {
   kCrosshairOpacity,
   kDefaultYScale,
   kAllowYAxisScale,
+  kSeriesType,
+  kBarLineWidth,
   kCount,
 };
 
@@ -138,7 +141,7 @@ inline constexpr jsize kColorChannelCount = 4;
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 31);
+static_assert(kConfigNumberCount == 33);
 static_assert(kSnapshotMetaCount == 51);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
@@ -298,6 +301,14 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.allow_y_axis_scale =
       number_count < 31 ? config.allow_zoom
                         : number_at(ConfigNumberIndex::kAllowYAxisScale) != 0;
+  config.series_type =
+      number_count < 32 || number_at(ConfigNumberIndex::kSeriesType) == 0.0
+          ? SeriesType::kCandlestick
+          : SeriesType::kBar;
+  config.bar_line_width =
+      number_count < 33
+          ? config.display_scale
+          : static_cast<float>(number_at(ConfigNumberIndex::kBarLineWidth));
   config.background = color_at(ConfigColorIndex::kBackground);
   config.grid = color_at(ConfigColorIndex::kGrid);
   config.axis_text = color_at(ConfigColorIndex::kAxisText);

@@ -87,6 +87,13 @@ ChartConfig NormalizeConfig(ChartConfig config) {
   if (!IsFinite(config.display_scale) || !(config.display_scale > 0.0f)) {
     config.display_scale = 1.0f;
   }
+  if (config.series_type != SeriesType::kCandlestick &&
+      config.series_type != SeriesType::kBar) {
+    config.series_type = SeriesType::kCandlestick;
+  }
+  if (!IsFinite(config.bar_line_width) || !(config.bar_line_width > 0.0f)) {
+    config.bar_line_width = config.display_scale;
+  }
   if (!IsFinite(config.tooltip_background_opacity)) {
     config.tooltip_background_opacity = 1.0f;
   }

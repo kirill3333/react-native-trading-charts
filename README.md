@@ -42,6 +42,7 @@ export function Chart() {
       timeframeMs={60_000}
       initialVisibleCount={100}
       defaultScale={1.25}
+      series={{ type: 'candlestick' }}
       xAxis={{ locale: 'en-GB', timeZone: 'UTC', spacing: 'time' }}
       yAxis={{
         position: 'right',
@@ -144,6 +145,32 @@ moves to a different candle or that candle's values change. It receives `null`
 once when the selection is cleared; moving within the same unchanged candle does
 not emit another callback.
 
+### Series rendering
+
+`series.type` selects how the native GPU renders the same OHLCV store.
+`'candlestick'` is the default; use `'bar'` for an OHLC bar with a high-low
+stem, open tick on the left and close tick on the right:
+
+```tsx
+<TradingChartsView
+  chartId="bars"
+  series={{ type: 'bar' }}
+  appearance={{
+    bars: {
+      upColor: '#00A88F',
+      downColor: '#FF334F',
+      lineWidth: 1,
+    },
+  }}
+/>
+```
+
+Bar colors fall back to `appearance.candles`, then `theme`. `lineWidth` uses
+points on iOS and density-independent pixels on Android. Changing `series.type`
+at runtime keeps the native candle store, viewport, Y scale and crosshair
+selection; it only schedules a new render snapshot. Data methods and
+`onSelectedCandleChange` remain OHLCV-based for both render types.
+
 `onScaleChange` reports horizontal pinch changes and `onYAxisScaleChange`
 reports vertical drags that start in the Y-axis lane. Both callbacks receive an
 absolute `{ scale }`: `1` is the baseline, values above `1` make candles
@@ -184,6 +211,7 @@ families fall back to the platform monospace font.
     backgroundColor: '#FAFAFC',
     grid: { color: '#D9DCE4', opacity: 0.7 },
     candles: { upColor: '#159A68', downColor: '#D6455D' },
+    bars: { upColor: '#159A68', downColor: '#D6455D', lineWidth: 1 },
     xAxis: { text: { color: '#596173', fontSize: 11 } },
     yAxis: { text: { color: '#303747', fontSize: 11 } },
     priceExtremes: {
