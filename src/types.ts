@@ -15,7 +15,7 @@ export type TradeEvent = {
   size?: number;
 };
 
-export type ChartSeriesType = 'candlestick' | 'bar';
+export type ChartSeriesType = 'candlestick' | 'hollowCandlestick' | 'bar';
 
 export type ChartSeriesOptions = {
   type?: ChartSeriesType;

@@ -87,6 +87,20 @@ describe('chart settings', () => {
     expect(config.appearance.tooltip?.border).toBeUndefined();
   });
 
+  it('passes hollow candlesticks through to the native view config', () => {
+    const config = buildChartViewConfig(
+      settingsWith({ seriesType: 'hollowCandlestick' }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 },
+      'Europe/London'
+    );
+
+    expect(config.series).toEqual({ type: 'hollowCandlestick' });
+    expect(config.appearance.candles).toEqual({
+      upColor: '#38D98A',
+      downColor: '#FF3B64',
+    });
+  });
+
   it('builds the complete high contrast and formatting presets', () => {
     const config = buildChartViewConfig(
       settingsWith({

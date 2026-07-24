@@ -560,6 +560,43 @@ describe('chart config', () => {
     expect(serialized.appearance.bars.lineWidth).toBe(1.5);
   });
 
+  it('resolves hollow candlesticks with the candle palette', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'hollow',
+      series: { type: 'hollowCandlestick' },
+      appearance: {
+        candles: { upColor: '#00A88F', downColor: '#FF334F' },
+        bars: {
+          upColor: '#123456',
+          downColor: '#654321',
+          lineWidth: 2,
+        },
+      },
+    });
+
+    expect(resolved.series).toEqual({ type: 'hollowCandlestick' });
+    expect(resolved.appearance.candles).toEqual({
+      upColor: '#00A88F',
+      downColor: '#FF334F',
+    });
+    expect(resolved.appearance.currentPrice).toMatchObject({
+      line: { upColor: '#00A88F', downColor: '#FF334F' },
+      label: {
+        upBackgroundColor: '#00A88F',
+        downBackgroundColor: '#FF334F',
+      },
+    });
+    expect(resolved.appearance.tooltip).toMatchObject({
+      positiveValueColor: '#00A88F',
+      negativeValueColor: '#FF334F',
+    });
+
+    const serialized = JSON.parse(
+      JSON.stringify(resolved)
+    ) as typeof resolved;
+    expect(serialized.series).toEqual({ type: 'hollowCandlestick' });
+  });
+
   it('resolves independent native date and price formatters', () => {
     const resolved = resolveChartConfig({
       chartId: 'formatters',

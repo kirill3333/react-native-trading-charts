@@ -148,8 +148,29 @@ not emit another callback.
 ### Series rendering
 
 `series.type` selects how the native GPU renders the same OHLCV store.
-`'candlestick'` is the default; use `'bar'` for an OHLC bar with a high-low
-stem, open tick on the left and close tick on the right:
+`'candlestick'` is the default. Use `'hollowCandlestick'` for hollow rising
+candles and filled falling candles:
+
+```tsx
+<TradingChartsView
+  chartId="hollow"
+  series={{ type: 'hollowCandlestick' }}
+  appearance={{
+    candles: {
+      upColor: '#00A88F',
+      downColor: '#FF334F',
+    },
+  }}
+/>
+```
+
+Hollow candlesticks reuse `appearance.candles`: candles where `close >= open`
+use the up color and an outlined body, while candles where `close < open` use
+the down color and a filled body. The outline uses the same native thickness as
+the wick.
+
+Use `'bar'` for an OHLC bar with a high-low stem, open tick on the left and
+close tick on the right:
 
 ```tsx
 <TradingChartsView
@@ -169,7 +190,7 @@ Bar colors fall back to `appearance.candles`, then `theme`. `lineWidth` uses
 points on iOS and density-independent pixels on Android. Changing `series.type`
 at runtime keeps the native candle store, viewport, Y scale and crosshair
 selection; it only schedules a new render snapshot. Data methods and
-`onSelectedCandleChange` remain OHLCV-based for both render types.
+`onSelectedCandleChange` remain OHLCV-based for every render type.
 
 `onScaleChange` reports horizontal pinch changes and `onYAxisScaleChange`
 reports vertical drags that start in the Y-axis lane. Both callbacks receive an

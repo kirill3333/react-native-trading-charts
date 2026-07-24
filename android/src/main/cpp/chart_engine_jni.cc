@@ -301,10 +301,15 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.allow_y_axis_scale =
       number_count < 31 ? config.allow_zoom
                         : number_at(ConfigNumberIndex::kAllowYAxisScale) != 0;
-  config.series_type =
-      number_count < 32 || number_at(ConfigNumberIndex::kSeriesType) == 0.0
-          ? SeriesType::kCandlestick
-          : SeriesType::kBar;
+  config.series_type = SeriesType::kCandlestick;
+  if (number_count >= 32) {
+    const double series_type = number_at(ConfigNumberIndex::kSeriesType);
+    if (series_type == 1.0) {
+      config.series_type = SeriesType::kBar;
+    } else if (series_type == 2.0) {
+      config.series_type = SeriesType::kHollowCandlestick;
+    }
+  }
   config.bar_line_width =
       number_count < 33
           ? config.display_scale

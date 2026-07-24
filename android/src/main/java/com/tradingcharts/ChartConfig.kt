@@ -183,7 +183,7 @@ internal data class ChartConfig(
           crosshairOpacity.toDouble(),
           defaultYScale,
           allowYAxisScale.nativeDouble(),
-          (seriesType == "bar").nativeDouble(),
+          seriesType.nativeSeriesType(),
           barLineWidthPx.toDouble(),
       )
 
@@ -222,3 +222,10 @@ internal data class ChartConfig(
 }
 
 private fun Boolean.nativeDouble() = if (this) 1.0 else 0.0
+
+private fun String.nativeSeriesType() =
+    when (this) {
+      "bar" -> 1.0
+      "hollowCandlestick" -> 2.0
+      else -> 0.0
+    }

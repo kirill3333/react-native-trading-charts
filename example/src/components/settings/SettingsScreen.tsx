@@ -17,6 +17,7 @@ import { SettingSwitch } from './SettingSwitch';
 
 const SERIES_OPTIONS = [
   { label: 'Candles', value: 'candlestick' },
+  { label: 'Hollow', value: 'hollowCandlestick' },
   { label: 'Bars', value: 'bar' },
 ] as const;
 const SPACING_OPTIONS = [

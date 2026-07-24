@@ -558,8 +558,14 @@ export function resolveChartConfig(
   }
   const defaultScale = finitePositive(props.defaultScale ?? 1, 'defaultScale');
   const seriesType = props.series?.type ?? 'candlestick';
-  if (seriesType !== 'candlestick' && seriesType !== 'bar') {
-    throw new TypeError("series.type must be 'candlestick' or 'bar'");
+  if (
+    seriesType !== 'candlestick' &&
+    seriesType !== 'hollowCandlestick' &&
+    seriesType !== 'bar'
+  ) {
+    throw new TypeError(
+      "series.type must be 'candlestick', 'hollowCandlestick' or 'bar'"
+    );
   }
   const tooltipBackgroundOpacity = opacity(
     props.crosshair?.tooltipBackgroundOpacity ?? 1,

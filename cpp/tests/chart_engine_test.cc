@@ -1248,6 +1248,139 @@ void TestBarGeometryAndRuntimeSwitch() {
   ExpectNear(candlesticks->visible_y_max, visible_y_max);
   ExpectNear(candlesticks->selected_candle.timestamp, selected_timestamp);
   assert(candlesticks->vertices.size() != bars->vertices.size());
+
+  const uint64_t candlestick_revision = candlesticks->revision;
+  config.series_type = SeriesType::kHollowCandlestick;
+  engine.SetConfig(config);
+  const auto hollow_candlesticks = engine.Snapshot();
+  assert(hollow_candlesticks->revision > candlestick_revision);
+  assert(hollow_candlesticks->crosshair_visible);
+  assert(hollow_candlesticks->total_candle_count ==
+         candlesticks->total_candle_count);
+  ExpectNear(hollow_candlesticks->visible_x_min, visible_x_min);
+  ExpectNear(hollow_candlesticks->visible_x_max, visible_x_max);
+  ExpectNear(hollow_candlesticks->visible_y_min, visible_y_min);
+  ExpectNear(hollow_candlesticks->visible_y_max, visible_y_max);
+  ExpectNear(hollow_candlesticks->selected_candle.timestamp,
+             selected_timestamp);
+  assert(hollow_candlesticks->vertices.size() != candlesticks->vertices.size());
+}
+
+void TestHollowCandlestickGeometry() {
+  constexpr size_t kFloatsPerQuad = size_t{6} * 6;
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 3;
+  config.logical_spacing = true;
+  config.show_current_price = false;
+  config.series_type = SeriesType::kHollowCandlestick;
+  config.up = {0.1f, 0.2f, 0.3f, 0.4f};
+  config.down = {0.5f, 0.6f, 0.7f, 0.8f};
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 300.0f);
+
+  const double candles[] = {
+      0.0, 10.0, 14.0, 8.0,      12.0, 1.0,  60000.0, 12.0, 15.0,
+      7.0, 9.0,  1.0,  120000.0, 10.0, 12.0, 8.0,     10.0, 1.0,
+  };
+  assert(engine.SetHistory(candles, 18) == UpdateStatus::kApplied);
+
+  const auto snapshot = engine.Snapshot();
+  const size_t grid_quads = snapshot->x_ticks.size() + snapshot->y_ticks.size();
+  const size_t total_quads = snapshot->vertices.size() / kFloatsPerQuad;
+  assert(total_quads - grid_quads == 11);
+
+  const QuadBounds up_top_wick = SnapshotQuad(*snapshot, grid_quads);
+  const QuadBounds up_bottom_wick = SnapshotQuad(*snapshot, grid_quads + 1);
+  const QuadBounds up_top_edge = SnapshotQuad(*snapshot, grid_quads + 2);
+  const QuadBounds up_bottom_edge = SnapshotQuad(*snapshot, grid_quads + 3);
+  const QuadBounds up_left_edge = SnapshotQuad(*snapshot, grid_quads + 4);
+  const QuadBounds up_right_edge = SnapshotQuad(*snapshot, grid_quads + 5);
+  const QuadBounds down_wick = SnapshotQuad(*snapshot, grid_quads + 6);
+  const QuadBounds down_body = SnapshotQuad(*snapshot, grid_quads + 7);
+  const QuadBounds doji_top_wick = SnapshotQuad(*snapshot, grid_quads + 8);
+  const QuadBounds doji_bottom_wick = SnapshotQuad(*snapshot, grid_quads + 9);
+  const QuadBounds doji_body = SnapshotQuad(*snapshot, grid_quads + 10);
+
+  const float outline_width = up_top_wick.right - up_top_wick.left;
+  ExpectNear(up_top_wick.bottom, up_top_edge.top, 1e-4);
+  ExpectNear(up_bottom_wick.top, up_bottom_edge.bottom, 1e-4);
+  ExpectNear(up_top_edge.bottom - up_top_edge.top, outline_width, 1e-4);
+  ExpectNear(up_bottom_edge.bottom - up_bottom_edge.top, outline_width, 1e-4);
+  ExpectNear(up_left_edge.right - up_left_edge.left, outline_width, 1e-4);
+  ExpectNear(up_right_edge.right - up_right_edge.left, outline_width, 1e-4);
+  assert(up_left_edge.right < up_right_edge.left);
+  assert(up_top_edge.bottom < up_bottom_edge.top);
+  ExpectNear(up_top_wick.color.r, 0.1f);
+  ExpectNear(up_top_edge.color.a, 0.4f);
+
+  assert(down_wick.left < down_wick.right);
+  assert(down_body.left < down_body.right);
+  assert(down_body.top < down_body.bottom);
+  ExpectNear(down_wick.color.r, 0.5f);
+  ExpectNear(down_body.color.a, 0.8f);
+
+  assert(doji_top_wick.bottom <= doji_body.top);
+  assert(doji_bottom_wick.top >= doji_body.bottom);
+  ExpectNear(doji_body.bottom - doji_body.top, 1.0f, 1e-4);
+  ExpectNear(doji_body.color.r, 0.1f);
+  ExpectNear(doji_body.color.a, 0.4f);
+}
+
+void TestHollowCandlestickSpacingAndClipping() {
+  constexpr size_t kFloatsPerQuad = size_t{6} * 6;
+  const double candles[] = {
+      0.0,  10.0, 14.0, 8.0,      12.0, 1.0,  60000.0, 12.0, 16.0,
+      10.0, 14.0, 1.0,  180000.0, 10.0, 15.0, 8.0,     13.0, 1.0,
+  };
+
+  for (bool logical_spacing : {false, true}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initial_visible_count = 3;
+    config.logical_spacing = logical_spacing;
+    config.show_current_price = false;
+    config.series_type = SeriesType::kHollowCandlestick;
+    engine.SetConfig(config);
+    engine.SetSize(600.0f, 300.0f);
+    assert(engine.SetHistory(candles, 18) == UpdateStatus::kApplied);
+
+    const auto snapshot = engine.Snapshot();
+    const size_t grid_quads =
+        snapshot->x_ticks.size() + snapshot->y_ticks.size();
+    const QuadBounds first_body_top = SnapshotQuad(*snapshot, grid_quads + 2);
+    const QuadBounds second_body_top = SnapshotQuad(*snapshot, grid_quads + 8);
+    const QuadBounds third_body_top = SnapshotQuad(*snapshot, grid_quads + 14);
+    const float first_step =
+        QuadCenterX(second_body_top) - QuadCenterX(first_body_top);
+    const float second_step =
+        QuadCenterX(third_body_top) - QuadCenterX(second_body_top);
+    if (logical_spacing) {
+      ExpectNear(first_step, second_step, 1e-4);
+    } else {
+      ExpectNear(second_step, first_step * 2.0f, 1e-4);
+    }
+
+    if (logical_spacing) {
+      assert(engine.Zoom(2.0, snapshot->plot.right));
+      assert(engine.Pan(snapshot->plot.Width() * 0.17f));
+      const auto clipped = engine.Snapshot();
+      const size_t clipped_grid_quads =
+          clipped->x_ticks.size() + clipped->y_ticks.size();
+      const size_t total_quads = clipped->vertices.size() / kFloatsPerQuad;
+      bool touches_left_edge = false;
+      for (size_t index = clipped_grid_quads; index < total_quads; ++index) {
+        const QuadBounds quad = SnapshotQuad(*clipped, index);
+        assert(quad.left >= clipped->plot.left);
+        assert(quad.right <= clipped->plot.right);
+        assert(quad.top >= clipped->plot.top);
+        assert(quad.bottom <= clipped->plot.bottom);
+        touches_left_edge =
+            touches_left_edge || quad.left == clipped->plot.left;
+      }
+      assert(touches_left_edge);
+    }
+  }
 }
 
 void TestBarSpacingAndClipping() {
@@ -1432,6 +1565,8 @@ int main() noexcept {
     TestHybridHistoryUsesLocalCandleWidths();
     TestLogicalSpacingUsesUniformCandleSlots();
     TestBarGeometryAndRuntimeSwitch();
+    TestHollowCandlestickGeometry();
+    TestHollowCandlestickSpacingAndClipping();
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestLargeHistoryAndTradeBurst();

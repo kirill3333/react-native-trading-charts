@@ -88,7 +88,8 @@ ChartConfig NormalizeConfig(ChartConfig config) {
     config.display_scale = 1.0f;
   }
   if (config.series_type != SeriesType::kCandlestick &&
-      config.series_type != SeriesType::kBar) {
+      config.series_type != SeriesType::kBar &&
+      config.series_type != SeriesType::kHollowCandlestick) {
     config.series_type = SeriesType::kCandlestick;
   }
   if (!IsFinite(config.bar_line_width) || !(config.bar_line_width > 0.0f)) {

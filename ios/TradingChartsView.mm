@@ -1830,6 +1830,8 @@ struct TCTextPresentation {
   NSDictionary *barsAppearance = appearance[@"bars"];
   NSDictionary *series = root[@"series"];
   const bool usesBars = [series[@"type"] isEqualToString:@"bar"];
+  const bool usesHollowCandlesticks =
+      [series[@"type"] isEqualToString:@"hollowCandlestick"];
   NSDictionary *seriesAppearance = usesBars ? barsAppearance : candlesAppearance;
   NSDictionary *currentAppearance = appearance[@"currentPrice"];
   NSDictionary *currentLineAppearance = currentAppearance[@"line"];
@@ -1856,7 +1858,10 @@ struct TCTextPresentation {
   _config.background = TCColorFromHex(appearance[@"backgroundColor"], _config.background);
   _config.grid = TCColorFromHex(gridAppearance[@"color"], _config.grid);
   _config.axis_text = TCColorFromHex(theme[@"axisTextColor"], _config.axis_text);
-  _config.series_type = usesBars ? SeriesType::kBar : SeriesType::kCandlestick;
+  _config.series_type =
+      usesBars ? SeriesType::kBar
+               : (usesHollowCandlesticks ? SeriesType::kHollowCandlestick
+                                         : SeriesType::kCandlestick);
   _config.bar_line_width = barsAppearance[@"lineWidth"]
       ? [barsAppearance[@"lineWidth"] floatValue]
       : 1.0f;

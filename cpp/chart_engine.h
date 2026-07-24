@@ -35,8 +35,9 @@ struct Candle {
 };
 
 enum class SeriesType : std::uint8_t {
-  kCandlestick,
-  kBar,
+  kCandlestick = 0,
+  kBar = 1,
+  kHollowCandlestick = 2,
 };
 
 struct ChartConfig {
