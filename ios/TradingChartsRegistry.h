@@ -13,6 +13,17 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)updateCandle:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
 - (void)updateTrade:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
 - (void)updateTrades:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId;
+- (void)addSeries:(NSString *)seriesJson chartId:(NSString *)chartId;
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+              chartId:(NSString *)chartId
+              seriesId:(NSString *)seriesId
+              dataType:(NSString *)dataType
+               prepend:(BOOL)prepend
+                update:(BOOL)update;
+- (void)removeSeries:(NSString *)seriesId chartId:(NSString *)chartId;
+- (void)setPaneHeight:(NSString *)paneId
+               weight:(double)weight
+              chartId:(NSString *)chartId;
 - (void)getCandlesForChart:(NSString *)chartId
                    success:(void (^)(NSArray<NSNumber *> *candles))success
                    failure:(void (^)(void))failure;

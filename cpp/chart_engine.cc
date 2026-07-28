@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <numeric>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,6 +52,11 @@ struct ParsedCandles {
   std::vector<Candle> candles;
 };
 
+struct ParsedHistogram {
+  UpdateStatus status = UpdateStatus::kApplied;
+  std::vector<HistogramPoint> points;
+};
+
 ParsedCandles ParseCandles(const double* values, size_t value_count) {
   if (value_count == 0) {
     return {};
@@ -68,6 +75,29 @@ ParsedCandles ParseCandles(const double* values, size_t value_count) {
     }
     previous = candle.timestamp;
     parsed.candles.push_back(candle);
+  }
+  return parsed;
+}
+
+ParsedHistogram ParseHistogram(const double* values, size_t value_count) {
+  if (value_count == 0) {
+    return {};
+  }
+  if (values == nullptr || value_count % 2 != 0) {
+    return {UpdateStatus::kInvalidInput, {}};
+  }
+  ParsedHistogram parsed;
+  parsed.points.reserve(value_count / 2);
+  double previous = -std::numeric_limits<double>::infinity();
+  for (size_t index = 0; index < value_count; index += 2) {
+    const double timestamp = values[index];
+    const double value = values[index + 1];
+    if (!IsFinite(timestamp) || timestamp < 0.0 || timestamp <= previous ||
+        !IsFinite(value)) {
+      return {UpdateStatus::kInvalidInput, {}};
+    }
+    previous = timestamp;
+    parsed.points.push_back(HistogramPoint{timestamp, value});
   }
   return parsed;
 }
@@ -147,6 +177,13 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
       config_.timeframe_ms != config.timeframe_ms ||
       config_.logical_spacing != config.logical_spacing;
   config_ = std::move(normalized_config);
+  if (!panes_.empty()) {
+    panes_[0].scale_margin_top = config_.y_scale_margin_top;
+    panes_[0].scale_margin_bottom = config_.y_scale_margin_bottom;
+    panes_[0].min_move = config_.min_move;
+    panes_[0].precision = config_.precision;
+    panes_[0].scale_visible = config_.show_y_axis;
+  }
   if (viewport_defaults_changed && !candles_.empty()) {
     ResetViewportLocked();
   }
@@ -154,6 +191,342 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
     crosshair_active_ = false;
   }
   MarkDirtyLocked();
+}
+
+void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
+                           bool resizable) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<PaneConfig> normalized;
+  normalized.reserve(std::max<size_t>(panes.size(), 1));
+  if (panes.empty()) {
+    normalized.push_back(PaneConfig{});
+  } else {
+    for (PaneConfig pane : panes) {
+      if (pane.pane_id.empty() || pane.price_scale_id.empty() ||
+          !IsFinite(pane.height_weight) || pane.height_weight <= 0.0 ||
+          !IsFinite(pane.min_height) || pane.min_height <= 0.0f) {
+        continue;
+      }
+      pane.scale_margin_top = std::max(0.0, pane.scale_margin_top);
+      pane.scale_margin_bottom = std::max(0.0, pane.scale_margin_bottom);
+      if (pane.scale_margin_top + pane.scale_margin_bottom >= 1.0) {
+        pane.scale_margin_top = 0.1;
+        pane.scale_margin_bottom = 0.0;
+      }
+      if (!IsFinite(pane.min_move) || pane.min_move <= 0.0) {
+        pane.min_move = 0.01;
+      }
+      pane.precision = std::clamp(pane.precision, 0, 12);
+      auto previous = std::find_if(
+          panes_.begin(), panes_.end(), [&](const PaneConfig& existing) {
+            return existing.pane_id == pane.pane_id &&
+                   existing.price_scale_id == pane.price_scale_id;
+          });
+      if (previous != panes_.end()) {
+        const double configured_weight = pane.height_weight;
+        if (pane.height_weight == previous->configured_height_weight) {
+          pane.height_weight = previous->height_weight;
+        }
+        pane.configured_height_weight = configured_weight;
+        pane.y_range_multiplier = previous->y_range_multiplier;
+      } else {
+        pane.configured_height_weight = pane.height_weight;
+      }
+      normalized.push_back(std::move(pane));
+    }
+  }
+  auto main_pane = std::find_if(
+      normalized.begin(), normalized.end(), [](const PaneConfig& pane) {
+        return pane.pane_id == "main" && pane.price_scale_id == "main";
+      });
+  if (main_pane == normalized.end()) {
+    normalized.insert(normalized.begin(), PaneConfig{});
+  } else if (main_pane != normalized.begin()) {
+    std::rotate(normalized.begin(), main_pane, main_pane + 1);
+  }
+  normalized.front().scale_margin_top = config_.y_scale_margin_top;
+  normalized.front().scale_margin_bottom = config_.y_scale_margin_bottom;
+  normalized.front().min_move = config_.min_move;
+  normalized.front().precision = config_.precision;
+  normalized.front().scale_visible = config_.show_y_axis;
+  normalized.front().y_range_multiplier = y_range_multiplier_;
+  panes_ = std::move(normalized);
+  panes_resizable_ = resizable && panes_.size() > 1;
+  additional_series_.erase(
+      std::remove_if(
+          additional_series_.begin(), additional_series_.end(),
+          [&](const SeriesData& series) {
+            if (!series.config.declarative) {
+              return false;
+            }
+            return std::none_of(
+                panes_.begin(), panes_.end(), [&](const PaneConfig& pane) {
+                  return pane.pane_id == series.config.pane_id &&
+                         pane.price_scale_id == series.config.price_scale_id;
+                });
+          }),
+      additional_series_.end());
+  RebuildSeriesIndicesLocked();
+  MarkDirtyLocked();
+}
+
+SeriesData* ChartEngine::FindSeriesLocked(const std::string& series_id) {
+  auto found =
+      std::find_if(additional_series_.begin(), additional_series_.end(),
+                   [&](const SeriesData& series) {
+                     return series.config.series_id == series_id;
+                   });
+  return found == additional_series_.end() ? nullptr : &*found;
+}
+
+const SeriesData* ChartEngine::FindSeriesLocked(
+    const std::string& series_id) const {
+  auto found =
+      std::find_if(additional_series_.begin(), additional_series_.end(),
+                   [&](const SeriesData& series) {
+                     return series.config.series_id == series_id;
+                   });
+  return found == additional_series_.end() ? nullptr : &*found;
+}
+
+void ChartEngine::RebuildSeriesIndicesLocked() {
+  for (SeriesData& series : additional_series_) {
+    const auto pane =
+        std::find_if(panes_.begin(), panes_.end(), [&](const PaneConfig& item) {
+          return item.pane_id == series.config.pane_id &&
+                 item.price_scale_id == series.config.price_scale_id;
+        });
+    series.pane_index =
+        pane == panes_.end()
+            ? kInvalidStateIndex
+            : static_cast<size_t>(std::distance(panes_.begin(), pane));
+    series.source_series_index = kInvalidStateIndex;
+    if (series.config.source != SeriesSource::kOhlcvVolume) {
+      continue;
+    }
+    if (series.config.source_series_id.empty() ||
+        series.config.source_series_id == "main") {
+      series.source_series_index = kMainSeriesStateIndex;
+      continue;
+    }
+    const auto source = std::find_if(
+        additional_series_.begin(), additional_series_.end(),
+        [&](const SeriesData& candidate) {
+          return candidate.config.series_id == series.config.source_series_id &&
+                 candidate.config.type != SeriesType::kHistogram;
+        });
+    if (source != additional_series_.end()) {
+      series.source_series_index = static_cast<size_t>(
+          std::distance(additional_series_.begin(), source));
+    }
+  }
+}
+
+UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
+  if (config.series_id.empty() || config.series_id == "main" ||
+      config.pane_id.empty() || config.price_scale_id.empty()) {
+    return UpdateStatus::kInvalidInput;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto pane = std::find_if(
+      panes_.begin(), panes_.end(), [&](const PaneConfig& candidate) {
+        return candidate.pane_id == config.pane_id &&
+               candidate.price_scale_id == config.price_scale_id;
+      });
+  if (pane == panes_.end()) {
+    return UpdateStatus::kInvalidInput;
+  }
+  SeriesData* existing = FindSeriesLocked(config.series_id);
+  if (existing != nullptr) {
+    if (!existing->config.declarative || !config.declarative) {
+      return UpdateStatus::kInvalidInput;
+    }
+    existing->config = config;
+  } else {
+    additional_series_.push_back(SeriesData{config, {}, {}});
+  }
+  RebuildSeriesIndicesLocked();
+  MarkDirtyLocked();
+  return UpdateStatus::kApplied;
+}
+
+bool ChartEngine::RemoveSeries(const std::string& series_id) {
+  if (series_id.empty() || series_id == "main") {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto old_size = additional_series_.size();
+  additional_series_.erase(
+      std::remove_if(additional_series_.begin(), additional_series_.end(),
+                     [&](const SeriesData& series) {
+                       return series.config.series_id == series_id ||
+                              (series.config.source ==
+                                   SeriesSource::kOhlcvVolume &&
+                               series.config.source_series_id == series_id);
+                     }),
+      additional_series_.end());
+  if (additional_series_.size() == old_size) {
+    return false;
+  }
+  RebuildSeriesIndicesLocked();
+  MarkDirtyLocked();
+  return true;
+}
+
+UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
+                                        const double* values,
+                                        size_t value_count, bool histogram) {
+  if (series_id == "main") {
+    return histogram ? UpdateStatus::kInvalidInput
+                     : SetHistory(values, value_count);
+  }
+  ParsedCandles candles;
+  ParsedHistogram points;
+  if (histogram) {
+    points = ParseHistogram(values, value_count);
+    if (points.status != UpdateStatus::kApplied) {
+      return points.status;
+    }
+  } else {
+    candles = ParseCandles(values, value_count);
+    if (candles.status != UpdateStatus::kApplied) {
+      return candles.status;
+    }
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  SeriesData* series = FindSeriesLocked(series_id);
+  if (series == nullptr || series->config.source != SeriesSource::kData) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (value_count == 0) {
+    if (series->candles.empty() && series->histogram.empty()) {
+      return UpdateStatus::kApplied;
+    }
+    series->candles.clear();
+    series->histogram.clear();
+    MarkDirtyLocked();
+    return UpdateStatus::kApplied;
+  }
+  if ((series->config.type == SeriesType::kHistogram) != histogram) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (histogram) {
+    series->histogram = std::move(points.points);
+  } else {
+    series->candles = std::move(candles.candles);
+  }
+  MarkDirtyLocked();
+  return UpdateStatus::kApplied;
+}
+
+UpdateStatus ChartEngine::PrependSeriesData(const std::string& series_id,
+                                            const double* values,
+                                            size_t value_count,
+                                            bool histogram) {
+  if (series_id == "main") {
+    return histogram ? UpdateStatus::kInvalidInput
+                     : PrependHistory(values, value_count);
+  }
+  ParsedCandles candles;
+  ParsedHistogram points;
+  if (histogram) {
+    points = ParseHistogram(values, value_count);
+    if (points.status != UpdateStatus::kApplied || points.points.empty()) {
+      return points.status;
+    }
+  } else {
+    candles = ParseCandles(values, value_count);
+    if (candles.status != UpdateStatus::kApplied || candles.candles.empty()) {
+      return candles.status;
+    }
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  SeriesData* series = FindSeriesLocked(series_id);
+  if (series == nullptr || series->config.source != SeriesSource::kData ||
+      (series->config.type == SeriesType::kHistogram) != histogram) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (histogram) {
+    if (!series->histogram.empty() &&
+        points.points.back().timestamp >= series->histogram.front().timestamp) {
+      return UpdateStatus::kInvalidInput;
+    }
+    series->histogram.insert(series->histogram.begin(), points.points.begin(),
+                             points.points.end());
+  } else {
+    if (!series->candles.empty() &&
+        candles.candles.back().timestamp >= series->candles.front().timestamp) {
+      return UpdateStatus::kInvalidInput;
+    }
+    series->candles.insert(series->candles.begin(), candles.candles.begin(),
+                           candles.candles.end());
+  }
+  MarkDirtyLocked();
+  return UpdateStatus::kApplied;
+}
+
+UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
+                                           const double* values,
+                                           size_t value_count, bool histogram) {
+  if (series_id == "main") {
+    return histogram ? UpdateStatus::kInvalidInput
+                     : UpdateCandle(values, value_count);
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  SeriesData* series = FindSeriesLocked(series_id);
+  if (series == nullptr || series->config.source != SeriesSource::kData ||
+      (series->config.type == SeriesType::kHistogram) != histogram) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (histogram) {
+    ParsedHistogram parsed = ParseHistogram(values, value_count);
+    if (parsed.status != UpdateStatus::kApplied || parsed.points.size() != 1) {
+      return UpdateStatus::kInvalidInput;
+    }
+    const HistogramPoint point = parsed.points.front();
+    if (series->histogram.empty() ||
+        point.timestamp > series->histogram.back().timestamp) {
+      series->histogram.push_back(point);
+    } else if (point.timestamp == series->histogram.back().timestamp) {
+      series->histogram.back() = point;
+    } else {
+      return UpdateStatus::kIgnoredOldTimestamp;
+    }
+  } else {
+    ParsedCandles parsed = ParseCandles(values, value_count);
+    if (parsed.status != UpdateStatus::kApplied || parsed.candles.size() != 1) {
+      return UpdateStatus::kInvalidInput;
+    }
+    const Candle candle = parsed.candles.front();
+    if (series->candles.empty() ||
+        candle.timestamp > series->candles.back().timestamp) {
+      series->candles.push_back(candle);
+    } else if (candle.timestamp == series->candles.back().timestamp) {
+      series->candles.back() = candle;
+    } else {
+      return UpdateStatus::kIgnoredOldTimestamp;
+    }
+  }
+  MarkDirtyLocked();
+  return UpdateStatus::kApplied;
+}
+
+bool ChartEngine::SetPaneHeight(const std::string& pane_id,
+                                double height_weight) {
+  if (!IsFinite(height_weight) || height_weight <= 0.0) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto pane = std::find_if(panes_.begin(), panes_.end(),
+                           [&](const PaneConfig& candidate) {
+                             return candidate.pane_id == pane_id;
+                           });
+  if (pane == panes_.end() || pane->height_weight == height_weight) {
+    return false;
+  }
+  pane->height_weight = height_weight;
+  MarkDirtyLocked();
+  return true;
 }
 
 double ChartEngine::XDomainUnitLocked() const {
@@ -381,10 +754,17 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
 void ChartEngine::Clear() {
   std::lock_guard<std::mutex> lock(mutex_);
   candles_.clear();
+  for (SeriesData& series : additional_series_) {
+    series.candles.clear();
+    series.histogram.clear();
+  }
   last_trade_timestamp_.reset();
   crosshair_active_ = false;
   viewport_initialized_ = false;
   y_range_multiplier_ = 1.0 / config_.default_y_scale;
+  for (size_t index = 0; index < panes_.size(); ++index) {
+    panes_[index].y_range_multiplier = index == 0 ? y_range_multiplier_ : 1.0;
+  }
   visible_x_min_ = 0.0;
   visible_x_max_ = 1.0;
   horizontal_scale_base_span_ = 1.0;
@@ -393,6 +773,9 @@ void ChartEngine::Clear() {
 
 void ChartEngine::ResetViewportLocked() {
   y_range_multiplier_ = 1.0 / config_.default_y_scale;
+  for (size_t index = 0; index < panes_.size(); ++index) {
+    panes_[index].y_range_multiplier = index == 0 ? y_range_multiplier_ : 1.0;
+  }
   if (candles_.empty()) {
     viewport_initialized_ = false;
     visible_x_min_ = 0.0;
@@ -419,6 +802,9 @@ void ChartEngine::ResetViewportLocked() {
 
 void ChartEngine::FitContentLocked() {
   y_range_multiplier_ = 1.0 / config_.default_y_scale;
+  for (size_t index = 0; index < panes_.size(); ++index) {
+    panes_[index].y_range_multiplier = index == 0 ? y_range_multiplier_ : 1.0;
+  }
   if (candles_.empty()) {
     viewport_initialized_ = false;
     visible_x_min_ = 0.0;
@@ -545,28 +931,170 @@ void ChartEngine::ZoomAtRightEdge(double scale) {
 }
 
 bool ChartEngine::ScaleY(float delta_pixels) {
+  float middle = 0.0f;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const float axis_height =
+        config_.show_x_axis ? config_.x_axis_height : 0.0f;
+    middle = internal::kTopInset +
+             (height_ - axis_height - internal::kTopInset) * 0.5f;
+  }
+  return ScaleYAt(delta_pixels, middle);
+}
+
+std::vector<Rect> ChartEngine::PaneRectsLocked() const {
+  std::vector<Rect> result(panes_.size());
+  if (panes_.empty()) {
+    return result;
+  }
+  const float y_lane = config_.show_y_axis ? config_.y_axis_width : 0.0f;
+  const float left =
+      config_.show_y_axis && !config_.y_axis_on_right ? y_lane : 0.0f;
+  const float right =
+      width_ - (config_.show_y_axis && config_.y_axis_on_right ? y_lane : 0.0f);
+  const float bottom =
+      height_ - (config_.show_x_axis ? config_.x_axis_height : 0.0f);
+  const float separator = config_.display_scale;
+  const float available =
+      std::max(0.0f, bottom - internal::kTopInset -
+                         separator * static_cast<float>(panes_.size() - 1));
+  std::vector<float> heights(panes_.size(), 0.0f);
+  std::vector<bool> fixed(panes_.size(), false);
+  float remaining = available;
+  double remaining_weight = 0.0;
+  for (const PaneConfig& pane : panes_) {
+    remaining_weight += pane.height_weight;
+  }
+  for (size_t pass = 0; pass < panes_.size(); ++pass) {
+    bool changed = false;
+    for (size_t index = 0; index < panes_.size(); ++index) {
+      if (fixed[index]) {
+        continue;
+      }
+      const float candidate =
+          remaining_weight > 0.0
+              ? static_cast<float>(static_cast<double>(remaining) *
+                                   panes_[index].height_weight /
+                                   remaining_weight)
+              : 0.0f;
+      if (candidate < panes_[index].min_height) {
+        heights[index] = panes_[index].min_height;
+        fixed[index] = true;
+        remaining = std::max(0.0f, remaining - heights[index]);
+        remaining_weight -= panes_[index].height_weight;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+  for (size_t index = 0; index < panes_.size(); ++index) {
+    if (!fixed[index]) {
+      heights[index] = remaining_weight > 0.0
+                           ? static_cast<float>(static_cast<double>(remaining) *
+                                                panes_[index].height_weight /
+                                                remaining_weight)
+                           : 0.0f;
+    }
+  }
+  if (available > 0.0f) {
+    const float total = std::accumulate(heights.begin(), heights.end(), 0.0f);
+    if (total > available && total > 0.0f) {
+      const float scale = available / total;
+      for (float& height : heights) {
+        height *= scale;
+      }
+    }
+  }
+  float top = internal::kTopInset;
+  for (size_t index = 0; index < panes_.size(); ++index) {
+    result[index] = Rect{left, top, right, top + heights[index]};
+    top += heights[index] + separator;
+  }
+  return result;
+}
+
+size_t ChartEngine::PaneIndexAtYLocked(float y) const {
+  const std::vector<Rect> rects = PaneRectsLocked();
+  for (size_t index = 0; index < rects.size(); ++index) {
+    if (y >= rects[index].top && y <= rects[index].bottom) {
+      return index;
+    }
+  }
+  return rects.empty() ? 0 : rects.size() - 1;
+}
+
+bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!config_.allow_y_axis_scale || !config_.show_y_axis ||
       !viewport_initialized_ || height_ <= 0.0f || candles_.empty() ||
       !std::isfinite(delta_pixels)) {
     return false;
   }
-  const float axis_height = config_.show_x_axis ? config_.x_axis_height : 0.0f;
-  const double plot_height = std::max(
-      static_cast<double>(height_ - axis_height - internal::kTopInset), 1.0);
-  const double next =
-      std::clamp(y_range_multiplier_ *
-                     std::exp(static_cast<double>(delta_pixels) / plot_height),
-                 kMinYRangeMultiplier, kMaxYRangeMultiplier);
+  const size_t pane_index = PaneIndexAtYLocked(y);
+  if (pane_index >= panes_.size()) {
+    return false;
+  }
+  const std::vector<Rect> rects = PaneRectsLocked();
+  const double plot_height =
+      std::max(static_cast<double>(rects[pane_index].Height()), 1.0);
+  const double current = panes_[pane_index].y_range_multiplier;
+  const double next = std::clamp(
+      current * std::exp(static_cast<double>(delta_pixels) / plot_height),
+      kMinYRangeMultiplier, kMaxYRangeMultiplier);
   const bool crosshair_changed = crosshair_active_;
   crosshair_active_ = false;
-  if (next == y_range_multiplier_) {
+  if (next == current) {
     if (crosshair_changed) {
       MarkCrosshairDirtyLocked();
     }
     return false;
   }
-  y_range_multiplier_ = next;
+  panes_[pane_index].y_range_multiplier = next;
+  if (pane_index == 0) {
+    y_range_multiplier_ = next;
+  }
+  MarkDirtyLocked();
+  return true;
+}
+
+std::optional<size_t> ChartEngine::SeparatorAt(float y, float hit_slop) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!panes_resizable_ || panes_.size() < 2) {
+    return std::nullopt;
+  }
+  const std::vector<Rect> rects = PaneRectsLocked();
+  for (size_t index = 0; index + 1 < rects.size(); ++index) {
+    if (std::abs(y - rects[index].bottom) <= hit_slop) {
+      return index;
+    }
+  }
+  return std::nullopt;
+}
+
+bool ChartEngine::ResizePaneSeparator(size_t separator_index,
+                                      float delta_pixels) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!panes_resizable_ || separator_index + 1 >= panes_.size() ||
+      !std::isfinite(delta_pixels)) {
+    return false;
+  }
+  const std::vector<Rect> rects = PaneRectsLocked();
+  const float first_height = rects[separator_index].Height();
+  const float second_height = rects[separator_index + 1].Height();
+  const float next_first =
+      std::max(panes_[separator_index].min_height,
+               std::min(first_height + delta_pixels,
+                        first_height + second_height -
+                            panes_[separator_index + 1].min_height));
+  const float next_second = first_height + second_height - next_first;
+  if (next_first == first_height || next_second <= 0.0f) {
+    return false;
+  }
+  panes_[separator_index].height_weight = static_cast<double>(next_first);
+  panes_[separator_index + 1].height_weight = static_cast<double>(next_second);
+  crosshair_active_ = false;
   MarkDirtyLocked();
   return true;
 }
@@ -618,7 +1146,8 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::Snapshot() {
   if (!dirty_ && snapshot_) {
     return snapshot_;
   }
-  internal::SnapshotBuildInput input{config_, candles_};
+  internal::SnapshotBuildInput input{config_, candles_, panes_,
+                                     additional_series_};
   input.width = width_;
   input.height = height_;
   input.visible_x_min = visible_x_min_;

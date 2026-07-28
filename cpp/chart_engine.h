@@ -17,6 +17,8 @@ namespace trading_charts {
 // Positional input widths used by the native bridges.
 inline constexpr size_t kCandleValueCount = 6;
 inline constexpr size_t kTradeValueCount = 3;
+inline constexpr size_t kInvalidStateIndex = static_cast<size_t>(-1);
+inline constexpr size_t kMainSeriesStateIndex = static_cast<size_t>(-2);
 
 struct Color {
   float r = 1.0f;
@@ -38,6 +40,55 @@ enum class SeriesType : std::uint8_t {
   kCandlestick = 0,
   kBar = 1,
   kHollowCandlestick = 2,
+  kHistogram = 3,
+};
+
+struct HistogramPoint {
+  double timestamp = 0.0;
+  double value = 0.0;
+};
+
+enum class SeriesSource : std::uint8_t {
+  kData = 0,
+  kOhlcvVolume = 1,
+};
+
+struct PaneConfig {
+  std::string pane_id = "main";
+  std::string price_scale_id = "main";
+  double height_weight = 1.0;
+  double configured_height_weight = 1.0;
+  float min_height = 48.0f;
+  double scale_margin_top = 0.2;
+  double scale_margin_bottom = 0.1;
+  bool scale_visible = true;
+  bool volume_format = false;
+  int precision = 2;
+  double min_move = 0.01;
+  double y_range_multiplier = 1.0;
+};
+
+struct SeriesConfig {
+  std::string series_id;
+  std::string pane_id = "main";
+  std::string price_scale_id = "main";
+  std::string source_series_id;
+  SeriesType type = SeriesType::kCandlestick;
+  SeriesSource source = SeriesSource::kData;
+  Color color{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
+  Color up{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
+  Color down{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  float line_width = 1.0f;
+  bool visible = true;
+  bool declarative = false;
+};
+
+struct SeriesData {
+  SeriesConfig config;
+  std::vector<Candle> candles;
+  std::vector<HistogramPoint> histogram;
+  size_t pane_index = kInvalidStateIndex;
+  size_t source_series_index = kInvalidStateIndex;
 };
 
 struct ChartConfig {
@@ -130,6 +181,21 @@ struct PriceExtremum {
   bool label_on_right = true;
 };
 
+struct PaneSnapshot {
+  std::string pane_id;
+  std::string price_scale_id;
+  Rect plot;
+  double height_weight = 1.0;
+  double visible_y_min = 0.0;
+  double visible_y_max = 1.0;
+  double y_axis_scale = 1.0;
+  size_t y_tick_offset = 0;
+  size_t y_tick_count = 0;
+  bool scale_visible = true;
+  bool volume_format = false;
+  int precision = 2;
+};
+
 // Immutable render state published to the platform GPU and text overlays.
 // All coordinates are expressed in native view coordinates.
 struct RenderSnapshot {
@@ -152,6 +218,8 @@ struct RenderSnapshot {
   std::vector<float> vertices;
   std::vector<AxisTick> x_ticks;
   std::vector<AxisTick> y_ticks;
+  std::vector<AxisTick> pane_y_ticks;
+  std::vector<PaneSnapshot> panes;
   PriceExtremum visible_maximum;
   PriceExtremum visible_minimum;
   Candle selected_candle;
@@ -168,6 +236,7 @@ struct RenderSnapshot {
   bool current_price_visible = false;
   bool crosshair_visible = false;
   bool selected_percentages_valid = false;
+  size_t active_pane_index = 0;
 };
 
 enum class UpdateStatus : std::uint8_t {
@@ -185,6 +254,20 @@ class ChartEngine {
   ChartEngine();
 
   void SetConfig(const ChartConfig& config);
+  void SetPanes(const std::vector<PaneConfig>& panes, bool resizable);
+  UpdateStatus AddSeries(const SeriesConfig& config);
+  bool RemoveSeries(const std::string& series_id);
+  UpdateStatus SetSeriesData(const std::string& series_id, const double* values,
+                             size_t value_count, bool histogram);
+  UpdateStatus PrependSeriesData(const std::string& series_id,
+                                 const double* values, size_t value_count,
+                                 bool histogram);
+  UpdateStatus UpdateSeriesData(const std::string& series_id,
+                                const double* values, size_t value_count,
+                                bool histogram);
+  bool SetPaneHeight(const std::string& pane_id, double height_weight);
+  bool ResizePaneSeparator(size_t separator_index, float delta_pixels);
+  std::optional<size_t> SeparatorAt(float y, float hit_slop) const;
   void SetSize(float width, float height);
 
   // Replaces history from packed [time, open, high, low, close, volume]
@@ -210,6 +293,7 @@ class ChartEngine {
   bool Zoom(double scale, float focus_x);
   void ZoomAtRightEdge(double scale);
   bool ScaleY(float delta_pixels);
+  bool ScaleYAt(float delta_pixels, float y);
   void ResetViewport();
   void FitContent();
   void SetCrosshair(bool active, float x, float y);
@@ -228,6 +312,9 @@ class ChartEngine {
   mutable std::mutex mutex_;
   ChartConfig config_;
   std::vector<Candle> candles_;
+  std::vector<PaneConfig> panes_{PaneConfig{}};
+  std::vector<SeriesData> additional_series_;
+  bool panes_resizable_ = false;
   float width_ = 0.0f;
   float height_ = 0.0f;
   double visible_x_min_ = 0.0;
@@ -253,6 +340,11 @@ class ChartEngine {
   double DataXMaxLocked() const;
   void ResetViewportLocked();
   void FitContentLocked();
+  size_t PaneIndexAtYLocked(float y) const;
+  std::vector<Rect> PaneRectsLocked() const;
+  SeriesData* FindSeriesLocked(const std::string& series_id);
+  const SeriesData* FindSeriesLocked(const std::string& series_id) const;
+  void RebuildSeriesIndicesLocked();
   void ClampViewportLocked();
   bool IsAtLiveEdgeLocked() const;
   UpdateStatus UpdateTradeLocked(double timestamp, double price, double size);

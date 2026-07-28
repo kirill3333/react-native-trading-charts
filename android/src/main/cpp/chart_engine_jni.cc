@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cpp/chart_engine.h"
@@ -16,7 +17,10 @@
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
+using trading_charts::PaneConfig;
 using trading_charts::RenderSnapshot;
+using trading_charts::SeriesConfig;
+using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 
@@ -199,6 +203,18 @@ std::string StringAt(JNIEnv* env, jobjectArray values, jsize index,
   return result;
 }
 
+std::string CopyString(JNIEnv* env, jstring value) {
+  if (!value) {
+    return {};
+  }
+  const char* chars = env->GetStringUTFChars(value, nullptr);
+  std::string result = chars ? chars : "";
+  if (chars) {
+    env->ReleaseStringUTFChars(value, chars);
+  }
+  return result;
+}
+
 }  // namespace
 
 extern "C" {
@@ -344,6 +360,135 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   instance->SetConfig(config);
 }
 
+JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetPanes(
+    JNIEnv* env, jclass, jlong handle, jobjectArray strings,
+    jdoubleArray numbers, jboolean resizable) {
+  auto* instance = EngineFromHandle(handle);
+  if (!instance || !strings || !numbers) {
+    return;
+  }
+  constexpr jsize kNumberWidth = 8;
+  const jsize pane_count = env->GetArrayLength(strings) / 2;
+  if (env->GetArrayLength(numbers) < pane_count * kNumberWidth) {
+    return;
+  }
+  const auto values = CopyDoubles(env, numbers);
+  std::vector<PaneConfig> panes;
+  panes.reserve(static_cast<size_t>(pane_count));
+  for (jsize index = 0; index < pane_count; ++index) {
+    const size_t offset = static_cast<size_t>(index * kNumberWidth);
+    PaneConfig pane;
+    pane.pane_id = StringAt(env, strings, index * 2, "");
+    pane.price_scale_id = StringAt(env, strings, index * 2 + 1, "");
+    pane.height_weight = values[offset];
+    pane.min_height = static_cast<float>(values[offset + 1]);
+    pane.scale_visible = values[offset + 2] != 0.0;
+    pane.scale_margin_top = values[offset + 3];
+    pane.scale_margin_bottom = values[offset + 4];
+    pane.volume_format = values[offset + 5] != 0.0;
+    pane.precision = static_cast<int>(values[offset + 6]);
+    pane.min_move = values[offset + 7];
+    panes.push_back(std::move(pane));
+  }
+  instance->SetPanes(panes, resizable == JNI_TRUE);
+}
+
+JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
+    JNIEnv* env, jclass, jlong handle, jobjectArray strings,
+    jdoubleArray numbers, jfloatArray colors) {
+  auto* instance = EngineFromHandle(handle);
+  if (!instance || !strings || !numbers || !colors ||
+      env->GetArrayLength(strings) < 4 || env->GetArrayLength(numbers) < 5 ||
+      env->GetArrayLength(colors) < 12) {
+    return 2;
+  }
+  const auto values = CopyDoubles(env, numbers);
+  std::array<jfloat, 12> color_values{};
+  env->GetFloatArrayRegion(colors, 0, 12, color_values.data());
+  const auto color_at = [&](size_t offset) {
+    return Color{color_values[offset], color_values[offset + 1],
+                 color_values[offset + 2], color_values[offset + 3]};
+  };
+  SeriesConfig series;
+  series.series_id = StringAt(env, strings, 0, "");
+  series.pane_id = StringAt(env, strings, 1, "");
+  series.price_scale_id = StringAt(env, strings, 2, "");
+  series.source_series_id = StringAt(env, strings, 3, "");
+  const int type = static_cast<int>(values[0]);
+  if (type == 1) {
+    series.type = SeriesType::kBar;
+  } else if (type == 2) {
+    series.type = SeriesType::kHollowCandlestick;
+  } else if (type == 3) {
+    series.type = SeriesType::kHistogram;
+  }
+  series.source =
+      values[1] == 1.0 ? SeriesSource::kOhlcvVolume : SeriesSource::kData;
+  series.visible = values[2] != 0.0;
+  series.declarative = values[3] != 0.0;
+  series.line_width = static_cast<float>(values[4]);
+  series.color = color_at(0);
+  series.up = color_at(4);
+  series.down = color_at(8);
+  return StatusValue(instance->AddSeries(series));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeRemoveSeries(JNIEnv* env, jclass,
+                                                            jlong handle,
+                                                            jstring series_id) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->RemoveSeries(CopyString(env, series_id))
+             ? JNI_TRUE
+             : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetSeriesData(
+    JNIEnv* env, jclass, jlong handle, jstring series_id, jboolean histogram,
+    jdoubleArray values) {
+  const auto data = CopyDoubles(env, values);
+  auto* instance = EngineFromHandle(handle);
+  return instance ? StatusValue(instance->SetSeriesData(
+                        CopyString(env, series_id), data.data(), data.size(),
+                        histogram == JNI_TRUE))
+                  : 2;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativePrependSeriesData(
+    JNIEnv* env, jclass, jlong handle, jstring series_id, jboolean histogram,
+    jdoubleArray values) {
+  const auto data = CopyDoubles(env, values);
+  auto* instance = EngineFromHandle(handle);
+  return instance ? StatusValue(instance->PrependSeriesData(
+                        CopyString(env, series_id), data.data(), data.size(),
+                        histogram == JNI_TRUE))
+                  : 2;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeUpdateSeriesData(
+    JNIEnv* env, jclass, jlong handle, jstring series_id, jboolean histogram,
+    jdoubleArray values) {
+  const auto data = CopyDoubles(env, values);
+  auto* instance = EngineFromHandle(handle);
+  return instance ? StatusValue(instance->UpdateSeriesData(
+                        CopyString(env, series_id), data.data(), data.size(),
+                        histogram == JNI_TRUE))
+                  : 2;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetPaneHeight(
+    JNIEnv* env, jclass, jlong handle, jstring pane_id, jdouble height_weight) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->SetPaneHeight(CopyString(env, pane_id),
+                                             height_weight)
+             ? JNI_TRUE
+             : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetSize(
     JNIEnv*, jclass, jlong handle, jfloat width, jfloat height) {
   if (auto* instance = EngineFromHandle(handle)) {
@@ -440,6 +585,44 @@ Java_com_tradingcharts_ChartEngineNative_nativeScaleY(JNIEnv*, jclass,
                                                       jfloat delta) {
   if (auto* instance = EngineFromHandle(handle)) {
     return instance->ScaleY(delta) ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeScaleYAt(JNIEnv*, jclass,
+                                                        jlong handle,
+                                                        jfloat delta,
+                                                        jfloat y) {
+  if (auto* instance = EngineFromHandle(handle)) {
+    return instance->ScaleYAt(delta, y) ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSeparatorAt(JNIEnv*, jclass,
+                                                           jlong handle,
+                                                           jfloat y,
+                                                           jfloat hit_slop) {
+  if (auto* instance = EngineFromHandle(handle)) {
+    const auto index = instance->SeparatorAt(y, hit_slop);
+    return index ? static_cast<jint>(*index) : -1;
+  }
+  return -1;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeResizePaneSeparator(
+    JNIEnv*, jclass, jlong handle, jint separator_index, jfloat delta) {
+  if (separator_index < 0) {
+    return JNI_FALSE;
+  }
+  if (auto* instance = EngineFromHandle(handle)) {
+    return instance->ResizePaneSeparator(static_cast<size_t>(separator_index),
+                                         delta)
+               ? JNI_TRUE
+               : JNI_FALSE;
   }
   return JNI_FALSE;
 }
@@ -571,6 +754,69 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotYTicks(JNIEnv* env,
                               packed.data());
   }
   return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPaneYTicks(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  std::vector<double> packed;
+  if (value) {
+    packed.reserve(value->pane_y_ticks.size() * 2);
+    for (const auto& tick : value->pane_y_ticks) {
+      packed.push_back(tick.value);
+      packed.push_back(tick.position);
+    }
+  }
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
+  if (!packed.empty()) {
+    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
+                              packed.data());
+  }
+  return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
+                                                             jclass,
+                                                             jlong handle) {
+  constexpr size_t kWidth = 13;
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  std::vector<double> packed;
+  if (value) {
+    packed.reserve(value->panes.size() * kWidth);
+    for (const auto& pane : value->panes) {
+      packed.push_back(pane.plot.left);
+      packed.push_back(pane.plot.top);
+      packed.push_back(pane.plot.right);
+      packed.push_back(pane.plot.bottom);
+      packed.push_back(pane.height_weight);
+      packed.push_back(pane.visible_y_min);
+      packed.push_back(pane.visible_y_max);
+      packed.push_back(pane.y_axis_scale);
+      packed.push_back(static_cast<double>(pane.y_tick_offset));
+      packed.push_back(static_cast<double>(pane.y_tick_count));
+      packed.push_back(pane.scale_visible ? 1.0 : 0.0);
+      packed.push_back(pane.volume_format ? 1.0 : 0.0);
+      packed.push_back(static_cast<double>(pane.precision));
+    }
+  }
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
+  if (!packed.empty()) {
+    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
+                              packed.data());
+  }
+  return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotActivePane(
+    JNIEnv*, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  return value ? static_cast<jint>(value->active_pane_index) : 0;
 }
 
 JNIEXPORT jdoubleArray JNICALL

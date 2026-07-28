@@ -2,6 +2,7 @@ import {
   type ChartAppearance,
   type ChartBorderStyle,
   type ChartFormatters,
+  type ChartPaneOptions,
   type ChartSeriesType,
   type ChartTheme,
   type ChartTextStyle,
@@ -15,6 +16,7 @@ import {
   type ResolvedPriceDisplayFormat,
   type SignificantValueFormat,
   type TradingChartsViewProps,
+  type VolumeValueFormat,
   type YAxisValueFormat,
 } from './types';
 
@@ -73,6 +75,56 @@ function nonEmpty(value: string, name: string): string {
     throw new TypeError(`${name} must be a non-empty string`);
   }
   return value;
+}
+
+function identifier(value: string, name: string): string {
+  const result = nonEmpty(value, name);
+  if (!/^[A-Za-z0-9._-]+$/.test(result)) {
+    throw new TypeError(
+      `${name} may contain only letters, numbers, '.', '_' and '-'`
+    );
+  }
+  return result;
+}
+
+function resolveScaleMargins(
+  value: ChartPaneOptions['priceScale']['scaleMargins'] | undefined,
+  fallback: { top: number; bottom: number },
+  name: string
+) {
+  const result = value ?? fallback;
+  if (
+    !Number.isFinite(result.top) ||
+    result.top < 0 ||
+    !Number.isFinite(result.bottom) ||
+    result.bottom < 0 ||
+    result.top + result.bottom >= 1
+  ) {
+    throw new TypeError(
+      `${name} must be finite, non-negative and sum to less than 1`
+    );
+  }
+  return { top: result.top, bottom: result.bottom };
+}
+
+function resolveVolumeFormat(
+  value: VolumeValueFormat | undefined
+): Required<VolumeValueFormat> {
+  const precision = value?.precision ?? 2;
+  if (!Number.isInteger(precision) || precision < 0 || precision > 12) {
+    throw new TypeError(
+      'panes[].priceScale.valueFormat.precision must be an integer from 0 to 12'
+    );
+  }
+  return {
+    type: 'volume',
+    precision,
+    locale: nonEmpty(
+      value?.locale ?? 'en-GB',
+      'panes[].priceScale.valueFormat.locale'
+    ),
+    useGrouping: value?.useGrouping ?? true,
+  };
 }
 
 function resolveTextStyle(
@@ -620,12 +672,150 @@ export function resolveChartConfig(
     props.xAxis ?? {},
     valueFormat
   );
+  const paneInputs =
+    props.panes ??
+    ([
+      {
+        paneId: 'main',
+        heightWeight: 1,
+        priceScale: { priceScaleId: 'main' },
+      },
+    ] satisfies ChartPaneOptions[]);
+  const seenPaneIds = new Set<string>();
+  const seenScaleIds = new Set<string>();
+  const panes = paneInputs.map((pane, index) => {
+    const name = `panes[${index}]`;
+    const paneId = identifier(pane.paneId, `${name}.paneId`);
+    const priceScaleId = identifier(
+      pane.priceScale.priceScaleId,
+      `${name}.priceScale.priceScaleId`
+    );
+    if (seenPaneIds.has(paneId)) {
+      throw new TypeError(`duplicate paneId '${paneId}'`);
+    }
+    if (seenScaleIds.has(priceScaleId)) {
+      throw new TypeError(`duplicate priceScaleId '${priceScaleId}'`);
+    }
+    seenPaneIds.add(paneId);
+    seenScaleIds.add(priceScaleId);
+    const paneValueFormat = pane.priceScale.valueFormat;
+    return {
+      paneId,
+      heightWeight: finitePositive(
+        pane.heightWeight,
+        `${name}.heightWeight`
+      ),
+      minHeight: finitePositive(pane.minHeight ?? 48, `${name}.minHeight`),
+      priceScale: {
+        priceScaleId,
+        visible:
+          pane.priceScale.visible ??
+          (paneId === 'main' ? props.yAxis?.visible ?? true : true),
+        scaleMargins: resolveScaleMargins(
+          pane.priceScale.scaleMargins,
+          paneId === 'main' ? scaleMargins : { top: 0.1, bottom: 0 },
+          `${name}.priceScale.scaleMargins`
+        ),
+        valueFormat:
+          paneValueFormat?.type === 'volume'
+            ? resolveVolumeFormat(paneValueFormat)
+            : resolveValueFormat(paneValueFormat ?? valueFormat),
+      },
+    };
+  });
+  const mainPane = panes.find((pane) => pane.paneId === 'main');
+  if (mainPane == null || mainPane.priceScale.priceScaleId !== 'main') {
+    throw new TypeError(
+      "panes must contain the reserved 'main' pane with priceScaleId 'main'"
+    );
+  }
+  const orderedPanes = [
+    mainPane,
+    ...panes.filter((pane) => pane.paneId !== 'main'),
+  ];
+
+  const additionalSeriesInputs = props.additionalSeries ?? [];
+  const seenSeriesIds = new Set<string>(['main']);
+  const knownOhlcSeriesIds = new Set<string>(['main']);
+  additionalSeriesInputs.forEach((item) => {
+    if (item.type !== 'histogram') {
+      knownOhlcSeriesIds.add(item.seriesId);
+    }
+  });
+  const additionalSeries = additionalSeriesInputs.map((item, index) => {
+    const name = `additionalSeries[${index}]`;
+    const seriesId = identifier(item.seriesId, `${name}.seriesId`);
+    if (seriesId === 'main') {
+      throw new TypeError("additionalSeries cannot use reserved seriesId 'main'");
+    }
+    if (seenSeriesIds.has(seriesId)) {
+      throw new TypeError(`duplicate seriesId '${seriesId}'`);
+    }
+    seenSeriesIds.add(seriesId);
+    const paneId = identifier(item.paneId, `${name}.paneId`);
+    const priceScaleId = identifier(
+      item.priceScaleId,
+      `${name}.priceScaleId`
+    );
+    const pane = orderedPanes.find(
+      (candidate) => candidate.paneId === paneId
+    );
+    if (pane == null) {
+      throw new TypeError(`${name}.paneId references an unknown pane`);
+    }
+    if (pane.priceScale.priceScaleId !== priceScaleId) {
+      throw new TypeError(
+        `${name}.priceScaleId must match the pane's price scale`
+      );
+    }
+    if (item.type !== 'histogram') {
+      return {
+        ...item,
+        seriesId,
+        paneId,
+        priceScaleId,
+        visible: item.visible ?? true,
+      };
+    }
+    const source = item.source ?? { type: 'data' as const };
+    if (
+      source.type === 'ohlcvVolume' &&
+      !knownOhlcSeriesIds.has(source.seriesId)
+    ) {
+      throw new TypeError(`${name}.source.seriesId must reference OHLC data`);
+    }
+    return {
+      ...item,
+      seriesId,
+      paneId,
+      priceScaleId,
+      visible: item.visible ?? true,
+      source,
+      appearance: {
+        color: color(
+          item.appearance?.color ?? theme.axisTextColor,
+          `${name}.appearance.color`
+        ),
+        upColor: color(
+          item.appearance?.upColor ?? theme.upColor,
+          `${name}.appearance.upColor`
+        ),
+        downColor: color(
+          item.appearance?.downColor ?? theme.downColor,
+          `${name}.appearance.downColor`
+        ),
+      },
+    };
+  });
 
   return {
     timeframeMs,
     initialVisibleCount,
     defaultScale,
     series: { type: seriesType },
+    panes: orderedPanes,
+    additionalSeries,
+    panesResizable: props.panesResizable ?? orderedPanes.length > 1,
     theme,
     appearance,
     formatters,

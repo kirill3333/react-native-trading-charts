@@ -1,9 +1,27 @@
 import NativeTradingCharts from './NativeTradingCharts';
-import { type OhlcCandle, type TradeEvent } from './types';
+import {
+  type AdditionalChartSeriesOptions,
+  type ChartSeriesDataPoint,
+  type HistogramPoint,
+  type OhlcCandle,
+  type TradeEvent,
+} from './types';
 
 function assertChartId(chartId: string) {
   if (typeof chartId !== 'string' || chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
+  }
+}
+
+function assertIdentifier(value: string, name: string) {
+  if (
+    typeof value !== 'string' ||
+    value.trim().length === 0 ||
+    !/^[A-Za-z0-9._-]+$/.test(value)
+  ) {
+    throw new TypeError(
+      `${name} must contain only letters, numbers, '.', '_' or '-'`
+    );
   }
 }
 
@@ -71,6 +89,77 @@ function unpackCandles(values: ReadonlyArray<number>): OhlcCandle[] {
   return candles;
 }
 
+function isOhlcPoint(point: ChartSeriesDataPoint): point is OhlcCandle {
+  return 'open' in point;
+}
+
+function validateHistogramPoint(point: HistogramPoint, index?: number) {
+  const prefix = index == null ? 'point' : `points[${index}]`;
+  assertFinite(point.timestamp, `${prefix}.timestamp`);
+  if (
+    point.timestamp < 0 ||
+    !Number.isSafeInteger(point.timestamp)
+  ) {
+    throw new TypeError(`${prefix}.timestamp must be a non-negative integer`);
+  }
+  assertFinite(point.value, `${prefix}.value`);
+}
+
+function packSeriesData(
+  points: ReadonlyArray<ChartSeriesDataPoint>,
+  single = false
+) {
+  if (single && points.length !== 1) {
+    throw new TypeError('updateSeriesData requires exactly one point');
+  }
+  if (points.length === 0) {
+    return { dataType: 'histogram', packed: [] as number[] };
+  }
+  const ohlc = isOhlcPoint(points[0]!);
+  const packed: number[] = [];
+  let previousTimestamp = -Infinity;
+  points.forEach((point, index) => {
+    if (isOhlcPoint(point) !== ohlc) {
+      throw new TypeError('series data must contain one homogeneous point type');
+    }
+    if (ohlc) {
+      validateCandle(point as OhlcCandle, index);
+      packCandle(point as OhlcCandle, packed);
+    } else {
+      validateHistogramPoint(point as HistogramPoint, index);
+      packed.push(point.timestamp, (point as HistogramPoint).value);
+    }
+    if (point.timestamp <= previousTimestamp) {
+      throw new TypeError('series data must have strictly increasing timestamps');
+    }
+    previousTimestamp = point.timestamp;
+  });
+  return { dataType: ohlc ? 'ohlc' : 'histogram', packed };
+}
+
+function validateSeriesOptions(options: AdditionalChartSeriesOptions) {
+  assertIdentifier(options.seriesId, 'options.seriesId');
+  if (options.seriesId === 'main') {
+    throw new TypeError("seriesId 'main' is reserved");
+  }
+  assertIdentifier(options.paneId, 'options.paneId');
+  assertIdentifier(options.priceScaleId, 'options.priceScaleId');
+  if (
+    options.type !== 'candlestick' &&
+    options.type !== 'hollowCandlestick' &&
+    options.type !== 'bar' &&
+    options.type !== 'histogram'
+  ) {
+    throw new TypeError('options.type is invalid');
+  }
+  if (
+    options.type === 'histogram' &&
+    options.source?.type === 'ohlcvVolume'
+  ) {
+    assertIdentifier(options.source.seriesId, 'options.source.seriesId');
+  }
+}
+
 function validateTrade(trade: TradeEvent, index?: number) {
   const prefix = index == null ? 'trade' : `trades[${index}]`;
   assertFinite(trade.timestamp, `${prefix}.timestamp`);
@@ -92,6 +181,79 @@ function validateTrade(trade: TradeEvent, index?: number) {
 }
 
 export const TradingCharts = {
+  addSeries(chartId: string, options: AdditionalChartSeriesOptions) {
+    assertChartId(chartId);
+    validateSeriesOptions(options);
+    NativeTradingCharts.addSeries(chartId, JSON.stringify(options));
+  },
+
+  setSeriesData(
+    chartId: string,
+    seriesId: string,
+    points: ReadonlyArray<ChartSeriesDataPoint>
+  ) {
+    assertChartId(chartId);
+    assertIdentifier(seriesId, 'seriesId');
+    const { dataType, packed } = packSeriesData(points);
+    NativeTradingCharts.setSeriesData(
+      chartId,
+      seriesId,
+      dataType,
+      packed
+    );
+  },
+
+  prependSeriesData(
+    chartId: string,
+    seriesId: string,
+    points: ReadonlyArray<ChartSeriesDataPoint>
+  ) {
+    assertChartId(chartId);
+    assertIdentifier(seriesId, 'seriesId');
+    const { dataType, packed } = packSeriesData(points);
+    NativeTradingCharts.prependSeriesData(
+      chartId,
+      seriesId,
+      dataType,
+      packed
+    );
+  },
+
+  updateSeriesData(
+    chartId: string,
+    seriesId: string,
+    point: ChartSeriesDataPoint
+  ) {
+    assertChartId(chartId);
+    assertIdentifier(seriesId, 'seriesId');
+    const { dataType, packed } = packSeriesData([point], true);
+    NativeTradingCharts.updateSeriesData(
+      chartId,
+      seriesId,
+      dataType,
+      packed
+    );
+  },
+
+  removeSeries(chartId: string, seriesId: string) {
+    assertChartId(chartId);
+    assertIdentifier(seriesId, 'seriesId');
+    if (seriesId === 'main') {
+      throw new TypeError("seriesId 'main' is reserved");
+    }
+    NativeTradingCharts.removeSeries(chartId, seriesId);
+  },
+
+  setPaneHeight(chartId: string, paneId: string, heightWeight: number) {
+    assertChartId(chartId);
+    assertIdentifier(paneId, 'paneId');
+    assertFinite(heightWeight, 'heightWeight');
+    if (heightWeight <= 0) {
+      throw new TypeError('heightWeight must be greater than 0');
+    }
+    NativeTradingCharts.setPaneHeight(chartId, paneId, heightWeight);
+  },
+
   setHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
     assertChartId(chartId);
     const packed: number[] = [];

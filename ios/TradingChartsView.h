@@ -12,6 +12,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applyCandleData:(NSArray<NSNumber *> *)data;
 - (void)applyTradeData:(NSArray<NSNumber *> *)data;
 - (void)applyTradesData:(NSArray<NSNumber *> *)data;
+- (void)addSeriesJson:(NSString *)json;
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+             seriesId:(NSString *)seriesId
+             dataType:(NSString *)dataType
+              prepend:(BOOL)prepend
+               update:(BOOL)update;
+- (void)removeSeries:(NSString *)seriesId;
+- (void)setPaneHeight:(NSString *)paneId weight:(double)weight;
 - (void)zoomByScale:(double)scale;
 - (void)fitChartContent;
 - (void)clearChartData;

@@ -23,6 +23,7 @@ import kotlin.math.pow
 import kotlin.math.round
 import kotlin.math.roundToInt
 
+@Suppress("LargeClass")
 internal class ChartOverlayView(context: Context) : View(context) {
   private data class PreparedValueFormat(
       val number: NumberFormat,
@@ -80,6 +81,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private lateinit var currentPriceValueFormat: PreparedValueFormat
   private lateinit var crosshairPriceValueFormat: PreparedValueFormat
   private lateinit var tooltipValueFormat: PreparedValueFormat
+  private var paneValueFormats: Map<String, PreparedValueFormat> = emptyMap()
+  private var paneVolumeFormats: Map<String, NumberFormat> = emptyMap()
   private lateinit var percentFormat: NumberFormat
   private lateinit var volumeFormat: NumberFormat
   private lateinit var axisDateFormats: List<SimpleDateFormat>
@@ -123,6 +126,20 @@ internal class ChartOverlayView(context: Context) : View(context) {
     currentPriceValueFormat = prepareValueFormat(config.currentPriceValueFormat)
     crosshairPriceValueFormat = prepareValueFormat(config.crosshairPriceValueFormat)
     tooltipValueFormat = prepareValueFormat(config.tooltipValueFormat)
+    paneValueFormats =
+        config.panes.associate { it.priceScaleId to prepareValueFormat(it.valueFormat) }
+    paneVolumeFormats =
+        config.panes
+            .filter { it.volumeFormat }
+            .associate { pane ->
+              pane.priceScaleId to
+                  NumberFormat.getNumberInstance(Locale.forLanguageTag(pane.valueFormat.locale))
+                      .apply {
+                        isGroupingUsed = pane.valueFormat.useGrouping
+                        minimumFractionDigits = 0
+                        maximumFractionDigits = pane.valueFormat.precision
+                      }
+            }
     val locale = Locale.forLanguageTag(config.valueFormat.locale)
     percentFormat =
         NumberFormat.getNumberInstance(locale).apply {
@@ -291,7 +308,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private fun formatPercent(value: Double, valid: Boolean) =
       if (valid) "${percentFormat.format(value)}%" else "—"
 
-  private fun formatVolume(value: Double): String {
+  private fun formatVolume(value: Double, formatter: NumberFormat = volumeFormat): String {
     val (scaled, suffix) =
         when {
           abs(value) >= 1e12 -> value / 1e12 to "T"
@@ -300,7 +317,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
           abs(value) >= 1e3 -> value / 1e3 to "K"
           else -> value to ""
         }
-    return volumeFormat.format(scaled) + suffix
+    return formatter.format(scaled) + suffix
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -311,30 +328,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
     extremumLinePaint.color = config.extremaConnectorColor
     extremumBackgroundPaint.color = config.extremaBackgroundColor
 
-    if (config.showXAxis) {
-      var lastRight = -Float.MAX_VALUE
-      val formatter = axisDateFormats[timeFormatIndex(frame)]
-      frame.xTicks.forEach { tick ->
-        val label = formatter.format(Date(tick.value.toLong()))
-        val width = xAxisPaint.measureText(label)
-        val x = max(2f, min(frame.width - width - 2f, tick.position - width / 2f))
-        if (x >= lastRight + 8f * density) {
-          canvas.drawText(label, x, frame.plotBottom + 16f * density, xAxisPaint)
-          lastRight = x + width
-        }
-      }
-    }
-
-    if (config.showYAxis) {
-      frame.yTicks.forEach { tick ->
-        val label = formatValue(tick.value, yAxisValueFormat)
-        val width = yAxisPaint.measureText(label)
-        val x =
-            if (config.yAxisOnRight) frame.plotRight + 6f * density
-            else max(2f, frame.plotLeft - width - 6f * density)
-        canvas.drawText(label, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
-      }
-    }
+    if (config.showXAxis) drawXAxis(canvas, frame)
+    if (config.showYAxis) drawYAxes(canvas, frame)
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
       drawBadge(
@@ -349,9 +344,22 @@ internal class ChartOverlayView(context: Context) : View(context) {
     drawExtremum(canvas, frame.visibleMinimum, frame, minimumLabelCache)
 
     if (frame.crosshairVisible) {
+      val activePane = frame.panes.getOrNull(frame.activePaneIndex) ?: frame.panes.firstOrNull()
+      val crosshairText =
+          if (activePane?.volumeFormat == true) {
+            formatVolume(
+                frame.crosshairPrice,
+                paneVolumeFormats[activePane.priceScaleId] ?: volumeFormat,
+            )
+          } else {
+            formatValue(
+                frame.crosshairPrice,
+                activePane?.let { paneValueFormats[it.priceScaleId] } ?: crosshairPriceValueFormat,
+            )
+          }
       drawBadge(
           canvas,
-          formatValue(frame.crosshairPrice, crosshairPriceValueFormat),
+          crosshairText,
           frame.crosshairY,
           config.crosshairPriceBackgroundColor,
           currentPriceBadge = false,
@@ -362,6 +370,42 @@ internal class ChartOverlayView(context: Context) : View(context) {
           frame,
       )
       if (config.showTooltip) drawTooltip(canvas, frame)
+    }
+  }
+
+  private fun drawXAxis(canvas: Canvas, frame: ChartSnapshot) {
+    val xAxisTop = frame.panes.lastOrNull()?.plotBottom ?: frame.plotBottom
+    var lastRight = -Float.MAX_VALUE
+    val formatter = axisDateFormats[timeFormatIndex(frame)]
+    frame.xTicks.forEach { tick ->
+      val label = formatter.format(Date(tick.value.toLong()))
+      val width = xAxisPaint.measureText(label)
+      val x = max(2f, min(frame.width - width - 2f, tick.position - width / 2f))
+      if (x >= lastRight + 8f * density) {
+        canvas.drawText(label, x, xAxisTop + 16f * density, xAxisPaint)
+        lastRight = x + width
+      }
+    }
+  }
+
+  private fun drawYAxes(canvas: Canvas, frame: ChartSnapshot) {
+    frame.panes.forEach { pane ->
+      if (!pane.scaleVisible) return@forEach
+      val valueFormatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
+      val volumeFormatter = paneVolumeFormats[pane.priceScaleId]
+      pane.yTicks.forEach { tick ->
+        val label =
+            if (pane.volumeFormat) {
+              formatVolume(tick.value, volumeFormatter ?: volumeFormat)
+            } else {
+              formatValue(tick.value, valueFormatter)
+            }
+        val width = yAxisPaint.measureText(label)
+        val x =
+            if (frame.config.yAxisOnRight) pane.plotRight + 6f * density
+            else max(2f, pane.plotLeft - width - 6f * density)
+        canvas.drawText(label, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
+      }
     }
   }
 
@@ -402,7 +446,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
         )
     val width = crosshairTimeTextPaint.measureText(text) + 12f * density
     val left = max(frame.plotLeft, min(frame.plotRight - width, frame.crosshairX - width / 2f))
-    val rect = RectF(left, frame.plotBottom, left + width, frame.plotBottom + height)
+    val xAxisTop = frame.panes.lastOrNull()?.plotBottom ?: frame.plotBottom
+    val rect = RectF(left, xAxisTop, left + width, xAxisTop + height)
     drawBackground(
         canvas,
         rect,

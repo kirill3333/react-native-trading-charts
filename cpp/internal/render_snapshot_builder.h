@@ -19,6 +19,8 @@ inline constexpr float kTopInset = 8.0f;
 struct SnapshotBuildInput {
   const ChartConfig& config;
   const std::vector<Candle>& candles;
+  const std::vector<PaneConfig>& panes;
+  const std::vector<SeriesData>& additional_series;
   float width = 0.0f;
   float height = 0.0f;
   double visible_x_min = 0.0;

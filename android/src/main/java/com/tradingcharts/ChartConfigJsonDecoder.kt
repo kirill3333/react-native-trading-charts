@@ -49,7 +49,8 @@ internal class ChartConfigJsonDecoder(
     config = decodeTooltipAppearance(config)
     config = decodeAxes(config)
     config = decodeFormats(config)
-    return decodeInteractions(config)
+    config = decodeInteractions(config)
+    return decodePanesAndSeries(config)
   }
 
   private fun decodeBase() =
@@ -236,6 +237,71 @@ internal class ChartConfigJsonDecoder(
               ),
       )
 
+  private fun decodePanesAndSeries(config: ChartConfig): ChartConfig {
+    val paneValues = root.optJSONArray("panes")
+    val panes =
+        if (paneValues == null) {
+          config.panes.map {
+            it.copy(
+                minHeightPx = it.minHeightPx * density,
+                scaleVisible = config.showYAxis,
+                scaleMarginTop = config.yScaleMarginTop,
+                scaleMarginBottom = config.yScaleMarginBottom,
+                valueFormat = config.valueFormat,
+            )
+          }
+        } else {
+          List(paneValues.length()) { index ->
+            val pane = paneValues.getJSONObject(index)
+            val scale = pane.getJSONObject("priceScale")
+            val margins = scale.getJSONObject("scaleMargins")
+            val format = paneValueFormat(scale.getJSONObject("valueFormat"), config.valueFormat)
+            PaneConfig(
+                paneId = pane.getString("paneId"),
+                priceScaleId = scale.getString("priceScaleId"),
+                heightWeight = pane.getDouble("heightWeight"),
+                minHeightPx = pane.getDouble("minHeight").toFloat() * density,
+                scaleVisible = scale.optBoolean("visible", true),
+                scaleMarginTop = margins.getDouble("top"),
+                scaleMarginBottom = margins.getDouble("bottom"),
+                volumeFormat = format.type == "volume",
+                valueFormat = format,
+            )
+          }
+        }
+    val seriesValues = root.optJSONArray("additionalSeries")
+    val additionalSeries =
+        if (seriesValues == null) {
+          emptyList()
+        } else {
+          List(seriesValues.length()) { index ->
+            seriesConfig(
+                seriesValues.getJSONObject(index),
+                config,
+                declarative = true,
+            )
+          }
+        }
+    return config.copy(
+        panes = panes,
+        additionalSeries = additionalSeries,
+        panesResizable = root.optBoolean("panesResizable", panes.size > 1),
+    )
+  }
+
+  private fun paneValueFormat(json: JSONObject, fallback: ValueFormat): ValueFormat {
+    if (json.optString("type") != "volume") return valueFormat(json)
+    return ValueFormat(
+        type = "volume",
+        precision = json.optInt("precision", 2),
+        significantDigits = 3,
+        minMove = 1.0,
+        locale = json.optString("locale", fallback.locale),
+        currencySymbol = "",
+        useGrouping = json.optBoolean("useGrouping", true),
+    )
+  }
+
   private fun textStyle(json: JSONObject, defaultColor: Int) =
       TextStyleConfig(
           color = if (json.has("color")) chartColor(json.getString("color")) else defaultColor,
@@ -273,20 +339,59 @@ internal class ChartConfigJsonDecoder(
       )
 
   private fun chartColor(value: String): Int {
-    val raw = value.removePrefix("#").toLong(16)
-    return if (value.length == 7) {
-      Color.rgb(
-          ((raw shr 16) and 0xff).toInt(),
-          ((raw shr 8) and 0xff).toInt(),
-          (raw and 0xff).toInt(),
-      )
-    } else {
-      Color.argb(
-          (raw and 0xff).toInt(),
-          ((raw shr 24) and 0xff).toInt(),
-          ((raw shr 16) and 0xff).toInt(),
-          ((raw shr 8) and 0xff).toInt(),
-      )
-    }
+    return parseChartColor(value)
+  }
+}
+
+internal fun seriesConfigFromJson(
+    json: String,
+    fallback: ChartConfig,
+    declarative: Boolean = false,
+): SeriesConfig = seriesConfig(JSONObject(json), fallback, declarative)
+
+private fun seriesConfig(
+    json: JSONObject,
+    fallback: ChartConfig,
+    declarative: Boolean,
+): SeriesConfig {
+  val appearance = json.optJSONObject("appearance")
+  val source = json.optJSONObject("source")
+  return SeriesConfig(
+      seriesId = json.getString("seriesId"),
+      type = json.getString("type"),
+      paneId = json.getString("paneId"),
+      priceScaleId = json.getString("priceScaleId"),
+      visible = json.optBoolean("visible", true),
+      sourceType = source?.optString("type", "data") ?: "data",
+      sourceSeriesId = source?.optString("seriesId", "") ?: "",
+      color =
+          appearance?.optString("color")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+              ?: fallback.axisTextColor,
+      upColor =
+          appearance?.optString("upColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+              ?: fallback.upColor,
+      downColor =
+          appearance?.optString("downColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+              ?: fallback.downColor,
+      declarative = declarative,
+      lineWidthPx = fallback.barLineWidthPx,
+  )
+}
+
+private fun parseChartColor(value: String): Int {
+  val raw = value.removePrefix("#").toLong(16)
+  return if (value.length == 7) {
+    Color.rgb(
+        ((raw shr 16) and 0xff).toInt(),
+        ((raw shr 8) and 0xff).toInt(),
+        (raw and 0xff).toInt(),
+    )
+  } else {
+    Color.argb(
+        (raw and 0xff).toInt(),
+        ((raw shr 24) and 0xff).toInt(),
+        ((raw shr 16) and 0xff).toInt(),
+        ((raw shr 8) and 0xff).toInt(),
+    )
   }
 }

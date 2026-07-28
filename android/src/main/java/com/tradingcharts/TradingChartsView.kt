@@ -20,6 +20,7 @@ private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
   return this?.contentEquals(other) == true
 }
 
+@Suppress("TooManyFunctions")
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
   private val renderer = ChartRenderer()
@@ -47,6 +48,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var lastSelectedCandle: DoubleArray? = null
   private var pendingScaleChange = false
   private var pendingYAxisScaleChange = false
+  private val declarativeSeriesIds = mutableSetOf<String>()
+  private var activeSeparatorIndex = -1
+  private var separatorLastY = 0f
+  private var pendingPaneResizeIndex = -1
+  private var pendingPaneResizeFinished = false
 
   private val flingFrame =
       object : Runnable {
@@ -138,7 +144,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
                     if (isPointInYAxis(first)) {
                       if (
                           config.allowYAxisScale &&
-                              ChartEngineNative.nativeScaleY(engineHandle, -distanceY)
+                              ChartEngineNative.nativeScaleYAt(
+                                  engineHandle,
+                                  -distanceY,
+                                  current.y,
+                              )
                       ) {
                         pendingYAxisScaleChange = true
                         shouldScheduleFrame = true
@@ -281,6 +291,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       pendingScaleChange = false
       pendingYAxisScaleChange = false
       ChartEngineNative.setConfig(engineHandle, config)
+      reconcileDeclarativeSeries()
       scheduleFrame()
     } catch (error: JSONException) {
       logInvalidConfig(error)
@@ -322,6 +333,65 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   fun applyTrades(values: DoubleArray) {
     logStatus("updateTrades", ChartEngineNative.nativeUpdateTrades(engineHandle, values))
     scheduleFrame()
+  }
+
+  fun addSeries(seriesJson: String) {
+    try {
+      val series = seriesConfigFromJson(seriesJson, config)
+      logStatus("addSeries", ChartEngineNative.addSeries(engineHandle, series))
+      scheduleFrame()
+    } catch (error: JSONException) {
+      logInvalidConfig(error)
+    } catch (error: IllegalArgumentException) {
+      logInvalidConfig(error)
+    }
+  }
+
+  fun setSeriesData(
+      seriesId: String,
+      dataType: String,
+      values: DoubleArray,
+      prepend: Boolean,
+      update: Boolean,
+  ) {
+    val histogram = dataType == "histogram"
+    val status =
+        when {
+          update ->
+              ChartEngineNative.nativeUpdateSeriesData(
+                  engineHandle,
+                  seriesId,
+                  histogram,
+                  values,
+              )
+          prepend ->
+              ChartEngineNative.nativePrependSeriesData(
+                  engineHandle,
+                  seriesId,
+                  histogram,
+                  values,
+              )
+          else ->
+              ChartEngineNative.nativeSetSeriesData(
+                  engineHandle,
+                  seriesId,
+                  histogram,
+                  values,
+              )
+        }
+    logStatus("seriesData", status)
+    scheduleFrame()
+  }
+
+  fun removeSeries(seriesId: String) {
+    ChartEngineNative.nativeRemoveSeries(engineHandle, seriesId)
+    scheduleFrame()
+  }
+
+  fun setPaneHeight(paneId: String, heightWeight: Double) {
+    if (ChartEngineNative.nativeSetPaneHeight(engineHandle, paneId, heightWeight)) {
+      scheduleFrame()
+    }
   }
 
   fun zoom(scale: Double) {
@@ -375,6 +445,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       emitVisibleRangeChange(snapshot)
       emitSelectedCandleChange(snapshot)
       emitScaleChanges(snapshot)
+      emitPaneResize(snapshot)
     }
   }
 
@@ -438,7 +509,46 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
               snapshot.yAxisScale,
           )
       )
+      val pane = snapshot.panes.getOrNull(snapshot.activePaneIndex) ?: snapshot.panes.firstOrNull()
+      if (pane != null) {
+        dispatcher.dispatchEvent(
+            PriceScaleChangeEvent(
+                surfaceId,
+                id,
+                pane.paneId,
+                pane.priceScaleId,
+                pane.yAxisScale,
+            )
+        )
+      }
     }
+  }
+
+  private fun emitPaneResize(snapshot: ChartSnapshot) {
+    val separatorIndex = pendingPaneResizeIndex
+    val first = snapshot.panes.getOrNull(separatorIndex)
+    val second = snapshot.panes.getOrNull(separatorIndex + 1)
+    val reactContext = context as? ReactContext
+    val hasTarget = separatorIndex >= 0 && id != NO_ID
+    val hasPayload = first != null && second != null && reactContext != null
+    if (!hasTarget || !hasPayload) {
+      return
+    }
+    pendingPaneResizeIndex = -1
+    val finished = pendingPaneResizeFinished
+    pendingPaneResizeFinished = false
+    UIManagerHelper.getEventDispatcher(reactContext)
+        ?.dispatchEvent(
+            PaneResizeEvent(
+                UIManagerHelper.getSurfaceId(this),
+                id,
+                first.paneId,
+                first.heightWeight,
+                second.paneId,
+                second.heightWeight,
+                finished,
+            )
+        )
   }
 
   override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -452,11 +562,49 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       suppressFlingForTouch = false
       crosshairGestureActive = false
       stopFling()
+      if (config.panesResizable) {
+        activeSeparatorIndex =
+            ChartEngineNative.nativeSeparatorAt(
+                engineHandle,
+                event.y,
+                12f * resources.displayMetrics.density,
+            )
+        if (activeSeparatorIndex >= 0) {
+          suppressFlingForTouch = true
+          separatorLastY = event.y
+        }
+      }
     }
     parent?.requestDisallowInterceptTouchEvent(
         event.actionMasked != MotionEvent.ACTION_UP &&
             event.actionMasked != MotionEvent.ACTION_CANCEL
     )
+    if (activeSeparatorIndex >= 0) {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_MOVE -> {
+          val delta = event.y - separatorLastY
+          separatorLastY = event.y
+          if (
+              ChartEngineNative.nativeResizePaneSeparator(
+                  engineHandle,
+                  activeSeparatorIndex,
+                  delta,
+              )
+          ) {
+            pendingPaneResizeIndex = activeSeparatorIndex
+            scheduleFrame()
+          }
+        }
+        MotionEvent.ACTION_UP,
+        MotionEvent.ACTION_CANCEL -> {
+          pendingPaneResizeIndex = activeSeparatorIndex
+          pendingPaneResizeFinished = true
+          activeSeparatorIndex = -1
+          scheduleFrame()
+        }
+      }
+      return true
+    }
     scaleDetector.onTouchEvent(event)
     gestureDetector.onTouchEvent(event)
     when (event.actionMasked) {
@@ -512,6 +660,21 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
     registeredChartId = null
     ChartEngineNative.nativeDestroy(engineHandle)
+  }
+
+  private fun reconcileDeclarativeSeries() {
+    val requestedIds = config.additionalSeries.mapTo(mutableSetOf()) { it.seriesId }
+    (declarativeSeriesIds - requestedIds).forEach {
+      ChartEngineNative.nativeRemoveSeries(engineHandle, it)
+    }
+    val nextIds = mutableSetOf<String>()
+    config.additionalSeries.forEach {
+      val status = ChartEngineNative.addSeries(engineHandle, it)
+      logStatus("additionalSeries", status)
+      if (status == 0) nextIds += it.seriesId
+    }
+    declarativeSeriesIds.clear()
+    declarativeSeriesIds.addAll(nextIds)
   }
 
   companion object {

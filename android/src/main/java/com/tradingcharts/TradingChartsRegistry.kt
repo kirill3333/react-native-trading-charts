@@ -17,6 +17,20 @@ internal object TradingChartsRegistry {
 
     data class Trades(val values: DoubleArray) : Command
 
+    data class AddSeries(val json: String) : Command
+
+    data class SeriesData(
+        val seriesId: String,
+        val dataType: String,
+        val values: DoubleArray,
+        val prepend: Boolean,
+        val update: Boolean,
+    ) : Command
+
+    data class RemoveSeries(val seriesId: String) : Command
+
+    data class PaneHeight(val paneId: String, val heightWeight: Double) : Command
+
     data class Zoom(val scale: Double) : Command
 
     data object FitContent : Command
@@ -62,6 +76,35 @@ internal object TradingChartsRegistry {
   fun updateTrades(chartId: String, values: DoubleArray) =
       enqueue(chartId, Command.Trades(values.copyOf()))
 
+  fun addSeries(chartId: String, seriesJson: String) =
+      enqueue(chartId, Command.AddSeries(seriesJson))
+
+  @Suppress("LongParameterList")
+  fun setSeriesData(
+      chartId: String,
+      seriesId: String,
+      dataType: String,
+      values: DoubleArray,
+      prepend: Boolean = false,
+      update: Boolean = false,
+  ) =
+      enqueue(
+          chartId,
+          Command.SeriesData(
+              seriesId,
+              dataType,
+              values.copyOf(),
+              prepend,
+              update,
+          ),
+      )
+
+  fun removeSeries(chartId: String, seriesId: String) =
+      enqueue(chartId, Command.RemoveSeries(seriesId))
+
+  fun setPaneHeight(chartId: String, paneId: String, heightWeight: Double) =
+      enqueue(chartId, Command.PaneHeight(paneId, heightWeight))
+
   fun zoom(chartId: String, scale: Double) = enqueue(chartId, Command.Zoom(scale))
 
   fun fitContent(chartId: String) = enqueue(chartId, Command.FitContent)
@@ -81,7 +124,14 @@ internal object TradingChartsRegistry {
 
   fun clear(chartId: String) = onMain {
     val entry = entries[chartId] ?: return@onMain
-    entry.pending.clear()
+    entry.pending.removeAll {
+      it is Command.History ||
+          it is Command.PrependHistory ||
+          it is Command.Candle ||
+          it is Command.Trade ||
+          it is Command.Trades ||
+          it is Command.SeriesData
+    }
     entry.view?.get()?.clearData()
     if (entry.view?.get() == null) entries.remove(chartId)
   }
@@ -92,7 +142,19 @@ internal object TradingChartsRegistry {
     if (view != null) {
       apply(view, command)
     } else {
-      if (command is Command.History) entry.pending.clear()
+      if (command is Command.History) {
+        entry.pending.removeAll {
+          it is Command.History ||
+              it is Command.PrependHistory ||
+              it is Command.Candle ||
+              it is Command.Trade ||
+              it is Command.Trades
+        }
+      } else if (command is Command.SeriesData && !command.prepend && !command.update) {
+        entry.pending.removeAll {
+          it is Command.SeriesData && it.seriesId == command.seriesId
+        }
+      }
       entry.pending += command
     }
   }
@@ -104,6 +166,17 @@ internal object TradingChartsRegistry {
       is Command.Candle -> view.applyCandle(command.values)
       is Command.Trade -> view.applyTrade(command.values)
       is Command.Trades -> view.applyTrades(command.values)
+      is Command.AddSeries -> view.addSeries(command.json)
+      is Command.SeriesData ->
+          view.setSeriesData(
+              command.seriesId,
+              command.dataType,
+              command.values,
+              command.prepend,
+              command.update,
+          )
+      is Command.RemoveSeries -> view.removeSeries(command.seriesId)
+      is Command.PaneHeight -> view.setPaneHeight(command.paneId, command.heightWeight)
       is Command.Zoom -> view.zoom(command.scale)
       is Command.FitContent -> view.fitContent()
     }

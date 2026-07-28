@@ -28,12 +28,28 @@ export type ScaleChangeNativeEvent = Readonly<{
   scale: CodegenTypes.Double;
 }>;
 
+export type PaneResizeNativeEvent = Readonly<{
+  firstPaneId: string;
+  firstHeightWeight: CodegenTypes.Double;
+  secondPaneId: string;
+  secondHeightWeight: CodegenTypes.Double;
+  finished: boolean;
+}>;
+
+export type PriceScaleChangeNativeEvent = Readonly<{
+  paneId: string;
+  priceScaleId: string;
+  scale: CodegenTypes.Double;
+}>;
+
 export interface NativeProps extends ViewProps {
   chartId: string;
   configJson: string;
   onVisibleRangeChange?: CodegenTypes.DirectEventHandler<VisibleRangeChangeNativeEvent>;
   onScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
   onYAxisScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
+  onPaneResize?: CodegenTypes.DirectEventHandler<PaneResizeNativeEvent>;
+  onPriceScaleChange?: CodegenTypes.DirectEventHandler<PriceScaleChangeNativeEvent>;
   onSelectedCandleChange?: CodegenTypes.DirectEventHandler<SelectedCandleChangeNativeEvent>;
 }
 

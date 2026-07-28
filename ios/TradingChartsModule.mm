@@ -34,6 +34,58 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] updateTrades:trades chartId:chartId];
 }
 
+- (void)addSeries:(NSString *)chartId seriesJson:(NSString *)seriesJson {
+  [[TradingChartsRegistry shared] addSeries:seriesJson chartId:chartId];
+}
+
+- (void)setSeriesData:(NSString *)chartId
+             seriesId:(NSString *)seriesId
+             dataType:(NSString *)dataType
+                 data:(NSArray<NSNumber *> *)data {
+  [[TradingChartsRegistry shared] setSeriesData:data
+                                       chartId:chartId
+                                      seriesId:seriesId
+                                      dataType:dataType
+                                       prepend:NO
+                                        update:NO];
+}
+
+- (void)prependSeriesData:(NSString *)chartId
+                 seriesId:(NSString *)seriesId
+                 dataType:(NSString *)dataType
+                     data:(NSArray<NSNumber *> *)data {
+  [[TradingChartsRegistry shared] setSeriesData:data
+                                       chartId:chartId
+                                      seriesId:seriesId
+                                      dataType:dataType
+                                       prepend:YES
+                                        update:NO];
+}
+
+- (void)updateSeriesData:(NSString *)chartId
+                seriesId:(NSString *)seriesId
+                dataType:(NSString *)dataType
+                    data:(NSArray<NSNumber *> *)data {
+  [[TradingChartsRegistry shared] setSeriesData:data
+                                       chartId:chartId
+                                      seriesId:seriesId
+                                      dataType:dataType
+                                       prepend:NO
+                                        update:YES];
+}
+
+- (void)removeSeries:(NSString *)chartId seriesId:(NSString *)seriesId {
+  [[TradingChartsRegistry shared] removeSeries:seriesId chartId:chartId];
+}
+
+- (void)setPaneHeight:(NSString *)chartId
+               paneId:(NSString *)paneId
+         heightWeight:(double)heightWeight {
+  [[TradingChartsRegistry shared] setPaneHeight:paneId
+                                         weight:heightWeight
+                                        chartId:chartId];
+}
+
 - (void)getCandles:(NSString *)chartId
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject {

@@ -28,6 +28,62 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.updateTrades(chartId, trades.toDoubles())
   }
 
+  override fun addSeries(chartId: String, seriesJson: String) {
+    TradingChartsRegistry.addSeries(chartId, seriesJson)
+  }
+
+  override fun setSeriesData(
+      chartId: String,
+      seriesId: String,
+      dataType: String,
+      data: ReadableArray,
+  ) {
+    TradingChartsRegistry.setSeriesData(
+        chartId,
+        seriesId,
+        dataType,
+        data.toDoubles(),
+    )
+  }
+
+  override fun prependSeriesData(
+      chartId: String,
+      seriesId: String,
+      dataType: String,
+      data: ReadableArray,
+  ) {
+    TradingChartsRegistry.setSeriesData(
+        chartId,
+        seriesId,
+        dataType,
+        data.toDoubles(),
+        prepend = true,
+    )
+  }
+
+  override fun updateSeriesData(
+      chartId: String,
+      seriesId: String,
+      dataType: String,
+      point: ReadableArray,
+  ) {
+    TradingChartsRegistry.setSeriesData(
+        chartId,
+        seriesId,
+        dataType,
+        point.toDoubles(),
+        update = true,
+    )
+  }
+
+  override fun removeSeries(chartId: String, seriesId: String) {
+    TradingChartsRegistry.removeSeries(chartId, seriesId)
+  }
+
+  override fun setPaneHeight(chartId: String, paneId: String, heightWeight: Double) {
+    TradingChartsRegistry.setPaneHeight(chartId, paneId, heightWeight)
+  }
+
   override fun getCandles(chartId: String, promise: Promise) {
     TradingChartsRegistry.getCandles(
         chartId,

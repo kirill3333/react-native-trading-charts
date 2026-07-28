@@ -28,8 +28,11 @@ using facebook::react::concreteComponentDescriptorProvider;
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::PaneConfig;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
+using trading_charts::SeriesConfig;
+using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 using TCColor = trading_charts::Color;
@@ -51,10 +54,6 @@ os_log_t TCPerformanceLog() {
 
 UIColor *TCUIColor(const TCColor &color) {
   return [UIColor colorWithRed:color.r green:color.g blue:color.b alpha:color.a];
-}
-
-bool TCColorEqual(const TCColor &lhs, const TCColor &rhs) {
-  return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b && lhs.a == rhs.a;
 }
 
 TCColor TCColorFromHex(NSString *value, TCColor fallback) {
@@ -444,14 +443,13 @@ struct TCTextPresentation {
   CALayer *_tooltipContainer;
   CALayer *_extremaContainer;
   NSMutableArray<TCTextLayerItem *> *_xAxisLayers;
-  NSMutableArray<TCTextLayerItem *> *_yAxisLayers;
+  NSMutableDictionary<NSString *, NSMutableArray<TCTextLayerItem *> *> *_yAxisLayerPools;
   NSMutableArray<TCTextLayerItem *> *_extremaLayers;
   NSMutableArray<CALayer *> *_extremaConnectorLayers;
   NSMutableArray<CALayer *> *_extremaBackgroundLayers;
   NSMutableArray<TCTextLayerItem *> *_tooltipLineLayers;
   NSMutableArray<TCTextLayerItem *> *_tooltipValueLayers;
   std::vector<TCTextPresentation> _xAxisPresentations;
-  std::vector<TCTextPresentation> _yAxisPresentations;
   std::vector<TCTextPresentation> _extremaPresentations;
   std::vector<CGRect> _extremaConnectorFrames;
   std::vector<NSUInteger> _presentationAssignments;
@@ -502,6 +500,7 @@ struct TCTextPresentation {
   bool _tooltipStyleReady;
   NSDictionary *_appearanceConfig;
   NSDictionary *_formattersConfig;
+  NSArray<NSDictionary *> *_panesConfig;
   NSUInteger _presentationVersion;
   NSUInteger _preparedFormatterVersion;
   NSUInteger _preparedStyleVersion;
@@ -518,7 +517,7 @@ struct TCTextPresentation {
   NSCache<NSString *, NSString *> *_formattedValueCache;
   NSCache<NSString *, NSString *> *_formattedTimeCache;
   NSCache<NSNumber *, NSString *> *_formattedPercentageCache;
-  NSCache<NSNumber *, NSString *> *_formattedVolumeCache;
+  NSCache<NSString *, NSString *> *_formattedVolumeCache;
   NSCache<NSString *, TCTextLayout *> *_axisLayoutCache;
   NSCache<NSString *, TCTextLayout *> *_badgeLayoutCache;
   NSCache<NSString *, TCTextLayout *> *_timeBadgeLayoutCache;
@@ -559,7 +558,7 @@ struct TCTextPresentation {
     [self.layer addSublayer:_extremaContainer];
 
     _xAxisLayers = [NSMutableArray array];
-    _yAxisLayers = [NSMutableArray array];
+    _yAxisLayerPools = [NSMutableDictionary dictionary];
     _extremaLayers = [NSMutableArray array];
     _extremaConnectorLayers = [NSMutableArray array];
     _extremaBackgroundLayers = [NSMutableArray array];
@@ -649,6 +648,8 @@ struct TCTextPresentation {
       ? root[@"appearance"] : @{};
   _formattersConfig = [root[@"formatters"] isKindOfClass:NSDictionary.class]
       ? root[@"formatters"] : @{};
+  _panesConfig = [root[@"panes"] isKindOfClass:NSArray.class]
+      ? root[@"panes"] : @[];
   ++_presentationVersion;
 }
 
@@ -659,13 +660,23 @@ struct TCTextPresentation {
   _formattersReady = true;
 
   NSDictionary *price = _formattersConfig[@"price"] ?: @{};
-  _valueFormatters = @{
+  NSMutableDictionary<NSString *, TCValueFormatter *> *valueFormatters =
+      [@{
     @"yAxis" : [self valueFormatterFromJson:price[@"yAxis"] ?: @{} fallback:config],
     @"priceExtremes" : [self valueFormatterFromJson:price[@"priceExtremes"] ?: @{} fallback:config],
     @"currentPrice" : [self valueFormatterFromJson:price[@"currentPrice"] ?: @{} fallback:config],
     @"crosshairPrice" : [self valueFormatterFromJson:price[@"crosshairPrice"] ?: @{} fallback:config],
     @"tooltip" : [self valueFormatterFromJson:price[@"tooltip"] ?: @{} fallback:config],
-  };
+  } mutableCopy];
+  for (NSDictionary *pane in _panesConfig) {
+    NSDictionary *scale = pane[@"priceScale"];
+    NSString *scaleId = scale[@"priceScaleId"];
+    if (![scaleId isKindOfClass:NSString.class] || scaleId.length == 0) continue;
+    NSString *key = [@"scale:" stringByAppendingString:scaleId];
+    valueFormatters[key] =
+        [self valueFormatterFromJson:scale[@"valueFormat"] ?: @{} fallback:config];
+  }
+  _valueFormatters = valueFormatters;
 
   TCValueFormatter *axisFormatter = _valueFormatters[@"yAxis"];
   _numberFormatter = axisFormatter.numberFormatter;
@@ -913,8 +924,9 @@ struct TCTextPresentation {
   return result;
 }
 
-- (NSString *)formatVolume:(double)value {
-  NSNumber *cacheKey = @(value);
+- (NSString *)formatVolume:(double)value scaleId:(NSString *)scaleId {
+  NSString *cacheKey =
+      [NSString stringWithFormat:@"%@\x1f%@", scaleId ?: @"main", @(value).stringValue];
   NSString *cached = [_formattedVolumeCache objectForKey:cacheKey];
   if (cached) return cached;
   const double magnitude = fabs(value);
@@ -924,11 +936,20 @@ struct TCTextPresentation {
   else if (magnitude >= 1e9) { scaled = value / 1e9; suffix = @"B"; }
   else if (magnitude >= 1e6) { scaled = value / 1e6; suffix = @"M"; }
   else if (magnitude >= 1e3) { scaled = value / 1e3; suffix = @"K"; }
-  NSString *number = [_volumeFormatter stringFromNumber:@(scaled)] ?:
+  NSString *formatterKey =
+      [@"scale:" stringByAppendingString:(scaleId ?: @"main")];
+  TCValueFormatter *paneFormatter = _valueFormatters[formatterKey];
+  NSNumberFormatter *numberFormatter =
+      paneFormatter.numberFormatter ?: _volumeFormatter;
+  NSString *number = [numberFormatter stringFromNumber:@(scaled)] ?:
       [NSString stringWithFormat:@"%g", scaled];
   NSString *result = [number stringByAppendingString:suffix];
   [_formattedVolumeCache setObject:result forKey:cacheKey];
   return result;
+}
+
+- (NSString *)formatVolume:(double)value {
+  return [self formatVolume:value scaleId:@"main"];
 }
 
 - (NSUInteger)timeFormatIndexForSnapshot:(const RenderSnapshot &)snapshot {
@@ -1174,7 +1195,8 @@ struct TCTextPresentation {
   badge.backgroundLayer.borderColor = TCUIColor(border.color).CGColor;
   badge.backgroundLayer.cornerRadius = border.radius;
   badge.backgroundLayer.hidden = NO;
-  CGRect textFrame = CGRectMake(backgroundFrame.origin.x + 6,
+  CGFloat textX = CGRectGetMidX(backgroundFrame) - layout.size.width * 0.5;
+  CGRect textFrame = CGRectMake(textX,
                                 backgroundFrame.origin.y + (height - layout.size.height) * 0.5,
                                 layout.size.width, layout.size.height);
   [self applyLayout:layout toItem:badge.textItem frame:textFrame metrics:metrics];
@@ -1263,7 +1285,10 @@ struct TCTextPresentation {
         CGFloat x = MAX(2, MIN(current.width - layout.size.width - 2,
                               tick.position - layout.size.width / 2));
         if (x < lastRight + 8) continue;
-        CGRect frame = CGRectMake(x, current.plot.bottom + 5,
+        const CGFloat xAxisTop = current.panes.empty()
+            ? current.plot.bottom
+            : current.panes.back().plot.bottom;
+        CGRect frame = CGRectMake(x, xAxisTop + 5,
                                   layout.size.width, layout.size.height);
         _xAxisPresentations.emplace_back(layout, frame);
         lastRight = x + layout.size.width;
@@ -1274,24 +1299,49 @@ struct TCTextPresentation {
                  parentLayer:_axisContainer metrics:&metrics
              axisTextUpdates:&metrics.xTextUpdates];
 
-    _yAxisPresentations.clear();
-    _yAxisPresentations.reserve(current.y_ticks.size());
+    NSMutableSet<NSString *> *activeYAxisPoolKeys = [NSMutableSet set];
     if (config.show_y_axis) {
-      for (const auto &tick : current.y_ticks) {
-        NSString *label = [self formatValue:tick.value role:@"yAxis" snapshot:current];
-        TCTextLayout *layout = [self layoutForText:label attributes:_yAxisAttributes
-                                             cache:_axisLayoutCache metrics:&metrics];
-        CGFloat x = config.y_axis_on_right ? current.plot.right + 6
-                                        : current.plot.left - layout.size.width - 6;
-        CGRect frame = CGRectMake(MAX(2, x), tick.position - layout.size.height / 2,
-                                  layout.size.width, layout.size.height);
-        _yAxisPresentations.emplace_back(layout, frame);
-        ++visibleStaticLabels;
+      for (const auto &pane : current.panes) {
+        if (!pane.scale_visible) continue;
+        NSString *paneId =
+            [NSString stringWithUTF8String:pane.pane_id.c_str()] ?: @"main";
+        NSString *scaleId =
+            [NSString stringWithUTF8String:pane.price_scale_id.c_str()] ?: @"main";
+        NSString *poolKey =
+            [NSString stringWithFormat:@"%@\x1f%@", paneId, scaleId];
+        [activeYAxisPoolKeys addObject:poolKey];
+        NSMutableArray<TCTextLayerItem *> *pool = _yAxisLayerPools[poolKey];
+        if (!pool) {
+          pool = [NSMutableArray array];
+          _yAxisLayerPools[poolKey] = pool;
+        }
+        std::vector<TCTextPresentation> panePresentations;
+        panePresentations.reserve(pane.y_tick_count);
+        NSString *scaleRole = [@"scale:" stringByAppendingString:scaleId];
+        for (size_t index = 0; index < pane.y_tick_count; ++index) {
+          const auto &tick = current.pane_y_ticks[pane.y_tick_offset + index];
+          NSString *label = pane.volume_format
+              ? [self formatVolume:tick.value scaleId:scaleId]
+              : [self formatValue:tick.value role:scaleRole snapshot:current];
+          TCTextLayout *layout = [self layoutForText:label attributes:_yAxisAttributes
+                                               cache:_axisLayoutCache metrics:&metrics];
+          CGFloat x = config.y_axis_on_right ? pane.plot.right + 6
+                                          : pane.plot.left - layout.size.width - 6;
+          CGRect frame = CGRectMake(MAX(2, x), tick.position - layout.size.height / 2,
+                                    layout.size.width, layout.size.height);
+          panePresentations.emplace_back(layout, frame);
+          ++visibleStaticLabels;
+        }
+        [self applyPresentations:panePresentations toPool:pool
+                     parentLayer:_axisContainer metrics:&metrics
+                 axisTextUpdates:&metrics.yTextUpdates];
       }
     }
-    [self applyPresentations:_yAxisPresentations toPool:_yAxisLayers
-                 parentLayer:_axisContainer metrics:&metrics
-             axisTextUpdates:&metrics.yTextUpdates];
+    for (NSString *poolKey in _yAxisLayerPools) {
+      if (![activeYAxisPoolKeys containsObject:poolKey]) {
+        [self hideItemsInPool:_yAxisLayerPools[poolKey] fromIndex:0];
+      }
+    }
 
     _extremaPresentations.clear();
     _extremaConnectorFrames.clear();
@@ -1350,7 +1400,20 @@ struct TCTextPresentation {
 
   const NSUInteger crosshairTextUpdatesBefore = metrics.textUpdates;
   if (current.crosshair_visible) {
-    NSString *price = [self formatValue:current.crosshair_price role:@"crosshairPrice" snapshot:current];
+    const BOOL volumePane =
+        current.active_pane_index < current.panes.size() &&
+        current.panes[current.active_pane_index].volume_format;
+    NSString *activeScaleId = current.active_pane_index < current.panes.size()
+        ? ([NSString stringWithUTF8String:
+              current.panes[current.active_pane_index].price_scale_id.c_str()] ?: @"main")
+        : @"main";
+    NSString *price = volumePane
+        ? [self formatVolume:current.crosshair_price scaleId:activeScaleId]
+        : [self formatValue:current.crosshair_price
+                       role:current.active_pane_index == 0
+                           ? @"crosshairPrice"
+                           : [@"scale:" stringByAppendingString:activeScaleId]
+                   snapshot:current];
     [self setBadge:_crosshairPriceBadge
               text:price
                  y:current.crosshair_y
@@ -1385,10 +1448,13 @@ struct TCTextPresentation {
                                                cache:_timeBadgeLayoutCache
                                              metrics:&metrics];
       const CGFloat timeHeight = MAX(20, timeLayout.size.height + 6);
+      const CGFloat xAxisTop = current.panes.empty()
+          ? current.plot.bottom
+          : current.panes.back().plot.bottom;
       CGRect timeFrame = CGRectMake(
           MAX(current.plot.left, MIN(current.plot.right - timeLayout.size.width - 12,
                                      current.crosshair_x - timeLayout.size.width / 2 - 6)),
-          current.plot.bottom, timeLayout.size.width + 12, timeHeight);
+          xAxisTop, timeLayout.size.width + 12, timeHeight);
       if (!CGRectEqualToRect(_crosshairTimeBadge.backgroundLayer.frame, timeFrame)) {
         _crosshairTimeBadge.backgroundLayer.frame = timeFrame;
         ++metrics.frameUpdates;
@@ -1579,12 +1645,25 @@ struct TCTextPresentation {
     std::shared_ptr<const RenderSnapshot> snapshot);
 @property(nonatomic, copy, nullable) void (^yAxisScaleDidChange)(
     std::shared_ptr<const RenderSnapshot> snapshot);
+@property(nonatomic, copy, nullable) void (^paneResizeDidChange)(
+    std::shared_ptr<const RenderSnapshot> snapshot, size_t separatorIndex,
+    BOOL finished);
+@property(nonatomic, copy, nullable) void (^priceScaleDidChange)(
+    std::shared_ptr<const RenderSnapshot> snapshot);
 - (void)applyConfigJson:(NSString *)json;
 - (void)applyHistory:(NSArray<NSNumber *> *)data;
 - (void)prependHistory:(NSArray<NSNumber *> *)data;
 - (void)applyCandle:(NSArray<NSNumber *> *)data;
 - (void)applyTrade:(NSArray<NSNumber *> *)data;
 - (void)applyTrades:(NSArray<NSNumber *> *)data;
+- (void)addSeriesJson:(NSString *)json;
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+             seriesId:(NSString *)seriesId
+             dataType:(NSString *)dataType
+              prepend:(BOOL)prepend
+               update:(BOOL)update;
+- (void)removeSeries:(NSString *)seriesId;
+- (void)setPaneHeight:(NSString *)paneId weight:(double)weight;
 - (void)zoomByScale:(double)scale;
 - (void)fitContent;
 - (void)clearData;
@@ -1617,11 +1696,18 @@ struct TCTextPresentation {
   Candle _lastSelectedCandle;
   BOOL _pendingScaleChange;
   BOOL _pendingYAxisScaleChange;
+  BOOL _panesResizable;
+  BOOL _resizingPane;
+  size_t _resizingSeparatorIndex;
+  BOOL _pendingPaneResize;
+  BOOL _pendingPaneResizeFinished;
+  NSMutableSet<NSString *> *_declarativeSeriesIds;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     _engine = std::make_shared<ChartEngine>();
+    _declarativeSeriesIds = [NSMutableSet new];
     _lastFirstVisibleIndex = -1;
     _lastLastVisibleIndex = -1;
     _lastTotalCandleCount = -1;
@@ -1783,6 +1869,15 @@ struct TCTextPresentation {
   if (_pendingYAxisScaleChange) {
     _pendingYAxisScaleChange = NO;
     if (self.yAxisScaleDidChange) self.yAxisScaleDidChange(snapshot);
+    if (self.priceScaleDidChange) self.priceScaleDidChange(snapshot);
+  }
+  if (_pendingPaneResize) {
+    _pendingPaneResize = NO;
+    const BOOL finished = _pendingPaneResizeFinished;
+    _pendingPaneResizeFinished = NO;
+    if (self.paneResizeDidChange) {
+      self.paneResizeDidChange(snapshot, _resizingSeparatorIndex, finished);
+    }
   }
   if (_decelerating) [self requestFrame];
   os_signpost_interval_end(performanceLog, frameSignpostID, "Display Link Frame",
@@ -1931,7 +2026,154 @@ struct TCTextPresentation {
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
   _engine->SetConfig(_config);
+  std::vector<PaneConfig> paneConfigs;
+  NSArray *panes = root[@"panes"];
+  if ([panes isKindOfClass:NSArray.class]) {
+    paneConfigs.reserve(panes.count);
+    for (NSDictionary *pane in panes) {
+      if (![pane isKindOfClass:NSDictionary.class]) continue;
+      NSDictionary *scale = pane[@"priceScale"];
+      NSDictionary *margins = scale[@"scaleMargins"];
+      NSDictionary *valueFormat = scale[@"valueFormat"];
+      PaneConfig config;
+      config.pane_id = [pane[@"paneId"] UTF8String] ?: "";
+      config.price_scale_id = [scale[@"priceScaleId"] UTF8String] ?: "";
+      config.height_weight = [pane[@"heightWeight"] doubleValue];
+      config.min_height = [pane[@"minHeight"] floatValue];
+      config.scale_visible = [scale[@"visible"] boolValue];
+      config.scale_margin_top = [margins[@"top"] doubleValue];
+      config.scale_margin_bottom = [margins[@"bottom"] doubleValue];
+      config.volume_format = [valueFormat[@"type"] isEqualToString:@"volume"];
+      config.precision = [valueFormat[@"precision"] intValue];
+      config.min_move = valueFormat[@"minMove"]
+          ? [valueFormat[@"minMove"] doubleValue]
+          : (config.volume_format ? 1.0 : _config.min_move);
+      paneConfigs.push_back(std::move(config));
+    }
+  }
+  _engine->SetPanes(paneConfigs, [root[@"panesResizable"] boolValue]);
+  _panesResizable = [root[@"panesResizable"] boolValue] && paneConfigs.size() > 1;
+  NSArray *additionalSeries = root[@"additionalSeries"];
+  NSMutableSet<NSString *> *requestedDeclarativeSeriesIds = [NSMutableSet set];
+  if ([additionalSeries isKindOfClass:NSArray.class]) {
+    for (NSDictionary *item in additionalSeries) {
+      NSString *seriesId = item[@"seriesId"];
+      if ([seriesId isKindOfClass:NSString.class] && seriesId.length > 0) {
+        [requestedDeclarativeSeriesIds addObject:seriesId];
+      }
+    }
+  }
+  for (NSString *seriesId in [_declarativeSeriesIds copy]) {
+    if (![requestedDeclarativeSeriesIds containsObject:seriesId]) {
+      _engine->RemoveSeries(seriesId.UTF8String ?: "");
+    }
+  }
+  NSMutableSet<NSString *> *nextDeclarativeSeriesIds = [NSMutableSet set];
+  if ([additionalSeries isKindOfClass:NSArray.class]) {
+    for (NSDictionary *item in additionalSeries) {
+      if (![item isKindOfClass:NSDictionary.class]) continue;
+      SeriesConfig config;
+      NSString *seriesId = item[@"seriesId"];
+      NSString *type = item[@"type"];
+      config.series_id = seriesId.UTF8String ?: "";
+      config.pane_id = [item[@"paneId"] UTF8String] ?: "";
+      config.price_scale_id = [item[@"priceScaleId"] UTF8String] ?: "";
+      config.visible = item[@"visible"] ? [item[@"visible"] boolValue] : true;
+      config.declarative = true;
+      if ([type isEqualToString:@"bar"]) config.type = SeriesType::kBar;
+      else if ([type isEqualToString:@"hollowCandlestick"]) {
+        config.type = SeriesType::kHollowCandlestick;
+      } else if ([type isEqualToString:@"histogram"]) {
+        config.type = SeriesType::kHistogram;
+      }
+      NSDictionary *source = item[@"source"];
+      if ([source[@"type"] isEqualToString:@"ohlcvVolume"]) {
+        config.source = SeriesSource::kOhlcvVolume;
+        config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
+      }
+      NSDictionary *seriesAppearance = item[@"appearance"];
+      config.color = TCColorFromHex(seriesAppearance[@"color"], _config.axis_text);
+      config.up = TCColorFromHex(seriesAppearance[@"upColor"], _config.up);
+      config.down = TCColorFromHex(seriesAppearance[@"downColor"], _config.down);
+      const UpdateStatus status = _engine->AddSeries(config);
+      TCLogStatus(status, @"additionalSeries");
+      if (status == UpdateStatus::kApplied) {
+        [nextDeclarativeSeriesIds addObject:seriesId];
+      }
+    }
+  }
+  _declarativeSeriesIds = nextDeclarativeSeriesIds;
   [self requestFrame];
+}
+
+- (SeriesConfig)seriesConfigFromJson:(NSString *)json {
+  NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
+  NSDictionary *item =
+      data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil]
+           : nil;
+  SeriesConfig config;
+  if (![item isKindOfClass:NSDictionary.class]) return config;
+  NSString *type = item[@"type"];
+  config.series_id = [item[@"seriesId"] UTF8String] ?: "";
+  config.pane_id = [item[@"paneId"] UTF8String] ?: "";
+  config.price_scale_id = [item[@"priceScaleId"] UTF8String] ?: "";
+  config.visible = item[@"visible"] ? [item[@"visible"] boolValue] : true;
+  if ([type isEqualToString:@"bar"]) config.type = SeriesType::kBar;
+  else if ([type isEqualToString:@"hollowCandlestick"]) {
+    config.type = SeriesType::kHollowCandlestick;
+  } else if ([type isEqualToString:@"histogram"]) {
+    config.type = SeriesType::kHistogram;
+  }
+  NSDictionary *source = item[@"source"];
+  if ([source[@"type"] isEqualToString:@"ohlcvVolume"]) {
+    config.source = SeriesSource::kOhlcvVolume;
+    config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
+  }
+  NSDictionary *appearance = item[@"appearance"];
+  config.color = TCColorFromHex(appearance[@"color"], _config.axis_text);
+  config.up = TCColorFromHex(appearance[@"upColor"], _config.up);
+  config.down = TCColorFromHex(appearance[@"downColor"], _config.down);
+  return config;
+}
+
+- (void)addSeriesJson:(NSString *)json {
+  SeriesConfig config = [self seriesConfigFromJson:json];
+  TCLogStatus(_engine->AddSeries(config), @"addSeries");
+  [self requestFrame];
+}
+
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+             seriesId:(NSString *)seriesId
+             dataType:(NSString *)dataType
+              prepend:(BOOL)prepend
+               update:(BOOL)update {
+  auto values = TCDoubles(data);
+  const bool histogram = [dataType isEqualToString:@"histogram"];
+  UpdateStatus status = UpdateStatus::kInvalidInput;
+  if (update) {
+    status = _engine->UpdateSeriesData(seriesId.UTF8String ?: "",
+                                       values.data(), values.size(), histogram);
+  } else if (prepend) {
+    status = _engine->PrependSeriesData(seriesId.UTF8String ?: "",
+                                        values.data(), values.size(), histogram);
+  } else {
+    status = _engine->SetSeriesData(seriesId.UTF8String ?: "", values.data(),
+                                    values.size(), histogram);
+  }
+  TCLogStatus(status, @"seriesData");
+  [self requestFrame];
+}
+
+- (void)removeSeries:(NSString *)seriesId {
+  _engine->RemoveSeries(seriesId.UTF8String ?: "");
+  [_declarativeSeriesIds removeObject:seriesId];
+  [self requestFrame];
+}
+
+- (void)setPaneHeight:(NSString *)paneId weight:(double)weight {
+  if (_engine->SetPaneHeight(paneId.UTF8String ?: "", weight)) {
+    [self requestFrame];
+  }
 }
 
 - (void)applyHistory:(NSArray<NSNumber *> *)data {
@@ -2029,6 +2271,18 @@ struct TCTextPresentation {
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer {
   if (recognizer.state == UIGestureRecognizerStateBegan) {
     [self stopDeceleration];
+    CGPoint point = [recognizer locationInView:self];
+    const auto separator = _panesResizable
+        ? _engine->SeparatorAt(point.y, 12.0f)
+        : std::nullopt;
+    if (separator.has_value()) {
+      _resizingPane = YES;
+      _resizingSeparatorIndex = *separator;
+      _scalingYAxis = NO;
+      _suppressMomentum = YES;
+      [recognizer setTranslation:CGPointZero inView:self];
+      return;
+    }
     if (_crosshairPinned) {
       _scalingYAxis = NO;
       _suppressMomentum = YES;
@@ -2044,6 +2298,15 @@ struct TCTextPresentation {
     return;
   }
   if (recognizer.state == UIGestureRecognizerStateChanged) {
+    if (_resizingPane) {
+      CGPoint translation = [recognizer translationInView:self];
+      [recognizer setTranslation:CGPointZero inView:self];
+      if (_engine->ResizePaneSeparator(_resizingSeparatorIndex, translation.y)) {
+        _pendingPaneResize = YES;
+        [self requestFrame];
+      }
+      return;
+    }
     if (_crosshairPinned) {
       CGPoint point = [recognizer locationInView:self];
       _engine->SetCrosshair(true, point.x, point.y);
@@ -2053,7 +2316,9 @@ struct TCTextPresentation {
     CGPoint translation = [recognizer translationInView:self];
     [recognizer setTranslation:CGPointZero inView:self];
     if (_scalingYAxis) {
-      if (_config.allow_y_axis_scale && _engine->ScaleY(translation.y)) {
+      const CGPoint point = [recognizer locationInView:self];
+      if (_config.allow_y_axis_scale &&
+          _engine->ScaleYAt(translation.y, point.y)) {
         _pendingYAxisScaleChange = YES;
         [self requestFrame];
       }
@@ -2066,6 +2331,14 @@ struct TCTextPresentation {
   if (recognizer.state == UIGestureRecognizerStateEnded ||
       recognizer.state == UIGestureRecognizerStateCancelled ||
       recognizer.state == UIGestureRecognizerStateFailed) {
+    if (_resizingPane) {
+      _resizingPane = NO;
+      _pendingPaneResize = YES;
+      _pendingPaneResizeFinished = YES;
+      [self requestFrame];
+      _suppressMomentum = NO;
+      return;
+    }
     const BOOL shouldDecelerate = !_crosshairPinned &&
         recognizer.state == UIGestureRecognizerStateEnded &&
         !_scalingYAxis && !_suppressMomentum && _config.allow_pan;
@@ -2206,6 +2479,38 @@ struct TCTextPresentation {
           strongSelf->_eventEmitter);
       emitter->onYAxisScaleChange({snapshot->y_axis_scale});
     };
+    _host.priceScaleDidChange = ^(std::shared_ptr<const RenderSnapshot> snapshot) {
+      TradingChartsView *strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf->_eventEmitter || snapshot->panes.empty()) return;
+      auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+          strongSelf->_eventEmitter);
+      const size_t index =
+          std::min(snapshot->active_pane_index, snapshot->panes.size() - 1);
+      const auto &pane = snapshot->panes[index];
+      emitter->onPriceScaleChange({
+          pane.pane_id,
+          pane.price_scale_id,
+          pane.y_axis_scale,
+      });
+    };
+    _host.paneResizeDidChange =
+        ^(std::shared_ptr<const RenderSnapshot> snapshot, size_t separatorIndex,
+          BOOL finished) {
+      TradingChartsView *strongSelf = weakSelf;
+      if (!strongSelf || !strongSelf->_eventEmitter ||
+          separatorIndex + 1 >= snapshot->panes.size()) return;
+      auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+          strongSelf->_eventEmitter);
+      const auto &first = snapshot->panes[separatorIndex];
+      const auto &second = snapshot->panes[separatorIndex + 1];
+      emitter->onPaneResize({
+          first.pane_id,
+          first.height_weight,
+          second.pane_id,
+          second.height_weight,
+          finished == YES,
+      });
+    };
     self.contentView = _host;
   }
   return self;
@@ -2245,6 +2550,22 @@ struct TCTextPresentation {
 - (void)applyCandleData:(NSArray<NSNumber *> *)data { [_host applyCandle:TCArrayOrEmpty(data)]; }
 - (void)applyTradeData:(NSArray<NSNumber *> *)data { [_host applyTrade:TCArrayOrEmpty(data)]; }
 - (void)applyTradesData:(NSArray<NSNumber *> *)data { [_host applyTrades:TCArrayOrEmpty(data)]; }
+- (void)addSeriesJson:(NSString *)json { [_host addSeriesJson:json ?: @""]; }
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+             seriesId:(NSString *)seriesId
+             dataType:(NSString *)dataType
+              prepend:(BOOL)prepend
+               update:(BOOL)update {
+  [_host setSeriesData:TCArrayOrEmpty(data)
+              seriesId:seriesId ?: @""
+              dataType:dataType ?: @""
+               prepend:prepend
+                update:update];
+}
+- (void)removeSeries:(NSString *)seriesId { [_host removeSeries:seriesId ?: @""]; }
+- (void)setPaneHeight:(NSString *)paneId weight:(double)weight {
+  [_host setPaneHeight:paneId ?: @"" weight:weight];
+}
 - (void)zoomByScale:(double)scale { [_host zoomByScale:scale]; }
 - (void)fitChartContent { [_host fitContent]; }
 - (void)clearChartData { [_host clearData]; }

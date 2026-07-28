@@ -192,6 +192,84 @@ at runtime keeps the native candle store, viewport, Y scale and crosshair
 selection; it only schedules a new render snapshot. Data methods and
 `onSelectedCandleChange` remain OHLCV-based for every render type.
 
+### Multiple panes, series, and volume
+
+All panes share the `main` series time viewport while keeping independent
+autoscale ranges. When `panes` is supplied it must contain the reserved `main`
+pane and `main` price scale:
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  panes={[
+    {
+      paneId: 'main',
+      heightWeight: 3,
+      priceScale: { priceScaleId: 'main' },
+    },
+    {
+      paneId: 'volume',
+      heightWeight: 1,
+      minHeight: 56,
+      priceScale: {
+        priceScaleId: 'volume',
+        valueFormat: { type: 'volume', precision: 1 },
+      },
+    },
+  ]}
+  additionalSeries={[
+    {
+      seriesId: 'volume',
+      type: 'histogram',
+      paneId: 'volume',
+      priceScaleId: 'volume',
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+      appearance: {
+        upColor: '#38D98A80',
+        downColor: '#FF3B6480',
+      },
+    },
+  ]}
+  panesResizable
+  onPaneResize={({ nativeEvent }) => {
+    console.log(nativeEvent.firstPaneId, nativeEvent.firstHeightWeight);
+  }}
+  onPriceScaleChange={({ nativeEvent }) => {
+    console.log(nativeEvent.paneId, nativeEvent.scale);
+  }}
+/>
+```
+
+Derived volume reads OHLCV data directly from its source series, so
+`setHistory`, candle updates, prepends, and raw trades update it without a
+second data copy. Runtime series use the same pane definitions:
+
+```tsx
+TradingCharts.addSeries('btc-1m', {
+  seriesId: 'momentum',
+  type: 'histogram',
+  paneId: 'volume',
+  priceScaleId: 'volume',
+  source: { type: 'data' },
+  appearance: { color: '#8C7CFF' },
+});
+
+TradingCharts.setSeriesData('btc-1m', 'momentum', [
+  { timestamp: 1_720_000_000_000, value: -4.2 },
+  { timestamp: 1_720_000_060_000, value: 7.1 },
+]);
+TradingCharts.updateSeriesData('btc-1m', 'momentum', {
+  timestamp: 1_720_000_060_000,
+  value: 8.3,
+});
+TradingCharts.setPaneHeight('btc-1m', 'volume', 1.5);
+```
+
+The additional supported OHLC types are `candlestick`,
+`hollowCandlestick`, and `bar`. `prependSeriesData` follows the same ordering
+rules as main history, and `removeSeries` cannot remove the reserved `main`
+series. One visible price scale is supported per pane.
+
 `onScaleChange` reports horizontal pinch changes and `onYAxisScaleChange`
 reports vertical drags that start in the Y-axis lane. Both callbacks receive an
 absolute `{ scale }`: `1` is the baseline, values above `1` make candles

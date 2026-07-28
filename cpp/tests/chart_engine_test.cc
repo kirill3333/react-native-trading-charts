@@ -13,6 +13,9 @@
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::PaneConfig;
+using trading_charts::SeriesConfig;
+using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 
@@ -1521,6 +1524,179 @@ void TestCurrentPriceLineAndLabelColorsAreIndependent() {
   ExpectNear(snapshot->current_price_label_color.a, 0.8f);
 }
 
+void TestMultiPaneSeriesAndDerivedVolume() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 10;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 360.0f);
+
+  PaneConfig main;
+  main.height_weight = 3.0;
+  PaneConfig volume;
+  volume.pane_id = "volume";
+  volume.price_scale_id = "volume";
+  volume.height_weight = 1.0;
+  volume.volume_format = true;
+  engine.SetPanes({main, volume}, true);
+
+  SeriesConfig derived;
+  derived.series_id = "volume";
+  derived.type = SeriesType::kHistogram;
+  derived.source = SeriesSource::kOhlcvVolume;
+  derived.source_series_id = "main";
+  derived.pane_id = "volume";
+  derived.price_scale_id = "volume";
+  derived.declarative = true;
+  assert(engine.AddSeries(derived) == UpdateStatus::kApplied);
+  assert(engine.AddSeries(derived) == UpdateStatus::kApplied);
+
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 5.0, 60000.0, 11.0, 13.0, 8.0, 9.0, 8.0,
+  };
+  assert(engine.SetHistory(history, 12) == UpdateStatus::kApplied);
+  const auto first = engine.Snapshot();
+  assert(engine.Snapshot() == first);
+  assert(first->panes.size() == 2);
+  assert(first->panes[0].pane_id == "main");
+  assert(first->panes[1].pane_id == "volume");
+  assert(first->panes[1].volume_format);
+  assert(first->panes[1].visible_y_min <= 0.0);
+  assert(first->panes[1].visible_y_max >= 8.0);
+  assert(first->panes[0].plot.bottom < first->panes[1].plot.top);
+  assert(!first->pane_y_ticks.empty());
+
+  SeriesConfig comparison;
+  comparison.series_id = "comparison";
+  comparison.pane_id = "main";
+  comparison.price_scale_id = "main";
+  assert(engine.AddSeries(comparison) == UpdateStatus::kApplied);
+  const double comparison_history[] = {
+      0.0, 80.0, 100.0, 70.0, 90.0, 1.0, 60000.0, 90.0, 110.0, 85.0, 105.0, 1.0,
+  };
+  assert(engine.SetSeriesData("comparison", comparison_history, 12, false) ==
+         UpdateStatus::kApplied);
+  assert(engine.Snapshot()->panes[0].visible_y_max >= 110.0);
+
+  const uint64_t revision = first->revision;
+  const double updated[] = {60000.0, 11.0, 13.0, 10.0, 12.0, 20.0};
+  assert(engine.UpdateCandle(updated, 6) == UpdateStatus::kApplied);
+  const auto second = engine.Snapshot();
+  assert(second->revision > revision);
+  assert(second->panes[1].visible_y_max >= 20.0);
+
+  const double trade[] = {60500.0, 12.5, 7.0};
+  assert(engine.UpdateTrade(trade, 3) == UpdateStatus::kApplied);
+  assert(engine.Snapshot()->panes[1].visible_y_max >= 27.0);
+
+  const double prepended[] = {
+      -60000.0, 9.0, 10.0, 8.0, 9.5, 50.0,
+  };
+  // Main timestamps cannot be negative.
+  assert(engine.PrependHistory(prepended, 6) == UpdateStatus::kInvalidInput);
+
+  const double prior[] = {
+      0.0, 9.0, 10.0, 8.0, 9.5, 50.0,
+  };
+  ChartEngine prepend_engine;
+  prepend_engine.SetConfig(config);
+  prepend_engine.SetSize(600.0f, 360.0f);
+  prepend_engine.SetPanes({main, volume}, true);
+  assert(prepend_engine.AddSeries(derived) == UpdateStatus::kApplied);
+  const double later_history[] = {
+      60000.0,  10.0, 12.0, 9.0,  11.0, 5.0,
+      120000.0, 11.0, 13.0, 10.0, 12.0, 8.0,
+  };
+  assert(prepend_engine.SetHistory(later_history, 12) ==
+         UpdateStatus::kApplied);
+  assert(prepend_engine.PrependHistory(prior, 6) == UpdateStatus::kApplied);
+  prepend_engine.FitContent();
+  assert(prepend_engine.Snapshot()->panes[1].visible_y_max >= 50.0);
+
+  const double main_scale = second->panes[0].y_axis_scale;
+  const double volume_scale = second->panes[1].y_axis_scale;
+  assert(engine.ScaleYAt(
+      20.0f,
+      (second->panes[1].plot.top + second->panes[1].plot.bottom) * 0.5f));
+  const auto scaled = engine.Snapshot();
+  ExpectNear(scaled->panes[0].y_axis_scale, main_scale);
+  assert(scaled->panes[1].y_axis_scale != volume_scale);
+
+  engine.SetCrosshair(
+      true, scaled->panes[0].plot.left + 20.0f,
+      (scaled->panes[1].plot.top + scaled->panes[1].plot.bottom) * 0.5f);
+  const auto crosshair = engine.Snapshot();
+  assert(crosshair->crosshair_visible);
+  assert(crosshair->active_pane_index == 1);
+  assert(crosshair->selected_candle.timestamp >= 0.0);
+
+  assert(!engine.RemoveSeries("main"));
+  assert(engine.RemoveSeries("volume"));
+  assert(!engine.RemoveSeries("volume"));
+}
+
+void TestCustomHistogramAndRuntimePaneWeights() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(500.0f, 320.0f);
+
+  PaneConfig main;
+  main.height_weight = 2.0;
+  PaneConfig indicator;
+  indicator.pane_id = "indicator";
+  indicator.price_scale_id = "indicator";
+  indicator.height_weight = 1.0;
+  indicator.min_height = 60.0f;
+  engine.SetPanes({main, indicator}, true);
+
+  SeriesConfig histogram;
+  histogram.series_id = "momentum";
+  histogram.type = SeriesType::kHistogram;
+  histogram.pane_id = "indicator";
+  histogram.price_scale_id = "indicator";
+  assert(engine.AddSeries(histogram) == UpdateStatus::kApplied);
+  assert(engine.AddSeries(histogram) == UpdateStatus::kInvalidInput);
+
+  const double history[] = {
+      0.0,  10.0, 12.0, 9.0,      11.0, 1.0,  60000.0, 11.0, 13.0,
+      10.0, 12.0, 1.0,  120000.0, 12.0, 14.0, 11.0,    13.0, 1.0,
+  };
+  const double points[] = {60000.0, -3.0, 120000.0, 5.0};
+  assert(engine.SetHistory(history, 18) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData("momentum", points, 4, true) ==
+         UpdateStatus::kApplied);
+  const double prepended_point[] = {0.0, -7.0};
+  assert(engine.PrependSeriesData("momentum", prepended_point, 2, true) ==
+         UpdateStatus::kApplied);
+  const double updated_point[] = {120000.0, 9.0};
+  assert(engine.UpdateSeriesData("momentum", updated_point, 2, true) ==
+         UpdateStatus::kApplied);
+  const auto before = engine.Snapshot();
+  assert(before->panes[1].visible_y_min <= -7.0);
+  assert(before->panes[1].visible_y_max >= 9.0);
+
+  const auto separator = engine.SeparatorAt(before->panes[0].plot.bottom, 8.0f);
+  assert(separator.has_value() && *separator == 0);
+  assert(engine.ResizePaneSeparator(0, -40.0f));
+  const auto resized = engine.Snapshot();
+  assert(resized->panes[1].plot.Height() >= indicator.min_height);
+  const double runtime_weight = resized->panes[0].height_weight;
+
+  // Reapplying an unchanged declarative weight must preserve the runtime drag.
+  engine.SetPanes({main, indicator}, true);
+  const auto reapplied = engine.Snapshot();
+  ExpectNear(reapplied->panes[0].height_weight, runtime_weight);
+
+  // An actual declarative weight change intentionally replaces the runtime one.
+  main.height_weight = 4.0;
+  engine.SetPanes({main, indicator}, true);
+  const auto changed = engine.Snapshot();
+  ExpectNear(changed->panes[0].height_weight, 4.0);
+}
+
 }  // namespace
 
 int main() noexcept {
@@ -1569,6 +1745,8 @@ int main() noexcept {
     TestHollowCandlestickSpacingAndClipping();
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
+    TestMultiPaneSeriesAndDerivedVolume();
+    TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
     std::cout << "ChartEngineTests passed\n";
     return 0;

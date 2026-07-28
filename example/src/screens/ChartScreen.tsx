@@ -171,6 +171,8 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
 }: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
   const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
+  const [showVolume, setShowVolume] = useState(true);
+  const [volumeHeightWeight, setVolumeHeightWeight] = useState(1);
   const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
@@ -340,12 +342,46 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               minMove={ticker.minMove}
               onVisibleRangeChange={handleVisibleRangeChange}
               precision={ticker.precision}
+              showVolume={showVolume}
               timeframeMs={timeframeMs}
+              volumeHeightWeight={volumeHeightWeight}
             />
             <ConnectionBadge status={status} />
           </View>
         </View>
         <View style={styles.chartControls}>
+          <Pressable
+            accessibilityLabel={showVolume ? 'Hide volume' : 'Show volume'}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showVolume }}
+            onPress={() => setShowVolume((visible) => !visible)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              color={showVolume ? '#38D98A' : '#7D7689'}
+              name="bar-chart"
+              size={24}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Change volume pane height"
+            accessibilityRole="button"
+            disabled={!showVolume}
+            onPress={() =>
+              setVolumeHeightWeight((weight) => (weight >= 1.5 ? 0.6 : weight + 0.3))
+            }
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              !showVolume && styles.chartSizeButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.chartSizeButtonText}>V</Text>
+            <MaterialIcons color="#C2B9FF" name="height" size={18} />
+          </Pressable>
           <Pressable
             accessibilityLabel="Zoom in chart"
             accessibilityRole="button"

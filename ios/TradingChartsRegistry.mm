@@ -67,6 +67,18 @@
       else if ([type isEqualToString:@"candle"]) [view applyCandleData:data];
       else if ([type isEqualToString:@"trade"]) [view applyTradeData:data];
       else if ([type isEqualToString:@"trades"]) [view applyTradesData:data];
+      else if ([type isEqualToString:@"addSeries"]) [view addSeriesJson:command[@"json"]];
+      else if ([type isEqualToString:@"seriesData"]) {
+        [view setSeriesData:data
+                  seriesId:command[@"seriesId"]
+                  dataType:command[@"dataType"]
+                   prepend:[command[@"prepend"] boolValue]
+                    update:[command[@"update"] boolValue]];
+      } else if ([type isEqualToString:@"removeSeries"]) {
+        [view removeSeries:command[@"seriesId"]];
+      } else if ([type isEqualToString:@"paneHeight"]) {
+        [view setPaneHeight:command[@"paneId"] weight:[command[@"weight"] doubleValue]];
+      }
       else if ([type isEqualToString:@"zoom"]) [view zoomByScale:[command[@"scale"] doubleValue]];
       else if ([type isEqualToString:@"fitContent"]) [view fitChartContent];
     }
@@ -96,7 +108,18 @@
       else if ([type isEqualToString:@"trades"]) [view applyTradesData:copy];
       return;
     }
-    if ([type isEqualToString:@"history"]) [entry.pending removeAllObjects];
+    if ([type isEqualToString:@"history"]) {
+      NSIndexSet *indexes = [entry.pending indexesOfObjectsPassingTest:
+          ^BOOL(NSDictionary *command, NSUInteger index, BOOL *stop) {
+            NSString *pendingType = command[@"type"];
+            return [pendingType isEqualToString:@"history"] ||
+                [pendingType isEqualToString:@"prependHistory"] ||
+                [pendingType isEqualToString:@"candle"] ||
+                [pendingType isEqualToString:@"trade"] ||
+                [pendingType isEqualToString:@"trades"];
+          }];
+      [entry.pending removeObjectsAtIndexes:indexes];
+    }
     [entry.pending addObject:@{ @"type": type, @"data": copy }];
   }];
 }
@@ -115,6 +138,79 @@
 }
 - (void)updateTrades:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
   [self enqueue:@"trades" data:data chartId:chartId];
+}
+
+- (void)addSeries:(NSString *)seriesJson chartId:(NSString *)chartId {
+  if (chartId.length == 0) return;
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    if (entry.view) {
+      [entry.view addSeriesJson:seriesJson];
+    } else {
+      [entry.pending addObject:@{ @"type": @"addSeries", @"json": seriesJson ?: @"" }];
+    }
+  }];
+}
+
+- (void)setSeriesData:(NSArray<NSNumber *> *)data
+               chartId:(NSString *)chartId
+               seriesId:(NSString *)seriesId
+               dataType:(NSString *)dataType
+                prepend:(BOOL)prepend
+                 update:(BOOL)update {
+  if (chartId.length == 0 || seriesId.length == 0) return;
+  NSArray<NSNumber *> *copy = [data copy];
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    if (entry.view) {
+      [entry.view setSeriesData:copy
+                      seriesId:seriesId
+                      dataType:dataType
+                       prepend:prepend
+                        update:update];
+      return;
+    }
+    if (!prepend && !update) {
+      NSIndexSet *indexes = [entry.pending indexesOfObjectsPassingTest:
+          ^BOOL(NSDictionary *command, NSUInteger index, BOOL *stop) {
+            return [command[@"type"] isEqualToString:@"seriesData"] &&
+                [command[@"seriesId"] isEqualToString:seriesId];
+          }];
+      [entry.pending removeObjectsAtIndexes:indexes];
+    }
+    [entry.pending addObject:@{
+      @"type": @"seriesData",
+      @"data": copy,
+      @"seriesId": seriesId,
+      @"dataType": dataType ?: @"",
+      @"prepend": @(prepend),
+      @"update": @(update),
+    }];
+  }];
+}
+
+- (void)removeSeries:(NSString *)seriesId chartId:(NSString *)chartId {
+  if (chartId.length == 0 || seriesId.length == 0) return;
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    if (entry.view) [entry.view removeSeries:seriesId];
+    else [entry.pending addObject:@{ @"type": @"removeSeries", @"seriesId": seriesId }];
+  }];
+}
+
+- (void)setPaneHeight:(NSString *)paneId
+               weight:(double)weight
+              chartId:(NSString *)chartId {
+  if (chartId.length == 0 || paneId.length == 0) return;
+  [self onMain:^{
+    TCRegistryEntry *entry = [self entryFor:chartId create:YES];
+    if (entry.view) [entry.view setPaneHeight:paneId weight:weight];
+    else [entry.pending addObject:@{
+      @"type": @"paneHeight",
+      @"paneId": paneId,
+      @"weight": @(weight),
+    }];
+  }];
 }
 
 - (void)getCandlesForChart:(NSString *)chartId
@@ -157,9 +253,21 @@
   if (chartId.length == 0) return;
   [self onMain:^{
     TCRegistryEntry *entry = [self entryFor:chartId create:NO];
-    [entry.pending removeAllObjects];
+    NSIndexSet *indexes = [entry.pending indexesOfObjectsPassingTest:
+        ^BOOL(NSDictionary *command, NSUInteger index, BOOL *stop) {
+          NSString *type = command[@"type"];
+          return [type isEqualToString:@"history"] ||
+              [type isEqualToString:@"prependHistory"] ||
+              [type isEqualToString:@"candle"] ||
+              [type isEqualToString:@"trade"] ||
+              [type isEqualToString:@"trades"] ||
+              [type isEqualToString:@"seriesData"];
+        }];
+    [entry.pending removeObjectsAtIndexes:indexes];
     [entry.view clearChartData];
-    if (!entry.view) [self->_entries removeObjectForKey:chartId];
+    if (!entry.view && entry.pending.count == 0) {
+      [self->_entries removeObjectForKey:chartId];
+    }
   }];
 }
 

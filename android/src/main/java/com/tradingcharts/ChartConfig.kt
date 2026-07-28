@@ -58,6 +58,33 @@ internal data class CrosshairTooltipLabels(
     val volume: String = "Volume",
 )
 
+internal data class PaneConfig(
+    val paneId: String,
+    val priceScaleId: String,
+    val heightWeight: Double,
+    val minHeightPx: Float,
+    val scaleVisible: Boolean,
+    val scaleMarginTop: Double,
+    val scaleMarginBottom: Double,
+    val volumeFormat: Boolean,
+    val valueFormat: ValueFormat,
+)
+
+internal data class SeriesConfig(
+    val seriesId: String,
+    val type: String,
+    val paneId: String,
+    val priceScaleId: String,
+    val visible: Boolean = true,
+    val sourceType: String = "data",
+    val sourceSeriesId: String = "",
+    val color: Int = Color.rgb(151, 145, 165),
+    val upColor: Int = Color.rgb(56, 217, 138),
+    val downColor: Int = Color.rgb(255, 59, 100),
+    val declarative: Boolean = false,
+    val lineWidthPx: Float = 1f,
+)
+
 internal data class ChartConfig(
     val timeframeMs: Double = 60_000.0,
     val initialVisibleCount: Int = 100,
@@ -149,6 +176,22 @@ internal data class ChartConfig(
     val tooltipBackgroundOpacity: Float = 1f,
     val crosshairDashed: Boolean = false,
     val tooltipLabels: CrosshairTooltipLabels = CrosshairTooltipLabels(),
+    val panes: List<PaneConfig> =
+        listOf(
+            PaneConfig(
+                paneId = "main",
+                priceScaleId = "main",
+                heightWeight = 1.0,
+                minHeightPx = 48f,
+                scaleVisible = true,
+                scaleMarginTop = 0.2,
+                scaleMarginBottom = 0.1,
+                volumeFormat = false,
+                valueFormat = ValueFormat(),
+            )
+        ),
+    val additionalSeries: List<SeriesConfig> = emptyList(),
+    val panesResizable: Boolean = false,
 ) {
   fun nativeNumbers() =
       doubleArrayOf(
@@ -215,7 +258,27 @@ internal data class ChartConfig(
 
   fun nativeStrings() = arrayOf(xLocale, xTimeZone, valueFormat.locale, valueFormat.currencySymbol)
 
+  fun nativePaneNumbers(): DoubleArray =
+      DoubleArray(panes.size * PANE_NUMBER_WIDTH).also { values ->
+        panes.forEachIndexed { index, pane ->
+          val offset = index * PANE_NUMBER_WIDTH
+          values[offset] = pane.heightWeight
+          values[offset + 1] = pane.minHeightPx.toDouble()
+          values[offset + 2] = pane.scaleVisible.nativeDouble()
+          values[offset + 3] = pane.scaleMarginTop
+          values[offset + 4] = pane.scaleMarginBottom
+          values[offset + 5] = pane.volumeFormat.nativeDouble()
+          values[offset + 6] = pane.valueFormat.precision.toDouble()
+          values[offset + 7] = pane.valueFormat.minMove
+        }
+      }
+
+  fun nativePaneStrings(): Array<String> =
+      panes.flatMap { listOf(it.paneId, it.priceScaleId) }.toTypedArray()
+
   companion object {
+    const val PANE_NUMBER_WIDTH = 8
+
     fun fromJson(json: String, density: Float, scaledDensity: Float): ChartConfig =
         ChartConfigJsonDecoder(json, density, scaledDensity).decode()
   }

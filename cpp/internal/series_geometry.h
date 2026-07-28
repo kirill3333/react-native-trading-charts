@@ -21,6 +21,7 @@ struct SeriesGeometryInput {
   double visible_x_max = 1.0;
   double visible_y_min = 0.0;
   double visible_y_max = 1.0;
+  const std::vector<Candle>* logical_reference = nullptr;
 };
 
 size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input);

@@ -21,6 +21,62 @@ export type ChartSeriesOptions = {
   type?: ChartSeriesType;
 };
 
+export type HistogramPoint = {
+  timestamp: number;
+  value: number;
+};
+
+export type VolumeValueFormat = {
+  type: 'volume';
+  precision?: number;
+  locale?: string;
+  useGrouping?: boolean;
+};
+
+export type ChartPanePriceScaleOptions = {
+  priceScaleId: string;
+  visible?: boolean;
+  scaleMargins?: PriceScaleMargins;
+  valueFormat?: YAxisValueFormat | VolumeValueFormat;
+};
+
+export type ChartPaneOptions = {
+  paneId: string;
+  heightWeight: number;
+  minHeight?: number;
+  priceScale: ChartPanePriceScaleOptions;
+};
+
+export type AdditionalOhlcSeriesOptions = {
+  seriesId: string;
+  type: ChartSeriesType;
+  paneId: string;
+  priceScaleId: string;
+  visible?: boolean;
+};
+
+export type HistogramSeriesOptions = {
+  seriesId: string;
+  type: 'histogram';
+  paneId: string;
+  priceScaleId: string;
+  visible?: boolean;
+  source?:
+    | { type: 'ohlcvVolume'; seriesId: string }
+    | { type: 'data' };
+  appearance?: {
+    color?: string;
+    upColor?: string;
+    downColor?: string;
+  };
+};
+
+export type AdditionalChartSeriesOptions =
+  | AdditionalOhlcSeriesOptions
+  | HistogramSeriesOptions;
+
+export type ChartSeriesDataPoint = OhlcCandle | HistogramPoint;
+
 export type ChartTheme = {
   backgroundColor?: string;
   gridColor?: string;
@@ -255,12 +311,28 @@ export type ScaleChangeEvent = {
   scale: number;
 };
 
+export type PaneResizeEvent = {
+  firstPaneId: string;
+  firstHeightWeight: number;
+  secondPaneId: string;
+  secondHeightWeight: number;
+  finished: boolean;
+};
+
+export type PriceScaleChangeEvent = ScaleChangeEvent & {
+  paneId: string;
+  priceScaleId: string;
+};
+
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
   timeframeMs?: number;
   initialVisibleCount?: number;
   defaultScale?: number;
   series?: ChartSeriesOptions;
+  panes?: ReadonlyArray<ChartPaneOptions>;
+  additionalSeries?: ReadonlyArray<AdditionalChartSeriesOptions>;
+  panesResizable?: boolean;
   theme?: ChartTheme;
   appearance?: ChartAppearance;
   formatters?: ChartFormatters;
@@ -277,6 +349,10 @@ export type TradingChartsViewProps = ViewProps & {
   onYAxisScaleChange?: (
     event: NativeSyntheticEvent<ScaleChangeEvent>
   ) => void;
+  onPaneResize?: (event: NativeSyntheticEvent<PaneResizeEvent>) => void;
+  onPriceScaleChange?: (
+    event: NativeSyntheticEvent<PriceScaleChangeEvent>
+  ) => void;
   onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
 };
 
@@ -285,6 +361,9 @@ export type ResolvedChartConfig = {
   initialVisibleCount: number;
   defaultScale: number;
   series: Required<ChartSeriesOptions>;
+  panes: ResolvedChartPaneOptions[];
+  additionalSeries: ResolvedAdditionalChartSeriesOptions[];
+  panesResizable: boolean;
   theme: Required<ChartTheme>;
   appearance: ResolvedChartAppearance;
   formatters: ResolvedChartFormatters;
@@ -299,6 +378,32 @@ export type ResolvedChartConfig = {
     tooltipLabels: Required<CrosshairTooltipLabels>;
   };
 };
+
+export type ResolvedChartPaneOptions = {
+  paneId: string;
+  heightWeight: number;
+  minHeight: number;
+  priceScale: {
+    priceScaleId: string;
+    visible: boolean;
+    scaleMargins: PriceScaleMargins;
+    valueFormat: ResolvedYAxisValueFormat | Required<VolumeValueFormat>;
+  };
+};
+
+export type ResolvedAdditionalChartSeriesOptions =
+  | (AdditionalOhlcSeriesOptions & { visible: boolean })
+  | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {
+      visible: boolean;
+      source:
+        | { type: 'ohlcvVolume'; seriesId: string }
+        | { type: 'data' };
+      appearance: {
+        color: string;
+        upColor: string;
+        downColor: string;
+      };
+    });
 
 export type ResolvedChartTextStyle = {
   color: string;

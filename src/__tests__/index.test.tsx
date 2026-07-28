@@ -9,6 +9,12 @@ const mockNativeModule = {
   updateCandle: jest.fn(),
   updateTrade: jest.fn(),
   updateTrades: jest.fn(),
+  addSeries: jest.fn(),
+  setSeriesData: jest.fn(),
+  prependSeriesData: jest.fn(),
+  updateSeriesData: jest.fn(),
+  removeSeries: jest.fn(),
+  setPaneHeight: jest.fn(),
   getCandles: jest.fn<(chartId: string) => Promise<ReadonlyArray<number>>>(),
   zoom: jest.fn(),
   fitContent: jest.fn(),
@@ -90,6 +96,57 @@ describe('TradingCharts data API', () => {
     );
   });
 
+  it('packs homogeneous OHLC and histogram series data', () => {
+    TradingCharts.setSeriesData('chart', 'comparison', [
+      { timestamp: 0, open: 10, high: 12, low: 9, close: 11, volume: 2 },
+    ]);
+    TradingCharts.setSeriesData('chart', 'momentum', [
+      { timestamp: 0, value: -2 },
+      { timestamp: 60_000, value: 3 },
+    ]);
+
+    expect(mockNativeModule.setSeriesData).toHaveBeenNthCalledWith(
+      1,
+      'chart',
+      'comparison',
+      'ohlc',
+      [0, 10, 12, 9, 11, 2]
+    );
+    expect(mockNativeModule.setSeriesData).toHaveBeenNthCalledWith(
+      2,
+      'chart',
+      'momentum',
+      'histogram',
+      [0, -2, 60_000, 3]
+    );
+    expect(() =>
+      TradingCharts.setSeriesData('chart', 'mixed', [
+        { timestamp: 0, value: 1 },
+        { timestamp: 60_000, open: 1, high: 2, low: 0, close: 1 },
+      ])
+    ).toThrow('homogeneous');
+  });
+
+  it('validates series identifiers and reserved main operations', () => {
+    expect(() =>
+      TradingCharts.addSeries('chart', {
+        seriesId: 'main',
+        type: 'histogram',
+        paneId: 'volume',
+        priceScaleId: 'volume',
+      })
+    ).toThrow('reserved');
+    expect(() => TradingCharts.removeSeries('chart', 'main')).toThrow(
+      'reserved'
+    );
+    TradingCharts.setPaneHeight('chart', 'volume', 0.35);
+    expect(mockNativeModule.setPaneHeight).toHaveBeenCalledWith(
+      'chart',
+      'volume',
+      0.35
+    );
+  });
+
   it('reads and unpacks the current native candle store', async () => {
     mockNativeModule.getCandles.mockResolvedValue([
       0, 10, 12, 9, 11, 2, 60_000, 11, 14, 10, 13, 4,
@@ -164,6 +221,101 @@ describe('TradingCharts data API', () => {
 });
 
 describe('chart config', () => {
+  it('resolves price and volume panes with validated series references', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'price-volume',
+      panes: [
+        {
+          paneId: 'volume',
+          heightWeight: 1,
+          priceScale: {
+            priceScaleId: 'volume',
+            valueFormat: { type: 'volume', precision: 1 },
+          },
+        },
+        {
+          paneId: 'main',
+          heightWeight: 3,
+          priceScale: { priceScaleId: 'main' },
+        },
+      ],
+      additionalSeries: [
+        {
+          seriesId: 'volume',
+          type: 'histogram',
+          paneId: 'volume',
+          priceScaleId: 'volume',
+          source: { type: 'ohlcvVolume', seriesId: 'main' },
+        },
+      ],
+    });
+
+    expect(resolved.panes.map((pane) => pane.paneId)).toEqual([
+      'main',
+      'volume',
+    ]);
+    expect(resolved.panes[1]?.priceScale.valueFormat).toMatchObject({
+      type: 'volume',
+      precision: 1,
+    });
+    expect(resolved.panes[1]?.priceScale.visible).toBe(true);
+    expect(resolved.panesResizable).toBe(true);
+    expect(resolved.additionalSeries[0]).toMatchObject({
+      seriesId: 'volume',
+      visible: true,
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+    });
+  });
+
+  it('rejects duplicate IDs and invalid pane/scale references', () => {
+    const panes = [
+      {
+        paneId: 'main',
+        heightWeight: 3,
+        priceScale: { priceScaleId: 'main' },
+      },
+      {
+        paneId: 'volume',
+        heightWeight: 1,
+        priceScale: { priceScaleId: 'volume' },
+      },
+    ] as const;
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-reference',
+        panes,
+        additionalSeries: [
+          {
+            seriesId: 'volume',
+            type: 'histogram',
+            paneId: 'volume',
+            priceScaleId: 'main',
+          },
+        ],
+      })
+    ).toThrow("must match the pane's price scale");
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'duplicate-series',
+        panes,
+        additionalSeries: [
+          {
+            seriesId: 'same',
+            type: 'histogram',
+            paneId: 'volume',
+            priceScaleId: 'volume',
+          },
+          {
+            seriesId: 'same',
+            type: 'histogram',
+            paneId: 'volume',
+            priceScaleId: 'volume',
+          },
+        ],
+      })
+    ).toThrow('duplicate seriesId');
+  });
+
   it('resolves price and compact defaults', () => {
     const price = resolveChartConfig({ chartId: 'price' });
     expect(price.timeframeMs).toBe(60_000);

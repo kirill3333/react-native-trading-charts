@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "cpp/internal/triangle_geometry.h"
@@ -46,8 +47,24 @@ double XDomainUnit(const SeriesGeometryInput& input) {
 }
 
 double CandleX(const SeriesGeometryInput& input, size_t index) {
-  return input.config.logical_spacing ? static_cast<double>(index)
-                                      : input.candles[index].timestamp;
+  if (!input.config.logical_spacing) {
+    return input.candles[index].timestamp;
+  }
+  if (input.logical_reference == nullptr) {
+    return static_cast<double>(index);
+  }
+  const double timestamp = input.candles[index].timestamp;
+  const auto found = std::lower_bound(input.logical_reference->begin(),
+                                      input.logical_reference->end(), timestamp,
+                                      [](const Candle& candle, double value) {
+                                        return candle.timestamp < value;
+                                      });
+  if (found == input.logical_reference->end() ||
+      found->timestamp != timestamp) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return static_cast<double>(
+      std::distance(input.logical_reference->begin(), found));
 }
 
 float ProjectX(const SeriesGeometryInput& input, double value) {
@@ -74,6 +91,10 @@ void VisitVisibleSamples(const SeriesGeometryInput& input,
   for (size_t index = input.first_index; index < input.end_index;
        index += stride) {
     const Candle& candle = input.candles[index];
+    const double candle_x = CandleX(input, index);
+    if (!std::isfinite(candle_x)) {
+      continue;
+    }
     double slot_domain = fallback_slot_domain;
     if (!input.config.logical_spacing) {
       bool has_local_spacing = false;
@@ -101,7 +122,7 @@ void VisitVisibleSamples(const SeriesGeometryInput& input,
         input.plot.Width();
     callback(SeriesSample{
         candle,
-        ProjectX(input, CandleX(input, index)),
+        ProjectX(input, candle_x),
         slot_width,
         ProjectY(input, candle.open),
         ProjectY(input, candle.high),
@@ -261,6 +282,8 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
       break;
     case SeriesType::kCandlestick:
       break;
+    case SeriesType::kHistogram:
+      return 0;
   }
   return SampleCount(input) * quads_per_sample * kFloatsPerQuad;
 }
@@ -276,6 +299,8 @@ void AppendSeriesGeometry(const SeriesGeometryInput& input,
       return;
     case SeriesType::kCandlestick:
       AppendCandlestickGeometry(input, vertices);
+      return;
+    case SeriesType::kHistogram:
       return;
   }
 }

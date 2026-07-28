@@ -1,5 +1,7 @@
 package com.tradingcharts
 
+import android.graphics.Color
+
 internal data class AxisTick(val value: Double, val position: Float)
 
 internal data class PriceExtremumSnapshot(
@@ -8,6 +10,23 @@ internal data class PriceExtremumSnapshot(
     val x: Float,
     val y: Float,
     val labelOnRight: Boolean,
+)
+
+internal data class PaneSnapshot(
+    val paneId: String,
+    val priceScaleId: String,
+    val plotLeft: Float,
+    val plotTop: Float,
+    val plotRight: Float,
+    val plotBottom: Float,
+    val heightWeight: Double,
+    val visibleYMin: Double,
+    val visibleYMax: Double,
+    val yAxisScale: Double,
+    val yTicks: List<AxisTick>,
+    val scaleVisible: Boolean,
+    val volumeFormat: Boolean,
+    val precision: Int,
 )
 
 internal data class ChartSnapshot(
@@ -33,6 +52,8 @@ internal data class ChartSnapshot(
     val vertices: FloatArray,
     val xTicks: List<AxisTick>,
     val yTicks: List<AxisTick>,
+    val panes: List<PaneSnapshot>,
+    val activePaneIndex: Int,
     val currentPriceVisible: Boolean,
     val currentPrice: Double,
     val currentPriceY: Float,
@@ -120,7 +141,10 @@ private fun DoubleArray.visibleMinimum() =
         labelOnRight = this[SnapshotMetaIndex.VISIBLE_MINIMUM_LABEL_ON_RIGHT] != 0.0,
     )
 
+@Suppress("TooManyFunctions")
 internal object ChartEngineNative {
+  private const val PANE_META_WIDTH = 13
+
   init {
     System.loadLibrary("tradingcharts")
   }
@@ -136,6 +160,58 @@ internal object ChartEngineNative {
       colors: FloatArray,
       strings: Array<String>,
   )
+
+  @JvmStatic
+  external fun nativeSetPanes(
+      handle: Long,
+      strings: Array<String>,
+      numbers: DoubleArray,
+      resizable: Boolean,
+  )
+
+  @JvmStatic
+  external fun nativeAddSeries(
+      handle: Long,
+      strings: Array<String>,
+      numbers: DoubleArray,
+      colors: FloatArray,
+  ): Int
+
+  @JvmStatic external fun nativeRemoveSeries(handle: Long, seriesId: String): Boolean
+
+  @JvmStatic
+  external fun nativeSetSeriesData(
+      handle: Long,
+      seriesId: String,
+      histogram: Boolean,
+      values: DoubleArray,
+  ): Int
+
+  @JvmStatic
+  external fun nativePrependSeriesData(
+      handle: Long,
+      seriesId: String,
+      histogram: Boolean,
+      values: DoubleArray,
+  ): Int
+
+  @JvmStatic
+  external fun nativeUpdateSeriesData(
+      handle: Long,
+      seriesId: String,
+      histogram: Boolean,
+      values: DoubleArray,
+  ): Int
+
+  @JvmStatic
+  external fun nativeSetPaneHeight(handle: Long, paneId: String, heightWeight: Double): Boolean
+
+  @JvmStatic external fun nativeScaleYAt(handle: Long, delta: Float, y: Float): Boolean
+
+  @JvmStatic external fun nativeSeparatorAt(handle: Long, y: Float, hitSlop: Float): Int
+
+  @JvmStatic
+  external fun nativeResizePaneSeparator(handle: Long, separatorIndex: Int, delta: Float): Boolean
 
   @JvmStatic external fun nativeSetSize(handle: Long, width: Float, height: Float)
 
@@ -179,10 +255,54 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotYTicks(handle: Long): DoubleArray
 
+  @JvmStatic private external fun nativeSnapshotPaneYTicks(handle: Long): DoubleArray
+
+  @JvmStatic private external fun nativeSnapshotPanes(handle: Long): DoubleArray
+
+  @JvmStatic private external fun nativeSnapshotActivePane(handle: Long): Int
+
   @JvmStatic private external fun nativeSnapshotMeta(handle: Long): DoubleArray
 
   fun setConfig(handle: Long, config: ChartConfig) {
     nativeSetConfig(handle, config.nativeNumbers(), config.nativeColors(), config.nativeStrings())
+    nativeSetPanes(
+        handle,
+        config.nativePaneStrings(),
+        config.nativePaneNumbers(),
+        config.panesResizable,
+    )
+  }
+
+  fun addSeries(handle: Long, series: SeriesConfig): Int {
+    val colors = FloatArray(12)
+    listOf(series.color, series.upColor, series.downColor).forEachIndexed { index, color ->
+      colors[index * 4] = Color.red(color) / 255f
+      colors[index * 4 + 1] = Color.green(color) / 255f
+      colors[index * 4 + 2] = Color.blue(color) / 255f
+      colors[index * 4 + 3] = Color.alpha(color) / 255f
+    }
+    return nativeAddSeries(
+        handle,
+        arrayOf(
+            series.seriesId,
+            series.paneId,
+            series.priceScaleId,
+            series.sourceSeriesId,
+        ),
+        doubleArrayOf(
+            when (series.type) {
+              "bar" -> 1.0
+              "hollowCandlestick" -> 2.0
+              "histogram" -> 3.0
+              else -> 0.0
+            },
+            if (series.sourceType == "ohlcvVolume") 1.0 else 0.0,
+            if (series.visible) 1.0 else 0.0,
+            if (series.declarative) 1.0 else 0.0,
+            series.lineWidthPx.toDouble(),
+        ),
+        colors,
+    )
   }
 
   fun snapshot(handle: Long, config: ChartConfig): ChartSnapshot {
@@ -197,6 +317,7 @@ internal object ChartEngineNative {
           values.asList().chunked(2).map {
             AxisTick(it[0], it[1].toFloat())
           }
+      val panes = snapshotPanes(snapshot, config, ::ticks)
       return ChartSnapshot(
           revision = nativeSnapshotRevision(snapshot),
           contentRevision = nativeSnapshotContentRevision(snapshot),
@@ -220,6 +341,8 @@ internal object ChartEngineNative {
           vertices = nativeSnapshotVertices(snapshot),
           xTicks = ticks(nativeSnapshotXTicks(snapshot)),
           yTicks = ticks(nativeSnapshotYTicks(snapshot)),
+          panes = panes,
+          activePaneIndex = nativeSnapshotActivePane(snapshot),
           currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
           currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
           currentPriceY = meta[SnapshotMetaIndex.CURRENT_PRICE_Y].toFloat(),
@@ -255,6 +378,40 @@ internal object ChartEngineNative {
       )
     } finally {
       nativeReleaseSnapshot(snapshot)
+    }
+  }
+
+  private fun snapshotPanes(
+      snapshot: Long,
+      config: ChartConfig,
+      ticks: (DoubleArray) -> List<AxisTick>,
+  ): List<PaneSnapshot> {
+    val paneTicks = ticks(nativeSnapshotPaneYTicks(snapshot))
+    val paneMeta = nativeSnapshotPanes(snapshot)
+    check(paneMeta.size % PANE_META_WIDTH == 0) {
+      "Invalid native pane metadata size: ${paneMeta.size}"
+    }
+    return List(paneMeta.size / PANE_META_WIDTH) { index ->
+      val offset = index * PANE_META_WIDTH
+      val tickOffset = paneMeta[offset + 8].toInt()
+      val tickCount = paneMeta[offset + 9].toInt()
+      val configPane = config.panes.getOrNull(index)
+      PaneSnapshot(
+          paneId = configPane?.paneId ?: "pane-$index",
+          priceScaleId = configPane?.priceScaleId ?: "scale-$index",
+          plotLeft = paneMeta[offset].toFloat(),
+          plotTop = paneMeta[offset + 1].toFloat(),
+          plotRight = paneMeta[offset + 2].toFloat(),
+          plotBottom = paneMeta[offset + 3].toFloat(),
+          heightWeight = paneMeta[offset + 4],
+          visibleYMin = paneMeta[offset + 5],
+          visibleYMax = paneMeta[offset + 6],
+          yAxisScale = paneMeta[offset + 7],
+          yTicks = paneTicks.subList(tickOffset, tickOffset + tickCount),
+          scaleVisible = paneMeta[offset + 10] != 0.0,
+          volumeFormat = paneMeta[offset + 11] != 0.0,
+          precision = paneMeta[offset + 12].toInt(),
+      )
     }
   }
 }
