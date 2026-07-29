@@ -5,6 +5,7 @@ add_library(
   trading_charts_engine
   STATIC
   chart_engine.cc
+  internal/pane_layout.cc
   internal/render_snapshot_builder.cc
   internal/series_geometry.cc
 )

@@ -29,6 +29,12 @@ void ExpectNear(double actual, double expected, double tolerance = 1e-9) {
   }
 }
 
+const std::vector<float>& ContentOf(
+    const trading_charts::RenderSnapshot& snapshot) {
+  static const std::vector<float> kEmpty;
+  return snapshot.content_vertices ? *snapshot.content_vertices : kEmpty;
+}
+
 struct QuadBounds {
   float left = 0.0f;
   float top = 0.0f;
@@ -43,27 +49,27 @@ QuadBounds SnapshotQuad(const trading_charts::RenderSnapshot& snapshot,
   constexpr size_t kVerticesPerQuad = 6;
   constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
   const size_t offset = quad_index * kFloatsPerQuad;
-  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+  assert(offset + kFloatsPerQuad <= ContentOf(snapshot).size());
 
   QuadBounds bounds{
-      snapshot.vertices[offset],
-      snapshot.vertices[offset + 1],
-      snapshot.vertices[offset],
-      snapshot.vertices[offset + 1],
+      ContentOf(snapshot)[offset],
+      ContentOf(snapshot)[offset + 1],
+      ContentOf(snapshot)[offset],
+      ContentOf(snapshot)[offset + 1],
       {
-          snapshot.vertices[offset + 2],
-          snapshot.vertices[offset + 3],
-          snapshot.vertices[offset + 4],
-          snapshot.vertices[offset + 5],
+          ContentOf(snapshot)[offset + 2],
+          ContentOf(snapshot)[offset + 3],
+          ContentOf(snapshot)[offset + 4],
+          ContentOf(snapshot)[offset + 5],
       },
   };
   for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
     const size_t vertex_offset = offset + vertex * kFloatsPerVertex;
-    bounds.left = std::min(bounds.left, snapshot.vertices[vertex_offset]);
-    bounds.top = std::min(bounds.top, snapshot.vertices[vertex_offset + 1]);
-    bounds.right = std::max(bounds.right, snapshot.vertices[vertex_offset]);
+    bounds.left = std::min(bounds.left, ContentOf(snapshot)[vertex_offset]);
+    bounds.top = std::min(bounds.top, ContentOf(snapshot)[vertex_offset + 1]);
+    bounds.right = std::max(bounds.right, ContentOf(snapshot)[vertex_offset]);
     bounds.bottom =
-        std::max(bounds.bottom, snapshot.vertices[vertex_offset + 1]);
+        std::max(bounds.bottom, ContentOf(snapshot)[vertex_offset + 1]);
   }
   return bounds;
 }
@@ -87,12 +93,12 @@ float RenderedCandleBodyWidth(const trading_charts::RenderSnapshot& snapshot,
   const size_t body_quad =
       grid_quad_count + candle_offset * kQuadsPerCandle + 1;
   const size_t offset = body_quad * kFloatsPerQuad;
-  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+  assert(offset + kFloatsPerQuad <= ContentOf(snapshot).size());
 
-  float minimum_x = snapshot.vertices[offset];
+  float minimum_x = ContentOf(snapshot)[offset];
   float maximum_x = minimum_x;
   for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
-    const float x = snapshot.vertices[offset + vertex * kFloatsPerVertex];
+    const float x = ContentOf(snapshot)[offset + vertex * kFloatsPerVertex];
     minimum_x = std::min(minimum_x, x);
     maximum_x = std::max(maximum_x, x);
   }
@@ -110,12 +116,12 @@ float RenderedCandleBodyCenter(const trading_charts::RenderSnapshot& snapshot,
   const size_t body_quad =
       grid_quad_count + candle_offset * kQuadsPerCandle + 1;
   const size_t offset = body_quad * kFloatsPerQuad;
-  assert(offset + kFloatsPerQuad <= snapshot.vertices.size());
+  assert(offset + kFloatsPerQuad <= ContentOf(snapshot).size());
 
-  float minimum_x = snapshot.vertices[offset];
+  float minimum_x = ContentOf(snapshot)[offset];
   float maximum_x = minimum_x;
   for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
-    const float x = snapshot.vertices[offset + vertex * kFloatsPerVertex];
+    const float x = ContentOf(snapshot)[offset + vertex * kFloatsPerVertex];
     minimum_x = std::min(minimum_x, x);
     maximum_x = std::max(maximum_x, x);
   }
@@ -152,6 +158,23 @@ void TestBucketTransitionAndNoGaps() {
   assert(engine.UpdateTrades(trades, 6) == UpdateStatus::kApplied);
   assert(engine.CandleCount() == 2);
   ExpectNear(engine.CandleAt(1).timestamp, 180000.0);
+}
+
+void TestMixedTradeBatchReportsAppliedChange() {
+  ChartEngine engine;
+  const double first[] = {1000.0, 10.0, 1.0};
+  assert(engine.UpdateTrade(first, 3) == UpdateStatus::kApplied);
+  const uint64_t revision = engine.Revision();
+
+  // The old record is ignored, but the newer record mutates the current
+  // candle. The aggregate status must still request a native frame.
+  const double mixed[] = {
+      999.0, 8.0, 1.0, 1001.0, 12.0, 2.0,
+  };
+  assert(engine.UpdateTrades(mixed, 6) == UpdateStatus::kApplied);
+  assert(engine.Revision() > revision);
+  ExpectNear(engine.CandleAt(0).close, 12.0);
+  ExpectNear(engine.CandleAt(0).volume, 3.0);
 }
 
 void TestHistoryContinuation() {
@@ -270,7 +293,7 @@ void TestSnapshotAndAutoscale() {
   const auto snapshot = engine.Snapshot();
   assert(snapshot->visible_y_min < 9.0);
   assert(snapshot->visible_y_max > 20.0);
-  assert(!snapshot->vertices.empty());
+  assert(!ContentOf(*snapshot).empty());
   assert(!snapshot->x_ticks.empty());
   assert(!snapshot->y_ticks.empty());
 }
@@ -679,11 +702,11 @@ void TestCurrentPricePinsToVerticalViewportEdges() {
   const auto hidden =
       snapshot_for_current_price(99.0, 101.0, 98.0, 100.0, true, false);
   assert(!hidden->current_price_visible);
-  assert(above->vertices.size() == hidden->vertices.size());
+  assert(ContentOf(*above).size() == ContentOf(*hidden).size());
 
   const auto inside_hidden =
       snapshot_for_current_price(10.0, 11.0, 9.0, 10.0, true, false);
-  assert(inside->vertices.size() > inside_hidden->vertices.size());
+  assert(ContentOf(*inside).size() > ContentOf(*inside_hidden).size());
 }
 
 void TestDefaultScaleControlsResetViewport() {
@@ -761,12 +784,13 @@ void TestCurrentPriceLineIsOneUnitThick() {
   constexpr size_t kFloatsPerVertex = 6;
   constexpr size_t kVerticesPerQuad = 6;
   constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
-  assert(snapshot->vertices.size() >= kFloatsPerQuad);
-  const size_t offset = snapshot->vertices.size() - kFloatsPerQuad;
-  float minimum_y = snapshot->vertices[offset + 1];
+  assert(ContentOf(*snapshot).size() >= kFloatsPerQuad);
+  const size_t offset = ContentOf(*snapshot).size() - kFloatsPerQuad;
+  float minimum_y = ContentOf(*snapshot)[offset + 1];
   float maximum_y = minimum_y;
   for (size_t vertex = 1; vertex < kVerticesPerQuad; ++vertex) {
-    const float y = snapshot->vertices[offset + vertex * kFloatsPerVertex + 1];
+    const float y =
+        ContentOf(*snapshot)[offset + vertex * kFloatsPerVertex + 1];
     minimum_y = std::min(minimum_y, y);
     maximum_y = std::max(maximum_y, y);
   }
@@ -1031,7 +1055,7 @@ void TestCrosshairStatisticsAndLineStyles() {
 
   const double bullish[] = {0.0, 10.0, 15.0, 8.0, 12.0, 5.0};
   assert(engine.SetHistory(bullish, 6) == UpdateStatus::kApplied);
-  const size_t base_vertex_floats = engine.Snapshot()->vertices.size();
+  const auto base = engine.Snapshot();
   engine.SetCrosshair(true, 400.0f, 220.0f);
   const auto solid = engine.Snapshot();
   ExpectNear(solid->selected_change, 2.0);
@@ -1039,24 +1063,26 @@ void TestCrosshairStatisticsAndLineStyles() {
   ExpectNear(solid->selected_amplitude_percent, 70.0);
   assert(solid->selected_percentages_valid);
   constexpr size_t kSolidCrosshairVertexFloatCount = size_t{2} * 6 * 6;
-  assert(solid->vertices.size() - base_vertex_floats ==
-         kSolidCrosshairVertexFloatCount);
+  assert(solid->overlay_vertices.size() == kSolidCrosshairVertexFloatCount);
+  // Crosshair-only updates reuse the content geometry without copying it.
+  assert(solid->content_vertices == base->content_vertices);
+  assert(solid->content_revision == base->content_revision);
+  assert(solid->revision > base->revision);
 
   engine.SetCrosshair(false, 0.0f, 0.0f);
   config.crosshair_dashed = true;
   config.display_scale = 2.0f;
   engine.SetConfig(config);
-  const size_t dashed_base_vertex_floats = engine.Snapshot()->vertices.size();
+  engine.Snapshot();
   engine.SetCrosshair(true, 400.0f, 220.0f);
   const auto dashed = engine.Snapshot();
-  assert(dashed->vertices.size() - dashed_base_vertex_floats >
-         kSolidCrosshairVertexFloatCount);
-  for (size_t offset = dashed_base_vertex_floats;
-       offset < dashed->vertices.size(); offset += 6) {
-    assert(dashed->vertices[offset] >= dashed->plot.left - 0.5f);
-    assert(dashed->vertices[offset] <= dashed->plot.right + 0.5f);
-    assert(dashed->vertices[offset + 1] >= dashed->plot.top - 0.5f);
-    assert(dashed->vertices[offset + 1] <= dashed->plot.bottom + 0.5f);
+  assert(dashed->overlay_vertices.size() > kSolidCrosshairVertexFloatCount);
+  for (size_t offset = 0; offset < dashed->overlay_vertices.size();
+       offset += 6) {
+    assert(dashed->overlay_vertices[offset] >= dashed->plot.left - 0.5f);
+    assert(dashed->overlay_vertices[offset] <= dashed->plot.right + 0.5f);
+    assert(dashed->overlay_vertices[offset + 1] >= dashed->plot.top - 0.5f);
+    assert(dashed->overlay_vertices[offset + 1] <= dashed->plot.bottom + 0.5f);
   }
 
   const double bearish[] = {0.0, 10.0, 11.0, 7.0, 8.0, 5.0};
@@ -1250,7 +1276,7 @@ void TestBarGeometryAndRuntimeSwitch() {
   ExpectNear(candlesticks->visible_y_min, visible_y_min);
   ExpectNear(candlesticks->visible_y_max, visible_y_max);
   ExpectNear(candlesticks->selected_candle.timestamp, selected_timestamp);
-  assert(candlesticks->vertices.size() != bars->vertices.size());
+  assert(ContentOf(*candlesticks).size() != ContentOf(*bars).size());
 
   const uint64_t candlestick_revision = candlesticks->revision;
   config.series_type = SeriesType::kHollowCandlestick;
@@ -1266,7 +1292,8 @@ void TestBarGeometryAndRuntimeSwitch() {
   ExpectNear(hollow_candlesticks->visible_y_max, visible_y_max);
   ExpectNear(hollow_candlesticks->selected_candle.timestamp,
              selected_timestamp);
-  assert(hollow_candlesticks->vertices.size() != candlesticks->vertices.size());
+  assert(ContentOf(*hollow_candlesticks).size() !=
+         ContentOf(*candlesticks).size());
 }
 
 void TestHollowCandlestickGeometry() {
@@ -1290,7 +1317,7 @@ void TestHollowCandlestickGeometry() {
 
   const auto snapshot = engine.Snapshot();
   const size_t grid_quads = snapshot->x_ticks.size() + snapshot->y_ticks.size();
-  const size_t total_quads = snapshot->vertices.size() / kFloatsPerQuad;
+  const size_t total_quads = ContentOf(*snapshot).size() / kFloatsPerQuad;
   assert(total_quads - grid_quads == 11);
 
   const QuadBounds up_top_wick = SnapshotQuad(*snapshot, grid_quads);
@@ -1370,7 +1397,7 @@ void TestHollowCandlestickSpacingAndClipping() {
       const auto clipped = engine.Snapshot();
       const size_t clipped_grid_quads =
           clipped->x_ticks.size() + clipped->y_ticks.size();
-      const size_t total_quads = clipped->vertices.size() / kFloatsPerQuad;
+      const size_t total_quads = ContentOf(*clipped).size() / kFloatsPerQuad;
       bool touches_left_edge = false;
       for (size_t index = clipped_grid_quads; index < total_quads; ++index) {
         const QuadBounds quad = SnapshotQuad(*clipped, index);
@@ -1444,7 +1471,7 @@ void TestBarSpacingAndClipping() {
       const auto clipped = engine.Snapshot();
       const size_t clipped_grid_quads =
           clipped->x_ticks.size() + clipped->y_ticks.size();
-      const size_t total_quads = clipped->vertices.size() / kFloatsPerQuad;
+      const size_t total_quads = ContentOf(*clipped).size() / kFloatsPerQuad;
       assert(total_quads - clipped_grid_quads == 6);
       const QuadBounds clipped_open =
           SnapshotQuad(*clipped, clipped_grid_quads + 1);
@@ -1502,10 +1529,10 @@ void TestLargeHistoryAndTradeBurst() {
   assert(engine.CandleCount() == kCandleCount + 1);
 
   const auto snapshot = engine.Snapshot();
-  assert(!snapshot->vertices.empty());
+  assert(!ContentOf(*snapshot).empty());
   // Geometry remains capped by LOD instead of growing linearly with 50k
   // candles.
-  assert(snapshot->vertices.size() < 1500000);
+  assert(ContentOf(*snapshot).size() < 1500000);
 }
 
 void TestCurrentPriceLineAndLabelColorsAreIndependent() {
@@ -1697,12 +1724,262 @@ void TestCustomHistogramAndRuntimePaneWeights() {
   ExpectNear(changed->panes[0].height_weight, 4.0);
 }
 
+void TestViewportInDataGapReportsEmptyRange() {
+  ChartEngine engine;
+  engine.SetSize(800.0f, 500.0f);
+  // Irregular timestamps with a large gap between 60000 and 600000.
+  const double history[] = {
+      0.0,  10.0, 12.0,     9.0,  11.0,     1.0,  60000.0, 11.0,
+      13.0, 10.0, 12.0,     1.0,  600000.0, 20.0, 22.0,    19.0,
+      21.0, 1.0,  660000.0, 21.0, 23.0,     20.0, 22.0,    1.0,
+  };
+  assert(engine.SetHistory(history, 24) == UpdateStatus::kApplied);
+
+  // Zoom deep into the gap: the window ends up between two candles.
+  assert(engine.Zoom(20.0, 400.0f));
+  const auto snapshot = engine.Snapshot();
+  assert(snapshot->visible_x_min > 60000.0);
+  assert(snapshot->visible_x_max < 600000.0);
+  assert(!snapshot->has_visible_candles);
+  // Honest empty range: last < first, pointing at the insertion position.
+  assert(snapshot->first_visible_index == 2);
+  assert(snapshot->last_visible_index + 1 == snapshot->first_visible_index);
+  // Autoscale anchors to the candles adjacent to the gap instead of the
+  // whole store.
+  assert(snapshot->visible_y_min < 9.5);
+  assert(snapshot->visible_y_max > 21.0);
+  // Neighboring candles project outside the plot, so extrema stay hidden.
+  assert(!snapshot->visible_maximum.visible);
+  assert(!snapshot->visible_minimum.visible);
+  // No candle quads are tessellated for the main series: content contains
+  // only the grid and the dashed current-price line.
+  const size_t content_quads = ContentOf(*snapshot).size() / (size_t{6} * 6);
+  const size_t grid_quads = snapshot->x_ticks.size() + snapshot->y_ticks.size();
+  const size_t dash_quads = content_quads - grid_quads;
+  const size_t expected_dashes =
+      static_cast<size_t>(std::ceil(snapshot->plot.Width() / 6.0f));
+  assert(dash_quads == expected_dashes);
+
+  // Panning back to data restores a normal visible range.
+  assert(engine.Pan(-8000.0f));
+  const auto restored = engine.Snapshot();
+  assert(restored->has_visible_candles);
+  assert(restored->first_visible_index <= restored->last_visible_index);
+}
+
+void TestTimeModeAdditionalSeriesRendersInsideMainGap() {
+  ChartEngine engine;
+  engine.SetSize(800.0f, 500.0f);
+  const double history[] = {
+      0.0,  10.0, 12.0,     9.0,  11.0,     1.0,  60000.0, 11.0,
+      13.0, 10.0, 12.0,     1.0,  600000.0, 20.0, 22.0,    19.0,
+      21.0, 1.0,  660000.0, 21.0, 23.0,     20.0, 22.0,    1.0,
+  };
+  assert(engine.SetHistory(history, 24) == UpdateStatus::kApplied);
+  assert(engine.Zoom(20.0, 400.0f));
+  const auto gap = engine.Snapshot();
+  assert(!gap->has_visible_candles);
+
+  SeriesConfig histogram;
+  histogram.series_id = "gap-data";
+  histogram.type = SeriesType::kHistogram;
+  histogram.pane_id = "main";
+  histogram.price_scale_id = "main";
+  assert(engine.AddSeries(histogram) == UpdateStatus::kApplied);
+  const double point[] = {
+      (gap->visible_x_min + gap->visible_x_max) * 0.5,
+      500.0,
+  };
+  assert(engine.SetSeriesData("gap-data", point, 2, true) ==
+         UpdateStatus::kApplied);
+
+  const auto snapshot = engine.Snapshot();
+  assert(!snapshot->has_visible_candles);
+  assert(snapshot->visible_y_max > 500.0);
+}
+
+void TestLogicalSpacingAdditionalSeriesAlignment() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.logical_spacing = true;
+  config.initial_visible_count = 5;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 360.0f);
+
+  PaneConfig main;
+  main.height_weight = 2.0;
+  PaneConfig volume;
+  volume.pane_id = "volume";
+  volume.price_scale_id = "volume";
+  volume.height_weight = 1.0;
+  volume.volume_format = true;
+  engine.SetPanes({main, volume}, false);
+
+  SeriesConfig derived;
+  derived.series_id = "volume";
+  derived.type = SeriesType::kHistogram;
+  derived.source = SeriesSource::kOhlcvVolume;
+  derived.pane_id = "volume";
+  derived.price_scale_id = "volume";
+  assert(engine.AddSeries(derived) == UpdateStatus::kApplied);
+
+  SeriesConfig overlay;
+  overlay.series_id = "overlay";
+  overlay.pane_id = "main";
+  overlay.price_scale_id = "main";
+  assert(engine.AddSeries(overlay) == UpdateStatus::kApplied);
+
+  const double history[] = {
+      0.0,  10.0, 13.0,     10.0, 12.0,     10.0, 60000.0, 11.0, 13.0,     10.0,
+      12.0, 20.0, 120000.0, 10.0, 13.0,     10.0, 12.0,    30.0, 180000.0, 11.0,
+      13.0, 10.0, 12.0,     40.0, 240000.0, 10.0, 13.0,    10.0, 12.0,     50.0,
+  };
+  assert(engine.SetHistory(history, 30) == UpdateStatus::kApplied);
+
+  // The 90000 candle is not aligned to a main candle: in logical mode it has
+  // no x position and must be excluded from both geometry and autoscale.
+  const double overlay_candles[] = {
+      0.0,  10.5, 12.5,     10.5, 12.0,    1.0,  60000.0, 10.5,
+      12.5, 10.5, 12.0,     1.0,  90000.0, 1.0,  100.0,   1.0,
+      90.0, 1.0,  120000.0, 10.5, 12.5,    10.5, 12.0,    1.0,
+  };
+  assert(engine.SetSeriesData("overlay", overlay_candles, 24, false) ==
+         UpdateStatus::kApplied);
+
+  const auto snapshot = engine.Snapshot();
+  assert(snapshot->has_visible_candles);
+  assert(snapshot->visible_y_min > 9.0);
+  assert(snapshot->visible_y_max < 50.0);
+  // Derived volume covers exactly the visible main candles.
+  assert(snapshot->panes[1].visible_y_max >= 50.0);
+}
+
+void TestSetConfigWithEquivalentValuesKeepsViewport() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.timeframe_ms = 60000.0;
+  config.initial_visible_count = 10;
+  engine.SetConfig(config);
+  engine.SetSize(800.0f, 500.0f);
+  std::vector<double> history;
+  for (int i = 0; i < 20; ++i) {
+    const double open = 100.0 + i;
+    history.insert(history.end(), {
+                                      static_cast<double>(i) * 60000.0,
+                                      open,
+                                      open + 2.0,
+                                      open - 1.0,
+                                      open + 1.0,
+                                      1.0,
+                                  });
+  }
+  assert(engine.SetHistory(history.data(), history.size()) ==
+         UpdateStatus::kApplied);
+  assert(engine.Zoom(2.0, 400.0f));
+  const auto zoomed = engine.Snapshot();
+
+  // Values that normalize to the current config must not reset the viewport.
+  ChartConfig equivalent = config;
+  equivalent.timeframe_ms = 60000.4;
+  equivalent.initial_visible_count = 10;
+  engine.SetConfig(equivalent);
+  const auto kept = engine.Snapshot();
+  ExpectNear(kept->visible_x_min, zoomed->visible_x_min);
+  ExpectNear(kept->visible_x_max, zoomed->visible_x_max);
+
+  // A real timeframe change still resets the viewport.
+  ChartConfig changed = config;
+  changed.timeframe_ms = 300000.0;
+  engine.SetConfig(changed);
+  const auto reset = engine.Snapshot();
+  assert(reset->visible_x_min != zoomed->visible_x_min ||
+         reset->visible_x_max != zoomed->visible_x_max);
+}
+
+void TestCrosshairOnlySnapshotReusesContent() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 5;
+  engine.SetConfig(config);
+  engine.SetSize(800.0f, 500.0f);
+  std::vector<double> history;
+  for (int i = 0; i < 18; ++i) {
+    const double open = 100.0 + i;
+    history.insert(history.end(), {
+                                      static_cast<double>(i) * 60000.0,
+                                      open,
+                                      open + 2.0,
+                                      open - 1.0,
+                                      open + 1.0,
+                                      1.0,
+                                  });
+  }
+  assert(engine.SetHistory(history.data(), history.size()) ==
+         UpdateStatus::kApplied);
+  const auto base = engine.Snapshot();
+
+  engine.SetCrosshair(true, 400.0f, 220.0f);
+  const auto first = engine.Snapshot();
+  assert(first->content_vertices == base->content_vertices);
+  assert(first->content_revision == base->content_revision);
+  assert(first->revision > base->revision);
+  assert(!first->overlay_vertices.empty());
+  assert(first->crosshair_visible);
+
+  engine.SetCrosshair(true, 300.0f, 200.0f);
+  const auto second = engine.Snapshot();
+  assert(second->content_vertices == first->content_vertices);
+  assert(second->revision > first->revision);
+
+  engine.SetCrosshair(false, 0.0f, 0.0f);
+  const auto cleared = engine.Snapshot();
+  assert(cleared->content_vertices == first->content_vertices);
+  assert(cleared->overlay_vertices.empty());
+  assert(!cleared->crosshair_visible);
+
+  // A content mutation tessellates a fresh content buffer.
+  assert(engine.Pan(40.0f));
+  const auto panned = engine.Snapshot();
+  assert(panned->content_revision > first->content_revision);
+  assert(panned->content_vertices != first->content_vertices);
+}
+
+void TestPaneLayoutEdgeCasesMatchHitTesting() {
+  ChartEngine engine;
+  engine.SetSize(400.0f, 200.0f);
+  PaneConfig main;
+  main.min_height = 150.0f;
+  PaneConfig second;
+  second.pane_id = "volume";
+  second.price_scale_id = "volume";
+  second.min_height = 150.0f;
+  engine.SetPanes({main, second}, true);
+
+  const double history[] = {0.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  assert(engine.SetHistory(history, 6) == UpdateStatus::kApplied);
+  const auto snapshot = engine.Snapshot();
+  assert(snapshot->panes.size() == 2);
+  // Min heights exceed the available space: the first pane wins the remaining
+  // room and the last pane is clamped to the plot bottom.
+  ExpectNear(snapshot->panes[0].plot.top, 8.0);
+  ExpectNear(snapshot->panes[0].plot.Height(), 150.0);
+  ExpectNear(snapshot->panes[1].plot.bottom, 200.0f - 26.0f);
+  // Hit-testing sees the same geometry the renderer produced.
+  const float boundary = snapshot->panes[0].plot.bottom;
+  const auto separator = engine.SeparatorAt(boundary, 3.0f);
+  assert(separator.has_value() && *separator == 0);
+  assert(!engine.SeparatorAt(snapshot->panes[0].plot.top + 20.0f, 3.0f)
+              .has_value());
+}
+
 }  // namespace
 
 int main() noexcept {
   try {
     TestTradeAggregation();
     TestBucketTransitionAndNoGaps();
+    TestMixedTradeBatchReportsAppliedChange();
     TestHistoryContinuation();
     TestPrependHistoryPreservesViewport();
     TestCandlesReturnsAtomicCopyOfCurrentStore();
@@ -1748,6 +2025,12 @@ int main() noexcept {
     TestMultiPaneSeriesAndDerivedVolume();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
+    TestViewportInDataGapReportsEmptyRange();
+    TestTimeModeAdditionalSeriesRendersInsideMainGap();
+    TestLogicalSpacingAdditionalSeriesAlignment();
+    TestSetConfigWithEquivalentValuesKeepsViewport();
+    TestCrosshairOnlySnapshotReusesContent();
+    TestPaneLayoutEdgeCasesMatchHitTesting();
     std::cout << "ChartEngineTests passed\n";
     return 0;
   } catch (...) {

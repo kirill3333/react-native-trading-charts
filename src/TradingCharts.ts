@@ -1,4 +1,5 @@
 import NativeTradingCharts from './NativeTradingCharts';
+import { resolveAdditionalSeriesOptions } from './config';
 import {
   type AdditionalChartSeriesOptions,
   type ChartSeriesDataPoint,
@@ -7,7 +8,7 @@ import {
   type TradeEvent,
 } from './types';
 
-function assertChartId(chartId: string) {
+export function assertChartId(chartId: string) {
   if (typeof chartId !== 'string' || chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
   }
@@ -96,10 +97,7 @@ function isOhlcPoint(point: ChartSeriesDataPoint): point is OhlcCandle {
 function validateHistogramPoint(point: HistogramPoint, index?: number) {
   const prefix = index == null ? 'point' : `points[${index}]`;
   assertFinite(point.timestamp, `${prefix}.timestamp`);
-  if (
-    point.timestamp < 0 ||
-    !Number.isSafeInteger(point.timestamp)
-  ) {
+  if (point.timestamp < 0 || !Number.isSafeInteger(point.timestamp)) {
     throw new TypeError(`${prefix}.timestamp must be a non-negative integer`);
   }
   assertFinite(point.value, `${prefix}.value`);
@@ -120,7 +118,9 @@ function packSeriesData(
   let previousTimestamp = -Infinity;
   points.forEach((point, index) => {
     if (isOhlcPoint(point) !== ohlc) {
-      throw new TypeError('series data must contain one homogeneous point type');
+      throw new TypeError(
+        'series data must contain one homogeneous point type'
+      );
     }
     if (ohlc) {
       validateCandle(point as OhlcCandle, index);
@@ -130,37 +130,16 @@ function packSeriesData(
       packed.push(point.timestamp, (point as HistogramPoint).value);
     }
     if (point.timestamp <= previousTimestamp) {
-      throw new TypeError('series data must have strictly increasing timestamps');
+      throw new TypeError(
+        'series data must have strictly increasing timestamps'
+      );
     }
     previousTimestamp = point.timestamp;
   });
   return { dataType: ohlc ? 'ohlc' : 'histogram', packed };
 }
 
-function validateSeriesOptions(options: AdditionalChartSeriesOptions) {
-  assertIdentifier(options.seriesId, 'options.seriesId');
-  if (options.seriesId === 'main') {
-    throw new TypeError("seriesId 'main' is reserved");
-  }
-  assertIdentifier(options.paneId, 'options.paneId');
-  assertIdentifier(options.priceScaleId, 'options.priceScaleId');
-  if (
-    options.type !== 'candlestick' &&
-    options.type !== 'hollowCandlestick' &&
-    options.type !== 'bar' &&
-    options.type !== 'histogram'
-  ) {
-    throw new TypeError('options.type is invalid');
-  }
-  if (
-    options.type === 'histogram' &&
-    options.source?.type === 'ohlcvVolume'
-  ) {
-    assertIdentifier(options.source.seriesId, 'options.source.seriesId');
-  }
-}
-
-function validateTrade(trade: TradeEvent, index?: number) {
+export function validateTrade(trade: TradeEvent, index?: number) {
   const prefix = index == null ? 'trade' : `trades[${index}]`;
   assertFinite(trade.timestamp, `${prefix}.timestamp`);
   if (trade.timestamp < 0) {
@@ -180,11 +159,32 @@ function validateTrade(trade: TradeEvent, index?: number) {
   }
 }
 
+/**
+ * Validates trades and packs them into the native transport layout
+ * [timestamp, price, size]. Throws synchronously on invalid input or
+ * decreasing timestamps. Shared by updateTrades and the trade batcher.
+ */
+export function packTrades(trades: ReadonlyArray<TradeEvent>): number[] {
+  const packed: number[] = [];
+  let previousTimestamp = -Infinity;
+  trades.forEach((trade, index) => {
+    validateTrade(trade, index);
+    if (trade.timestamp < previousTimestamp) {
+      throw new TypeError('trades must have non-decreasing timestamps');
+    }
+    previousTimestamp = trade.timestamp;
+    packed.push(trade.timestamp, trade.price, trade.size ?? 0);
+  });
+  return packed;
+}
+
 export const TradingCharts = {
   addSeries(chartId: string, options: AdditionalChartSeriesOptions) {
     assertChartId(chartId);
-    validateSeriesOptions(options);
-    NativeTradingCharts.addSeries(chartId, JSON.stringify(options));
+    NativeTradingCharts.addSeries(
+      chartId,
+      JSON.stringify(resolveAdditionalSeriesOptions(options))
+    );
   },
 
   setSeriesData(
@@ -195,12 +195,7 @@ export const TradingCharts = {
     assertChartId(chartId);
     assertIdentifier(seriesId, 'seriesId');
     const { dataType, packed } = packSeriesData(points);
-    NativeTradingCharts.setSeriesData(
-      chartId,
-      seriesId,
-      dataType,
-      packed
-    );
+    NativeTradingCharts.setSeriesData(chartId, seriesId, dataType, packed);
   },
 
   prependSeriesData(
@@ -211,12 +206,7 @@ export const TradingCharts = {
     assertChartId(chartId);
     assertIdentifier(seriesId, 'seriesId');
     const { dataType, packed } = packSeriesData(points);
-    NativeTradingCharts.prependSeriesData(
-      chartId,
-      seriesId,
-      dataType,
-      packed
-    );
+    NativeTradingCharts.prependSeriesData(chartId, seriesId, dataType, packed);
   },
 
   updateSeriesData(
@@ -227,12 +217,7 @@ export const TradingCharts = {
     assertChartId(chartId);
     assertIdentifier(seriesId, 'seriesId');
     const { dataType, packed } = packSeriesData([point], true);
-    NativeTradingCharts.updateSeriesData(
-      chartId,
-      seriesId,
-      dataType,
-      packed
-    );
+    NativeTradingCharts.updateSeriesData(chartId, seriesId, dataType, packed);
   },
 
   removeSeries(chartId: string, seriesId: string) {
@@ -304,17 +289,7 @@ export const TradingCharts = {
 
   updateTrades(chartId: string, trades: ReadonlyArray<TradeEvent>) {
     assertChartId(chartId);
-    const packed: number[] = [];
-    let previousTimestamp = -Infinity;
-    trades.forEach((trade, index) => {
-      validateTrade(trade, index);
-      if (trade.timestamp < previousTimestamp) {
-        throw new TypeError('trades must have non-decreasing timestamps');
-      }
-      previousTimestamp = trade.timestamp;
-      packed.push(trade.timestamp, trade.price, trade.size ?? 0);
-    });
-    NativeTradingCharts.updateTrades(chartId, packed);
+    NativeTradingCharts.updateTrades(chartId, packTrades(trades));
   },
 
   async getCandles(chartId: string): Promise<OhlcCandle[]> {

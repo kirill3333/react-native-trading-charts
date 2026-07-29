@@ -5,6 +5,7 @@ add_library(
   tradingcharts
   SHARED
   ../cpp/chart_engine.cc
+  ../cpp/internal/pane_layout.cc
   ../cpp/internal/render_snapshot_builder.cc
   ../cpp/internal/series_geometry.cc
   src/main/cpp/chart_engine_jni.cc

@@ -183,9 +183,12 @@ NSString *TCMetalShaderSource(void) {
   id<MTLDevice> _device;
   id<MTLCommandQueue> _commandQueue;
   id<MTLRenderPipelineState> _pipeline;
-  id<MTLBuffer> _vertexBuffer;
-  NSUInteger _vertexCapacity;
+  id<MTLBuffer> _contentBuffer;
+  NSUInteger _contentCapacity;
+  id<MTLBuffer> _overlayBuffer;
+  NSUInteger _overlayCapacity;
   std::shared_ptr<const RenderSnapshot> _snapshot;
+  uint64_t _uploadedContentRevision;
   uint64_t _uploadedRevision;
 }
 
@@ -244,18 +247,32 @@ NSString *TCMetalShaderSource(void) {
   os_signpost_interval_end(performanceLog, acquireSignpostID, "Metal Acquire Drawable");
   if (!drawable || !pass || !_pipeline) return;
 
-  const NSUInteger byteCount = snapshot->vertices.size() * sizeof(float);
-  if (snapshot->revision != _uploadedRevision) {
-    if (byteCount > _vertexCapacity) {
-      _vertexCapacity = MAX(byteCount + 4096, 4096);
-      _vertexBuffer = [_device newBufferWithLength:_vertexCapacity options:MTLResourceStorageModeShared];
+  const std::shared_ptr<const std::vector<float>> &content = snapshot->content_vertices;
+  const NSUInteger contentBytes = content ? content->size() * sizeof(float) : 0;
+  const NSUInteger overlayBytes = snapshot->overlay_vertices.size() * sizeof(float);
+  // Content geometry changes only with content_revision (crosshair moves do
+  // not re-upload it); the small overlay buffer follows every revision.
+  if (snapshot->content_revision != _uploadedContentRevision) {
+    if (contentBytes > _contentCapacity) {
+      _contentCapacity = MAX(contentBytes + 4096, 4096);
+      _contentBuffer = [_device newBufferWithLength:_contentCapacity options:MTLResourceStorageModeShared];
     }
-    if (byteCount > 0) {
+    if (contentBytes > 0) {
       os_signpost_id_t uploadSignpostID = os_signpost_id_generate(performanceLog);
       os_signpost_interval_begin(performanceLog, uploadSignpostID, "Metal Vertex Memcpy",
-                                 "bytes=%{public}lu", static_cast<unsigned long>(byteCount));
-      memcpy(_vertexBuffer.contents, snapshot->vertices.data(), byteCount);
+                                 "bytes=%{public}lu", static_cast<unsigned long>(contentBytes));
+      memcpy(_contentBuffer.contents, content->data(), contentBytes);
       os_signpost_interval_end(performanceLog, uploadSignpostID, "Metal Vertex Memcpy");
+    }
+    _uploadedContentRevision = snapshot->content_revision;
+  }
+  if (snapshot->revision != _uploadedRevision) {
+    if (overlayBytes > _overlayCapacity) {
+      _overlayCapacity = MAX(overlayBytes + 4096, 4096);
+      _overlayBuffer = [_device newBufferWithLength:_overlayCapacity options:MTLResourceStorageModeShared];
+    }
+    if (overlayBytes > 0) {
+      memcpy(_overlayBuffer.contents, snapshot->overlay_vertices.data(), overlayBytes);
     }
     _uploadedRevision = snapshot->revision;
   }
@@ -263,18 +280,24 @@ NSString *TCMetalShaderSource(void) {
   os_signpost_id_t encodingSignpostID = os_signpost_id_generate(performanceLog);
   os_signpost_interval_begin(performanceLog, encodingSignpostID, "Metal Encode Commit",
                              "vertices=%{public}lu",
-                             static_cast<unsigned long>(snapshot->vertices.size() / 6));
+                             static_cast<unsigned long>((contentBytes + overlayBytes) / sizeof(float) / 6));
   id<MTLCommandBuffer> command = [_commandQueue commandBuffer];
   id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
   [encoder setRenderPipelineState:_pipeline];
-  if (byteCount > 0 && _vertexBuffer) {
-    [encoder setVertexBuffer:_vertexBuffer offset:0 atIndex:0];
-    TCMetalUniforms uniforms{simd_make_float2(static_cast<float>(snapshot->width),
-                                              static_cast<float>(snapshot->height))};
-    [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+  TCMetalUniforms uniforms{simd_make_float2(static_cast<float>(snapshot->width),
+                                            static_cast<float>(snapshot->height))};
+  [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+  if (contentBytes > 0 && _contentBuffer) {
+    [encoder setVertexBuffer:_contentBuffer offset:0 atIndex:0];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
-                vertexCount:snapshot->vertices.size() / 6];
+                vertexCount:content->size() / 6];
+  }
+  if (overlayBytes > 0 && _overlayBuffer) {
+    [encoder setVertexBuffer:_overlayBuffer offset:0 atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:snapshot->overlay_vertices.size() / 6];
   }
   [encoder endEncoding];
   [command presentDrawable:drawable];
@@ -394,6 +417,9 @@ static NSString *TCCryptoZeroCount(double value, TCValueFormatter *formatter) {
 @interface TCBadgeLayerGroup : NSObject
 @property(nonatomic, strong, readonly) CALayer *backgroundLayer;
 @property(nonatomic, strong, readonly) TCTextLayerItem *textItem;
+// Style-version of the last applied border/corner presentation. Static layer
+// properties are re-applied only when the presentation changes, not per frame.
+@property(nonatomic, assign) NSUInteger appliedStyleVersion;
 - (instancetype)initWithParentLayer:(CALayer *)parentLayer cornerRadius:(CGFloat)cornerRadius;
 @end
 
@@ -513,6 +539,11 @@ struct TCTextPresentation {
   TCBorderConfig _crosshairPriceBorder;
   TCBorderConfig _crosshairTimeBorder;
   TCBorderConfig _tooltipBorder;
+  UIColor *_currentPriceBorderColor;
+  UIColor *_crosshairPriceBorderColor;
+  UIColor *_crosshairTimeBorderColor;
+  UIColor *_tooltipBorderColor;
+  NSUInteger _appliedTooltipStyleVersion;
 
   NSCache<NSString *, NSString *> *_formattedValueCache;
   NSCache<NSString *, NSString *> *_formattedTimeCache;
@@ -778,6 +809,10 @@ struct TCTextPresentation {
   _crosshairPriceBorder = TCBorderFromJson(crosshairPrice[@"border"] ?: @{}, 4);
   _crosshairTimeBorder = TCBorderFromJson(crosshairTime[@"border"] ?: @{}, 4);
   _tooltipBorder = TCBorderFromJson(tooltip[@"border"] ?: @{}, 8);
+  _currentPriceBorderColor = TCUIColor(_currentPriceBorder.color);
+  _crosshairPriceBorderColor = TCUIColor(_crosshairPriceBorder.color);
+  _crosshairTimeBorderColor = TCUIColor(_crosshairTimeBorder.color);
+  _tooltipBorderColor = TCUIColor(_tooltipBorder.color);
 
   [_axisLayoutCache removeAllObjects];
   [_badgeLayoutCache removeAllObjects];
@@ -1046,7 +1081,9 @@ struct TCTextPresentation {
     item.layer.frame = frame;
     ++metrics->frameUpdates;
   }
-  item.layer.hidden = NO;
+  if (item.layer.hidden) {
+    item.layer.hidden = NO;
+  }
   return textChanged;
 }
 
@@ -1102,7 +1139,9 @@ struct TCTextPresentation {
   }
 
   for (NSUInteger poolIndex = 0; poolIndex < pool.count; ++poolIndex) {
-    if (!_usedPoolItems[poolIndex]) pool[poolIndex].layer.hidden = YES;
+    if (!_usedPoolItems[poolIndex] && !pool[poolIndex].layer.hidden) {
+      pool[poolIndex].layer.hidden = YES;
+    }
   }
 }
 
@@ -1121,7 +1160,9 @@ struct TCTextPresentation {
        ++presentationIndex) {
     const NSUInteger poolIndex = _presentationAssignments[presentationIndex];
     TCTextLayerItem *textItem = _extremaLayers[poolIndex];
-    textItem.layer.zPosition = 2;
+    if (textItem.layer.zPosition != 2) {
+      textItem.layer.zPosition = 2;
+    }
     CALayer *connector = [self connectorLayerAtIndex:poolIndex parentLayer:_extremaContainer];
     const CGRect frame = connectorFrames[presentationIndex];
     if (!CGRectEqualToRect(connector.frame, frame)) {
@@ -1132,7 +1173,9 @@ struct TCTextPresentation {
         !CGColorEqualToColor(connector.backgroundColor, lineColor.CGColor)) {
       connector.backgroundColor = lineColor.CGColor;
     }
-    connector.hidden = NO;
+    if (connector.hidden) {
+      connector.hidden = NO;
+    }
 
     CALayer *background = [self extremumBackgroundLayerAtIndex:poolIndex
                                                     parentLayer:_extremaContainer];
@@ -1146,15 +1189,19 @@ struct TCTextPresentation {
         !CGColorEqualToColor(background.backgroundColor, backgroundColor.CGColor)) {
       background.backgroundColor = backgroundColor.CGColor;
     }
-    background.hidden = NO;
+    if (background.hidden) {
+      background.hidden = NO;
+    }
   }
   for (NSUInteger poolIndex = 0; poolIndex < _extremaConnectorLayers.count; ++poolIndex) {
-    if (poolIndex >= _usedPoolItems.size() || !_usedPoolItems[poolIndex]) {
+    if ((poolIndex >= _usedPoolItems.size() || !_usedPoolItems[poolIndex]) &&
+        !_extremaConnectorLayers[poolIndex].hidden) {
       _extremaConnectorLayers[poolIndex].hidden = YES;
     }
   }
   for (NSUInteger poolIndex = 0; poolIndex < _extremaBackgroundLayers.count; ++poolIndex) {
-    if (poolIndex >= _usedPoolItems.size() || !_usedPoolItems[poolIndex]) {
+    if ((poolIndex >= _usedPoolItems.size() || !_usedPoolItems[poolIndex]) &&
+        !_extremaBackgroundLayers[poolIndex].hidden) {
       _extremaBackgroundLayers[poolIndex].hidden = YES;
     }
   }
@@ -1162,18 +1209,21 @@ struct TCTextPresentation {
 
 - (void)hideItemsInPool:(NSMutableArray<TCTextLayerItem *> *)pool fromIndex:(NSUInteger)index {
   for (NSUInteger itemIndex = index; itemIndex < pool.count; ++itemIndex) {
-    pool[itemIndex].layer.hidden = YES;
+    if (!pool[itemIndex].layer.hidden) {
+      pool[itemIndex].layer.hidden = YES;
+    }
   }
 }
 
 - (void)setBadge:(TCBadgeLayerGroup *)badge
-             text:(NSString *)text
-                y:(CGFloat)y
-            color:(TCColor)color
-       attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes
+              text:(NSString *)text
+                 y:(CGFloat)y
+             color:(TCColor)color
+        attributes:(NSDictionary<NSAttributedStringKey, id> *)attributes
             border:(const TCBorderConfig &)border
-         snapshot:(const RenderSnapshot &)snapshot
-          metrics:(TCOverlayUpdateMetrics *)metrics {
+       borderColor:(UIColor *)borderColor
+          snapshot:(const RenderSnapshot &)snapshot
+           metrics:(TCOverlayUpdateMetrics *)metrics {
   TCTextLayout *layout = [self layoutForText:text attributes:attributes
                                        cache:_badgeLayoutCache metrics:metrics];
   CGFloat width = MIN(snapshot.config.y_axis_width, layout.size.width + 12);
@@ -1191,10 +1241,15 @@ struct TCTextPresentation {
       !CGColorEqualToColor(badge.backgroundLayer.backgroundColor, backgroundColor.CGColor)) {
     badge.backgroundLayer.backgroundColor = backgroundColor.CGColor;
   }
-  badge.backgroundLayer.borderWidth = border.width;
-  badge.backgroundLayer.borderColor = TCUIColor(border.color).CGColor;
-  badge.backgroundLayer.cornerRadius = border.radius;
-  badge.backgroundLayer.hidden = NO;
+  if (badge.appliedStyleVersion != _presentationVersion) {
+    badge.appliedStyleVersion = _presentationVersion;
+    badge.backgroundLayer.borderWidth = border.width;
+    badge.backgroundLayer.borderColor = borderColor.CGColor;
+    badge.backgroundLayer.cornerRadius = border.radius;
+  }
+  if (badge.backgroundLayer.hidden) {
+    badge.backgroundLayer.hidden = NO;
+  }
   CGFloat textX = CGRectGetMidX(backgroundFrame) - layout.size.width * 0.5;
   CGRect textFrame = CGRectMake(textX,
                                 backgroundFrame.origin.y + (height - layout.size.height) * 0.5,
@@ -1203,8 +1258,12 @@ struct TCTextPresentation {
 }
 
 - (void)hideBadge:(TCBadgeLayerGroup *)badge {
-  badge.backgroundLayer.hidden = YES;
-  badge.textItem.layer.hidden = YES;
+  if (!badge.backgroundLayer.hidden) {
+    badge.backgroundLayer.hidden = YES;
+  }
+  if (!badge.textItem.layer.hidden) {
+    badge.textItem.layer.hidden = YES;
+  }
 }
 
 - (void)hideAllLayers {
@@ -1268,7 +1327,9 @@ struct TCTextPresentation {
 
   [CATransaction begin];
   [CATransaction setDisableActions:YES];
-  _badgeContainer.hidden = NO;
+  if (_badgeContainer.hidden) {
+    _badgeContainer.hidden = NO;
+  }
   if (staticUpdated) {
     NSUInteger visibleStaticLabels = 0;
     _axisContainer.hidden = NO;
@@ -1387,6 +1448,7 @@ struct TCTextPresentation {
                color:current.current_price_label_color
           attributes:_currentPriceBadgeAttributes
               border:_currentPriceBorder
+         borderColor:_currentPriceBorderColor
             snapshot:current
              metrics:&metrics];
       ++visibleStaticLabels;
@@ -1420,6 +1482,7 @@ struct TCTextPresentation {
              color:_crosshairPriceBackgroundColor
         attributes:_crosshairPriceBadgeAttributes
             border:_crosshairPriceBorder
+       borderColor:_crosshairPriceBorderColor
           snapshot:current
            metrics:&metrics];
   } else {
@@ -1465,10 +1528,15 @@ struct TCTextPresentation {
                                crosshairColor.CGColor)) {
         _crosshairTimeBadge.backgroundLayer.backgroundColor = crosshairColor.CGColor;
       }
-      _crosshairTimeBadge.backgroundLayer.borderWidth = _crosshairTimeBorder.width;
-      _crosshairTimeBadge.backgroundLayer.borderColor = TCUIColor(_crosshairTimeBorder.color).CGColor;
-      _crosshairTimeBadge.backgroundLayer.cornerRadius = _crosshairTimeBorder.radius;
-      _crosshairTimeBadge.backgroundLayer.hidden = NO;
+      if (_crosshairTimeBadge.appliedStyleVersion != _presentationVersion) {
+        _crosshairTimeBadge.appliedStyleVersion = _presentationVersion;
+        _crosshairTimeBadge.backgroundLayer.borderWidth = _crosshairTimeBorder.width;
+        _crosshairTimeBadge.backgroundLayer.borderColor = _crosshairTimeBorderColor.CGColor;
+        _crosshairTimeBadge.backgroundLayer.cornerRadius = _crosshairTimeBorder.radius;
+      }
+      if (_crosshairTimeBadge.backgroundLayer.hidden) {
+        _crosshairTimeBadge.backgroundLayer.hidden = NO;
+      }
       CGRect timeTextFrame = CGRectMake(timeFrame.origin.x + 6,
                                         timeFrame.origin.y + (timeHeight - timeLayout.size.height) * 0.5,
                                         timeLayout.size.width, timeLayout.size.height);
@@ -1528,11 +1596,18 @@ struct TCTextPresentation {
                                  tooltipBackgroundColor.CGColor)) {
           _tooltipBackgroundLayer.backgroundColor = tooltipBackgroundColor.CGColor;
         }
-        _tooltipBackgroundLayer.borderWidth = _tooltipBorder.width;
-        _tooltipBackgroundLayer.borderColor = TCUIColor(_tooltipBorder.color).CGColor;
-        _tooltipBackgroundLayer.cornerRadius = _tooltipBorder.radius;
-        _tooltipContainer.hidden = NO;
-        _tooltipBackgroundLayer.hidden = NO;
+        if (_appliedTooltipStyleVersion != _presentationVersion) {
+          _appliedTooltipStyleVersion = _presentationVersion;
+          _tooltipBackgroundLayer.borderWidth = _tooltipBorder.width;
+          _tooltipBackgroundLayer.borderColor = _tooltipBorderColor.CGColor;
+          _tooltipBackgroundLayer.cornerRadius = _tooltipBorder.radius;
+        }
+        if (_tooltipContainer.hidden) {
+          _tooltipContainer.hidden = NO;
+        }
+        if (_tooltipBackgroundLayer.hidden) {
+          _tooltipBackgroundLayer.hidden = NO;
+        }
         CGFloat y = box.origin.y + 9;
         TCTextLayerItem *headerItem = [self itemAtIndex:0
                                                  inPool:_tooltipLineLayers
@@ -1563,12 +1638,14 @@ struct TCTextPresentation {
         visibleSelectionLabels += values.count * 2;
         [self hideItemsInPool:_tooltipLineLayers fromIndex:2];
         [self hideItemsInPool:_tooltipValueLayers fromIndex:1];
-      } else {
+      } else if (!_tooltipContainer.hidden) {
         _tooltipContainer.hidden = YES;
       }
     } else {
       [self hideBadge:_crosshairTimeBadge];
-      _tooltipContainer.hidden = YES;
+      if (!_tooltipContainer.hidden) {
+        _tooltipContainer.hidden = YES;
+      }
     }
     _visibleSelectionLabels = visibleSelectionLabels;
     _appliedSelectedCandle = current.selected_candle;
@@ -1702,6 +1779,8 @@ struct TCTextPresentation {
   BOOL _pendingPaneResize;
   BOOL _pendingPaneResizeFinished;
   NSMutableSet<NSString *> *_declarativeSeriesIds;
+  uint64_t _lastDrawnRevision;
+  BOOL _forceNextDraw;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -1770,13 +1849,17 @@ struct TCTextPresentation {
   [self stopDeceleration];
   _displayLink.paused = YES;
   _frameScheduled = NO;
-  if (self.window) [self requestFrame];
+  if (self.window) {
+    _forceNextDraw = YES;
+    [self requestFrame];
+  }
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
   [self stopDeceleration];
   _displayLink.paused = YES;
   _frameScheduled = NO;
+  _forceNextDraw = YES;
   [self requestFrame];
 }
 
@@ -1834,10 +1917,21 @@ struct TCTextPresentation {
   os_signpost_interval_end(performanceLog, snapshotSignpostID, "ChartEngine Snapshot",
                            "revision=%{public}llu vertices=%{public}lu",
                            static_cast<unsigned long long>(snapshot->revision),
-                           static_cast<unsigned long>(snapshot->vertices.size() / 6));
+                           static_cast<unsigned long>(
+                               ((snapshot->content_vertices
+                                     ? snapshot->content_vertices->size()
+                                     : 0) +
+                                snapshot->overlay_vertices.size()) / 6));
   [_renderer setSnapshot:snapshot];
   [_overlay setSnapshot:snapshot];
-  [_metalView draw];
+  // Skip presenting identical frames: gesture and data handlers already
+  // coalesce frame requests, but bounded momentum windows and no-op updates
+  // can still schedule frames that carry no state change.
+  if (_forceNextDraw || snapshot->revision != _lastDrawnRevision) {
+    [_metalView draw];
+    _lastDrawnRevision = snapshot->revision;
+    _forceNextDraw = NO;
+  }
   if (snapshot->has_visible_candles) {
     NSInteger first = static_cast<NSInteger>(snapshot->first_visible_index);
     NSInteger last = static_cast<NSInteger>(snapshot->last_visible_index);
@@ -2072,32 +2166,12 @@ struct TCTextPresentation {
   if ([additionalSeries isKindOfClass:NSArray.class]) {
     for (NSDictionary *item in additionalSeries) {
       if (![item isKindOfClass:NSDictionary.class]) continue;
-      SeriesConfig config;
       NSString *seriesId = item[@"seriesId"];
-      NSString *type = item[@"type"];
-      config.series_id = seriesId.UTF8String ?: "";
-      config.pane_id = [item[@"paneId"] UTF8String] ?: "";
-      config.price_scale_id = [item[@"priceScaleId"] UTF8String] ?: "";
-      config.visible = item[@"visible"] ? [item[@"visible"] boolValue] : true;
-      config.declarative = true;
-      if ([type isEqualToString:@"bar"]) config.type = SeriesType::kBar;
-      else if ([type isEqualToString:@"hollowCandlestick"]) {
-        config.type = SeriesType::kHollowCandlestick;
-      } else if ([type isEqualToString:@"histogram"]) {
-        config.type = SeriesType::kHistogram;
-      }
-      NSDictionary *source = item[@"source"];
-      if ([source[@"type"] isEqualToString:@"ohlcvVolume"]) {
-        config.source = SeriesSource::kOhlcvVolume;
-        config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
-      }
-      NSDictionary *seriesAppearance = item[@"appearance"];
-      config.color = TCColorFromHex(seriesAppearance[@"color"], _config.axis_text);
-      config.up = TCColorFromHex(seriesAppearance[@"upColor"], _config.up);
-      config.down = TCColorFromHex(seriesAppearance[@"downColor"], _config.down);
+      SeriesConfig config = [self seriesConfigFromItem:item declarative:YES];
       const UpdateStatus status = _engine->AddSeries(config);
       TCLogStatus(status, @"additionalSeries");
-      if (status == UpdateStatus::kApplied) {
+      if (status == UpdateStatus::kApplied &&
+          [seriesId isKindOfClass:NSString.class]) {
         [nextDeclarativeSeriesIds addObject:seriesId];
       }
     }
@@ -2106,18 +2180,14 @@ struct TCTextPresentation {
   [self requestFrame];
 }
 
-- (SeriesConfig)seriesConfigFromJson:(NSString *)json {
-  NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
-  NSDictionary *item =
-      data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil]
-           : nil;
+- (SeriesConfig)seriesConfigFromItem:(NSDictionary *)item declarative:(BOOL)declarative {
   SeriesConfig config;
-  if (![item isKindOfClass:NSDictionary.class]) return config;
   NSString *type = item[@"type"];
   config.series_id = [item[@"seriesId"] UTF8String] ?: "";
   config.pane_id = [item[@"paneId"] UTF8String] ?: "";
   config.price_scale_id = [item[@"priceScaleId"] UTF8String] ?: "";
   config.visible = item[@"visible"] ? [item[@"visible"] boolValue] : true;
+  config.declarative = declarative;
   if ([type isEqualToString:@"bar"]) config.type = SeriesType::kBar;
   else if ([type isEqualToString:@"hollowCandlestick"]) {
     config.type = SeriesType::kHollowCandlestick;
@@ -2136,10 +2206,20 @@ struct TCTextPresentation {
   return config;
 }
 
+- (SeriesConfig)seriesConfigFromJson:(NSString *)json {
+  NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
+  NSDictionary *item =
+      data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil]
+           : nil;
+  if (![item isKindOfClass:NSDictionary.class]) return SeriesConfig{};
+  return [self seriesConfigFromItem:item declarative:NO];
+}
+
 - (void)addSeriesJson:(NSString *)json {
   SeriesConfig config = [self seriesConfigFromJson:json];
-  TCLogStatus(_engine->AddSeries(config), @"addSeries");
-  [self requestFrame];
+  const UpdateStatus status = _engine->AddSeries(config);
+  TCLogStatus(status, @"addSeries");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 
 - (void)setSeriesData:(NSArray<NSNumber *> *)data
@@ -2161,13 +2241,14 @@ struct TCTextPresentation {
                                     values.size(), histogram);
   }
   TCLogStatus(status, @"seriesData");
-  [self requestFrame];
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 
 - (void)removeSeries:(NSString *)seriesId {
-  _engine->RemoveSeries(seriesId.UTF8String ?: "");
-  [_declarativeSeriesIds removeObject:seriesId];
-  [self requestFrame];
+  if (_engine->RemoveSeries(seriesId.UTF8String ?: "")) {
+    [_declarativeSeriesIds removeObject:seriesId];
+    [self requestFrame];
+  }
 }
 
 - (void)setPaneHeight:(NSString *)paneId weight:(double)weight {
@@ -2182,30 +2263,35 @@ struct TCTextPresentation {
   _pendingScaleChange = NO;
   _pendingYAxisScaleChange = NO;
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->SetHistory(values.data(), values.size()), @"setHistory");
-  [self requestFrame];
+  const UpdateStatus status = _engine->SetHistory(values.data(), values.size());
+  TCLogStatus(status, @"setHistory");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 - (void)prependHistory:(NSArray<NSNumber *> *)data {
   _crosshairPinned = NO;
   _crosshairGestureActive = NO;
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->PrependHistory(values.data(), values.size()), @"prependHistory");
-  [self requestFrame];
+  const UpdateStatus status = _engine->PrependHistory(values.data(), values.size());
+  TCLogStatus(status, @"prependHistory");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 - (void)applyCandle:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->UpdateCandle(values.data(), values.size()), @"updateCandle");
-  [self requestFrame];
+  const UpdateStatus status = _engine->UpdateCandle(values.data(), values.size());
+  TCLogStatus(status, @"updateCandle");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 - (void)applyTrade:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->UpdateTrade(values.data(), values.size()), @"updateTrade");
-  [self requestFrame];
+  const UpdateStatus status = _engine->UpdateTrade(values.data(), values.size());
+  TCLogStatus(status, @"updateTrade");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 - (void)applyTrades:(NSArray<NSNumber *> *)data {
   auto values = TCDoubles(data);
-  TCLogStatus(_engine->UpdateTrades(values.data(), values.size()), @"updateTrades");
-  [self requestFrame];
+  const UpdateStatus status = _engine->UpdateTrades(values.data(), values.size());
+  TCLogStatus(status, @"updateTrades");
+  if (status == UpdateStatus::kApplied) [self requestFrame];
 }
 - (void)zoomByScale:(double)scale {
   [self stopDeceleration];
@@ -2323,8 +2409,9 @@ struct TCTextPresentation {
         [self requestFrame];
       }
     } else if (_config.allow_pan) {
-      _engine->Pan(translation.x);
-      [self requestFrame];
+      if (_engine->Pan(translation.x)) {
+        [self requestFrame];
+      }
     }
     return;
   }
@@ -2359,14 +2446,23 @@ struct TCTextPresentation {
     _crosshairGestureActive = NO;
     CGPoint focus = [recognizer locationInView:self];
     _engine->SetCrosshair(false, focus.x, focus.y);
+    [self requestFrame];
+    return;
+  }
+  if (recognizer.state == UIGestureRecognizerStateEnded ||
+      recognizer.state == UIGestureRecognizerStateCancelled ||
+      recognizer.state == UIGestureRecognizerStateFailed) {
+    _suppressMomentum = NO;
+    return;
   }
   if (recognizer.state != UIGestureRecognizerStateChanged) return;
   CGPoint focus = [recognizer locationInView:self];
-  if (_engine->Zoom(recognizer.scale, focus.x)) {
+  const bool zoomed = _engine->Zoom(recognizer.scale, focus.x);
+  if (zoomed) {
     _pendingScaleChange = YES;
+    [self requestFrame];
   }
   recognizer.scale = 1.0;
-  [self requestFrame];
 }
 - (void)handleLongPress:(UILongPressGestureRecognizer *)recognizer {
   if (recognizer.state == UIGestureRecognizerStateBegan) {

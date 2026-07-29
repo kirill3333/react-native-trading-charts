@@ -1,6 +1,9 @@
 package com.tradingcharts
 
 import android.graphics.Color
+import java.nio.ByteBuffer
+
+private const val CONTENT_FLOATS_PER_VERTEX = 6
 
 internal data class AxisTick(val value: Double, val position: Float)
 
@@ -29,6 +32,11 @@ internal data class PaneSnapshot(
     val precision: Int,
 )
 
+internal data class ChartFrame(
+    val snapshot: ChartSnapshot,
+    val contentVertices: ContentVertexBufferLease?,
+)
+
 internal data class ChartSnapshot(
     val revision: Long,
     val contentRevision: Long,
@@ -49,7 +57,9 @@ internal data class ChartSnapshot(
     val visibleYMin: Double,
     val visibleYMax: Double,
     val yAxisScale: Double,
-    val vertices: FloatArray,
+    // Content geometry is transferred separately through a pooled direct buffer.
+    // Overlay (crosshair) remains small and follows every revision.
+    val overlayVertices: FloatArray,
     val xTicks: List<AxisTick>,
     val yTicks: List<AxisTick>,
     val panes: List<PaneSnapshot>,
@@ -241,6 +251,8 @@ internal object ChartEngineNative {
 
   @JvmStatic external fun nativeSetCrosshair(handle: Long, active: Boolean, x: Float, y: Float)
 
+  @JvmStatic external fun nativeEngineRevision(handle: Long): Long
+
   @JvmStatic private external fun nativeAcquireSnapshot(handle: Long): Long
 
   @JvmStatic private external fun nativeReleaseSnapshot(handle: Long)
@@ -249,7 +261,15 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotContentRevision(handle: Long): Long
 
-  @JvmStatic private external fun nativeSnapshotVertices(handle: Long): FloatArray
+  @JvmStatic private external fun nativeSnapshotContentVertexCount(handle: Long): Int
+
+  @JvmStatic
+  private external fun nativeCopySnapshotContentVertices(
+      handle: Long,
+      target: ByteBuffer,
+  ): Int
+
+  @JvmStatic private external fun nativeSnapshotOverlayVertices(handle: Long): FloatArray
 
   @JvmStatic private external fun nativeSnapshotXTicks(handle: Long): DoubleArray
 
@@ -305,80 +325,125 @@ internal object ChartEngineNative {
     )
   }
 
-  fun snapshot(handle: Long, config: ChartConfig): ChartSnapshot {
+  fun snapshot(
+      handle: Long,
+      config: ChartConfig,
+      previous: ChartSnapshot?,
+      contentBuffers: ContentVertexBufferPool,
+  ): ChartFrame? {
     val snapshot = nativeAcquireSnapshot(handle)
     check(snapshot != 0L) { "Unable to acquire chart snapshot" }
+    var contentVertices: ContentVertexBufferLease? = null
     try {
-      val meta = nativeSnapshotMeta(snapshot)
-      check(meta.size == SnapshotMetaIndex.SIZE) {
-        "Invalid native snapshot metadata size: ${meta.size}"
+      val contentRevision = nativeSnapshotContentRevision(snapshot)
+      if (previous == null || previous.contentRevision != contentRevision) {
+        contentVertices =
+            copyContentVertices(snapshot, contentRevision, contentBuffers) ?: return null
       }
-      fun ticks(values: DoubleArray) =
-          values.asList().chunked(2).map {
-            AxisTick(it[0], it[1].toFloat())
-          }
-      val panes = snapshotPanes(snapshot, config, ::ticks)
-      return ChartSnapshot(
-          revision = nativeSnapshotRevision(snapshot),
-          contentRevision = nativeSnapshotContentRevision(snapshot),
-          config = config,
-          width = meta[SnapshotMetaIndex.WIDTH].toFloat(),
-          height = meta[SnapshotMetaIndex.HEIGHT].toFloat(),
-          plotLeft = meta[SnapshotMetaIndex.PLOT_LEFT].toFloat(),
-          plotTop = meta[SnapshotMetaIndex.PLOT_TOP].toFloat(),
-          plotRight = meta[SnapshotMetaIndex.PLOT_RIGHT].toFloat(),
-          plotBottom = meta[SnapshotMetaIndex.PLOT_BOTTOM].toFloat(),
-          visibleXMin = meta[SnapshotMetaIndex.VISIBLE_X_MIN],
-          visibleXMax = meta[SnapshotMetaIndex.VISIBLE_X_MAX],
-          horizontalScale = meta[SnapshotMetaIndex.HORIZONTAL_SCALE],
-          firstVisibleIndex = meta[SnapshotMetaIndex.FIRST_VISIBLE_INDEX].toInt(),
-          lastVisibleIndex = meta[SnapshotMetaIndex.LAST_VISIBLE_INDEX].toInt(),
-          totalCandleCount = meta[SnapshotMetaIndex.TOTAL_CANDLE_COUNT].toInt(),
-          hasVisibleCandles = meta[SnapshotMetaIndex.HAS_VISIBLE_CANDLES] != 0.0,
-          visibleYMin = meta[SnapshotMetaIndex.VISIBLE_Y_MIN],
-          visibleYMax = meta[SnapshotMetaIndex.VISIBLE_Y_MAX],
-          yAxisScale = meta[SnapshotMetaIndex.Y_AXIS_SCALE],
-          vertices = nativeSnapshotVertices(snapshot),
-          xTicks = ticks(nativeSnapshotXTicks(snapshot)),
-          yTicks = ticks(nativeSnapshotYTicks(snapshot)),
-          panes = panes,
-          activePaneIndex = nativeSnapshotActivePane(snapshot),
-          currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
-          currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
-          currentPriceY = meta[SnapshotMetaIndex.CURRENT_PRICE_Y].toFloat(),
-          currentPriceColor =
-              floatArrayOf(
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_R].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_G].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_B].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_A].toFloat(),
-              ),
-          currentPriceLabelColor =
-              floatArrayOf(
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_R].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_G].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_B].toFloat(),
-                  meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_A].toFloat(),
-              ),
-          visibleMaximum = meta.visibleMaximum(),
-          visibleMinimum = meta.visibleMinimum(),
-          crosshairVisible = meta[SnapshotMetaIndex.CROSSHAIR_VISIBLE] != 0.0,
-          crosshairX = meta[SnapshotMetaIndex.CROSSHAIR_X].toFloat(),
-          crosshairY = meta[SnapshotMetaIndex.CROSSHAIR_Y].toFloat(),
-          crosshairPrice = meta[SnapshotMetaIndex.CROSSHAIR_PRICE],
-          selectedCandle =
-              meta.copyOfRange(
-                  SnapshotMetaIndex.SELECTED_CANDLE_START,
-                  SnapshotMetaIndex.SELECTED_CANDLE_END_EXCLUSIVE,
-              ),
-          selectedChange = meta[SnapshotMetaIndex.SELECTED_CHANGE],
-          selectedChangePercent = meta[SnapshotMetaIndex.SELECTED_CHANGE_PERCENT],
-          selectedAmplitudePercent = meta[SnapshotMetaIndex.SELECTED_AMPLITUDE_PERCENT],
-          selectedPercentagesValid = meta[SnapshotMetaIndex.SELECTED_PERCENTAGES_VALID] != 0.0,
-      )
+      val frame =
+          ChartFrame(
+              snapshot = buildSnapshot(snapshot, contentRevision, config),
+              contentVertices = contentVertices,
+          )
+      contentVertices = null
+      return frame
     } finally {
+      contentVertices?.release()
       nativeReleaseSnapshot(snapshot)
     }
+  }
+
+  private fun copyContentVertices(
+      snapshot: Long,
+      contentRevision: Long,
+      contentBuffers: ContentVertexBufferPool,
+  ): ContentVertexBufferLease? {
+    val contentVertexCount = nativeSnapshotContentVertexCount(snapshot)
+    check(contentVertexCount >= 0) { "Invalid native content vertex count" }
+    check(contentVertexCount % CONTENT_FLOATS_PER_VERTEX == 0) {
+      "Invalid native content vertex layout: $contentVertexCount floats"
+    }
+    val lease = contentBuffers.acquire(contentVertexCount, contentRevision) ?: return null
+    val copied = nativeCopySnapshotContentVertices(snapshot, lease.writableBuffer())
+    if (copied != contentVertexCount) {
+      lease.release()
+      error("Unable to copy native content vertices: expected $contentVertexCount, copied $copied")
+    }
+    return lease
+  }
+
+  private fun buildSnapshot(
+      snapshot: Long,
+      contentRevision: Long,
+      config: ChartConfig,
+  ): ChartSnapshot {
+    val meta = nativeSnapshotMeta(snapshot)
+    check(meta.size == SnapshotMetaIndex.SIZE) {
+      "Invalid native snapshot metadata size: ${meta.size}"
+    }
+    fun ticks(values: DoubleArray) =
+        List(values.size / 2) { index ->
+          AxisTick(values[2 * index], values[2 * index + 1].toFloat())
+        }
+    val panes = snapshotPanes(snapshot, config, ::ticks)
+    return ChartSnapshot(
+        revision = nativeSnapshotRevision(snapshot),
+        contentRevision = contentRevision,
+        config = config,
+        width = meta[SnapshotMetaIndex.WIDTH].toFloat(),
+        height = meta[SnapshotMetaIndex.HEIGHT].toFloat(),
+        plotLeft = meta[SnapshotMetaIndex.PLOT_LEFT].toFloat(),
+        plotTop = meta[SnapshotMetaIndex.PLOT_TOP].toFloat(),
+        plotRight = meta[SnapshotMetaIndex.PLOT_RIGHT].toFloat(),
+        plotBottom = meta[SnapshotMetaIndex.PLOT_BOTTOM].toFloat(),
+        visibleXMin = meta[SnapshotMetaIndex.VISIBLE_X_MIN],
+        visibleXMax = meta[SnapshotMetaIndex.VISIBLE_X_MAX],
+        horizontalScale = meta[SnapshotMetaIndex.HORIZONTAL_SCALE],
+        firstVisibleIndex = meta[SnapshotMetaIndex.FIRST_VISIBLE_INDEX].toInt(),
+        lastVisibleIndex = meta[SnapshotMetaIndex.LAST_VISIBLE_INDEX].toInt(),
+        totalCandleCount = meta[SnapshotMetaIndex.TOTAL_CANDLE_COUNT].toInt(),
+        hasVisibleCandles = meta[SnapshotMetaIndex.HAS_VISIBLE_CANDLES] != 0.0,
+        visibleYMin = meta[SnapshotMetaIndex.VISIBLE_Y_MIN],
+        visibleYMax = meta[SnapshotMetaIndex.VISIBLE_Y_MAX],
+        yAxisScale = meta[SnapshotMetaIndex.Y_AXIS_SCALE],
+        overlayVertices = nativeSnapshotOverlayVertices(snapshot),
+        xTicks = ticks(nativeSnapshotXTicks(snapshot)),
+        yTicks = ticks(nativeSnapshotYTicks(snapshot)),
+        panes = panes,
+        activePaneIndex = nativeSnapshotActivePane(snapshot),
+        currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
+        currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
+        currentPriceY = meta[SnapshotMetaIndex.CURRENT_PRICE_Y].toFloat(),
+        currentPriceColor =
+            floatArrayOf(
+                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_R].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_G].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_B].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_A].toFloat(),
+            ),
+        currentPriceLabelColor =
+            floatArrayOf(
+                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_R].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_G].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_B].toFloat(),
+                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_A].toFloat(),
+            ),
+        visibleMaximum = meta.visibleMaximum(),
+        visibleMinimum = meta.visibleMinimum(),
+        crosshairVisible = meta[SnapshotMetaIndex.CROSSHAIR_VISIBLE] != 0.0,
+        crosshairX = meta[SnapshotMetaIndex.CROSSHAIR_X].toFloat(),
+        crosshairY = meta[SnapshotMetaIndex.CROSSHAIR_Y].toFloat(),
+        crosshairPrice = meta[SnapshotMetaIndex.CROSSHAIR_PRICE],
+        selectedCandle =
+            meta.copyOfRange(
+                SnapshotMetaIndex.SELECTED_CANDLE_START,
+                SnapshotMetaIndex.SELECTED_CANDLE_END_EXCLUSIVE,
+            ),
+        selectedChange = meta[SnapshotMetaIndex.SELECTED_CHANGE],
+        selectedChangePercent = meta[SnapshotMetaIndex.SELECTED_CHANGE_PERCENT],
+        selectedAmplitudePercent = meta[SnapshotMetaIndex.SELECTED_AMPLITUDE_PERCENT],
+        selectedPercentagesValid = meta[SnapshotMetaIndex.SELECTED_PERCENTAGES_VALID] != 0.0,
+    )
   }
 
   private fun snapshotPanes(

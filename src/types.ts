@@ -1,4 +1,10 @@
-import { type NativeSyntheticEvent, type ViewProps } from 'react-native';
+import { type ViewProps } from 'react-native';
+import {
+  type PaneResizeNativeEvent,
+  type PriceScaleChangeNativeEvent,
+  type ScaleChangeNativeEvent,
+  type VisibleRangeChangeNativeEvent,
+} from './TradingChartsViewNativeComponent';
 
 export type OhlcCandle = {
   timestamp: number;
@@ -6,6 +12,8 @@ export type OhlcCandle = {
   high: number;
   low: number;
   close: number;
+  /** Traded volume. Packed as 0 when omitted, so native code and
+   * getCandles() cannot distinguish "no volume" from "zero volume". */
   volume?: number;
 };
 
@@ -74,6 +82,21 @@ export type HistogramSeriesOptions = {
 export type AdditionalChartSeriesOptions =
   | AdditionalOhlcSeriesOptions
   | HistogramSeriesOptions;
+
+/**
+ * Result of resolving an imperative addSeries() call: identifiers and the
+ * source are normalized and `visible` defaults to true. Appearance colors
+ * stay optional — when omitted, the native side falls back to the live chart
+ * configuration (theme), exactly as if the field were absent.
+ */
+export type NormalizedAdditionalChartSeriesOptions =
+  | (AdditionalOhlcSeriesOptions & { visible: boolean })
+  | (Omit<HistogramSeriesOptions, 'visible' | 'source'> & {
+      visible: boolean;
+      source:
+        | { type: 'ohlcvVolume'; seriesId: string }
+        | { type: 'data' };
+    });
 
 export type ChartSeriesDataPoint = OhlcCandle | HistogramPoint;
 
@@ -297,32 +320,15 @@ export type CrosshairOptions = {
   tooltipLabels?: CrosshairTooltipLabels;
 };
 
-export type VisibleRangeChangeEvent = {
-  from: number;
-  to: number;
-  firstVisibleIndex: number;
-  lastVisibleIndex: number;
-  totalCount: number;
-  atStart: boolean;
-  atEnd: boolean;
-};
+// Event payloads are declared once next to the Fabric codegen contract and
+// re-exported here so both sides can never drift apart.
+export type VisibleRangeChangeEvent = VisibleRangeChangeNativeEvent;
 
-export type ScaleChangeEvent = {
-  scale: number;
-};
+export type ScaleChangeEvent = ScaleChangeNativeEvent;
 
-export type PaneResizeEvent = {
-  firstPaneId: string;
-  firstHeightWeight: number;
-  secondPaneId: string;
-  secondHeightWeight: number;
-  finished: boolean;
-};
+export type PaneResizeEvent = PaneResizeNativeEvent;
 
-export type PriceScaleChangeEvent = ScaleChangeEvent & {
-  paneId: string;
-  priceScaleId: string;
-};
+export type PriceScaleChangeEvent = PriceScaleChangeNativeEvent;
 
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
@@ -342,17 +348,11 @@ export type TradingChartsViewProps = ViewProps & {
   currentPrice?: CurrentPriceOptions;
   priceExtremes?: PriceExtremesOptions;
   crosshair?: CrosshairOptions;
-  onVisibleRangeChange?: (
-    event: NativeSyntheticEvent<VisibleRangeChangeEvent>
-  ) => void;
-  onScaleChange?: (event: NativeSyntheticEvent<ScaleChangeEvent>) => void;
-  onYAxisScaleChange?: (
-    event: NativeSyntheticEvent<ScaleChangeEvent>
-  ) => void;
-  onPaneResize?: (event: NativeSyntheticEvent<PaneResizeEvent>) => void;
-  onPriceScaleChange?: (
-    event: NativeSyntheticEvent<PriceScaleChangeEvent>
-  ) => void;
+  onVisibleRangeChange?: (event: VisibleRangeChangeEvent) => void;
+  onScaleChange?: (event: ScaleChangeEvent) => void;
+  onYAxisScaleChange?: (event: ScaleChangeEvent) => void;
+  onPaneResize?: (event: PaneResizeEvent) => void;
+  onPriceScaleChange?: (event: PriceScaleChangeEvent) => void;
   onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
 };
 

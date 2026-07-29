@@ -20,6 +20,7 @@ Android.
 import {
   TradingCharts,
   TradingChartsView,
+  createTradeBatcher,
   type OhlcCandle,
 } from 'react-native-trading-charts';
 
@@ -83,11 +84,11 @@ export function Chart() {
         // `null` is emitted once when the crosshair selection is cleared.
         console.log('Selected candle', candle);
       }}
-      onScaleChange={({ nativeEvent }) => {
-        console.log('Horizontal scale', nativeEvent.scale);
+      onScaleChange={({ scale }) => {
+        console.log('Horizontal scale', scale);
       }}
-      onYAxisScaleChange={({ nativeEvent }) => {
-        console.log('Y-axis scale', nativeEvent.scale);
+      onYAxisScaleChange={({ scale }) => {
+        console.log('Y-axis scale', scale);
       }}
     />
   );
@@ -114,6 +115,11 @@ TradingCharts.updateTrade('btc-1m', {
 
 // Prefer batches for burst/high-frequency feeds.
 TradingCharts.updateTrades('btc-1m', incomingTrades);
+
+// For high-frequency streams that deliver one trade at a time, the batcher
+// reduces JS-to-native calls by forwarding one updateTrades call per interval.
+const batcher = createTradeBatcher('btc-1m', { intervalMs: 32 });
+ws.onmessage = (message) => batcher.add(parseTrade(message));
 
 // Programmatic zoom is anchored to the right edge of the visible range.
 // Values greater than 1 zoom in; values between 0 and 1 zoom out.
@@ -231,11 +237,11 @@ pane and `main` price scale:
     },
   ]}
   panesResizable
-  onPaneResize={({ nativeEvent }) => {
-    console.log(nativeEvent.firstPaneId, nativeEvent.firstHeightWeight);
+  onPaneResize={(event) => {
+    console.log(event.firstPaneId, event.firstHeightWeight);
   }}
-  onPriceScaleChange={({ nativeEvent }) => {
-    console.log(nativeEvent.paneId, nativeEvent.scale);
+  onPriceScaleChange={(event) => {
+    console.log(event.paneId, event.scale);
   }}
 />
 ```

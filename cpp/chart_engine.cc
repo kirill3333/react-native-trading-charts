@@ -172,10 +172,13 @@ void ChartEngine::MarkCrosshairDirtyLocked() {
 void ChartEngine::SetConfig(const ChartConfig& config) {
   ChartConfig normalized_config = NormalizeConfig(config);
   std::lock_guard<std::mutex> lock(mutex_);
+  // Compare against the normalized config: raw inputs that normalize to the
+  // current values must not trigger a viewport reset.
   const bool viewport_defaults_changed =
-      config_.initial_visible_count != config.initial_visible_count ||
-      config_.timeframe_ms != config.timeframe_ms ||
-      config_.logical_spacing != config.logical_spacing;
+      config_.initial_visible_count !=
+          normalized_config.initial_visible_count ||
+      config_.timeframe_ms != normalized_config.timeframe_ms ||
+      config_.logical_spacing != normalized_config.logical_spacing;
   config_ = std::move(normalized_config);
   if (!panes_.empty()) {
     panes_[0].scale_margin_top = config_.y_scale_margin_top;
@@ -747,6 +750,10 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
   }
   if (changed) {
     MarkDirtyLocked();
+    // A mixed batch may contain ignored old trades followed by newer trades
+    // that were applied. Native views use kApplied to decide whether a frame
+    // is needed, so an actual mutation takes precedence over ignored records.
+    return UpdateStatus::kApplied;
   }
   return result;
 }
@@ -943,80 +950,16 @@ bool ChartEngine::ScaleY(float delta_pixels) {
 }
 
 std::vector<Rect> ChartEngine::PaneRectsLocked() const {
-  std::vector<Rect> result(panes_.size());
-  if (panes_.empty()) {
-    return result;
-  }
-  const float y_lane = config_.show_y_axis ? config_.y_axis_width : 0.0f;
-  const float left =
-      config_.show_y_axis && !config_.y_axis_on_right ? y_lane : 0.0f;
-  const float right =
-      width_ - (config_.show_y_axis && config_.y_axis_on_right ? y_lane : 0.0f);
-  const float bottom =
-      height_ - (config_.show_x_axis ? config_.x_axis_height : 0.0f);
-  const float separator = config_.display_scale;
-  const float available =
-      std::max(0.0f, bottom - internal::kTopInset -
-                         separator * static_cast<float>(panes_.size() - 1));
-  std::vector<float> heights(panes_.size(), 0.0f);
-  std::vector<bool> fixed(panes_.size(), false);
-  float remaining = available;
-  double remaining_weight = 0.0;
-  for (const PaneConfig& pane : panes_) {
-    remaining_weight += pane.height_weight;
-  }
-  for (size_t pass = 0; pass < panes_.size(); ++pass) {
-    bool changed = false;
-    for (size_t index = 0; index < panes_.size(); ++index) {
-      if (fixed[index]) {
-        continue;
-      }
-      const float candidate =
-          remaining_weight > 0.0
-              ? static_cast<float>(static_cast<double>(remaining) *
-                                   panes_[index].height_weight /
-                                   remaining_weight)
-              : 0.0f;
-      if (candidate < panes_[index].min_height) {
-        heights[index] = panes_[index].min_height;
-        fixed[index] = true;
-        remaining = std::max(0.0f, remaining - heights[index]);
-        remaining_weight -= panes_[index].height_weight;
-        changed = true;
-      }
-    }
-    if (!changed) {
-      break;
-    }
-  }
-  for (size_t index = 0; index < panes_.size(); ++index) {
-    if (!fixed[index]) {
-      heights[index] = remaining_weight > 0.0
-                           ? static_cast<float>(static_cast<double>(remaining) *
-                                                panes_[index].height_weight /
-                                                remaining_weight)
-                           : 0.0f;
-    }
-  }
-  if (available > 0.0f) {
-    const float total = std::accumulate(heights.begin(), heights.end(), 0.0f);
-    if (total > available && total > 0.0f) {
-      const float scale = available / total;
-      for (float& height : heights) {
-        height *= scale;
-      }
-    }
-  }
-  float top = internal::kTopInset;
-  for (size_t index = 0; index < panes_.size(); ++index) {
-    result[index] = Rect{left, top, right, top + heights[index]};
-    top += heights[index] + separator;
-  }
-  return result;
+  return internal::ComputePaneRects(config_, panes_, width_, height_);
 }
 
 size_t ChartEngine::PaneIndexAtYLocked(float y) const {
   const std::vector<Rect> rects = PaneRectsLocked();
+  return PaneIndexAtYLocked(y, rects);
+}
+
+size_t ChartEngine::PaneIndexAtYLocked(float y,
+                                       const std::vector<Rect>& rects) const {
   for (size_t index = 0; index < rects.size(); ++index) {
     if (y >= rects[index].top && y <= rects[index].bottom) {
       return index;
@@ -1032,11 +975,11 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
       !std::isfinite(delta_pixels)) {
     return false;
   }
-  const size_t pane_index = PaneIndexAtYLocked(y);
+  const std::vector<Rect> rects = PaneRectsLocked();
+  const size_t pane_index = PaneIndexAtYLocked(y, rects);
   if (pane_index >= panes_.size()) {
     return false;
   }
-  const std::vector<Rect> rects = PaneRectsLocked();
   const double plot_height =
       std::max(static_cast<double>(rects[pane_index].Height()), 1.0);
   const double current = panes_[pane_index].y_range_multiplier;
@@ -1131,6 +1074,11 @@ size_t ChartEngine::CandleCount() const {
   return candles_.size();
 }
 
+uint64_t ChartEngine::Revision() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return revision_;
+}
+
 Candle ChartEngine::CandleAt(size_t index) const {
   std::lock_guard<std::mutex> lock(mutex_);
   return index < candles_.size() ? candles_[index] : Candle{};
@@ -1160,6 +1108,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::Snapshot() {
   input.crosshair_touch_y = crosshair_touch_y_;
   input.revision = revision_;
   input.content_revision = content_revision_;
+  input.previous = snapshot_;
   snapshot_ = internal::BuildRenderSnapshot(input);
   dirty_ = false;
   return snapshot_;

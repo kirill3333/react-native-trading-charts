@@ -11,6 +11,9 @@
 
 namespace trading_charts::internal {
 
+// Visible samples are downsampled to at most this many positions.
+inline constexpr size_t kMaxVisibleSamples = 16384;
+
 struct SeriesGeometryInput {
   const ChartConfig& config;
   const std::vector<Candle>& candles;
@@ -25,6 +28,10 @@ struct SeriesGeometryInput {
 };
 
 size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input);
+
+// Quads emitted per visible sample for the given series type
+// (histogram series tessellate outside this path and report 1).
+size_t SeriesQuadsPerSample(SeriesType type);
 
 void AppendSeriesGeometry(const SeriesGeometryInput& input,
                           std::vector<float>& vertices);

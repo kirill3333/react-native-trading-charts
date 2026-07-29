@@ -215,7 +215,12 @@ struct RenderSnapshot {
   double selected_change = 0.0;
   double selected_change_percent = 0.0;
   double selected_amplitude_percent = 0.0;
-  std::vector<float> vertices;
+  // Content geometry (grid, series, pane separators, current price) changes
+  // only with content_revision and is shared between consecutive snapshots
+  // without copying. Null when there is no drawable content.
+  std::shared_ptr<const std::vector<float>> content_vertices;
+  // Overlay geometry (crosshair) is rebuilt with every revision.
+  std::vector<float> overlay_vertices;
   std::vector<AxisTick> x_ticks;
   std::vector<AxisTick> y_ticks;
   std::vector<AxisTick> pane_y_ticks;
@@ -291,6 +296,8 @@ class ChartEngine {
 
   bool Pan(float delta_pixels);
   bool Zoom(double scale, float focus_x);
+  // Programmatic zoom anchored at the live edge. Intentionally not gated by
+  // `allow_zoom`, which only restricts the pinch gesture.
   void ZoomAtRightEdge(double scale);
   bool ScaleY(float delta_pixels);
   bool ScaleYAt(float delta_pixels, float y);
@@ -299,6 +306,10 @@ class ChartEngine {
   void SetCrosshair(bool active, float x, float y);
 
   size_t CandleCount() const;
+
+  // Current render revision. Cheaper than Snapshot() when the caller only
+  // needs to know whether render-relevant state changed.
+  uint64_t Revision() const;
 
   // Returns a value-initialized candle when `index` is outside the store.
   Candle CandleAt(size_t index) const;
@@ -341,6 +352,7 @@ class ChartEngine {
   void ResetViewportLocked();
   void FitContentLocked();
   size_t PaneIndexAtYLocked(float y) const;
+  size_t PaneIndexAtYLocked(float y, const std::vector<Rect>& rects) const;
   std::vector<Rect> PaneRectsLocked() const;
   SeriesData* FindSeriesLocked(const std::string& series_id);
   const SeriesData* FindSeriesLocked(const std::string& series_id) const;

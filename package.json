@@ -135,7 +135,7 @@
       "customExportConditions": [
         "require",
         "react-native",
-        "<%- project.sourceCondition -%>"
+        "react-native-trading-charts-source"
       ]
     },
     "modulePathIgnorePatterns": [

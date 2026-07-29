@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { type TradingCharts as TradingChartsExport } from '../TradingCharts';
-import { type resolveChartConfig as resolveChartConfigExport } from '../config';
+import {
+  type resolveAdditionalSeriesOptions as resolveAdditionalSeriesOptionsExport,
+  type resolveChartConfig as resolveChartConfigExport,
+} from '../config';
 import { selectedCandleFromNativeEvent } from '../events';
+import { type createTradeBatcher as createTradeBatcherExport } from '../tradeBatcher';
 
 const mockNativeModule = {
   setHistory: jest.fn(),
@@ -29,8 +33,13 @@ jest.mock('../NativeTradingCharts', () => ({
 const { TradingCharts } = require('../TradingCharts') as {
   TradingCharts: typeof TradingChartsExport;
 };
-const { resolveChartConfig } = require('../config') as {
-  resolveChartConfig: typeof resolveChartConfigExport;
+const { resolveAdditionalSeriesOptions, resolveChartConfig } =
+  require('../config') as {
+    resolveAdditionalSeriesOptions: typeof resolveAdditionalSeriesOptionsExport;
+    resolveChartConfig: typeof resolveChartConfigExport;
+  };
+const { createTradeBatcher } = require('../tradeBatcher') as {
+  createTradeBatcher: typeof createTradeBatcherExport;
 };
 
 describe('TradingCharts data API', () => {
@@ -144,6 +153,134 @@ describe('TradingCharts data API', () => {
       'chart',
       'volume',
       0.35
+    );
+  });
+
+  it('resolves imperative addSeries options before sending them', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'momentum',
+      type: 'histogram',
+      paneId: 'indicator',
+      priceScaleId: 'indicator',
+      appearance: { color: '#FFAA00' },
+    });
+    expect(mockNativeModule.addSeries).toHaveBeenCalledTimes(1);
+    const firstCall = mockNativeModule.addSeries.mock.calls[0]!;
+    expect(firstCall[0]).toBe('chart');
+    expect(JSON.parse(firstCall[1] as string)).toEqual({
+      seriesId: 'momentum',
+      type: 'histogram',
+      paneId: 'indicator',
+      priceScaleId: 'indicator',
+      visible: true,
+      source: { type: 'data' },
+      appearance: { color: '#FFAA00' },
+    });
+
+    TradingCharts.addSeries('chart', {
+      seriesId: 'volume',
+      type: 'histogram',
+      paneId: 'volume',
+      priceScaleId: 'volume',
+      visible: false,
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+    });
+    const secondCall = mockNativeModule.addSeries.mock.calls[1]!;
+    expect(secondCall[0]).toBe('chart');
+    expect(JSON.parse(secondCall[1] as string)).toEqual({
+      seriesId: 'volume',
+      type: 'histogram',
+      paneId: 'volume',
+      priceScaleId: 'volume',
+      visible: false,
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+    });
+  });
+
+  it('rejects invalid imperative addSeries options', () => {
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        seriesId: 'bad id',
+        type: 'histogram',
+        paneId: 'volume',
+        priceScaleId: 'volume',
+      })
+    ).toThrow('seriesId');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        seriesId: 'momentum',
+        type: 'histogram',
+        paneId: 'indicator',
+        priceScaleId: 'indicator',
+        appearance: { color: 'orange' },
+      })
+    ).toThrow('#RRGGBB');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        seriesId: 'comparison',
+        type: 'line' as 'bar',
+        paneId: 'main',
+        priceScaleId: 'main',
+      })
+    ).toThrow('type');
+  });
+
+  it('batches trades through createTradeBatcher', () => {
+    jest.useFakeTimers();
+    try {
+      const batcher = createTradeBatcher('main', { intervalMs: 16 });
+      batcher.add({ timestamp: 100, price: 12, size: 3 });
+      batcher.add({ timestamp: 101, price: 13 });
+      expect(mockNativeModule.updateTrades).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(16);
+      expect(mockNativeModule.updateTrades).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.updateTrades).toHaveBeenCalledWith(
+        'main',
+        [100, 12, 3, 101, 13, 0]
+      );
+
+      expect(() => batcher.add({ timestamp: 99, price: 11 })).toThrow(
+        'non-decreasing'
+      );
+      batcher.add({ timestamp: 102, price: 14 });
+      batcher.flush();
+      expect(mockNativeModule.updateTrades).toHaveBeenCalledTimes(2);
+
+      batcher.add({ timestamp: 103, price: 15 });
+      batcher.dispose();
+      jest.advanceTimersByTime(100);
+      expect(mockNativeModule.updateTrades).toHaveBeenCalledTimes(2);
+      expect(() => batcher.add({ timestamp: 104, price: 16 })).toThrow(
+        'disposed'
+      );
+
+      const invalid = createTradeBatcher('main');
+      expect(() => invalid.add({ timestamp: -1, price: 1 })).toThrow();
+      expect(() =>
+        TradingCharts.updateTrades('main', [
+          { timestamp: 200, price: 1 },
+          { timestamp: 199, price: 2 },
+        ])
+      ).toThrow('non-decreasing');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('validates createTradeBatcher options synchronously', () => {
+    expect(() => createTradeBatcher('')).toThrow('chartId');
+    expect(() => createTradeBatcher('main', { intervalMs: 0 })).toThrow(
+      'intervalMs'
+    );
+    expect(() => createTradeBatcher('main', { intervalMs: 1.5 })).toThrow(
+      'intervalMs'
+    );
+    expect(() => createTradeBatcher('main', { intervalMs: NaN })).toThrow(
+      'intervalMs'
+    );
+    expect(() => createTradeBatcher('main', { intervalMs: Infinity })).toThrow(
+      'intervalMs'
     );
   });
 
@@ -705,9 +842,7 @@ describe('chart config', () => {
       negativeValueColor: '#FF334F',
     });
 
-    const serialized = JSON.parse(
-      JSON.stringify(resolved)
-    ) as typeof resolved;
+    const serialized = JSON.parse(JSON.stringify(resolved)) as typeof resolved;
     expect(serialized.series).toEqual({ type: 'bar' });
     expect(serialized.appearance.bars.lineWidth).toBe(1.5);
   });
@@ -743,9 +878,7 @@ describe('chart config', () => {
       negativeValueColor: '#FF334F',
     });
 
-    const serialized = JSON.parse(
-      JSON.stringify(resolved)
-    ) as typeof resolved;
+    const serialized = JSON.parse(JSON.stringify(resolved)) as typeof resolved;
     expect(serialized.series).toEqual({ type: 'hollowCandlestick' });
   });
 
@@ -762,7 +895,11 @@ describe('chart config', () => {
       },
       formatters: {
         date: {
-          xAxis: { seconds: 'HH:mm:ss.SSS', day: 'dd/MM', timeZone: 'Europe/London' },
+          xAxis: {
+            seconds: 'HH:mm:ss.SSS',
+            day: 'dd/MM',
+            timeZone: 'Europe/London',
+          },
           crosshairTimeBadge: { pattern: 'HH:mm:ss', locale: 'ru-RU' },
           tooltipHeader: { pattern: 'dd MMM yyyy' },
         },

@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
 import android.widget.OverScroller
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.uimanager.UIManagerHelper
 import java.util.concurrent.atomic.AtomicBoolean
@@ -23,6 +24,7 @@ private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
 @Suppress("TooManyFunctions")
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
+  private val contentBuffers = ContentVertexBufferPool()
   private val renderer = ChartRenderer()
   private val plotView =
       GLSurfaceView(context).apply {
@@ -53,6 +55,43 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var separatorLastY = 0f
   private var pendingPaneResizeIndex = -1
   private var pendingPaneResizeFinished = false
+  private var lastSnapshot: ChartSnapshot? = null
+  private var lastAppliedRevision = -1L
+
+  private val frameCallback = Runnable {
+    frameScheduled.set(false)
+    if (disposed || !isAttachedToWindow) return@Runnable
+    // Pending event flags accompany engine mutations; skip the whole
+    // snapshot marshal only when neither happened since the last frame.
+    val hasPendingEvents =
+        pendingPaneResizeIndex >= 0 || pendingScaleChange || pendingYAxisScaleChange
+    if (
+        !hasPendingEvents &&
+            lastSnapshot != null &&
+            ChartEngineNative.nativeEngineRevision(engineHandle) == lastAppliedRevision
+    ) {
+      return@Runnable
+    }
+    val frame =
+        ChartEngineNative.snapshot(engineHandle, config, lastSnapshot, contentBuffers)
+            ?: run {
+              // All bounded direct-buffer slots are temporarily owned by the
+              // GL thread. Retry on the next vsync without blocking the UI or
+              // allocating an unbounded fallback buffer.
+              scheduleFrame()
+              return@Runnable
+            }
+    val snapshot = frame.snapshot
+    lastSnapshot = snapshot
+    lastAppliedRevision = snapshot.revision
+    renderer.submit(frame)
+    overlay.snapshot = snapshot
+    plotView.requestRender()
+    emitVisibleRangeChange(snapshot)
+    emitSelectedCandleChange(snapshot)
+    emitScaleChanges(snapshot)
+    emitPaneResize(snapshot)
+  }
 
   private val flingFrame =
       object : Runnable {
@@ -309,37 +348,43 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     crosshairGestureActive = false
     pendingScaleChange = false
     pendingYAxisScaleChange = false
-    logStatus("setHistory", ChartEngineNative.nativeSetHistory(engineHandle, values))
-    scheduleFrame()
+    val status = ChartEngineNative.nativeSetHistory(engineHandle, values)
+    logStatus("setHistory", status)
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun prependHistory(values: DoubleArray) {
     crosshairPinned = false
     crosshairGestureActive = false
-    logStatus("prependHistory", ChartEngineNative.nativePrependHistory(engineHandle, values))
-    scheduleFrame()
+    val status = ChartEngineNative.nativePrependHistory(engineHandle, values)
+    logStatus("prependHistory", status)
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun applyCandle(values: DoubleArray) {
-    logStatus("updateCandle", ChartEngineNative.nativeUpdateCandle(engineHandle, values))
-    scheduleFrame()
+    val status = ChartEngineNative.nativeUpdateCandle(engineHandle, values)
+    logStatus("updateCandle", status)
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun applyTrade(values: DoubleArray) {
-    logStatus("updateTrade", ChartEngineNative.nativeUpdateTrade(engineHandle, values))
-    scheduleFrame()
+    val status = ChartEngineNative.nativeUpdateTrade(engineHandle, values)
+    logStatus("updateTrade", status)
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun applyTrades(values: DoubleArray) {
-    logStatus("updateTrades", ChartEngineNative.nativeUpdateTrades(engineHandle, values))
-    scheduleFrame()
+    val status = ChartEngineNative.nativeUpdateTrades(engineHandle, values)
+    logStatus("updateTrades", status)
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun addSeries(seriesJson: String) {
     try {
       val series = seriesConfigFromJson(seriesJson, config)
-      logStatus("addSeries", ChartEngineNative.addSeries(engineHandle, series))
-      scheduleFrame()
+      val status = ChartEngineNative.addSeries(engineHandle, series)
+      logStatus("addSeries", status)
+      if (status == STATUS_APPLIED) scheduleFrame()
     } catch (error: JSONException) {
       logInvalidConfig(error)
     } catch (error: IllegalArgumentException) {
@@ -380,12 +425,13 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
               )
         }
     logStatus("seriesData", status)
-    scheduleFrame()
+    if (status == STATUS_APPLIED) scheduleFrame()
   }
 
   fun removeSeries(seriesId: String) {
-    ChartEngineNative.nativeRemoveSeries(engineHandle, seriesId)
-    scheduleFrame()
+    if (ChartEngineNative.nativeRemoveSeries(engineHandle, seriesId)) {
+      scheduleFrame()
+    }
   }
 
   fun setPaneHeight(paneId: String, heightWeight: Double) {
@@ -435,18 +481,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun scheduleFrame() {
     if (disposed || !isAttachedToWindow || !frameScheduled.compareAndSet(false, true)) return
-    postOnAnimation {
-      frameScheduled.set(false)
-      if (disposed || !isAttachedToWindow) return@postOnAnimation
-      val snapshot = ChartEngineNative.snapshot(engineHandle, config)
-      renderer.snapshot = snapshot
-      overlay.snapshot = snapshot
-      plotView.requestRender()
-      emitVisibleRangeChange(snapshot)
-      emitSelectedCandleChange(snapshot)
-      emitScaleChanges(snapshot)
-      emitPaneResize(snapshot)
-    }
+    postOnAnimation(frameCallback)
   }
 
   private fun emitVisibleRangeChange(snapshot: ChartSnapshot) {
@@ -531,10 +566,12 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     val reactContext = context as? ReactContext
     val hasTarget = separatorIndex >= 0 && id != NO_ID
     val hasPayload = first != null && second != null && reactContext != null
+    pendingPaneResizeIndex = -1
     if (!hasTarget || !hasPayload) {
+      // Reset alongside the index so a stale flag cannot fire a late event.
+      pendingPaneResizeFinished = false
       return
     }
-    pendingPaneResizeIndex = -1
     val finished = pendingPaneResizeFinished
     pendingPaneResizeFinished = false
     UIManagerHelper.getEventDispatcher(reactContext)
@@ -629,6 +666,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    (context as? ReactContext)?.addLifecycleEventListener(lifecycleListener)
     plotView.onResume()
     pendingChartId?.let { id ->
       if (registeredChartId == null) {
@@ -646,7 +684,9 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   override fun onDetachedFromWindow() {
     stopFling()
+    removeCallbacks(frameCallback)
     frameScheduled.set(false)
+    (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)
     plotView.onPause()
     registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
     registeredChartId = null
@@ -657,10 +697,27 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     if (disposed) return
     stopFling()
     disposed = true
+    renderer.clearPending()
+    (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)
     registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
     registeredChartId = null
     ChartEngineNative.nativeDestroy(engineHandle)
   }
+
+  private val lifecycleListener =
+      object : LifecycleEventListener {
+        override fun onHostResume() {
+          plotView.onResume()
+          scheduleFrame()
+        }
+
+        override fun onHostPause() {
+          stopFling()
+          plotView.onPause()
+        }
+
+        override fun onHostDestroy() = Unit
+      }
 
   private fun reconcileDeclarativeSeries() {
     val requestedIds = config.additionalSeries.mapTo(mutableSetOf()) { it.seriesId }
@@ -681,5 +738,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     private const val TAG = "TradingCharts"
     private const val FLING_DISTANCE_LIMIT = 1_000_000_000
     private const val PAST_EDGE_DATA_WAIT_MS = 1_500L
+    private const val STATUS_APPLIED = 0
   }
 }

@@ -18,18 +18,30 @@ formatting, and React Native integration in the iOS and Android layers.
 ## Architecture map
 
 - `src/TradingChartsView.native.tsx`: validates `chartId`, resolves config, and
-  passes a memoized JSON config to the generated Fabric component.
-- `src/TradingChartsViewNativeComponent.ts`: Fabric view codegen contract.
-- `src/NativeTradingCharts.ts`: TurboModule command contract.
-- `src/TradingCharts.ts`: public imperative API.
+  passes a memoized JSON config to the generated Fabric component. Unwraps all
+  native events into plain payloads for public handlers.
+- `src/TradingChartsViewNativeComponent.ts`: Fabric view codegen contract and
+  the single source of truth for event payload types.
+- `src/NativeTradingCharts.ts`: TurboModule command contract. The module is
+  resolved lazily so importing the package never throws on non-native
+  platforms.
+- `src/TradingCharts.ts`: public imperative API. `addSeries` options are
+  resolved/normalized in JS before crossing the bridge.
+- `src/tradeBatcher.ts`: `createTradeBatcher`, the recommended way to feed
+  high-frequency trade streams (one `updateTrades` call per interval).
 - `cpp/chart_engine.{h,cc}`: shared candle store, trade aggregation, viewport,
-  autoscale, ticks, crosshair selection, and triangle generation.
+  autoscale, ticks, crosshair selection, and snapshot publication.
+- `cpp/internal/pane_layout.{h,cc}`: single source of truth for pane rects,
+  shared by gesture hit-testing and the snapshot builder.
+- `cpp/internal/render_snapshot_builder.{h,cc}`: immutable snapshot
+  construction, visible-range computation, autoscale, ticks, and geometry
+  tessellation (split into content and overlay vertex buffers).
 - `cpp/internal/series_geometry.{h,cc}`: shared, allocation-free geometry
   strategies for candlestick, bar, and future price-series render types.
 - `ios/TradingChartsView.mm`: Fabric view, gestures, on-demand frame scheduling,
   Metal renderer, and Core Animation text overlay.
-- `ios/TradingChartsRegistry.mm`: main-thread command routing and pending-command
-  replay for views identified by `chartId`.
+- `ios/TradingChartsRegistry.mm`: main-thread command routing and bounded
+  pending-command replay for views identified by `chartId`.
 - `android/src/main/cpp/chart_engine_jni.cc`: JNI bridge to the shared engine and
   snapshot serialization.
 - `android/src/main/java/com/tradingcharts/TradingChartsView.kt`: native view,
@@ -46,18 +58,26 @@ formatting, and React Native integration in the iOS and Android layers.
 1. JavaScript calls the TurboModule using a stable, unique `chartId`.
 2. The platform registry dispatches on the main thread. If the Fabric view is
    not mounted, it retains commands and replays them when the view registers.
-   A queued `setHistory` replaces older queued work.
+   A queued `setHistory` replaces older queued work. Pending queues are
+   bounded; the oldest streaming commands (candle/trade batches) are dropped
+   first so an unmounted view cannot grow memory without limit.
 3. The native view mutates its `ChartEngine`; the engine increments `revision_`
    and marks its cached snapshot dirty.
 4. The native view requests one frame. Repeated requests before the next vsync
-   are coalesced.
+   are coalesced. Data and gesture handlers request frames only when the
+   engine reports an actual state change.
 5. `ChartEngine::snapshot()` builds an immutable `RenderSnapshot` only when
-   dirty; otherwise it returns the cached `shared_ptr`.
-6. The GPU renderer consumes `vertices`; the native overlay consumes ticks and
-   metadata from the same snapshot.
+   dirty; otherwise it returns the cached `shared_ptr`. When only crosshair
+   state changed (`content_revision` unchanged), the builder copies the
+   previous snapshot, shares its content vertex buffer without copying, and
+   rebuilds only the crosshair overlay.
+6. The GPU renderer consumes `content_vertices` and `overlay_vertices` from
+   the same snapshot in two draws; the native overlay consumes ticks and
+   metadata. `content_vertices` is re-uploaded only when `content_revision`
+   changes; `overlay_vertices` follows every revision.
 7. Visible-range events are emitted only when the first index, last index, or
-   total candle count changes. Preserve this guard to avoid unnecessary JS
-   traffic.
+   total candle count changes, and only while `has_visible_candles` is true.
+   Preserve this guard to avoid unnecessary JS traffic.
 
 ## Shared C++ engine invariants
 
@@ -71,9 +91,22 @@ formatting, and React Native integration in the iOS and Android layers.
   changes output must call `markDirtyLocked()`.
 - Geometry is interleaved as six floats per vertex: `x, y, r, g, b, a`, and is
   rendered as triangles. iOS and Android must keep this contract identical.
+- A snapshot carries two vertex buffers. `content_vertices` (grid, series,
+  pane separators, current price) changes only with `content_revision` and is
+  shared between consecutive snapshots; `overlay_vertices` (crosshair) is
+  rebuilt with every revision. Renderers upload and draw the two buffers
+  separately. `content_vertices` is null when there is no drawable content.
 - Series types tessellate into that common triangle list. Keep style selection
   in shared C++ and avoid platform-specific candle/bar geometry or GPU line
   primitives.
+- Pane rects come from `internal::ComputePaneRects`, used identically by
+  gesture hit-testing and the snapshot builder. Do not re-implement pane
+  layout elsewhere.
+- A viewport that contains no candles (a data gap) yields an honest empty
+  visible range: `has_visible_candles` is false, `last_visible_index` is
+  `first_visible_index - 1`, autoscale anchors to the adjacent candles, and
+  platforms suppress visible-range events. Do not fall back to scanning the
+  whole store.
 - The engine operates in native view coordinates. iOS uses points with the
   default `displayScale` of 1. Android uses pixels and passes density as
   `displayScale`, so physical tick density stays comparable.
@@ -96,12 +129,16 @@ formatting, and React Native integration in the iOS and Android layers.
 - Rendering is on demand. `requestFrame` coalesces requests; each display-link
   callback immediately pauses the link again. Momentum explicitly schedules the
   next frame. Do not convert this to an always-running display link.
+- Gesture and data handlers call `requestFrame` only when the engine reports a
+  state change (`Pan`/`Zoom`/`ScaleYAt` return values, `UpdateStatus::kApplied`).
 - The display-link callback obtains one snapshot, assigns the same `shared_ptr`
-  to Metal and the overlay, calls `MTKView.draw`, and conditionally emits the
-  visible range.
-- `TCMetalRenderer` grows and reuses a shared vertex buffer. It copies vertices
-  only when the snapshot revision changes and encodes a single triangle draw.
-  Preserve revision-based uploads and capacity reuse.
+  to Metal and the overlay, and calls `MTKView.draw` only when the snapshot
+  revision differs from the last drawn one (forced after window re-attach and
+  `applicationDidBecomeActive`).
+- `TCMetalRenderer` keeps two grow-only shared vertex buffers. Content is
+  copied only when `content_revision` changes; the small crosshair overlay
+  buffer follows every revision. Preserve revision-based uploads and capacity
+  reuse.
 - `currentDrawable` / `currentRenderPassDescriptor` acquisition may represent
   GPU or presentation pacing. Time spent in `Metal Acquire Drawable` is not by
   itself evidence of CPU computation; use Metal System Trace before changing
@@ -121,6 +158,10 @@ Keep these properties:
 - X and Y layers are pools; hide unused layers rather than destroying them.
 - `applyLayout` changes `CATextLayer.string` only when the cached layout identity
   changes. Frame-only movement must not reassign attributed text.
+- Static layer properties (badge borders, corner radii) are re-applied only
+  when the presentation version changes, and `hidden`/`zPosition` writes are
+  guarded by their current value. Do not reintroduce unconditional property
+  writes into per-frame paths.
 - X/Y presentation reconciliation is deliberately two-pass. First reserve every
   unused layer whose cached `TCTextLayout` already matches a requested label;
   then assign unmatched labels to remaining layers. This prevents an index-shift
@@ -179,23 +220,38 @@ Metal glyph atlas is a larger architectural change, not a routine optimization.
 - `GLSurfaceView` must remain `RENDERMODE_WHEN_DIRTY`. `scheduleFrame` uses an
   `AtomicBoolean` plus `postOnAnimation` to coalesce UI-thread work, then updates
   both renderers and calls `requestRender()`.
+- The frame callback first reads the engine revision through a cheap JNI call
+  (`nativeEngineRevision`) and skips the whole snapshot marshal when neither
+  the revision nor a pending event flag changed. Data handlers schedule frames
+  only on `UpdateStatus` applied.
 - Fling uses `OverScroller` and `postOnAnimation`; stop it on new input,
-  visibility loss, detach, and disposal.
+  visibility loss, detach, and disposal. A React `LifecycleEventListener`
+  forwards host pause/resume to the `GLSurfaceView`.
 - `ChartEngineNative.snapshot()` acquires a native `shared_ptr`, copies metadata,
-  vertices, and ticks into JVM-owned objects, and releases the holder in
-  `finally`. Preserve the acquire/release pairing. Be aware that Android has a
-  per-revision JNI/array-copy cost that iOS does not have.
-- `ChartRenderer.snapshot` is `@Volatile` because it crosses from the UI thread
-  to the GL thread.
-- GLES uploads a VBO only when `revision` changes and then performs one triangle
-  draw. Preserve the uploaded-revision guard. The current upload creates a new
-  direct `ByteBuffer`; buffer reuse is a plausible optimization, but measure
-  allocations and CPU before changing it.
+  ticks, and the small overlay array into JVM-owned objects, and releases the
+  holder in `finally`. Preserve the acquire/release pairing. When
+  `contentRevision` changes, JNI copies content geometry directly into one of
+  three bounded, grow-only direct-buffer slots. Crosshair-only frames reuse the
+  existing slot and skip the large copy.
+- `ChartRenderer.submit()` transfers the newest frame from the UI thread to the
+  GL thread through a synchronized single-frame mailbox. Replacing a pending
+  frame must release its content-buffer lease; a metadata-only replacement with
+  the same `contentRevision` inherits that lease.
+- GLES owns two grow-only VBO slots. Content uploads consume the pooled direct
+  buffer without a Java `FloatArray` or second staging copy; the small overlay
+  array still uses a grow-only direct staging buffer. The renderer retains the
+  latest content lease so it can restore the VBO after EGL recreation. Content
+  uploads follow `contentRevision`, overlay follows `revision`.
+  Cached upload revisions must be reset in `onSurfaceCreated`: GLSurfaceView
+  destroys the EGL context on pause, and stale revisions would draw from
+  buffers that no longer exist.
 - The Android overlay uses `Canvas.drawText`, persistent `Paint` objects, and
-  formatter reuse keyed by config. It invalidates when a new snapshot arrives.
-  The iOS `CATextLayer` pool cannot be copied directly to Android; equivalent
-  work would involve cached measurements/layouts, reduced overlay invalidation,
-  or a platform-appropriate text layer/atlas.
+  formatter reuse keyed by config. It re-applies without invalidation when the
+  snapshot revision is unchanged, caches measured axis/badge labels by value
+  bits (cleared on config change), and reuses scratch `RectF`/`Date` objects
+  instead of allocating in `onDraw`. The iOS `CATextLayer` pool cannot be
+  copied directly to Android; further work would involve a platform-appropriate
+  text layer/atlas.
 - Android sizes are pixels. Do not mix dp and px: JSON dimensions are scaled in
   `ChartConfig.fromJson`, while engine and gesture coordinates use pixels.
 

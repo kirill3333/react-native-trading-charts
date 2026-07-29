@@ -9,10 +9,9 @@
 #include <vector>
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/pane_layout.h"
 
 namespace trading_charts::internal {
-
-inline constexpr float kTopInset = 8.0f;
 
 // References engine-owned state while ChartEngine holds its mutex. The
 // builder copies everything needed by the published snapshot before returning.
@@ -33,6 +32,10 @@ struct SnapshotBuildInput {
   float crosshair_touch_y = 0.0f;
   std::uint64_t revision = 0;
   std::uint64_t content_revision = 0;
+  // The previously published snapshot of the same engine. When its
+  // content_revision matches, the builder reuses its content geometry
+  // instead of tessellating everything again.
+  std::shared_ptr<const RenderSnapshot> previous = nullptr;
 };
 
 // Builds a new immutable snapshot from state protected by ChartEngine's mutex.

@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
+import { StyleSheet } from 'react-native';
 import {
   TradingChartsView,
   type AdditionalChartSeriesOptions,
@@ -21,9 +21,7 @@ type InteractiveChartProps = {
   minMove: number;
   showVolume: boolean;
   volumeHeightWeight: number;
-  onVisibleRangeChange: (
-    event: NativeSyntheticEvent<VisibleRangeChangeEvent>
-  ) => void;
+  onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
 };
 
 export const InteractiveChart = memo(function InteractiveChart({

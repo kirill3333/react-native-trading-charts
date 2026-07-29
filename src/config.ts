@@ -1,4 +1,5 @@
 import {
+  type AdditionalChartSeriesOptions,
   type ChartAppearance,
   type ChartBorderStyle,
   type ChartFormatters,
@@ -7,6 +8,7 @@ import {
   type ChartTheme,
   type ChartTextStyle,
   type CompactValueFormat,
+  type NormalizedAdditionalChartSeriesOptions,
   type PriceDisplayFormat,
   type PriceValueFormat,
   type ResolvedChartAppearance,
@@ -588,6 +590,67 @@ function resolveFormatters(
         'formatters.price.tooltip'
       ),
     },
+  };
+}
+
+/**
+ * Validates and normalizes an imperative addSeries() call the same way the
+ * declarative additionalSeries config path does, minus the pane/theme
+ * context that only the view-level config has. Appearance colors stay
+ * optional so the native side can fall back to the live chart configuration.
+ */
+export function resolveAdditionalSeriesOptions(
+  options: AdditionalChartSeriesOptions,
+  name = 'options'
+): NormalizedAdditionalChartSeriesOptions {
+  const seriesId = identifier(options.seriesId, `${name}.seriesId`);
+  if (seriesId === 'main') {
+    throw new TypeError(`${name}.seriesId 'main' is reserved`);
+  }
+  const paneId = identifier(options.paneId, `${name}.paneId`);
+  const priceScaleId = identifier(
+    options.priceScaleId,
+    `${name}.priceScaleId`
+  );
+  if (options.type !== 'histogram') {
+    if (
+      options.type !== 'candlestick' &&
+      options.type !== 'hollowCandlestick' &&
+      options.type !== 'bar'
+    ) {
+      throw new TypeError(
+        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar' or 'histogram'`
+      );
+    }
+    return {
+      ...options,
+      seriesId,
+      paneId,
+      priceScaleId,
+      visible: options.visible ?? true,
+    };
+  }
+  const source = options.source ?? { type: 'data' as const };
+  if (source.type === 'ohlcvVolume') {
+    identifier(source.seriesId, `${name}.source.seriesId`);
+  }
+  const appearance = options.appearance;
+  if (appearance?.color != null) {
+    color(appearance.color, `${name}.appearance.color`);
+  }
+  if (appearance?.upColor != null) {
+    color(appearance.upColor, `${name}.appearance.upColor`);
+  }
+  if (appearance?.downColor != null) {
+    color(appearance.downColor, `${name}.appearance.downColor`);
+  }
+  return {
+    ...options,
+    seriesId,
+    paneId,
+    priceScaleId,
+    visible: options.visible ?? true,
+    source,
   };
 }
 

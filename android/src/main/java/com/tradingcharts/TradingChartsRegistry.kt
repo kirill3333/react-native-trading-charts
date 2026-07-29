@@ -44,6 +44,8 @@ internal object TradingChartsRegistry {
   private val handler = Handler(Looper.getMainLooper())
   private val entries = mutableMapOf<String, Entry>()
 
+  private const val MAX_PENDING_COMMANDS = 256
+
   fun register(view: TradingChartsView, chartId: String) = onMain {
     val entry = entries.getOrPut(chartId) { Entry() }
     val current = entry.view?.get()
@@ -154,8 +156,31 @@ internal object TradingChartsRegistry {
         entry.pending.removeAll {
           it is Command.SeriesData && it.seriesId == command.seriesId
         }
+      } else if (command is Command.PaneHeight) {
+        entry.pending.removeAll {
+          it is Command.PaneHeight && it.paneId == command.paneId
+        }
+      } else if (command is Command.FitContent) {
+        entry.pending.removeAll { it is Command.FitContent }
       }
       entry.pending += command
+      trimPending(chartId, entry.pending)
+    }
+  }
+
+  // Bound the backlog of a chartId whose view is not mounted: oldest
+  // streaming updates are dropped first. If no streaming command remains,
+  // drop the oldest command so the limit stays hard for every command mix.
+  private fun trimPending(chartId: String, pending: MutableList<Command>) {
+    while (pending.size > MAX_PENDING_COMMANDS) {
+      val dropIndex = pending.indexOfFirst {
+        it is Command.Candle || it is Command.Trade || it is Command.Trades
+      }
+      val dropped = pending.removeAt(if (dropIndex >= 0) dropIndex else 0)
+      Log.w(
+          "TradingCharts",
+          "Pending command limit reached for '$chartId'; dropping ${dropped.javaClass.simpleName}",
+      )
     }
   }
 

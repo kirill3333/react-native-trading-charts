@@ -12,6 +12,7 @@ import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
@@ -23,7 +24,7 @@ import kotlin.math.pow
 import kotlin.math.round
 import kotlin.math.roundToInt
 
-@Suppress("LargeClass")
+@Suppress("LargeClass", "TooManyFunctions")
 internal class ChartOverlayView(context: Context) : View(context) {
   private data class PreparedValueFormat(
       val number: NumberFormat,
@@ -55,9 +56,34 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   var snapshot: ChartSnapshot? = null
     set(value) {
+      // Re-applying an identical revision carries no visual change; keep the
+      // previous frame instead of invalidating and redrawing all text.
+      if (value != null && field?.revision == value.revision) {
+        field = value
+        return
+      }
       field = value
       invalidate()
     }
+
+  /** Cached axis label and its measured width, keyed by value bits. */
+  private data class AxisLabel(
+      val text: String,
+      val width: Float,
+  )
+
+  /** Everything drawBadge needs to place one badge without re-measuring. */
+  private data class BadgeContent(
+      val label: AxisLabel,
+      val y: Float,
+      val backgroundColor: Int,
+  )
+
+  /** Access-ordered cache that evicts the least recently used label. */
+  private class BoundedCache<K, V>(private val maximumSize: Int) :
+      LinkedHashMap<K, V>(maximumSize + 1, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?) = size > maximumSize
+  }
 
   private val density = resources.displayMetrics.density
   private val scaledDensity = resources.displayMetrics.scaledDensity
@@ -97,6 +123,17 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private var tooltipChangePercentBits = 0L
   private var tooltipAmplitudePercentBits = 0L
   private var tooltipPercentagesValid = false
+  // Axis/badge label caches are bounded for long-running pan/zoom sessions and
+  // invalidated in prepare() on any config change.
+  private val xLabelCache = BoundedCache<Long, AxisLabel>(MAX_X_LABEL_CACHE_SIZE)
+  private val yLabelCache = HashMap<String, BoundedCache<Long, AxisLabel>>()
+  private var timeBadgeLabel: AxisLabel? = null
+  private var timeBadgeBits = 0L
+  private var currentPriceLabel: AxisLabel? = null
+  private var currentPriceBits = 0L
+  private val scratchDate = Date(0L)
+  private val scratchRect = RectF()
+  private val scratchBorderRect = RectF()
 
   init {
     setWillNotDraw(false)
@@ -168,6 +205,10 @@ internal class ChartOverlayView(context: Context) : View(context) {
     tooltipConfig = null
     maximumLabelCache.hasValue = false
     minimumLabelCache.hasValue = false
+    xLabelCache.clear()
+    yLabelCache.clear()
+    timeBadgeLabel = null
+    currentPriceLabel = null
   }
 
   private fun applyTextStyle(
@@ -334,9 +375,12 @@ internal class ChartOverlayView(context: Context) : View(context) {
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
       drawBadge(
           canvas,
-          formatValue(frame.currentPrice, currentPriceValueFormat),
-          frame.currentPriceY,
-          colorFromFloats(frame.currentPriceLabelColor),
+          frame,
+          BadgeContent(
+              currentPriceLabel(frame),
+              frame.currentPriceY,
+              colorFromFloats(frame.currentPriceLabelColor),
+          ),
           currentPriceBadge = true,
       )
     }
@@ -344,46 +388,65 @@ internal class ChartOverlayView(context: Context) : View(context) {
     drawExtremum(canvas, frame.visibleMinimum, frame, minimumLabelCache)
 
     if (frame.crosshairVisible) {
-      val activePane = frame.panes.getOrNull(frame.activePaneIndex) ?: frame.panes.firstOrNull()
-      val crosshairText =
-          if (activePane?.volumeFormat == true) {
-            formatVolume(
-                frame.crosshairPrice,
-                paneVolumeFormats[activePane.priceScaleId] ?: volumeFormat,
-            )
-          } else {
-            formatValue(
-                frame.crosshairPrice,
-                activePane?.let { paneValueFormats[it.priceScaleId] } ?: crosshairPriceValueFormat,
-            )
-          }
-      drawBadge(
-          canvas,
-          crosshairText,
-          frame.crosshairY,
-          config.crosshairPriceBackgroundColor,
-          currentPriceBadge = false,
-      )
-      drawTimeBadge(
-          canvas,
-          crosshairTimeDateFormat.format(Date(frame.selectedCandle[0].toLong())),
-          frame,
-      )
+      drawCrosshairBadges(canvas, frame)
       if (config.showTooltip) drawTooltip(canvas, frame)
     }
+  }
+
+  private fun currentPriceLabel(frame: ChartSnapshot): AxisLabel {
+    val bits = frame.currentPrice.toBits()
+    val cached = currentPriceLabel
+    if (cached != null && currentPriceBits == bits) return cached
+    val text = formatValue(frame.currentPrice, currentPriceValueFormat)
+    return AxisLabel(text, currentPriceTextPaint.measureText(text)).also {
+      currentPriceLabel = it
+      currentPriceBits = bits
+    }
+  }
+
+  private fun drawCrosshairBadges(canvas: Canvas, frame: ChartSnapshot) {
+    val activePane = frame.panes.getOrNull(frame.activePaneIndex) ?: frame.panes.firstOrNull()
+    val priceText =
+        if (activePane?.volumeFormat == true) {
+          formatVolume(
+              frame.crosshairPrice,
+              paneVolumeFormats[activePane.priceScaleId] ?: volumeFormat,
+          )
+        } else {
+          formatValue(
+              frame.crosshairPrice,
+              activePane?.let { paneValueFormats[it.priceScaleId] } ?: crosshairPriceValueFormat,
+          )
+        }
+    drawBadge(
+        canvas,
+        frame,
+        BadgeContent(
+            AxisLabel(priceText, crosshairPriceTextPaint.measureText(priceText)),
+            frame.crosshairY,
+            frame.config.crosshairPriceBackgroundColor,
+        ),
+        currentPriceBadge = false,
+    )
+    drawTimeBadge(canvas, frame)
   }
 
   private fun drawXAxis(canvas: Canvas, frame: ChartSnapshot) {
     val xAxisTop = frame.panes.lastOrNull()?.plotBottom ?: frame.plotBottom
     var lastRight = -Float.MAX_VALUE
-    val formatter = axisDateFormats[timeFormatIndex(frame)]
+    val formatIndex = timeFormatIndex(frame)
+    val formatter = axisDateFormats[formatIndex]
     frame.xTicks.forEach { tick ->
-      val label = formatter.format(Date(tick.value.toLong()))
-      val width = xAxisPaint.measureText(label)
-      val x = max(2f, min(frame.width - width - 2f, tick.position - width / 2f))
+      val key = 31L * tick.value.toBits() + formatIndex
+      val label =
+          xLabelCache.getOrPut(key) {
+            val text = formatter.format(scratchDate.apply { time = tick.value.toLong() })
+            AxisLabel(text, xAxisPaint.measureText(text))
+          }
+      val x = max(2f, min(frame.width - label.width - 2f, tick.position - label.width / 2f))
       if (x >= lastRight + 8f * density) {
-        canvas.drawText(label, x, xAxisTop + 16f * density, xAxisPaint)
-        lastRight = x + width
+        canvas.drawText(label.text, x, xAxisTop + 16f * density, xAxisPaint)
+        lastRight = x + label.width
       }
     }
   }
@@ -393,18 +456,25 @@ internal class ChartOverlayView(context: Context) : View(context) {
       if (!pane.scaleVisible) return@forEach
       val valueFormatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
       val volumeFormatter = paneVolumeFormats[pane.priceScaleId]
+      val paneCache =
+          yLabelCache.getOrPut(pane.priceScaleId) {
+            BoundedCache(MAX_Y_LABEL_CACHE_SIZE)
+          }
       pane.yTicks.forEach { tick ->
         val label =
-            if (pane.volumeFormat) {
-              formatVolume(tick.value, volumeFormatter ?: volumeFormat)
-            } else {
-              formatValue(tick.value, valueFormatter)
+            paneCache.getOrPut(tick.value.toBits()) {
+              val text =
+                  if (pane.volumeFormat) {
+                    formatVolume(tick.value, volumeFormatter ?: volumeFormat)
+                  } else {
+                    formatValue(tick.value, valueFormatter)
+                  }
+              AxisLabel(text, yAxisPaint.measureText(text))
             }
-        val width = yAxisPaint.measureText(label)
         val x =
             if (frame.config.yAxisOnRight) pane.plotRight + 6f * density
-            else max(2f, pane.plotLeft - width - 6f * density)
-        canvas.drawText(label, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
+            else max(2f, pane.plotLeft - label.width - 6f * density)
+        canvas.drawText(label.text, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
       }
     }
   }
@@ -413,41 +483,55 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private fun drawBadge(
       canvas: Canvas,
-      text: String,
-      y: Float,
-      backgroundColor: Int,
+      frame: ChartSnapshot,
+      badge: BadgeContent,
       currentPriceBadge: Boolean,
   ) {
-    val frame = requireNotNull(snapshot)
     val config = frame.config
     val textPaint = if (currentPriceBadge) currentPriceTextPaint else crosshairPriceTextPaint
     val border = if (currentPriceBadge) config.currentPriceBorder else config.crosshairPriceBorder
-    val textWidth = textPaint.measureText(text)
     val height = max(20f * density, textPaint.descent() - textPaint.ascent() + 6f * density)
     val halfHeight = height / 2f
-    val badgeY = y.coerceIn(halfHeight, max(halfHeight, frame.height - halfHeight))
-    val width = min(config.yAxisWidth, textWidth + 12f * density)
+    val badgeY = badge.y.coerceIn(halfHeight, max(halfHeight, frame.height - halfHeight))
+    val width = min(config.yAxisWidth, badge.label.width + 12f * density)
     val x = if (config.yAxisOnRight) frame.plotRight else max(0f, frame.plotLeft - width)
-    val rect = RectF(x, badgeY - halfHeight, x + width, badgeY + halfHeight)
-    drawBackground(canvas, rect, backgroundColor, border)
+    val rect = scratchRect
+    rect.set(x, badgeY - halfHeight, x + width, badgeY + halfHeight)
+    drawBackground(canvas, rect, badge.backgroundColor, border)
     canvas.drawText(
-        text,
+        badge.label.text,
         rect.left + 6f * density,
         centeredBaseline(rect.centerY(), textPaint),
         textPaint,
     )
   }
 
-  private fun drawTimeBadge(canvas: Canvas, text: String, frame: ChartSnapshot) {
+  private fun drawTimeBadge(canvas: Canvas, frame: ChartSnapshot) {
+    val bits = frame.selectedCandle[0].toBits()
+    val cached = timeBadgeLabel
+    val label =
+        if (cached != null && timeBadgeBits == bits) {
+          cached
+        } else {
+          val text =
+              crosshairTimeDateFormat.format(
+                  scratchDate.apply { time = frame.selectedCandle[0].toLong() }
+              )
+          AxisLabel(text, crosshairTimeTextPaint.measureText(text)).also {
+            timeBadgeLabel = it
+            timeBadgeBits = bits
+          }
+        }
     val height =
         max(
             20f * density,
             crosshairTimeTextPaint.descent() - crosshairTimeTextPaint.ascent() + 6f * density,
         )
-    val width = crosshairTimeTextPaint.measureText(text) + 12f * density
+    val width = label.width + 12f * density
     val left = max(frame.plotLeft, min(frame.plotRight - width, frame.crosshairX - width / 2f))
     val xAxisTop = frame.panes.lastOrNull()?.plotBottom ?: frame.plotBottom
-    val rect = RectF(left, xAxisTop, left + width, xAxisTop + height)
+    val rect = scratchRect
+    rect.set(left, xAxisTop, left + width, xAxisTop + height)
     drawBackground(
         canvas,
         rect,
@@ -455,7 +539,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
         frame.config.crosshairTimeBorder,
     )
     canvas.drawText(
-        text,
+        label.text,
         rect.left + 6f * density,
         centeredBaseline(rect.centerY(), crosshairTimeTextPaint),
         crosshairTimeTextPaint,
@@ -474,7 +558,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
       borderPaint.color = border.color
       borderPaint.strokeWidth = border.widthPx
       val inset = border.widthPx / 2f
-      val borderRect = RectF(rect).apply { inset(inset, inset) }
+      val borderRect = scratchBorderRect
+      borderRect.set(rect)
+      borderRect.inset(inset, inset)
       canvas.drawRoundRect(
           borderRect,
           max(0f, border.radiusPx - inset),
@@ -534,13 +620,13 @@ internal class ChartOverlayView(context: Context) : View(context) {
     val left =
         if (frame.crosshairX > frame.width / 2f) frame.plotLeft + 8f * density
         else frame.plotRight - layout.width - 8f * density
-    val rect =
-        RectF(
-            left,
-            frame.plotTop + 8f * density,
-            left + layout.width,
-            frame.plotTop + 8f * density + layout.height,
-        )
+    val rect = scratchRect
+    rect.set(
+        left,
+        frame.plotTop + 8f * density,
+        left + layout.width,
+        frame.plotTop + 8f * density + layout.height,
+    )
     val background = config.tooltipBackgroundColor
     val alpha = (Color.alpha(background) * config.tooltipBackgroundOpacity).roundToInt()
     drawBackground(
@@ -696,6 +782,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
   companion object {
     private const val TAG = "TradingCharts"
     private const val MIN_CRYPTO_ZERO_COUNT = 1
+    private const val MAX_X_LABEL_CACHE_SIZE = 1024
+    private const val MAX_Y_LABEL_CACHE_SIZE = 256
     private const val SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
   }
 }

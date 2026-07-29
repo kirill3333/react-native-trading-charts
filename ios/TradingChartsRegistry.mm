@@ -19,6 +19,36 @@
   NSMutableDictionary<NSString *, TCRegistryEntry *> *_entries;
 }
 
+// Upper bound for queued commands of a chartId whose view is not mounted.
+// Oldest streaming updates are dropped first, then the oldest remaining
+// command so every possible command mix stays bounded.
+static const NSUInteger TCMaxPendingCommands = 256;
+
+static void TCTrimPendingCommands(NSMutableArray<NSDictionary *> *pending,
+                                  NSString *chartId) {
+  while (pending.count > TCMaxPendingCommands) {
+    NSUInteger dropIndex =
+        [pending indexOfObjectPassingTest:^BOOL(NSDictionary *command, NSUInteger, BOOL *) {
+          NSString *type = command[@"type"];
+          return [type isEqualToString:@"candle"] ||
+              [type isEqualToString:@"trade"] ||
+              [type isEqualToString:@"trades"];
+        }];
+    if (dropIndex == NSNotFound) dropIndex = 0;
+    NSString *droppedType = pending[dropIndex][@"type"] ?: @"unknown";
+    [pending removeObjectAtIndex:dropIndex];
+    NSLog(@"[TradingCharts] pending command limit reached for '%@'; dropping %@",
+          chartId, droppedType);
+  }
+}
+
+static void TCAppendPendingCommand(NSMutableArray<NSDictionary *> *pending,
+                                   NSDictionary *command,
+                                   NSString *chartId) {
+  [pending addObject:command];
+  TCTrimPendingCommands(pending, chartId);
+}
+
 + (instancetype)shared {
   static TradingChartsRegistry *registry;
   static dispatch_once_t onceToken;
@@ -96,7 +126,7 @@
 
 - (void)enqueue:(NSString *)type data:(NSArray<NSNumber *> *)data chartId:(NSString *)chartId {
   if (chartId.length == 0) return;
-  NSArray<NSNumber *> *copy = [data copy];
+  NSArray<NSNumber *> *copy = [data copy] ?: @[];
   [self onMain:^{
     TCRegistryEntry *entry = [self entryFor:chartId create:YES];
     TradingChartsView *view = entry.view;
@@ -120,7 +150,8 @@
           }];
       [entry.pending removeObjectsAtIndexes:indexes];
     }
-    [entry.pending addObject:@{ @"type": type, @"data": copy }];
+    TCAppendPendingCommand(entry.pending, @{ @"type": type, @"data": copy },
+                           chartId);
   }];
 }
 
@@ -147,27 +178,29 @@
     if (entry.view) {
       [entry.view addSeriesJson:seriesJson];
     } else {
-      [entry.pending addObject:@{ @"type": @"addSeries", @"json": seriesJson ?: @"" }];
+      TCAppendPendingCommand(
+          entry.pending,
+          @{ @"type": @"addSeries", @"json": seriesJson ?: @"" }, chartId);
     }
   }];
 }
 
 - (void)setSeriesData:(NSArray<NSNumber *> *)data
                chartId:(NSString *)chartId
-               seriesId:(NSString *)seriesId
-               dataType:(NSString *)dataType
+              seriesId:(NSString *)seriesId
+              dataType:(NSString *)dataType
                 prepend:(BOOL)prepend
                  update:(BOOL)update {
   if (chartId.length == 0 || seriesId.length == 0) return;
-  NSArray<NSNumber *> *copy = [data copy];
+  NSArray<NSNumber *> *copy = [data copy] ?: @[];
   [self onMain:^{
     TCRegistryEntry *entry = [self entryFor:chartId create:YES];
     if (entry.view) {
       [entry.view setSeriesData:copy
-                      seriesId:seriesId
-                      dataType:dataType
-                       prepend:prepend
-                        update:update];
+                       seriesId:seriesId
+                       dataType:dataType
+                        prepend:prepend
+                         update:update];
       return;
     }
     if (!prepend && !update) {
@@ -178,14 +211,14 @@
           }];
       [entry.pending removeObjectsAtIndexes:indexes];
     }
-    [entry.pending addObject:@{
+    TCAppendPendingCommand(entry.pending, @{
       @"type": @"seriesData",
       @"data": copy,
       @"seriesId": seriesId,
       @"dataType": dataType ?: @"",
       @"prepend": @(prepend),
       @"update": @(update),
-    }];
+    }, chartId);
   }];
 }
 
@@ -194,7 +227,11 @@
   [self onMain:^{
     TCRegistryEntry *entry = [self entryFor:chartId create:YES];
     if (entry.view) [entry.view removeSeries:seriesId];
-    else [entry.pending addObject:@{ @"type": @"removeSeries", @"seriesId": seriesId }];
+    else {
+      TCAppendPendingCommand(
+          entry.pending,
+          @{ @"type": @"removeSeries", @"seriesId": seriesId }, chartId);
+    }
   }];
 }
 
@@ -205,11 +242,19 @@
   [self onMain:^{
     TCRegistryEntry *entry = [self entryFor:chartId create:YES];
     if (entry.view) [entry.view setPaneHeight:paneId weight:weight];
-    else [entry.pending addObject:@{
-      @"type": @"paneHeight",
-      @"paneId": paneId,
-      @"weight": @(weight),
-    }];
+    else {
+      NSIndexSet *indexes = [entry.pending indexesOfObjectsPassingTest:
+          ^BOOL(NSDictionary *command, NSUInteger, BOOL *) {
+            return [command[@"type"] isEqualToString:@"paneHeight"] &&
+                [command[@"paneId"] isEqualToString:paneId];
+          }];
+      [entry.pending removeObjectsAtIndexes:indexes];
+      TCAppendPendingCommand(entry.pending, @{
+        @"type": @"paneHeight",
+        @"paneId": paneId,
+        @"weight": @(weight),
+      }, chartId);
+    }
   }];
 }
 
@@ -231,7 +276,8 @@
     if (view) {
       [view zoomByScale:scale];
     } else {
-      [entry.pending addObject:@{ @"type": @"zoom", @"scale": @(scale) }];
+      TCAppendPendingCommand(
+          entry.pending, @{ @"type": @"zoom", @"scale": @(scale) }, chartId);
     }
   }];
 }
@@ -244,7 +290,13 @@
     if (view) {
       [view fitChartContent];
     } else {
-      [entry.pending addObject:@{ @"type": @"fitContent" }];
+      NSIndexSet *indexes = [entry.pending indexesOfObjectsPassingTest:
+          ^BOOL(NSDictionary *command, NSUInteger, BOOL *) {
+            return [command[@"type"] isEqualToString:@"fitContent"];
+          }];
+      [entry.pending removeObjectsAtIndexes:indexes];
+      TCAppendPendingCommand(
+          entry.pending, @{ @"type": @"fitContent" }, chartId);
     }
   }];
 }

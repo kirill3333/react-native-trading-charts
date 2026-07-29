@@ -17,7 +17,6 @@ namespace {
 constexpr size_t kCandlestickQuadsPerSample = 2;
 constexpr size_t kHollowCandlestickQuadsPerSample = 6;
 constexpr size_t kBarQuadsPerSample = 3;
-constexpr size_t kMaxVisibleSamples = 16384;
 constexpr float kBarTickSlotRatio = 0.45f;
 
 struct SeriesSample {
@@ -46,7 +45,12 @@ double XDomainUnit(const SeriesGeometryInput& input) {
   return input.config.logical_spacing ? 1.0 : input.config.timeframe_ms;
 }
 
-double CandleX(const SeriesGeometryInput& input, size_t index) {
+// Maps a series candle to its logical x domain. `hint` is a cursor into
+// `logical_reference` that only moves forward: consecutive samples are
+// timestamp-sorted, so the amortized lookup is O(1) instead of a binary
+// search per sample. The caller seeds it with one binary search.
+double CandleX(const SeriesGeometryInput& input, size_t index,
+               std::vector<Candle>::const_iterator& hint) {
   if (!input.config.logical_spacing) {
     return input.candles[index].timestamp;
   }
@@ -54,17 +58,14 @@ double CandleX(const SeriesGeometryInput& input, size_t index) {
     return static_cast<double>(index);
   }
   const double timestamp = input.candles[index].timestamp;
-  const auto found = std::lower_bound(input.logical_reference->begin(),
-                                      input.logical_reference->end(), timestamp,
-                                      [](const Candle& candle, double value) {
-                                        return candle.timestamp < value;
-                                      });
-  if (found == input.logical_reference->end() ||
-      found->timestamp != timestamp) {
+  const std::vector<Candle>& reference = *input.logical_reference;
+  while (hint != reference.end() && hint->timestamp < timestamp) {
+    ++hint;
+  }
+  if (hint == reference.end() || hint->timestamp != timestamp) {
     return std::numeric_limits<double>::quiet_NaN();
   }
-  return static_cast<double>(
-      std::distance(input.logical_reference->begin(), found));
+  return static_cast<double>(std::distance(reference.begin(), hint));
 }
 
 float ProjectX(const SeriesGeometryInput& input, double value) {
@@ -87,11 +88,25 @@ void VisitVisibleSamples(const SeriesGeometryInput& input,
   const size_t stride = SampleStride(input);
   const double fallback_slot_domain =
       XDomainUnit(input) * static_cast<double>(stride);
+  // Seed the monotonic logical-reference cursor with a single binary search;
+  // afterwards CandleX advances it linearly.
+  std::vector<Candle>::const_iterator hint = input.candles.begin();
+  if (input.logical_reference != nullptr) {
+    hint = input.first_index < input.end_index
+               ? std::lower_bound(
+                     input.logical_reference->begin(),
+                     input.logical_reference->end(),
+                     input.candles[input.first_index].timestamp,
+                     [](const Candle& candle, double value) {
+                       return candle.timestamp < value;
+                     })
+               : input.logical_reference->begin();
+  }
 
   for (size_t index = input.first_index; index < input.end_index;
        index += stride) {
     const Candle& candle = input.candles[index];
-    const double candle_x = CandleX(input, index);
+    const double candle_x = CandleX(input, index, hint);
     if (!std::isfinite(candle_x)) {
       continue;
     }
@@ -271,21 +286,26 @@ void AppendBarGeometry(const SeriesGeometryInput& input,
 
 }  // namespace
 
-size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
-  size_t quads_per_sample = kCandlestickQuadsPerSample;
-  switch (input.config.series_type) {
+size_t SeriesQuadsPerSample(SeriesType type) {
+  switch (type) {
     case SeriesType::kBar:
-      quads_per_sample = kBarQuadsPerSample;
-      break;
+      return kBarQuadsPerSample;
     case SeriesType::kHollowCandlestick:
-      quads_per_sample = kHollowCandlestickQuadsPerSample;
-      break;
+      return kHollowCandlestickQuadsPerSample;
     case SeriesType::kCandlestick:
-      break;
+      return kCandlestickQuadsPerSample;
     case SeriesType::kHistogram:
-      return 0;
+      return 1;
   }
-  return SampleCount(input) * quads_per_sample * kFloatsPerQuad;
+  return kCandlestickQuadsPerSample;
+}
+
+size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
+  if (input.config.series_type == SeriesType::kHistogram) {
+    return 0;
+  }
+  return SampleCount(input) * SeriesQuadsPerSample(input.config.series_type) *
+         kFloatsPerQuad;
 }
 
 void AppendSeriesGeometry(const SeriesGeometryInput& input,

@@ -34,4 +34,20 @@ export interface Spec extends TurboModule {
   clear(chartId: string): void;
 }
 
-export default TurboModuleRegistry.getEnforcing<Spec>('TradingCharts');
+let module: Spec | null = null;
+
+function getModule(): Spec {
+  if (module == null) {
+    module = TurboModuleRegistry.getEnforcing<Spec>('TradingCharts');
+  }
+  return module;
+}
+
+// Resolve the TurboModule lazily: getEnforcing throws synchronously when the
+// native module is missing (web, SSR, unit tests), and a module-level call
+// would crash the import of the whole package before any fallback can run.
+export default new Proxy({} as Spec, {
+  get(_target, property: keyof Spec) {
+    return getModule()[property];
+  },
+});

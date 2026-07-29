@@ -7,6 +7,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -668,6 +670,15 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetCrosshair(
 }
 
 JNIEXPORT jlong JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeEngineRevision(JNIEnv*, jclass,
+                                                              jlong handle) {
+  if (auto* instance = EngineFromHandle(handle)) {
+    return static_cast<jlong>(instance->Revision());
+  }
+  return 0;
+}
+
+JNIEXPORT jlong JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeAcquireSnapshot(JNIEnv*, jclass,
                                                                jlong handle) {
   if (auto* instance = EngineFromHandle(handle)) {
@@ -698,16 +709,62 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotContentRevision(
                            : 0;
 }
 
-JNIEXPORT jfloatArray JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeSnapshotVertices(JNIEnv* env,
-                                                                jclass,
-                                                                jlong handle) {
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotContentVertexCount(
+    JNIEnv*, jclass, jlong handle) {
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  const jsize count = value ? static_cast<jsize>(value->vertices.size()) : 0;
+  const std::vector<float>* vertices = value && value->content_vertices
+                                           ? value->content_vertices.get()
+                                           : nullptr;
+  const size_t count = vertices ? vertices->size() : 0;
+  if (count >
+      static_cast<size_t>(std::numeric_limits<jint>::max()) / sizeof(float)) {
+    return -1;
+  }
+  return static_cast<jint>(count);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeCopySnapshotContentVertices(
+    JNIEnv* env, jclass, jlong handle, jobject target) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  const std::vector<float>* vertices = value && value->content_vertices
+                                           ? value->content_vertices.get()
+                                           : nullptr;
+  const size_t count = vertices ? vertices->size() : 0;
+  if (count >
+      static_cast<size_t>(std::numeric_limits<jint>::max()) / sizeof(float)) {
+    return -1;
+  }
+  if (count == 0) {
+    return 0;
+  }
+  if (!target) {
+    return -1;
+  }
+  void* destination = env->GetDirectBufferAddress(target);
+  const jlong capacity = env->GetDirectBufferCapacity(target);
+  const size_t byte_count = count * sizeof(float);
+  if (!destination || capacity < 0 ||
+      static_cast<size_t>(capacity) < byte_count) {
+    return -1;
+  }
+  std::memcpy(destination, vertices->data(), byte_count);
+  return static_cast<jint>(count);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotOverlayVertices(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  const jsize count =
+      value ? static_cast<jsize>(value->overlay_vertices.size()) : 0;
   jfloatArray result = env->NewFloatArray(count);
   if (count > 0) {
-    env->SetFloatArrayRegion(result, 0, count, value->vertices.data());
+    env->SetFloatArrayRegion(result, 0, count, value->overlay_vertices.data());
   }
   return result;
 }

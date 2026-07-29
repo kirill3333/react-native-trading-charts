@@ -13,7 +13,6 @@ import {
   View,
   type ListRenderItem,
   type LayoutChangeEvent,
-  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -219,8 +218,8 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   );
 
   const handleVisibleRangeChange = useCallback(
-    (event: NativeSyntheticEvent<VisibleRangeChangeEvent>) => {
-      const { firstVisibleIndex, lastVisibleIndex } = event.nativeEvent;
+    (event: VisibleRangeChangeEvent) => {
+      const { firstVisibleIndex, lastVisibleIndex } = event;
       const visibleCount = lastVisibleIndex - firstVisibleIndex + 1;
       const preloadThreshold = Math.max(30, visibleCount * 2);
       if (firstVisibleIndex <= preloadThreshold) {

@@ -1,5 +1,7 @@
 export { TradingCharts } from './TradingCharts';
 export { TradingChartsView } from './TradingChartsView';
+export { createTradeBatcher } from './tradeBatcher';
+export type { TradeBatcher, TradeBatcherOptions } from './tradeBatcher';
 export type {
   ChartTheme,
   ChartAppearance,
@@ -15,6 +17,7 @@ export type {
   HistogramSeriesOptions,
   HistogramPoint,
   ChartSeriesDataPoint,
+  NormalizedAdditionalChartSeriesOptions,
   VolumeValueFormat,
   ChartSeriesOptions,
   ChartSeriesType,
