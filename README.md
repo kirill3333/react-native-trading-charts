@@ -445,10 +445,11 @@ the same formatter remains usable while the market crosses price magnitudes.
 zero-count notation is selected.
 
 The example app's `Auto` Y-axis format selects `significant` when the current
-market price is below `1`. This keeps sub-unit axes concise at prices such as
-`0.056602`; zero-count notation starts as soon as there is a leading fractional
-zero. Current-price, crosshair, extrema, and tooltip values keep the full
-`price` format so exact executable prices remain visible.
+market price is below `0.1`, where there is at least one leading fractional
+zero. This keeps axes concise at prices such as `0.056602` without collapsing
+the distinct ticks of markets trading close to `1`. Current-price, crosshair,
+extrema, and tooltip values keep the full `price` format so exact executable
+prices remain visible.
 
 `scaleMargins` reserves a fraction of the plot above and below the visible price
 range. Both values must be non-negative and their sum must be less than `1`.

@@ -1663,6 +1663,61 @@ void TestMultiPaneSeriesAndDerivedVolume() {
   assert(!engine.RemoveSeries("volume"));
 }
 
+void TestVolumePaneTickMinimumDependsOnHeight() {
+  auto snapshot_at_height = [](float height) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initial_visible_count = 10;
+    config.show_current_price = false;
+    engine.SetConfig(config);
+    engine.SetSize(600.0f, height);
+
+    PaneConfig main;
+    main.height_weight = 3.0;
+    PaneConfig volume;
+    volume.pane_id = "volume";
+    volume.price_scale_id = "volume";
+    volume.height_weight = 1.0;
+    volume.volume_format = true;
+    volume.scale_margin_top = 0.1;
+    volume.scale_margin_bottom = 0.0;
+    volume.min_move = 1.0;
+    engine.SetPanes({main, volume}, false);
+
+    SeriesConfig derived;
+    derived.series_id = "volume";
+    derived.type = SeriesType::kHistogram;
+    derived.source = SeriesSource::kOhlcvVolume;
+    derived.source_series_id = "main";
+    derived.pane_id = "volume";
+    derived.price_scale_id = "volume";
+    assert(engine.AddSeries(derived) == UpdateStatus::kApplied);
+
+    const double history[] = {
+        0.0, 10.0, 12.0, 9.0, 11.0, 17.0,
+    };
+    assert(engine.SetHistory(history, 6) == UpdateStatus::kApplied);
+    return engine.Snapshot();
+  };
+
+  const auto tall = snapshot_at_height(435.0f);
+  const auto& tall_volume = tall->panes[1];
+  assert(tall_volume.plot.Height() >= 88.0f);
+  assert(tall_volume.y_tick_count == 4);
+  ExpectNear(tall->pane_y_ticks[tall_volume.y_tick_offset].value, 0.0);
+  ExpectNear(tall->pane_y_ticks[tall_volume.y_tick_offset + 1].value, 5.0);
+  ExpectNear(tall->pane_y_ticks[tall_volume.y_tick_offset + 2].value, 10.0);
+  ExpectNear(tall->pane_y_ticks[tall_volume.y_tick_offset + 3].value, 15.0);
+
+  const auto short_pane = snapshot_at_height(315.0f);
+  const auto& short_volume = short_pane->panes[1];
+  assert(short_volume.plot.Height() < 88.0f);
+  assert(short_volume.y_tick_count == 2);
+  ExpectNear(short_pane->pane_y_ticks[short_volume.y_tick_offset].value, 0.0);
+  ExpectNear(short_pane->pane_y_ticks[short_volume.y_tick_offset + 1].value,
+             10.0);
+}
+
 void TestCustomHistogramAndRuntimePaneWeights() {
   ChartEngine engine;
   ChartConfig config;
@@ -2023,6 +2078,7 @@ int main() noexcept {
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestMultiPaneSeriesAndDerivedVolume();
+    TestVolumePaneTickMinimumDependsOnHeight();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
     TestViewportInDataGapReportsEmptyRange();

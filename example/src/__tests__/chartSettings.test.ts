@@ -197,11 +197,14 @@ describe('chart settings', () => {
     });
   });
 
-  it('selects significant formatting for non-zero prices below one', () => {
+  it('selects significant formatting only for prices with leading fractional zeros', () => {
     expect(shouldUseSignificantPriceFormat(0.056602)).toBe(true);
     expect(shouldUseSignificantPriceFormat(0.0000058)).toBe(true);
-    expect(shouldUseSignificantPriceFormat(-0.5)).toBe(true);
+    expect(shouldUseSignificantPriceFormat(-0.05)).toBe(true);
     expect(shouldUseSignificantPriceFormat(0)).toBe(false);
+    expect(shouldUseSignificantPriceFormat(0.99983)).toBe(false);
+    expect(shouldUseSignificantPriceFormat(-0.5)).toBe(false);
+    expect(shouldUseSignificantPriceFormat(0.1)).toBe(false);
     expect(shouldUseSignificantPriceFormat(1)).toBe(false);
   });
 });

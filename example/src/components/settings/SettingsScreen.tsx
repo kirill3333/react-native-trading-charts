@@ -149,7 +149,7 @@ export function SettingsScreen() {
             value={settings.yAxisPosition}
           />
           <SettingSegments
-            description="Uses significant digits below 1 and zero-count for tiny prices"
+            description="Uses zero-count formatting for prices below 0.1"
             disabled={!settings.yAxisVisible}
             label="Value format"
             onValueChange={(yAxisFormat) => updateSettings({ yAxisFormat })}

@@ -21,6 +21,8 @@ namespace trading_charts::internal {
 namespace {
 
 constexpr int kMaxTickCount = 256;
+constexpr float kYAxisTickSpacing = 44.0f;
+constexpr int kMinimumVolumeTickCount = 3;
 
 size_t SegmentCount(float start, float end, float step) {
   if (!(end > start) || !(step > 0.0f)) {
@@ -73,6 +75,51 @@ double NiceStep(double range, int target_count, double minimum) {
     nice = 5.0;
   }
   return std::max(nice * power, minimum);
+}
+
+double PreviousNiceStep(double step, double minimum) {
+  if (!(step > minimum)) {
+    return step;
+  }
+  const double upper_bound = std::nextafter(step, 0.0);
+  const double power = std::pow(10.0, std::floor(std::log10(upper_bound)));
+  const double fraction = upper_bound / power;
+  double nice = 1.0;
+  if (fraction >= 5.0) {
+    nice = 5.0;
+  } else if (fraction >= 2.5) {
+    nice = 2.5;
+  } else if (fraction >= 2.0) {
+    nice = 2.0;
+  }
+  return std::max(nice * power, minimum);
+}
+
+int TickCount(double minimum, double maximum, double step, int limit) {
+  if (!(maximum >= minimum) || !(step > 0.0) || limit <= 0) {
+    return 0;
+  }
+  const double first = std::ceil(minimum / step) * step;
+  int count = 0;
+  for (; count < limit; ++count) {
+    const double value = first + static_cast<double>(count) * step;
+    if (value > maximum + step * 1e-9) {
+      break;
+    }
+  }
+  return count;
+}
+
+double EnsureMinimumNiceTickCount(double minimum, double maximum, double step,
+                                  double minimum_step, int minimum_count) {
+  while (TickCount(minimum, maximum, step, minimum_count) < minimum_count) {
+    const double previous = PreviousNiceStep(step, minimum_step);
+    if (!(previous < step)) {
+      break;
+    }
+    step = previous;
+  }
+  return step;
 }
 
 double TimeStep(double span, int target_count) {
@@ -710,9 +757,9 @@ class RenderSnapshotBuilder {
       }
     }
 
-    const int y_target =
-        std::max(2, static_cast<int>(snapshot_->plot.Height() /
-                                     (44.0f * input_.config.display_scale)));
+    const int y_target = std::max(
+        2, static_cast<int>(snapshot_->plot.Height() /
+                            (kYAxisTickSpacing * input_.config.display_scale)));
     const double y_step =
         NiceStep(y_max_ - y_min_, y_target, input_.config.min_move);
     const double first_y = std::ceil(y_min_ / y_step) * y_step;
@@ -734,12 +781,24 @@ class RenderSnapshotBuilder {
       PaneSnapshot& pane = snapshot_->panes[pane_index];
       pane.y_tick_offset = snapshot_->pane_y_ticks.size();
       const PaneConfig& config = PaneConfigAt(input_.panes, pane_index);
-      const int target =
-          std::max(2, static_cast<int>(pane.plot.Height() /
-                                       (44.0f * input_.config.display_scale)));
-      const double step =
-          NiceStep(pane_y_max_[pane_index] - pane_y_min_[pane_index], target,
-                   config.min_move);
+      const int target = std::max(
+          2,
+          static_cast<int>(pane.plot.Height() /
+                           (kYAxisTickSpacing * input_.config.display_scale)));
+      double step = NiceStep(pane_y_max_[pane_index] - pane_y_min_[pane_index],
+                             target, config.min_move);
+      const float minimum_three_tick_height =
+          static_cast<float>(kMinimumVolumeTickCount - 1) * kYAxisTickSpacing *
+          input_.config.display_scale;
+      if (config.volume_format &&
+          pane.plot.Height() >= minimum_three_tick_height) {
+        // NiceStep rounds upward and can leave only zero plus one useful
+        // volume label. When three labels fit at the normal axis spacing,
+        // walk down the same nice-step sequence until all three are present.
+        step = EnsureMinimumNiceTickCount(
+            pane_y_min_[pane_index], pane_y_max_[pane_index], step,
+            config.min_move, kMinimumVolumeTickCount);
+      }
       const double first = std::ceil(pane_y_min_[pane_index] / step) * step;
       for (int index = 0; index < kMaxTickCount; ++index) {
         const double value = first + static_cast<double>(index) * step;

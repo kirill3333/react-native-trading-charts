@@ -121,7 +121,11 @@ type MarketChartFormat = {
 
 export function shouldUseSignificantPriceFormat(lastPrice: number): boolean {
   const magnitude = Math.abs(lastPrice);
-  return magnitude > 0 && magnitude < 1;
+  // Significant formatting is useful once a price has at least one leading
+  // fractional zero (for example, 0.056602 -> 0.0₁566). Near one it can erase
+  // the instrument's meaningful fractional ticks: 0.99983 rounded to three
+  // significant digits becomes 1, as do nearby values just above one.
+  return magnitude > 0 && magnitude < 0.1;
 }
 
 export type ChartViewConfig = {
