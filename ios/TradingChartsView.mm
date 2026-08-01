@@ -28,6 +28,7 @@ using facebook::react::concreteComponentDescriptorProvider;
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
@@ -2017,8 +2018,10 @@ struct TCTextPresentation {
   NSDictionary *gridAppearance = appearance[@"grid"];
   NSDictionary *candlesAppearance = appearance[@"candles"];
   NSDictionary *barsAppearance = appearance[@"bars"];
+  NSDictionary *lineAppearance = appearance[@"line"];
   NSDictionary *series = root[@"series"];
   const bool usesBars = [series[@"type"] isEqualToString:@"bar"];
+  const bool usesLine = [series[@"type"] isEqualToString:@"line"];
   const bool usesHollowCandlesticks =
       [series[@"type"] isEqualToString:@"hollowCandlestick"];
   NSDictionary *seriesAppearance = usesBars ? barsAppearance : candlesAppearance;
@@ -2049,11 +2052,36 @@ struct TCTextPresentation {
   _config.axis_text = TCColorFromHex(theme[@"axisTextColor"], _config.axis_text);
   _config.series_type =
       usesBars ? SeriesType::kBar
-               : (usesHollowCandlesticks ? SeriesType::kHollowCandlestick
-                                         : SeriesType::kCandlestick);
+               : (usesHollowCandlesticks
+                      ? SeriesType::kHollowCandlestick
+                      : (usesLine ? SeriesType::kLine
+                                  : SeriesType::kCandlestick));
   _config.bar_line_width = barsAppearance[@"lineWidth"]
       ? [barsAppearance[@"lineWidth"] floatValue]
       : 1.0f;
+  _config.line_width = lineAppearance[@"width"]
+      ? [lineAppearance[@"width"] floatValue]
+      : 2.0f;
+  _config.line = TCColorFromHex(lineAppearance[@"color"], _config.up);
+  NSDictionary *lineGradient = lineAppearance[@"gradient"];
+  _config.line_gradient_enabled =
+      [lineGradient isKindOfClass:NSDictionary.class];
+  _config.line_gradient_top = TCColorFromHex(
+      lineGradient[@"topColor"], _config.line);
+  _config.line_gradient_bottom = TCColorFromHex(
+      lineGradient[@"bottomColor"], _config.line);
+  NSString *lineSource = series[@"source"];
+  _config.line_source =
+      [lineSource isEqualToString:@"open"]
+          ? OhlcValueSource::kOpen
+          : ([lineSource isEqualToString:@"high"]
+                 ? OhlcValueSource::kHigh
+                 : ([lineSource isEqualToString:@"low"]
+                        ? OhlcValueSource::kLow
+                        : OhlcValueSource::kClose));
+  _config.line_gap_threshold_ms = series[@"gapThresholdMs"]
+      ? [series[@"gapThresholdMs"] doubleValue]
+      : 0.0;
   _config.up = TCColorFromHex(seriesAppearance[@"upColor"], _config.up);
   _config.down = TCColorFromHex(seriesAppearance[@"downColor"], _config.down);
   _config.crosshair = TCColorFromHex(crosshairLineAppearance[@"color"], _config.crosshair);
@@ -2193,9 +2221,12 @@ struct TCTextPresentation {
     config.type = SeriesType::kHollowCandlestick;
   } else if ([type isEqualToString:@"histogram"]) {
     config.type = SeriesType::kHistogram;
+  } else if ([type isEqualToString:@"line"]) {
+    config.type = SeriesType::kLine;
   }
-  NSDictionary *source = item[@"source"];
-  if ([source[@"type"] isEqualToString:@"ohlcvVolume"]) {
+  id source = item[@"source"];
+  if ([source isKindOfClass:NSDictionary.class] &&
+      [source[@"type"] isEqualToString:@"ohlcvVolume"]) {
     config.source = SeriesSource::kOhlcvVolume;
     config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
   }
@@ -2203,6 +2234,32 @@ struct TCTextPresentation {
   config.color = TCColorFromHex(appearance[@"color"], _config.axis_text);
   config.up = TCColorFromHex(appearance[@"upColor"], _config.up);
   config.down = TCColorFromHex(appearance[@"downColor"], _config.down);
+  if (config.type == SeriesType::kLine) {
+    NSString *valueSource =
+        [source isKindOfClass:NSString.class] ? source : @"close";
+    config.line_source =
+        [valueSource isEqualToString:@"open"]
+            ? OhlcValueSource::kOpen
+            : ([valueSource isEqualToString:@"high"]
+                   ? OhlcValueSource::kHigh
+                   : ([valueSource isEqualToString:@"low"]
+                          ? OhlcValueSource::kLow
+                          : OhlcValueSource::kClose));
+    config.line_width = appearance[@"width"]
+        ? [appearance[@"width"] floatValue]
+        : _config.line_width;
+    config.color = TCColorFromHex(appearance[@"color"], _config.line);
+    NSDictionary *gradient = appearance[@"gradient"];
+    config.line_gradient_enabled =
+        [gradient isKindOfClass:NSDictionary.class];
+    config.line_gradient_top = TCColorFromHex(
+        gradient[@"topColor"], config.color);
+    config.line_gradient_bottom = TCColorFromHex(
+        gradient[@"bottomColor"], config.color);
+    config.line_gap_threshold_ms = item[@"gapThresholdMs"]
+        ? [item[@"gapThresholdMs"] doubleValue]
+        : 0.0;
+  }
   return config;
 }
 

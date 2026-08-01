@@ -294,13 +294,20 @@ internal object ChartEngineNative {
   }
 
   fun addSeries(handle: Long, series: SeriesConfig): Int {
-    val colors = FloatArray(12)
-    listOf(series.color, series.upColor, series.downColor).forEachIndexed { index, color ->
-      colors[index * 4] = Color.red(color) / 255f
-      colors[index * 4 + 1] = Color.green(color) / 255f
-      colors[index * 4 + 2] = Color.blue(color) / 255f
-      colors[index * 4 + 3] = Color.alpha(color) / 255f
-    }
+    val colors = FloatArray(20)
+    listOf(
+            series.color,
+            series.upColor,
+            series.downColor,
+            series.lineGradientTopColor,
+            series.lineGradientBottomColor,
+        )
+        .forEachIndexed { index, color ->
+          colors[index * 4] = Color.red(color) / 255f
+          colors[index * 4 + 1] = Color.green(color) / 255f
+          colors[index * 4 + 2] = Color.blue(color) / 255f
+          colors[index * 4 + 3] = Color.alpha(color) / 255f
+        }
     return nativeAddSeries(
         handle,
         arrayOf(
@@ -314,12 +321,21 @@ internal object ChartEngineNative {
               "bar" -> 1.0
               "hollowCandlestick" -> 2.0
               "histogram" -> 3.0
+              "line" -> 4.0
               else -> 0.0
             },
             if (series.sourceType == "ohlcvVolume") 1.0 else 0.0,
             if (series.visible) 1.0 else 0.0,
             if (series.declarative) 1.0 else 0.0,
             series.lineWidthPx.toDouble(),
+            when (series.lineSource) {
+              "open" -> 0.0
+              "high" -> 1.0
+              "low" -> 2.0
+              else -> 3.0
+            },
+            if (series.lineGradientEnabled) 1.0 else 0.0,
+            series.lineGapThresholdMs,
         ),
         colors,
     )

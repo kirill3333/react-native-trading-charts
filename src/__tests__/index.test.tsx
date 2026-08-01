@@ -197,6 +197,38 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('resolves imperative line series options before sending them', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'comparison',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: 'high',
+      gapThresholdMs: 120_000,
+      appearance: {
+        width: 2.5,
+        color: '#2E90F5',
+        gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+      },
+    });
+
+    const call = mockNativeModule.addSeries.mock.calls[0]!;
+    expect(JSON.parse(call[1] as string)).toEqual({
+      seriesId: 'comparison',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: 'high',
+      gapThresholdMs: 120_000,
+      visible: true,
+      appearance: {
+        width: 2.5,
+        color: '#2E90F5',
+        gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+      },
+    });
+  });
+
   it('rejects invalid imperative addSeries options', () => {
     expect(() =>
       resolveAdditionalSeriesOptions({
@@ -218,7 +250,7 @@ describe('TradingCharts data API', () => {
     expect(() =>
       resolveAdditionalSeriesOptions({
         seriesId: 'comparison',
-        type: 'line' as 'bar',
+        type: 'area' as 'bar',
         paneId: 'main',
         priceScaleId: 'main',
       })
@@ -882,6 +914,42 @@ describe('chart config', () => {
     expect(serialized.series).toEqual({ type: 'hollowCandlestick' });
   });
 
+  it('resolves a gradient line and its source semantics', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'line',
+      series: { type: 'line', source: 'low', gapThresholdMs: 90_000 },
+      appearance: {
+        line: {
+          width: 2.5,
+          color: '#2E90F5',
+          gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+        },
+      },
+    });
+
+    expect(resolved.series).toEqual({
+      type: 'line',
+      source: 'low',
+      gapThresholdMs: 90_000,
+    });
+    expect(resolved.appearance.line).toEqual({
+      width: 2.5,
+      color: '#2E90F5',
+      gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+    });
+    expect(resolved.appearance.currentPrice).toMatchObject({
+      line: { upColor: '#2E90F5', downColor: '#2E90F5' },
+      label: {
+        upBackgroundColor: '#2E90F5',
+        downBackgroundColor: '#2E90F5',
+      },
+    });
+    expect(resolved.appearance.tooltip).toMatchObject({
+      positiveValueColor: '#2E90F5',
+      negativeValueColor: '#2E90F5',
+    });
+  });
+
   it('resolves independent native date and price formatters', () => {
     const resolved = resolveChartConfig({
       chartId: 'formatters',
@@ -943,9 +1011,27 @@ describe('chart config', () => {
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-series',
-        series: { type: 'line' as never },
+        series: { type: 'area' as never },
       })
     ).toThrow('series.type');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-line-source',
+        series: { type: 'line', source: 'median' as never },
+      })
+    ).toThrow('series.source');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-line-gap',
+        series: { type: 'line', gapThresholdMs: 0 },
+      })
+    ).toThrow('series.gapThresholdMs');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-line-width',
+        appearance: { line: { width: 0 } },
+      })
+    ).toThrow('appearance.line.width');
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-bar-width',

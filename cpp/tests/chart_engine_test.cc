@@ -10,9 +10,12 @@
 #include <iostream>
 #include <vector>
 
+#include "cpp/internal/series_geometry.h"
+
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
@@ -2028,6 +2031,148 @@ void TestPaneLayoutEdgeCasesMatchHitTesting() {
               .has_value());
 }
 
+void TestLineSourceAutoscaleCurrentPriceAndGradient() {
+  const double history[] = {
+      0.0, 10.0, 100.0, 1.0,      20.0, 1.0,   60000.0, 30.0, 110.0,
+      2.0, 40.0, 1.0,   120000.0, 50.0, 120.0, 3.0,     60.0, 1.0,
+  };
+  const struct {
+    OhlcValueSource source;
+    double minimum;
+    double maximum;
+    double current;
+  } cases[] = {
+      {OhlcValueSource::kOpen, 10.0, 50.0, 50.0},
+      {OhlcValueSource::kHigh, 100.0, 120.0, 120.0},
+      {OhlcValueSource::kLow, 1.0, 3.0, 3.0},
+      {OhlcValueSource::kClose, 20.0, 60.0, 60.0},
+  };
+
+  for (const auto& test : cases) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initial_visible_count = 3;
+    config.logical_spacing = true;
+    config.series_type = SeriesType::kLine;
+    config.line_source = test.source;
+    config.line_width = 4.0f;
+    config.line_gradient_enabled = true;
+    config.line_gradient_top = {1.0f, 0.0f, 0.0f, 1.0f};
+    config.line_gradient_bottom = {0.0f, 0.0f, 1.0f, 1.0f};
+    engine.SetConfig(config);
+    engine.SetSize(600.0f, 300.0f);
+    assert(engine.SetHistory(history, 18) == UpdateStatus::kApplied);
+
+    const auto snapshot = engine.Snapshot();
+    assert(snapshot->visible_minimum.visible);
+    assert(snapshot->visible_maximum.visible);
+    ExpectNear(snapshot->visible_minimum.value, test.minimum);
+    ExpectNear(snapshot->visible_maximum.value, test.maximum);
+    ExpectNear(snapshot->current_price, test.current);
+    assert(snapshot->visible_y_min < test.minimum);
+    assert(snapshot->visible_y_max > test.maximum);
+
+    const size_t grid_floats =
+        (snapshot->x_ticks.size() + snapshot->y_ticks.size()) * 36;
+    bool has_transparent_fringe = false;
+    bool has_top_color = false;
+    bool has_bottom_color = false;
+    const auto& vertices = ContentOf(*snapshot);
+    for (size_t offset = grid_floats; offset + 5 < vertices.size();
+         offset += 6) {
+      assert(std::isfinite(vertices[offset]));
+      assert(std::isfinite(vertices[offset + 1]));
+      assert(vertices[offset] >= snapshot->plot.left - 1e-4f);
+      assert(vertices[offset] <= snapshot->plot.right + 1e-4f);
+      assert(vertices[offset + 1] >= snapshot->plot.top - 1e-4f);
+      assert(vertices[offset + 1] <= snapshot->plot.bottom + 1e-4f);
+      has_transparent_fringe =
+          has_transparent_fringe || vertices[offset + 5] == 0.0f;
+      has_top_color =
+          has_top_color || vertices[offset + 2] > vertices[offset + 4];
+      has_bottom_color =
+          has_bottom_color || vertices[offset + 4] > vertices[offset + 2];
+    }
+    assert(has_transparent_fringe);
+    assert(has_top_color);
+    assert(has_bottom_color);
+
+    engine.SetCrosshair(true, snapshot->plot.left, snapshot->plot.top);
+    const auto crosshair = engine.Snapshot();
+    ExpectNear(crosshair->selected_candle.open, 10.0);
+    ExpectNear(crosshair->selected_candle.high, 100.0);
+    ExpectNear(crosshair->selected_candle.low, 1.0);
+    ExpectNear(crosshair->selected_candle.close, 20.0);
+  }
+}
+
+void TestLineGapThresholdAndContentReuse() {
+  const double history[] = {
+      0.0, 10.0, 12.0, 9.0, 11.0, 1.0, 600000.0, 20.0, 22.0, 19.0, 21.0, 1.0,
+  };
+  ChartConfig config;
+  config.initial_visible_count = 2;
+  config.series_type = SeriesType::kLine;
+  config.show_current_price = false;
+
+  ChartEngine connected;
+  connected.SetConfig(config);
+  connected.SetSize(600.0f, 300.0f);
+  assert(connected.SetHistory(history, 12) == UpdateStatus::kApplied);
+  const auto connected_snapshot = connected.Snapshot();
+
+  config.line_gap_threshold_ms = 60'000.0;
+  ChartEngine split;
+  split.SetConfig(config);
+  split.SetSize(600.0f, 300.0f);
+  assert(split.SetHistory(history, 12) == UpdateStatus::kApplied);
+  const auto split_snapshot = split.Snapshot();
+  assert(ContentOf(*connected_snapshot).size() >
+         ContentOf(*split_snapshot).size());
+
+  split.SetCrosshair(true, split_snapshot->plot.left, split_snapshot->plot.top);
+  const auto crosshair = split.Snapshot();
+  assert(crosshair->content_vertices == split_snapshot->content_vertices);
+}
+
+void TestLineSegmentsKeepConstantWidthAtSharpTurns() {
+  ChartConfig config;
+  config.series_type = SeriesType::kLine;
+  config.line_width = 6.0f;
+  config.line_source = OhlcValueSource::kClose;
+  const std::vector<Candle> candles{
+      {0.0, 20.0, 20.0, 20.0, 20.0, 0.0},
+      {1.0, 80.0, 80.0, 80.0, 80.0, 0.0},
+      {2.0, 20.0, 20.0, 20.0, 20.0, 0.0},
+  };
+  std::vector<float> vertices;
+  trading_charts::internal::AppendSeriesGeometry(
+      trading_charts::internal::SeriesGeometryInput{
+          config,
+          candles,
+          0,
+          candles.size(),
+          {0.0f, 0.0f, 100.0f, 100.0f},
+          -100.0,
+          900.0,
+          0.0,
+          100.0,
+          nullptr},
+      vertices);
+
+  // The first six vertices are the first segment's core quad. Both endpoint
+  // cross-sections must keep the requested width and the same orientation;
+  // a join normal must never flip one end into a self-intersecting bow tie.
+  assert(vertices.size() >= 36);
+  const float start_cross_x = vertices[0] - vertices[30];
+  const float start_cross_y = vertices[1] - vertices[31];
+  const float end_cross_x = vertices[6] - vertices[12];
+  const float end_cross_y = vertices[7] - vertices[13];
+  ExpectNear(std::hypot(start_cross_x, start_cross_y), config.line_width, 1e-4);
+  ExpectNear(std::hypot(end_cross_x, end_cross_y), config.line_width, 1e-4);
+  assert(start_cross_x * end_cross_x + start_cross_y * end_cross_y > 0.0f);
+}
+
 }  // namespace
 
 int main() noexcept {
@@ -2087,6 +2232,9 @@ int main() noexcept {
     TestSetConfigWithEquivalentValuesKeepsViewport();
     TestCrosshairOnlySnapshotReusesContent();
     TestPaneLayoutEdgeCasesMatchHitTesting();
+    TestLineSourceAutoscaleCurrentPriceAndGradient();
+    TestLineGapThresholdAndContentReuse();
+    TestLineSegmentsKeepConstantWidthAtSharpTurns();
     std::cout << "ChartEngineTests passed\n";
     return 0;
   } catch (...) {

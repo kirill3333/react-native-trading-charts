@@ -14,6 +14,8 @@ internal class ChartConfigJsonDecoder(
   private val gridAppearance = appearance.getJSONObject("grid")
   private val candlesAppearance = appearance.getJSONObject("candles")
   private val barsAppearance = appearance.optJSONObject("bars") ?: candlesAppearance
+  private val lineAppearance = appearance.optJSONObject("line") ?: JSONObject()
+  private val lineGradient = lineAppearance.optJSONObject("gradient")
   private val seriesType = root.optJSONObject("series")?.optString("type") ?: "candlestick"
   private val seriesAppearance = if (seriesType == "bar") barsAppearance else candlesAppearance
   private val xAxisAppearance = appearance.getJSONObject("xAxis")
@@ -62,6 +64,11 @@ internal class ChartConfigJsonDecoder(
           displayScale = density,
           seriesType = seriesType,
           barLineWidthPx = barsAppearance.optDouble("lineWidth", 1.0).toFloat() * density,
+          lineWidthPx = lineAppearance.optDouble("width", 2.0).toFloat() * density,
+          lineSource = root.optJSONObject("series")?.optString("source", "close") ?: "close",
+          lineGradientEnabled = lineGradient != null,
+          lineGapThresholdMs =
+              root.optJSONObject("series")?.optDouble("gapThresholdMs", 0.0) ?: 0.0,
       )
 
   private fun decodePalette(config: ChartConfig) =
@@ -71,6 +78,21 @@ internal class ChartConfigJsonDecoder(
           axisTextColor = chartColor(theme.getString("axisTextColor")),
           upColor = chartColor(seriesAppearance.getString("upColor")),
           downColor = chartColor(seriesAppearance.getString("downColor")),
+          lineColor = chartColor(lineAppearance.optString("color", theme.getString("upColor"))),
+          lineGradientTopColor =
+              chartColor(
+                  lineGradient?.optString(
+                      "topColor",
+                      lineAppearance.optString("color", theme.getString("upColor")),
+                  ) ?: lineAppearance.optString("color", theme.getString("upColor"))
+              ),
+          lineGradientBottomColor =
+              chartColor(
+                  lineGradient?.optString(
+                      "bottomColor",
+                      lineAppearance.optString("color", theme.getString("upColor")),
+                  ) ?: lineAppearance.optString("color", theme.getString("upColor"))
+              ),
           gridOpacity = gridAppearance.getDouble("opacity").toFloat(),
           currentPriceLineUpColor = chartColor(currentLineAppearance.getString("upColor")),
           currentPriceLineDownColor = chartColor(currentLineAppearance.getString("downColor")),
@@ -356,6 +378,11 @@ private fun seriesConfig(
 ): SeriesConfig {
   val appearance = json.optJSONObject("appearance")
   val source = json.optJSONObject("source")
+  val lineAppearance = appearance.takeIf { json.optString("type") == "line" }
+  val lineGradient = lineAppearance?.optJSONObject("gradient")
+  val resolvedColor =
+      appearance?.optString("color")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+          ?: if (json.optString("type") == "line") fallback.lineColor else fallback.axisTextColor
   return SeriesConfig(
       seriesId = json.getString("seriesId"),
       type = json.getString("type"),
@@ -364,9 +391,7 @@ private fun seriesConfig(
       visible = json.optBoolean("visible", true),
       sourceType = source?.optString("type", "data") ?: "data",
       sourceSeriesId = source?.optString("seriesId", "") ?: "",
-      color =
-          appearance?.optString("color")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
-              ?: fallback.axisTextColor,
+      color = resolvedColor,
       upColor =
           appearance?.optString("upColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
               ?: fallback.upColor,
@@ -374,7 +399,26 @@ private fun seriesConfig(
           appearance?.optString("downColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
               ?: fallback.downColor,
       declarative = declarative,
-      lineWidthPx = fallback.barLineWidthPx,
+      lineWidthPx =
+          if (json.optString("type") == "line") {
+            if (lineAppearance?.has("width") == true) {
+              lineAppearance.getDouble("width").toFloat() * fallback.displayScale
+            } else {
+              fallback.lineWidthPx
+            }
+          } else {
+            fallback.barLineWidthPx
+          },
+      lineSource =
+          if (json.optString("type") == "line") json.optString("source", "close") else "close",
+      lineGradientTopColor =
+          lineGradient?.optString("topColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+              ?: resolvedColor,
+      lineGradientBottomColor =
+          lineGradient?.optString("bottomColor")?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
+              ?: resolvedColor,
+      lineGradientEnabled = lineGradient != null,
+      lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
   )
 }
 

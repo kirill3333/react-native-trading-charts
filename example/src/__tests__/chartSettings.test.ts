@@ -101,6 +101,21 @@ describe('chart settings', () => {
     });
   });
 
+  it('switches the example to the gradient close line preset', () => {
+    const config = buildChartViewConfig(
+      settingsWith({ seriesType: 'line' }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 },
+      'Europe/London'
+    );
+
+    expect(config.series).toEqual({ type: 'line', source: 'close' });
+    expect(config.appearance.line).toEqual({
+      width: 2.5,
+      color: '#2E90F5',
+      gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+    });
+  });
+
   it('builds the complete high contrast and formatting presets', () => {
     const config = buildChartViewConfig(
       settingsWith({

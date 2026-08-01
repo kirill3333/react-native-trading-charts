@@ -198,6 +198,33 @@ at runtime keeps the native candle store, viewport, Y scale and crosshair
 selection; it only schedules a new render snapshot. Data methods and
 `onSelectedCandleChange` remain OHLCV-based for every render type.
 
+Use `'line'` to plot one OHLC field as a triangle-tessellated polyline. The GPU
+still receives the same RGBA triangle vertices as every other series type, so
+solid and vertical-gradient lines render identically on Metal and GLES:
+
+```tsx
+<TradingChartsView
+  chartId="line"
+  series={{ type: 'line', source: 'close', gapThresholdMs: 300_000 }}
+  appearance={{
+    line: {
+      width: 2.5,
+      color: '#2E90F5',
+      gradient: {
+        topColor: '#C51BFF',
+        bottomColor: '#2E90F5',
+      },
+    },
+  }}
+/>
+```
+
+`source` accepts `'open'`, `'high'`, `'low'`, or `'close'` and defaults to
+`'close'`. It drives the line, autoscale, visible extrema, and current-price
+value while crosshair selection remains full OHLCV. Missing timestamps are
+connected by default; when `gapThresholdMs` is provided, larger gaps split the
+line. Gradient colors are evaluated vertically inside the series pane.
+
 ### Multiple panes, series, and volume
 
 All panes share the `main` series time viewport while keeping independent
@@ -272,7 +299,21 @@ TradingCharts.setPaneHeight('btc-1m', 'volume', 1.5);
 ```
 
 The additional supported OHLC types are `candlestick`,
-`hollowCandlestick`, and `bar`. `prependSeriesData` follows the same ordering
+`hollowCandlestick`, `bar`, and `line`. Additional line series accept the same
+`source`, `gapThresholdMs`, and `appearance` fields:
+
+```tsx
+TradingCharts.addSeries('btc-1m', {
+  seriesId: 'comparison',
+  type: 'line',
+  paneId: 'main',
+  priceScaleId: 'main',
+  source: 'high',
+  appearance: { width: 2, color: '#FFAA00' },
+});
+```
+
+`prependSeriesData` follows the same ordering
 rules as main history, and `removeSeries` cannot remove the reserved `main`
 series. One visible price scale is supported per pane.
 

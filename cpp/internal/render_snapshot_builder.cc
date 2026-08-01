@@ -386,15 +386,20 @@ class RenderSnapshotBuilder {
     }
     minimum_candle_ = range_begin;
     maximum_candle_ = range_begin;
-    double raw_min = range_begin->low;
-    double raw_max = range_begin->high;
+    const bool line = input_.config.series_type == SeriesType::kLine;
+    double raw_min = line ? CandleValue(*range_begin, input_.config.line_source)
+                          : range_begin->low;
+    double raw_max = line ? raw_min : range_begin->high;
     for (auto it = range_begin; it != range_end; ++it) {
-      if (it->low < raw_min) {
-        raw_min = it->low;
+      const double minimum =
+          line ? CandleValue(*it, input_.config.line_source) : it->low;
+      const double maximum = line ? minimum : it->high;
+      if (minimum < raw_min) {
+        raw_min = minimum;
         minimum_candle_ = it;
       }
-      if (it->high > raw_max) {
-        raw_max = it->high;
+      if (maximum > raw_max) {
+        raw_max = maximum;
         maximum_candle_ = it;
       }
     }
@@ -574,6 +579,26 @@ class RenderSnapshotBuilder {
                               std::forward<Callback>(callback));
   }
 
+  template <typename Callback>
+  void VisitLineGapAnchors(const SeriesData& series, const SeriesWindow& window,
+                           Callback&& callback) const {
+    if (series.config.type != SeriesType::kLine ||
+        window.first != window.last || series.candles.empty()) {
+      return;
+    }
+    // Logical spacing can only render timestamps present in the main store;
+    // unmatched neighboring samples must stay out of autoscale as well.
+    if (input_.config.logical_spacing) {
+      return;
+    }
+    if (window.first > 0) {
+      callback(series.candles[window.first - 1]);
+    }
+    if (window.first < series.candles.size()) {
+      callback(series.candles[window.first]);
+    }
+  }
+
   void IncludeAdditionalSeriesRange(size_t pane_index, double& minimum,
                                     double& maximum) const {
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
@@ -597,12 +622,20 @@ class RenderSnapshotBuilder {
                                     });
         }
       } else {
+        const auto include_candle = [&](const Candle& candle) {
+          if (series.config.type == SeriesType::kLine) {
+            const double value = CandleValue(candle, series.config.line_source);
+            minimum = std::min(minimum, value);
+            maximum = std::max(maximum, value);
+          } else {
+            minimum = std::min(minimum, candle.low);
+            maximum = std::max(maximum, candle.high);
+          }
+        };
         VisitVisibleSeriesSamples(window, series.candles,
                                   input_.config.logical_spacing,
-                                  [&](const Candle& candle) {
-                                    minimum = std::min(minimum, candle.low);
-                                    maximum = std::max(maximum, candle.high);
-                                  });
+                                  include_candle);
+        VisitLineGapAnchors(series, window, include_candle);
       }
     }
   }
@@ -636,13 +669,22 @@ class RenderSnapshotBuilder {
                 });
           }
         } else {
+          const auto include_candle = [&](const Candle& candle) {
+            has_value = true;
+            if (series.config.type == SeriesType::kLine) {
+              const double value =
+                  CandleValue(candle, series.config.line_source);
+              raw_min = std::min(raw_min, value);
+              raw_max = std::max(raw_max, value);
+            } else {
+              raw_min = std::min(raw_min, candle.low);
+              raw_max = std::max(raw_max, candle.high);
+            }
+          };
           VisitVisibleSeriesSamples(window, series.candles,
                                     input_.config.logical_spacing,
-                                    [&](const Candle& candle) {
-                                      has_value = true;
-                                      raw_min = std::min(raw_min, candle.low);
-                                      raw_max = std::max(raw_max, candle.high);
-                                    });
+                                    include_candle);
+          VisitLineGapAnchors(series, window, include_candle);
         }
       }
       const PaneConfig& pane = PaneConfigAt(input_.panes, pane_index);
@@ -838,13 +880,36 @@ class RenderSnapshotBuilder {
         continue;
       }
       const SeriesWindow& window = series_windows_[index];
-      const size_t visible = window.last - window.first;
-      const size_t rendered_samples =
-          series.config.type == SeriesType::kHistogram
-              ? visible
-              : std::min(visible, kMaxVisibleSamples);
-      float_count += rendered_samples *
-                     SeriesQuadsPerSample(series.config.type) * kFloatsPerQuad;
+      if (series.config.type == SeriesType::kHistogram) {
+        float_count += (window.last - window.first) * kFloatsPerQuad;
+        continue;
+      }
+      ChartConfig config = input_.config;
+      config.series_type = series.config.type;
+      config.bar_line_width = series.config.line_width;
+      config.line_width = series.config.line_width;
+      size_t first = window.first;
+      size_t last = window.last;
+      if (series.config.type == SeriesType::kLine) {
+        if (first > 0) {
+          --first;
+        }
+        if (last < series.candles.size()) {
+          ++last;
+        }
+      }
+      float_count += SeriesGeometryFloatCapacity(SeriesGeometryInput{
+          config,
+          series.candles,
+          first,
+          last,
+          snapshot_->panes[series.pane_index].plot,
+          input_.visible_x_min,
+          input_.visible_x_max,
+          pane_y_min_[series.pane_index],
+          pane_y_max_[series.pane_index],
+          input_.config.logical_spacing ? &input_.candles : nullptr,
+      });
     }
     content_vertices_->reserve(float_count);
 
@@ -884,11 +949,23 @@ class RenderSnapshotBuilder {
   }
 
   SeriesGeometryInput BuildSeriesGeometryInput() const {
+    size_t first =
+        static_cast<size_t>(std::distance(input_.candles.cbegin(), lower_));
+    size_t end =
+        static_cast<size_t>(std::distance(input_.candles.cbegin(), upper_));
+    if (input_.config.series_type == SeriesType::kLine) {
+      if (first > 0) {
+        --first;
+      }
+      if (end < input_.candles.size()) {
+        ++end;
+      }
+    }
     return SeriesGeometryInput{
         input_.config,
         input_.candles,
-        static_cast<size_t>(std::distance(input_.candles.cbegin(), lower_)),
-        static_cast<size_t>(std::distance(input_.candles.cbegin(), upper_)),
+        first,
+        end,
         snapshot_->plot,
         input_.visible_x_min,
         input_.visible_x_max,
@@ -966,7 +1043,8 @@ class RenderSnapshotBuilder {
         }
         continue;
       }
-      if (series.candles.empty() || window.first >= window.last) {
+      if (series.candles.empty() || (window.first >= window.last &&
+                                     series.config.type != SeriesType::kLine)) {
         continue;
       }
       ChartConfig config = input_.config;
@@ -974,12 +1052,29 @@ class RenderSnapshotBuilder {
       config.up = series.config.up;
       config.down = series.config.down;
       config.bar_line_width = series.config.line_width;
+      config.line_width = series.config.line_width;
+      config.line = series.config.color;
+      config.line_gradient_top = series.config.line_gradient_top;
+      config.line_gradient_bottom = series.config.line_gradient_bottom;
+      config.line_gradient_enabled = series.config.line_gradient_enabled;
+      config.line_source = series.config.line_source;
+      config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
+      size_t first = window.first;
+      size_t last = window.last;
+      if (series.config.type == SeriesType::kLine) {
+        if (first > 0) {
+          --first;
+        }
+        if (last < series.candles.size()) {
+          ++last;
+        }
+      }
       AppendSeriesGeometry(
           SeriesGeometryInput{
               config,
               series.candles,
-              window.first,
-              window.last,
+              first,
+              last,
               snapshot_->panes[pane_index].plot,
               input_.visible_x_min,
               input_.visible_x_max,
@@ -1013,7 +1108,11 @@ class RenderSnapshotBuilder {
       return;
     }
 
-    snapshot_->current_price = current.close;
+    const double current_value =
+        input_.config.series_type == SeriesType::kLine
+            ? CandleValue(current, input_.config.line_source)
+            : current.close;
+    snapshot_->current_price = current_value;
     const bool current_price_up = current.close >= current.open;
     snapshot_->current_price_color =
         current_price_up ? input_.config.current_price_line_up
@@ -1023,13 +1122,13 @@ class RenderSnapshotBuilder {
                          : input_.config.current_price_label_down;
 
     const bool price_in_range =
-        current.close >= y_min_ && current.close <= y_max_;
+        current_value >= y_min_ && current_value <= y_max_;
     if (price_in_range || input_.config.pin_current_price_to_edge) {
       snapshot_->current_price_visible = true;
-      snapshot_->current_price_y = current.close > y_max_ ? snapshot_->plot.top
-                                   : current.close < y_min_
+      snapshot_->current_price_y = current_value > y_max_ ? snapshot_->plot.top
+                                   : current_value < y_min_
                                        ? snapshot_->plot.bottom
-                                       : ProjectY(current.close);
+                                       : ProjectY(current_value);
     }
     if (price_in_range) {
       const float dash = 3.0f * input_.config.display_scale;

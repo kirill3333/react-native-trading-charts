@@ -5,6 +5,7 @@ export type { TradeBatcher, TradeBatcherOptions } from './tradeBatcher';
 export type {
   ChartTheme,
   ChartAppearance,
+  ChartLineAppearance,
   ChartBadgeStyle,
   ChartBorderStyle,
   ChartDirectionalBadgeStyle,
@@ -30,6 +31,7 @@ export type {
   DatePatternFormat,
   GestureOptions,
   OhlcCandle,
+  OhlcValueSource,
   PriceExtremesOptions,
   PaneResizeEvent,
   PriceScaleChangeEvent,

@@ -19,6 +19,11 @@ const STANDARD_APPEARANCE: ChartAppearance = {
   grid: { color: '#292431', opacity: 0.65 },
   candles: { upColor: '#38D98A', downColor: '#FF3B64' },
   bars: { upColor: '#38D98A', downColor: '#FF3B64', lineWidth: 1 },
+  line: {
+    width: 2.5,
+    color: '#2E90F5',
+    gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+  },
   xAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   yAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   priceExtremes: {
@@ -60,6 +65,11 @@ const HIGH_CONTRAST_APPEARANCE: ChartAppearance = {
   grid: { color: '#20242A', opacity: 0.85 },
   candles: { upColor: '#21C99A', downColor: '#E31B5F' },
   bars: { upColor: '#21C99A', downColor: '#E31B5F', lineWidth: 1 },
+  line: {
+    width: 2.5,
+    color: '#2E90F5',
+    gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+  },
   xAxis: {
     text: { color: '#FFFFFF', fontSize: 11, fontWeight: 'semibold' },
   },
@@ -208,7 +218,10 @@ export function buildChartViewConfig(
       : STANDARD_APPEARANCE;
 
   return {
-    series: { type: settings.seriesType },
+    series:
+      settings.seriesType === 'line'
+        ? { type: 'line', source: 'close' }
+        : { type: settings.seriesType },
     appearance: {
       ...appearancePreset,
       tooltip: {

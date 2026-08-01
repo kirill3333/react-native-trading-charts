@@ -19,6 +19,7 @@
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
+using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
 using trading_charts::RenderSnapshot;
 using trading_charts::SeriesConfig;
@@ -67,6 +68,10 @@ enum class ConfigNumberIndex : std::uint8_t {
   kAllowYAxisScale,
   kSeriesType,
   kBarLineWidth,
+  kLineSource,
+  kLineWidth,
+  kLineGradientEnabled,
+  kLineGapThresholdMs,
   kCount,
 };
 
@@ -83,6 +88,9 @@ enum class ConfigColorIndex : std::uint8_t {
   kCurrentPriceLineDown = 36,
   kCurrentPriceLabelUp = 40,
   kCurrentPriceLabelDown = 44,
+  kLine = 48,
+  kLineGradientTop = 52,
+  kLineGradientBottom = 56,
 };
 
 enum class SnapshotMetaIndex : std::uint8_t {
@@ -143,15 +151,19 @@ enum class SnapshotMetaIndex : std::uint8_t {
 inline constexpr jsize kLegacyConfigNumberCount = 22;
 inline constexpr jsize kLegacyConfigColorCount = 32;
 inline constexpr jsize kExtendedConfigColorCount = 48;
+inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kColorChannelCount = 4;
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 33);
+static_assert(kConfigNumberCount == 37);
 static_assert(kSnapshotMetaCount == 51);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
               kExtendedConfigColorCount);
+static_assert(ToIndex(ConfigColorIndex::kLineGradientBottom) +
+                  kColorChannelCount ==
+              kLineConfigColorCount);
 
 ChartEngine* EngineFromHandle(jlong handle) {
   // JNI represents opaque native handles as jlong values.
@@ -243,7 +255,7 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
   std::array<jdouble, kConfigNumberCount> config_numbers{};
-  std::array<jfloat, kExtendedConfigColorCount> config_colors{};
+  std::array<jfloat, kLineConfigColorCount> config_colors{};
   env->GetDoubleArrayRegion(
       numbers, 0,
       std::min(number_count, static_cast<jsize>(config_numbers.size())),
@@ -326,12 +338,28 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       config.series_type = SeriesType::kBar;
     } else if (series_type == 2.0) {
       config.series_type = SeriesType::kHollowCandlestick;
+    } else if (series_type == 4.0) {
+      config.series_type = SeriesType::kLine;
     }
   }
   config.bar_line_width =
       number_count < 33
           ? config.display_scale
           : static_cast<float>(number_at(ConfigNumberIndex::kBarLineWidth));
+  if (number_count >= 37) {
+    const int source =
+        static_cast<int>(number_at(ConfigNumberIndex::kLineSource));
+    config.line_source = source == 0   ? OhlcValueSource::kOpen
+                         : source == 1 ? OhlcValueSource::kHigh
+                         : source == 2 ? OhlcValueSource::kLow
+                                       : OhlcValueSource::kClose;
+    config.line_width =
+        static_cast<float>(number_at(ConfigNumberIndex::kLineWidth));
+    config.line_gradient_enabled =
+        number_at(ConfigNumberIndex::kLineGradientEnabled) != 0.0;
+    config.line_gap_threshold_ms =
+        number_at(ConfigNumberIndex::kLineGapThresholdMs);
+  }
   config.background = color_at(ConfigColorIndex::kBackground);
   config.grid = color_at(ConfigColorIndex::kGrid);
   config.axis_text = color_at(ConfigColorIndex::kAxisText);
@@ -354,6 +382,16 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     config.current_price_line_down = config.down;
     config.current_price_label_up = config.up;
     config.current_price_label_down = config.down;
+  }
+  if (color_count >= kLineConfigColorCount) {
+    config.line = color_at(ConfigColorIndex::kLine);
+    config.line_gradient_top = color_at(ConfigColorIndex::kLineGradientTop);
+    config.line_gradient_bottom =
+        color_at(ConfigColorIndex::kLineGradientBottom);
+  } else {
+    config.line = config.up;
+    config.line_gradient_top = config.line;
+    config.line_gradient_bottom = config.line;
   }
   config.x_locale = StringAt(env, strings, 0, "en-GB");
   config.x_time_zone = StringAt(env, strings, 1, "UTC");
@@ -405,8 +443,12 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
     return 2;
   }
   const auto values = CopyDoubles(env, numbers);
-  std::array<jfloat, 12> color_values{};
-  env->GetFloatArrayRegion(colors, 0, 12, color_values.data());
+  const jsize number_count = env->GetArrayLength(numbers);
+  const jsize color_count = env->GetArrayLength(colors);
+  std::array<jfloat, 20> color_values{};
+  env->GetFloatArrayRegion(colors, 0,
+                           std::min(color_count, static_cast<jsize>(20)),
+                           color_values.data());
   const auto color_at = [&](size_t offset) {
     return Color{color_values[offset], color_values[offset + 1],
                  color_values[offset + 2], color_values[offset + 3]};
@@ -423,6 +465,8 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
     series.type = SeriesType::kHollowCandlestick;
   } else if (type == 3) {
     series.type = SeriesType::kHistogram;
+  } else if (type == 4) {
+    series.type = SeriesType::kLine;
   }
   series.source =
       values[1] == 1.0 ? SeriesSource::kOhlcvVolume : SeriesSource::kData;
@@ -432,6 +476,22 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   series.color = color_at(0);
   series.up = color_at(4);
   series.down = color_at(8);
+  if (number_count >= 8) {
+    const int source = static_cast<int>(values[5]);
+    series.line_source = source == 0   ? OhlcValueSource::kOpen
+                         : source == 1 ? OhlcValueSource::kHigh
+                         : source == 2 ? OhlcValueSource::kLow
+                                       : OhlcValueSource::kClose;
+    series.line_gradient_enabled = values[6] != 0.0;
+    series.line_gap_threshold_ms = values[7];
+  }
+  if (color_count >= 20) {
+    series.line_gradient_top = color_at(12);
+    series.line_gradient_bottom = color_at(16);
+  } else {
+    series.line_gradient_top = series.color;
+    series.line_gradient_bottom = series.color;
+  }
   return StatusValue(instance->AddSeries(series));
 }
 

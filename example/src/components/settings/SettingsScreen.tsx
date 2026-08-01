@@ -19,6 +19,7 @@ const SERIES_OPTIONS = [
   { label: 'Candles', value: 'candlestick' },
   { label: 'Hollow', value: 'hollowCandlestick' },
   { label: 'Bars', value: 'bar' },
+  { label: 'Line', value: 'line' },
 ] as const;
 const SPACING_OPTIONS = [
   { label: 'Time', value: 'time' },

@@ -9,6 +9,7 @@ import {
   type ChartTextStyle,
   type CompactValueFormat,
   type NormalizedAdditionalChartSeriesOptions,
+  type OhlcValueSource,
   type PriceDisplayFormat,
   type PriceValueFormat,
   type ResolvedChartAppearance,
@@ -87,6 +88,26 @@ function identifier(value: string, name: string): string {
     );
   }
   return result;
+}
+
+function ohlcValueSource(
+  value: OhlcValueSource | undefined,
+  name: string
+): OhlcValueSource {
+  const result = value ?? 'close';
+  if (
+    result !== 'open' &&
+    result !== 'high' &&
+    result !== 'low' &&
+    result !== 'close'
+  ) {
+    throw new TypeError(`${name} must be 'open', 'high', 'low' or 'close'`);
+  }
+  return result;
+}
+
+function optionalGapThreshold(value: number | undefined, name: string) {
+  return value == null ? undefined : finitePositive(value, name);
 }
 
 function resolveScaleMargins(
@@ -328,8 +349,37 @@ function resolveAppearance(
     input?.bars?.lineWidth ?? 1,
     'appearance.bars.lineWidth'
   );
-  const activeUpColor = seriesType === 'bar' ? barUpColor : upColor;
-  const activeDownColor = seriesType === 'bar' ? barDownColor : downColor;
+  const lineWidth = finitePositive(
+    input?.line?.width ?? 2,
+    'appearance.line.width'
+  );
+  const lineColor = color(
+    input?.line?.color ?? theme.upColor,
+    'appearance.line.color'
+  );
+  const lineGradient = input?.line?.gradient;
+  const resolvedLineGradient =
+    lineGradient == null
+      ? undefined
+      : {
+          topColor: color(
+            lineGradient.topColor,
+            'appearance.line.gradient.topColor'
+          ),
+          bottomColor: color(
+            lineGradient.bottomColor,
+            'appearance.line.gradient.bottomColor'
+          ),
+        };
+  let activeUpColor = upColor;
+  let activeDownColor = downColor;
+  if (seriesType === 'bar') {
+    activeUpColor = barUpColor;
+    activeDownColor = barDownColor;
+  } else if (seriesType === 'line') {
+    activeUpColor = lineColor;
+    activeDownColor = lineColor;
+  }
   const axisColor = color(theme.axisTextColor, 'theme.axisTextColor');
   const crosshairColor = color(
     input?.crosshair?.line?.color ?? theme.crosshairColor,
@@ -355,6 +405,13 @@ function resolveAppearance(
       upColor: barUpColor,
       downColor: barDownColor,
       lineWidth: barLineWidth,
+    },
+    line: {
+      width: lineWidth,
+      color: lineColor,
+      ...(resolvedLineGradient == null
+        ? null
+        : { gradient: resolvedLineGradient }),
     },
     xAxis: {
       text: resolveTextStyle(
@@ -616,11 +673,47 @@ export function resolveAdditionalSeriesOptions(
     if (
       options.type !== 'candlestick' &&
       options.type !== 'hollowCandlestick' &&
-      options.type !== 'bar'
+      options.type !== 'bar' &&
+      options.type !== 'line'
     ) {
       throw new TypeError(
-        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar' or 'histogram'`
+        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line' or 'histogram'`
       );
+    }
+    if (options.type === 'line') {
+      const appearance = options.appearance;
+      if (appearance?.width != null) {
+        finitePositive(appearance.width, `${name}.appearance.width`);
+      }
+      if (appearance?.color != null) {
+        color(appearance.color, `${name}.appearance.color`);
+      }
+      if (appearance?.gradient != null) {
+        color(
+          appearance.gradient.topColor,
+          `${name}.appearance.gradient.topColor`
+        );
+        color(
+          appearance.gradient.bottomColor,
+          `${name}.appearance.gradient.bottomColor`
+        );
+      }
+      return {
+        ...options,
+        seriesId,
+        paneId,
+        priceScaleId,
+        visible: options.visible ?? true,
+        source: ohlcValueSource(options.source, `${name}.source`),
+        ...(options.gapThresholdMs == null
+          ? null
+          : {
+              gapThresholdMs: optionalGapThreshold(
+                options.gapThresholdMs,
+                `${name}.gapThresholdMs`
+              ),
+            }),
+      };
     }
     return {
       ...options,
@@ -676,12 +769,28 @@ export function resolveChartConfig(
   if (
     seriesType !== 'candlestick' &&
     seriesType !== 'hollowCandlestick' &&
-    seriesType !== 'bar'
+    seriesType !== 'bar' &&
+    seriesType !== 'line'
   ) {
     throw new TypeError(
-      "series.type must be 'candlestick', 'hollowCandlestick' or 'bar'"
+      "series.type must be 'candlestick', 'hollowCandlestick', 'bar' or 'line'"
     );
   }
+  const resolvedSeries =
+    seriesType === 'line'
+      ? {
+          type: 'line' as const,
+          source: ohlcValueSource(props.series?.source, 'series.source'),
+          ...(props.series?.gapThresholdMs == null
+            ? null
+            : {
+                gapThresholdMs: optionalGapThreshold(
+                  props.series.gapThresholdMs,
+                  'series.gapThresholdMs'
+                ),
+              }),
+        }
+      : { type: seriesType };
   const tooltipBackgroundOpacity = opacity(
     props.crosshair?.tooltipBackgroundOpacity ?? 1,
     'crosshair.tooltipBackgroundOpacity'
@@ -832,6 +941,13 @@ export function resolveChartConfig(
       );
     }
     if (item.type !== 'histogram') {
+      if (item.type === 'line') {
+        const resolved = resolveAdditionalSeriesOptions(item, name);
+        if (resolved.type !== 'line') {
+          throw new TypeError(`${name}.type must remain 'line'`);
+        }
+        return resolved;
+      }
       return {
         ...item,
         seriesId,
@@ -875,7 +991,7 @@ export function resolveChartConfig(
     timeframeMs,
     initialVisibleCount,
     defaultScale,
-    series: { type: seriesType },
+    series: resolvedSeries,
     panes: orderedPanes,
     additionalSeries,
     panesResizable: props.panesResizable ?? orderedPanes.length > 1,

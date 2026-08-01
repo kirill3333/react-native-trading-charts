@@ -41,7 +41,29 @@ enum class SeriesType : std::uint8_t {
   kBar = 1,
   kHollowCandlestick = 2,
   kHistogram = 3,
+  kLine = 4,
 };
+
+enum class OhlcValueSource : std::uint8_t {
+  kOpen = 0,
+  kHigh = 1,
+  kLow = 2,
+  kClose = 3,
+};
+
+inline double CandleValue(const Candle& candle, OhlcValueSource source) {
+  switch (source) {
+    case OhlcValueSource::kOpen:
+      return candle.open;
+    case OhlcValueSource::kHigh:
+      return candle.high;
+    case OhlcValueSource::kLow:
+      return candle.low;
+    case OhlcValueSource::kClose:
+      return candle.close;
+  }
+  return candle.close;
+}
 
 struct HistogramPoint {
   double timestamp = 0.0;
@@ -78,7 +100,14 @@ struct SeriesConfig {
   Color color{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
   Color up{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
   Color down{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  Color line_gradient_top{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                          1.0f};
+  Color line_gradient_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                             1.0f};
   float line_width = 1.0f;
+  double line_gap_threshold_ms = 0.0;
+  OhlcValueSource line_source = OhlcValueSource::kClose;
+  bool line_gradient_enabled = false;
   bool visible = true;
   bool declarative = false;
 };
@@ -99,12 +128,21 @@ struct ChartConfig {
   float display_scale = 1.0f;
   SeriesType series_type = SeriesType::kCandlestick;
   float bar_line_width = 1.0f;
+  float line_width = 2.0f;
+  double line_gap_threshold_ms = 0.0;
+  OhlcValueSource line_source = OhlcValueSource::kClose;
+  bool line_gradient_enabled = false;
 
   Color background{16.0f / 255.0f, 12.0f / 255.0f, 24.0f / 255.0f, 1.0f};
   Color grid{41.0f / 255.0f, 36.0f / 255.0f, 49.0f / 255.0f, 1.0f};
   Color axis_text{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
   Color up{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
   Color down{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  Color line{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
+  Color line_gradient_top{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                          1.0f};
+  Color line_gradient_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                             1.0f};
   Color crosshair{168.0f / 255.0f, 162.0f / 255.0f, 179.0f / 255.0f, 1.0f};
   Color tooltip_background{27.0f / 255.0f, 23.0f / 255.0f, 35.0f / 255.0f,
                            1.0f};

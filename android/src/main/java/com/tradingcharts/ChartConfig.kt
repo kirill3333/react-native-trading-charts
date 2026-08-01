@@ -83,6 +83,11 @@ internal data class SeriesConfig(
     val downColor: Int = Color.rgb(255, 59, 100),
     val declarative: Boolean = false,
     val lineWidthPx: Float = 1f,
+    val lineSource: String = "close",
+    val lineGradientTopColor: Int = Color.rgb(56, 217, 138),
+    val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
+    val lineGradientEnabled: Boolean = false,
+    val lineGapThresholdMs: Double = 0.0,
 )
 
 internal data class ChartConfig(
@@ -93,11 +98,18 @@ internal data class ChartConfig(
     val displayScale: Float = 1f,
     val seriesType: String = "candlestick",
     val barLineWidthPx: Float = 1f,
+    val lineWidthPx: Float = 2f,
+    val lineSource: String = "close",
+    val lineGradientEnabled: Boolean = false,
+    val lineGapThresholdMs: Double = 0.0,
     val backgroundColor: Int = Color.rgb(16, 12, 24),
     val gridColor: Int = Color.rgb(41, 36, 49),
     val axisTextColor: Int = Color.rgb(151, 145, 165),
     val upColor: Int = Color.rgb(56, 217, 138),
     val downColor: Int = Color.rgb(255, 59, 100),
+    val lineColor: Int = Color.rgb(56, 217, 138),
+    val lineGradientTopColor: Int = Color.rgb(56, 217, 138),
+    val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
     val crosshairColor: Int = Color.rgb(168, 162, 179),
     val tooltipBackgroundColor: Int = Color.rgb(27, 23, 35),
     val tooltipTextColor: Int = Color.rgb(245, 242, 250),
@@ -228,6 +240,10 @@ internal data class ChartConfig(
           allowYAxisScale.nativeDouble(),
           seriesType.nativeSeriesType(),
           barLineWidthPx.toDouble(),
+          lineSource.nativeLineSource(),
+          lineWidthPx.toDouble(),
+          lineGradientEnabled.nativeDouble(),
+          lineGapThresholdMs,
       )
 
   fun nativeColors(): FloatArray {
@@ -245,6 +261,9 @@ internal data class ChartConfig(
             currentPriceLineDownColor,
             currentPriceLabelUpColor,
             currentPriceLabelDownColor,
+            lineColor,
+            lineGradientTopColor,
+            lineGradientBottomColor,
         )
     return FloatArray(values.size * 4).also { output ->
       values.forEachIndexed { index, color ->
@@ -290,5 +309,14 @@ private fun String.nativeSeriesType() =
     when (this) {
       "bar" -> 1.0
       "hollowCandlestick" -> 2.0
+      "line" -> 4.0
       else -> 0.0
+    }
+
+private fun String.nativeLineSource() =
+    when (this) {
+      "open" -> 0.0
+      "high" -> 1.0
+      "low" -> 2.0
+      else -> 3.0
     }

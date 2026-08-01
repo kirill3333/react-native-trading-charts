@@ -26,6 +26,17 @@ bool IsFinite(T value) {
   return std::isfinite(value);
 }
 
+OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
+  switch (source) {
+    case OhlcValueSource::kOpen:
+    case OhlcValueSource::kHigh:
+    case OhlcValueSource::kLow:
+    case OhlcValueSource::kClose:
+      return source;
+  }
+  return OhlcValueSource::kClose;
+}
+
 bool IsAlignedTimestamp(double timestamp, double timeframe_ms) {
   if (!(timestamp >= 0.0) || !(timeframe_ms >= 1.0)) {
     return false;
@@ -119,12 +130,21 @@ ChartConfig NormalizeConfig(ChartConfig config) {
   }
   if (config.series_type != SeriesType::kCandlestick &&
       config.series_type != SeriesType::kBar &&
-      config.series_type != SeriesType::kHollowCandlestick) {
+      config.series_type != SeriesType::kHollowCandlestick &&
+      config.series_type != SeriesType::kLine) {
     config.series_type = SeriesType::kCandlestick;
   }
   if (!IsFinite(config.bar_line_width) || !(config.bar_line_width > 0.0f)) {
     config.bar_line_width = config.display_scale;
   }
+  if (!IsFinite(config.line_width) || !(config.line_width > 0.0f)) {
+    config.line_width = 2.0f * config.display_scale;
+  }
+  if (!IsFinite(config.line_gap_threshold_ms) ||
+      config.line_gap_threshold_ms < 0.0) {
+    config.line_gap_threshold_ms = 0.0;
+  }
+  config.line_source = NormalizeLineSource(config.line_source);
   if (!IsFinite(config.tooltip_background_opacity)) {
     config.tooltip_background_opacity = 1.0f;
   }
@@ -327,26 +347,40 @@ void ChartEngine::RebuildSeriesIndicesLocked() {
 
 UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   if (config.series_id.empty() || config.series_id == "main" ||
-      config.pane_id.empty() || config.price_scale_id.empty()) {
+      config.pane_id.empty() || config.price_scale_id.empty() ||
+      (config.type != SeriesType::kCandlestick &&
+       config.type != SeriesType::kHollowCandlestick &&
+       config.type != SeriesType::kBar &&
+       config.type != SeriesType::kHistogram &&
+       config.type != SeriesType::kLine)) {
     return UpdateStatus::kInvalidInput;
   }
   std::lock_guard<std::mutex> lock(mutex_);
+  SeriesConfig normalized = config;
+  normalized.line_source = NormalizeLineSource(normalized.line_source);
+  if (!IsFinite(normalized.line_width) || !(normalized.line_width > 0.0f)) {
+    normalized.line_width = config_.line_width;
+  }
+  if (!IsFinite(normalized.line_gap_threshold_ms) ||
+      normalized.line_gap_threshold_ms < 0.0) {
+    normalized.line_gap_threshold_ms = 0.0;
+  }
   const auto pane = std::find_if(
       panes_.begin(), panes_.end(), [&](const PaneConfig& candidate) {
-        return candidate.pane_id == config.pane_id &&
-               candidate.price_scale_id == config.price_scale_id;
+        return candidate.pane_id == normalized.pane_id &&
+               candidate.price_scale_id == normalized.price_scale_id;
       });
   if (pane == panes_.end()) {
     return UpdateStatus::kInvalidInput;
   }
-  SeriesData* existing = FindSeriesLocked(config.series_id);
+  SeriesData* existing = FindSeriesLocked(normalized.series_id);
   if (existing != nullptr) {
-    if (!existing->config.declarative || !config.declarative) {
+    if (!existing->config.declarative || !normalized.declarative) {
       return UpdateStatus::kInvalidInput;
     }
-    existing->config = config;
+    existing->config = normalized;
   } else {
-    additional_series_.push_back(SeriesData{config, {}, {}});
+    additional_series_.push_back(SeriesData{normalized, {}, {}});
   }
   RebuildSeriesIndicesLocked();
   MarkDirtyLocked();

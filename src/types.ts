@@ -23,11 +23,34 @@ export type TradeEvent = {
   size?: number;
 };
 
-export type ChartSeriesType = 'candlestick' | 'hollowCandlestick' | 'bar';
+export type ChartSeriesType =
+  | 'candlestick'
+  | 'hollowCandlestick'
+  | 'bar'
+  | 'line';
 
-export type ChartSeriesOptions = {
-  type?: ChartSeriesType;
+export type OhlcValueSource = 'open' | 'high' | 'low' | 'close';
+
+export type ChartLineAppearance = {
+  width?: number;
+  color?: string;
+  gradient?: {
+    topColor: string;
+    bottomColor: string;
+  };
 };
+
+export type ChartSeriesOptions =
+  | {
+      type?: 'candlestick' | 'hollowCandlestick' | 'bar';
+      source?: never;
+      gapThresholdMs?: never;
+    }
+  | {
+      type: 'line';
+      source?: OhlcValueSource;
+      gapThresholdMs?: number;
+    };
 
 export type HistogramPoint = {
   timestamp: number;
@@ -55,20 +78,26 @@ export type ChartPaneOptions = {
   priceScale: ChartPanePriceScaleOptions;
 };
 
-export type AdditionalOhlcSeriesOptions = {
+type AdditionalSeriesBase = {
   seriesId: string;
-  type: ChartSeriesType;
   paneId: string;
   priceScaleId: string;
   visible?: boolean;
 };
 
-export type HistogramSeriesOptions = {
-  seriesId: string;
+export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
+  (
+    | { type: 'candlestick' | 'hollowCandlestick' | 'bar' }
+    | {
+        type: 'line';
+        source?: OhlcValueSource;
+        gapThresholdMs?: number;
+        appearance?: ChartLineAppearance;
+      }
+  );
+
+export type HistogramSeriesOptions = AdditionalSeriesBase & {
   type: 'histogram';
-  paneId: string;
-  priceScaleId: string;
-  visible?: boolean;
   source?:
     | { type: 'ohlcvVolume'; seriesId: string }
     | { type: 'data' };
@@ -159,6 +188,7 @@ export type ChartAppearance = {
     downColor?: string;
     lineWidth?: number;
   };
+  line?: ChartLineAppearance;
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
   priceExtremes?: {
@@ -360,7 +390,13 @@ export type ResolvedChartConfig = {
   timeframeMs: number;
   initialVisibleCount: number;
   defaultScale: number;
-  series: Required<ChartSeriesOptions>;
+  series:
+    | { type: 'candlestick' | 'hollowCandlestick' | 'bar' }
+    | {
+        type: 'line';
+        source: OhlcValueSource;
+        gapThresholdMs?: number;
+      };
   panes: ResolvedChartPaneOptions[];
   additionalSeries: ResolvedAdditionalChartSeriesOptions[];
   panesResizable: boolean;
@@ -419,6 +455,11 @@ export type ResolvedChartAppearance = {
   grid: { color: string; opacity: number };
   candles: { upColor: string; downColor: string };
   bars: { upColor: string; downColor: string; lineWidth: number };
+  line: {
+    width: number;
+    color: string;
+    gradient?: { topColor: string; bottomColor: string };
+  };
   xAxis: { text: ResolvedChartTextStyle };
   yAxis: { text: ResolvedChartTextStyle };
   priceExtremes: {
