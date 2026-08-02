@@ -8,14 +8,30 @@ const KLINE_RETRY_BASE_DELAY_MS = 750;
 export const BINANCE_WEBSOCKET_URL = 'wss://stream.binance.com:9443/ws';
 
 export const BINANCE_INTERVALS = [
-  { value: '1s', label: '1s', timeframeMs: 1_000 },
-  { value: '1m', label: '1m', timeframeMs: 60_000 },
-  { value: '5m', label: '5m', timeframeMs: 5 * 60_000 },
-  { value: '15m', label: '15m', timeframeMs: 15 * 60_000 },
-  { value: '1h', label: '1h', timeframeMs: 60 * 60_000 },
-  { value: '6h', label: '6h', timeframeMs: 6 * 60 * 60_000 },
-  { value: '12h', label: '12h', timeframeMs: 12 * 60 * 60_000 },
-  { value: '1d', label: '1d', timeframeMs: 24 * 60 * 60_000 },
+  { value: '1s', label: '1s', resolution: { unit: 'second' } },
+  { value: '1m', label: '1m', resolution: { unit: 'minute' } },
+  {
+    value: '5m',
+    label: '5m',
+    resolution: { unit: 'minute', multiplier: 5 },
+  },
+  {
+    value: '15m',
+    label: '15m',
+    resolution: { unit: 'minute', multiplier: 15 },
+  },
+  { value: '1h', label: '1h', resolution: { unit: 'hour' } },
+  {
+    value: '6h',
+    label: '6h',
+    resolution: { unit: 'hour', multiplier: 6 },
+  },
+  {
+    value: '12h',
+    label: '12h',
+    resolution: { unit: 'hour', multiplier: 12 },
+  },
+  { value: '1d', label: '1d', resolution: { unit: 'day' } },
 ] as const;
 
 export type BinanceInterval = (typeof BINANCE_INTERVALS)[number]['value'];

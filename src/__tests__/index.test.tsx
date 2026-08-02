@@ -519,7 +519,12 @@ describe('chart config', () => {
 
   it('resolves price and compact defaults', () => {
     const price = resolveChartConfig({ chartId: 'price' });
-    expect(price.timeframeMs).toBe(60_000);
+    expect(price.resolution).toEqual({ unit: 'minute', multiplier: 1 });
+    expect(price.tradeAggregation).toEqual({
+      bucketOrigin: { type: 'epoch' },
+      outsideSession: 'ignore',
+      candleTimestamp: 'bucketStart',
+    });
     expect(price.defaultScale).toBe(1);
     expect(price.series).toEqual({ type: 'candlestick' });
     expect(price.appearance.bars).toEqual({
@@ -607,8 +612,20 @@ describe('chart config', () => {
       significantDigits: 3,
     });
     expect(() =>
-      resolveChartConfig({ chartId: 'bad', timeframeMs: 1.5 })
-    ).toThrow('timeframeMs must be a positive integer');
+      resolveChartConfig({
+        chartId: 'bad-fixed-resolution',
+        resolution: { unit: 'fixed', durationMs: 1.5 },
+      })
+    ).toThrow('resolution.durationMs must be a positive safe integer');
+    expect(
+      resolveChartConfig({
+        chartId: 'fixed-resolution',
+        resolution: { unit: 'fixed', durationMs: 250 },
+      }).resolution
+    ).toEqual({
+      unit: 'fixed',
+      durationMs: 250,
+    });
     expect(() => resolveChartConfig({ chartId: '' })).toThrow(
       'chartId must be a non-empty string'
     );
@@ -622,6 +639,76 @@ describe('chart config', () => {
         xAxis: { spacing: 'invalid' as 'time' },
       })
     ).toThrow('xAxis.spacing');
+  });
+
+  it('resolves trading sessions and calendar exceptions', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'nyse-hourly',
+      resolution: { unit: 'hour' },
+      tradeAggregation: {
+        bucketOrigin: 'session',
+        calendar: {
+          timeZone: 'America/New_York',
+          sessions: [
+            {
+              days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+              start: '09:30',
+              end: '16:00',
+            },
+          ],
+          holidays: ['2026-12-25'],
+          overrides: [
+            {
+              date: '2026-11-27',
+              sessions: [{ start: '09:30', end: '13:00' }],
+            },
+          ],
+        },
+      },
+    });
+    expect(resolved.tradeAggregation).toMatchObject({
+      bucketOrigin: { type: 'session' },
+      calendar: {
+        timeZone: 'America/New_York',
+        sessions: [
+          {
+            weekdays: [1, 2, 3, 4, 5],
+            startSeconds: 34_200,
+            endSeconds: 57_600,
+            startDayOffset: 0,
+            endDayOffset: 0,
+          },
+        ],
+        holidays: ['2026-12-25'],
+      },
+    });
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-session',
+        resolution: { unit: 'minute' },
+        tradeAggregation: {
+          calendar: {
+            timeZone: 'UTC',
+            sessions: [{ days: ['monday'], start: '25:00', end: '16:00' }],
+          },
+        },
+      })
+    ).toThrow('valid wall-clock time');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-time-zone',
+        tradeAggregation: {
+          calendar: { timeZone: 'Mars/Olympus_Mons' },
+        },
+      })
+    ).toThrow('must be a valid IANA time zone');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-calendar-origin',
+        resolution: { unit: 'month' },
+        tradeAggregation: { bucketOrigin: 'session' },
+      })
+    ).toThrow('calendar resolutions');
   });
 
   it('resolves and validates crosshair presentation options', () => {

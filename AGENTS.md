@@ -279,11 +279,27 @@ Metal glyph atlas is a larger architectural change, not a routine optimization.
 
 ## Validation
 
-Run checks proportionate to the change:
+After completing all edits and before reporting the work as done, always run
+the repository-wide TypeScript/JavaScript checks:
 
 ```sh
 yarn typecheck
 yarn lint
+```
+
+If any C++ header or source file changed, also run the complete C++ linters:
+
+```sh
+yarn lint:cpp
+```
+
+These lint and type checks are mandatory after every applicable change, not
+optional or merely proportionate. Do not report completion while they are
+failing. If a required check cannot be run, report the exact blocker.
+
+Run tests proportionate to the change:
+
+```sh
 yarn test
 yarn test:cpp
 ```

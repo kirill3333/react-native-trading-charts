@@ -8,6 +8,7 @@ add_library(
   ../cpp/internal/pane_layout.cc
   ../cpp/internal/render_snapshot_builder.cc
   ../cpp/internal/series_geometry.cc
+  ../cpp/internal/trading_time.cc
   src/main/cpp/chart_engine_jni.cc
 )
 

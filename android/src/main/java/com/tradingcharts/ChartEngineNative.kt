@@ -190,6 +190,23 @@ internal object ChartEngineNative {
   )
 
   @JvmStatic
+  @Suppress("LongParameterList")
+  external fun nativeSetTradingCalendar(
+      handle: Long,
+      configured: Boolean,
+      timeZone: String,
+      transitionRangeEndMs: Long,
+      transitionTimes: LongArray,
+      transitionOffsets: IntArray,
+      sessions: IntArray,
+      holidayEpochDays: LongArray,
+      overrideEpochDays: LongArray,
+      overrideSessionOffsets: IntArray,
+      overrideSessions: IntArray,
+      weekStartsOn: Int,
+  )
+
+  @JvmStatic
   external fun nativeSetPanes(
       handle: Long,
       strings: Array<String>,
@@ -303,6 +320,21 @@ internal object ChartEngineNative {
 
   fun setConfig(handle: Long, config: ChartConfig) {
     nativeSetConfig(handle, config.nativeNumbers(), config.nativeColors(), config.nativeStrings())
+    val calendar = config.tradeAggregation.calendar
+    nativeSetTradingCalendar(
+        handle,
+        calendar.configured,
+        calendar.timeZone,
+        calendar.transitionRangeEndMs,
+        config.nativeTransitionTimes(),
+        config.nativeTransitionOffsets(),
+        config.nativeTradingSessions(),
+        config.nativeHolidayEpochDays(),
+        config.nativeOverrideEpochDays(),
+        config.nativeOverrideSessionOffsets(),
+        config.nativeOverrideSessions(),
+        calendar.weekStartsOn,
+    )
     nativeSetPanes(
         handle,
         config.nativePaneStrings(),

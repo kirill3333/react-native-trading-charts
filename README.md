@@ -40,7 +40,7 @@ export function Chart() {
     <TradingChartsView
       style={{ flex: 1 }}
       chartId="btc-1m"
-      timeframeMs={60_000}
+      resolution={{ unit: 'minute' }}
       initialVisibleCount={100}
       defaultScale={1.25}
       series={{ type: 'candlestick' }}
@@ -106,7 +106,7 @@ TradingCharts.updateCandle('btc-1m', {
   volume: 3.1,
 });
 
-// Raw trades are aggregated into UTC epoch-aligned OHLCV buckets in C++.
+// Raw trades are aggregated according to resolution/tradeAggregation in C++.
 TradingCharts.updateTrade('btc-1m', {
   timestamp: Date.now(),
   price: 64_642,
@@ -140,6 +140,73 @@ application.
 Raw trades must be ordered by non-decreasing millisecond timestamp. Empty time
 buckets are not synthesized. A trade in the final history bucket continues that
 candle; an older trade is ignored with a development warning.
+
+### Trading time and aggregation
+
+`resolution` describes market time rather than an arbitrary millisecond
+duration:
+
+```tsx
+<TradingChartsView
+  chartId="aapl-1h"
+  resolution={{ unit: 'hour' }}
+  tradeAggregation={{
+    bucketOrigin: 'session',
+    outsideSession: 'ignore',
+    calendar: {
+      timeZone: 'America/New_York',
+      sessions: [
+        {
+          days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          start: '09:30',
+          end: '16:00',
+        },
+      ],
+      holidays: ['2026-12-25'],
+      overrides: [
+        {
+          date: '2026-11-27',
+          sessions: [{ start: '09:30', end: '13:00' }],
+        },
+      ],
+    },
+  }}
+/>
+```
+
+Supported units are `second`, `minute`, `hour`, `day`, `week`, and `month`,
+with an optional positive integer `multiplier`. Intraday resolutions can start
+at the UTC epoch (the default), at each session open, or at a custom timestamp:
+
+```tsx
+tradeAggregation={{ bucketOrigin: { timestamp: 1_700_000_000_000 } }}
+```
+
+Daily, weekly, and monthly resolutions use calendar boundaries; a month is not
+treated as 30 days. `calendar.timeZone` determines session and calendar
+boundaries and includes DST changes. `xAxis.timeZone` only controls label
+formatting, so it may be configured independently. Session ends are exclusive.
+Trades outside the calendar are ignored by default; set `outsideSession` to
+`'reject'` to report them as invalid input. An override with an empty
+`sessions` array closes that trading date.
+
+Ready OHLC candles passed to `setHistory`, `prependHistory`, or `updateCandle`
+keep their feed-provided timestamps. They only need to be finite, non-negative,
+safe-integer milliseconds; history timestamps must be strictly increasing, and
+`updateCandle` may replace the last timestamp. They are not forced onto the
+configured raw-trade buckets. When ready candles and raw trades share one chart,
+their timestamp convention should match.
+
+For duration-based intervals that cannot be expressed as an integer calendar
+unit, use a fixed resolution:
+
+```tsx
+resolution={{ unit: 'fixed', durationMs: 250 }}
+```
+
+Fixed resolutions are UTC epoch-aligned by default and never acquire calendar
+semantics: `durationMs` always means an exact elapsed duration. Use
+`bucketOrigin: 'session'` or a custom timestamp to change their alignment.
 
 `defaultScale` defaults to `1` and scales the initial horizontal viewport after
 `initialVisibleCount` is applied. Values greater than `1` zoom in; values between

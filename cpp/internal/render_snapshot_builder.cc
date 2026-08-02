@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cpp/internal/series_geometry.h"
+#include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
 
 namespace trading_charts::internal {
@@ -368,7 +369,8 @@ class RenderSnapshotBuilder {
       snapshot_->visible_x_max = (upper_ - 1)->timestamp;
       if (!(snapshot_->visible_x_max > snapshot_->visible_x_min)) {
         snapshot_->visible_x_max =
-            snapshot_->visible_x_min + input_.config.timeframe_ms;
+            snapshot_->visible_x_min +
+            NominalResolutionMilliseconds(input_.config.resolution);
       }
     }
   }
@@ -995,7 +997,9 @@ class RenderSnapshotBuilder {
     }
     const double domain_span = input_.visible_x_max - input_.visible_x_min;
     const double slot_domain =
-        input_.config.logical_spacing ? 1.0 : input_.config.timeframe_ms;
+        input_.config.logical_spacing
+            ? 1.0
+            : NominalResolutionMilliseconds(input_.config.resolution);
     const float slot_width =
         static_cast<float>(slot_domain / domain_span) * plot.Width();
     const float width = std::clamp(slot_width * 0.7f, 1.0f, 28.0f);

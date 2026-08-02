@@ -23,12 +23,95 @@ export type TradeEvent = {
   size?: number;
 };
 
+export type ResolutionUnit =
+  'second' | 'minute' | 'hour' | 'day' | 'week' | 'month';
+
+export type ChartResolution =
+  | {
+      unit: ResolutionUnit;
+      multiplier?: number;
+    }
+  | {
+      unit: 'fixed';
+      durationMs: number;
+    };
+
+export type TradingWeekday =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
+export type TradingSessionSegment = {
+  start: string;
+  end: string;
+  startDayOffset?: -1 | 0;
+  endDayOffset?: 0 | 1;
+};
+
+export type TradingSession = TradingSessionSegment & {
+  days: ReadonlyArray<TradingWeekday>;
+};
+
+export type TradingCalendarOverride = {
+  date: string;
+  sessions: ReadonlyArray<TradingSessionSegment>;
+};
+
+export type TradingCalendar = {
+  timeZone: string;
+  sessions?: ReadonlyArray<TradingSession>;
+  holidays?: ReadonlyArray<string>;
+  overrides?: ReadonlyArray<TradingCalendarOverride>;
+  weekStartsOn?: 'monday' | 'sunday';
+};
+
+export type TradeAggregationOptions = {
+  bucketOrigin?: 'epoch' | 'session' | { timestamp: number };
+  calendar?: TradingCalendar;
+  outsideSession?: 'ignore' | 'reject';
+  candleTimestamp?: 'bucketStart' | 'tradingDateUtc';
+};
+
+export type ResolvedChartResolution =
+  | { unit: ResolutionUnit; multiplier: number }
+  | { unit: 'fixed'; durationMs: number };
+
+export type ResolvedTradingSessionSegment = {
+  startSeconds: number;
+  endSeconds: number;
+  startDayOffset: -1 | 0;
+  endDayOffset: 0 | 1;
+};
+
+export type ResolvedTradingSession = ResolvedTradingSessionSegment & {
+  weekdays: ReadonlyArray<number>;
+};
+
+export type ResolvedTradeAggregationOptions = {
+  bucketOrigin:
+    | { type: 'epoch' }
+    | { type: 'session' }
+    | { type: 'timestamp'; timestamp: number };
+  calendar?: {
+    timeZone: string;
+    sessions: ReadonlyArray<ResolvedTradingSession>;
+    holidays: ReadonlyArray<string>;
+    overrides: ReadonlyArray<{
+      date: string;
+      sessions: ReadonlyArray<ResolvedTradingSessionSegment>;
+    }>;
+    weekStartsOn: 'monday' | 'sunday';
+  };
+  outsideSession: 'ignore' | 'reject';
+  candleTimestamp: 'bucketStart' | 'tradingDateUtc';
+};
+
 export type ChartSeriesType =
-  | 'candlestick'
-  | 'hollowCandlestick'
-  | 'bar'
-  | 'line'
-  | 'area';
+  'candlestick' | 'hollowCandlestick' | 'bar' | 'line' | 'area';
 
 export type OhlcValueSource = 'open' | 'high' | 'low' | 'close';
 
@@ -112,9 +195,7 @@ export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
 
 export type HistogramSeriesOptions = AdditionalSeriesBase & {
   type: 'histogram';
-  source?:
-    | { type: 'ohlcvVolume'; seriesId: string }
-    | { type: 'data' };
+  source?: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };
   appearance?: {
     color?: string;
     upColor?: string;
@@ -123,8 +204,7 @@ export type HistogramSeriesOptions = AdditionalSeriesBase & {
 };
 
 export type AdditionalChartSeriesOptions =
-  | AdditionalOhlcSeriesOptions
-  | HistogramSeriesOptions;
+  AdditionalOhlcSeriesOptions | HistogramSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -136,9 +216,7 @@ export type NormalizedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
-      source:
-        | { type: 'ohlcvVolume'; seriesId: string }
-        | { type: 'data' };
+      source: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };
     });
 
 export type ChartSeriesDataPoint = OhlcCandle | HistogramPoint;
@@ -154,11 +232,7 @@ export type ChartTheme = {
   tooltipTextColor?: string;
 };
 
-export type ChartFontWeight =
-  | 'regular'
-  | 'medium'
-  | 'semibold'
-  | 'bold';
+export type ChartFontWeight = 'regular' | 'medium' | 'semibold' | 'bold';
 
 export type ChartTextStyle = {
   color?: string;
@@ -265,9 +339,7 @@ export type SignificantValueFormat = {
 };
 
 export type YAxisValueFormat =
-  | PriceValueFormat
-  | CompactValueFormat
-  | SignificantValueFormat;
+  PriceValueFormat | CompactValueFormat | SignificantValueFormat;
 
 export type PriceDisplayFormat =
   | Omit<PriceValueFormat, 'minMove'>
@@ -377,7 +449,8 @@ export type PriceScaleChangeEvent = PriceScaleChangeNativeEvent;
 
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
-  timeframeMs?: number;
+  resolution?: ChartResolution;
+  tradeAggregation?: TradeAggregationOptions;
   initialVisibleCount?: number;
   defaultScale?: number;
   series?: ChartSeriesOptions;
@@ -402,7 +475,8 @@ export type TradingChartsViewProps = ViewProps & {
 };
 
 export type ResolvedChartConfig = {
-  timeframeMs: number;
+  resolution: ResolvedChartResolution;
+  tradeAggregation: ResolvedTradeAggregationOptions;
   initialVisibleCount: number;
   defaultScale: number;
   series:
@@ -446,9 +520,7 @@ export type ResolvedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {
       visible: boolean;
-      source:
-        | { type: 'ohlcvVolume'; seriesId: string }
-        | { type: 'data' };
+      source: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };
       appearance: {
         color: string;
         upColor: string;

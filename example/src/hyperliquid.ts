@@ -9,20 +9,90 @@ const HISTORY_CANDLE_COUNT = 300;
 export const HYPERLIQUID_WEBSOCKET_URL = 'wss://api.hyperliquid.xyz/ws';
 
 export const HYPERLIQUID_INTERVALS = [
-  { value: '1m', label: '1m', timeframeMs: 60_000 },
-  { value: '3m', label: '3m', timeframeMs: 3 * 60_000 },
-  { value: '5m', label: '5m', timeframeMs: 5 * 60_000 },
-  { value: '15m', label: '15m', timeframeMs: 15 * 60_000 },
-  { value: '30m', label: '30m', timeframeMs: 30 * 60_000 },
-  { value: '1h', label: '1h', timeframeMs: 60 * 60_000 },
-  { value: '2h', label: '2h', timeframeMs: 2 * 60 * 60_000 },
-  { value: '4h', label: '4h', timeframeMs: 4 * 60 * 60_000 },
-  { value: '8h', label: '8h', timeframeMs: 8 * 60 * 60_000 },
-  { value: '12h', label: '12h', timeframeMs: 12 * 60 * 60_000 },
-  { value: '1d', label: '1d', timeframeMs: 24 * 60 * 60_000 },
-  { value: '3d', label: '3d', timeframeMs: 3 * 24 * 60 * 60_000 },
-  { value: '1w', label: '1w', timeframeMs: 7 * 24 * 60 * 60_000 },
-  { value: '1M', label: '1M', timeframeMs: 30 * 24 * 60 * 60_000 },
+  {
+    value: '1m',
+    label: '1m',
+    resolution: { unit: 'minute' },
+    requestDurationMs: 60_000,
+  },
+  {
+    value: '3m',
+    label: '3m',
+    resolution: { unit: 'minute', multiplier: 3 },
+    requestDurationMs: 3 * 60_000,
+  },
+  {
+    value: '5m',
+    label: '5m',
+    resolution: { unit: 'minute', multiplier: 5 },
+    requestDurationMs: 5 * 60_000,
+  },
+  {
+    value: '15m',
+    label: '15m',
+    resolution: { unit: 'minute', multiplier: 15 },
+    requestDurationMs: 15 * 60_000,
+  },
+  {
+    value: '30m',
+    label: '30m',
+    resolution: { unit: 'minute', multiplier: 30 },
+    requestDurationMs: 30 * 60_000,
+  },
+  {
+    value: '1h',
+    label: '1h',
+    resolution: { unit: 'hour' },
+    requestDurationMs: 60 * 60_000,
+  },
+  {
+    value: '2h',
+    label: '2h',
+    resolution: { unit: 'hour', multiplier: 2 },
+    requestDurationMs: 2 * 60 * 60_000,
+  },
+  {
+    value: '4h',
+    label: '4h',
+    resolution: { unit: 'hour', multiplier: 4 },
+    requestDurationMs: 4 * 60 * 60_000,
+  },
+  {
+    value: '8h',
+    label: '8h',
+    resolution: { unit: 'hour', multiplier: 8 },
+    requestDurationMs: 8 * 60 * 60_000,
+  },
+  {
+    value: '12h',
+    label: '12h',
+    resolution: { unit: 'hour', multiplier: 12 },
+    requestDurationMs: 12 * 60 * 60_000,
+  },
+  {
+    value: '1d',
+    label: '1d',
+    resolution: { unit: 'day' },
+    requestDurationMs: 24 * 60 * 60_000,
+  },
+  {
+    value: '3d',
+    label: '3d',
+    resolution: { unit: 'day', multiplier: 3 },
+    requestDurationMs: 3 * 24 * 60 * 60_000,
+  },
+  {
+    value: '1w',
+    label: '1w',
+    resolution: { unit: 'week' },
+    requestDurationMs: 7 * 24 * 60 * 60_000,
+  },
+  {
+    value: '1M',
+    label: '1M',
+    resolution: { unit: 'month' },
+    requestDurationMs: 31 * 24 * 60 * 60_000,
+  },
 ] as const;
 
 export type HyperliquidInterval =
@@ -421,7 +491,7 @@ export async function fetchHyperliquidCandles(
       ? Date.now()
       : Math.max(0, Math.floor(beforeTimestamp) - 1);
   const startTime =
-    endTime - intervalConfig.timeframeMs * (HISTORY_CANDLE_COUNT + 2);
+    endTime - intervalConfig.requestDurationMs * (HISTORY_CANDLE_COUNT + 2);
   return parseHyperliquidCandlesResponse(
     await request(
       {

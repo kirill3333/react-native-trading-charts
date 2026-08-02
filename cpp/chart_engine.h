@@ -129,8 +129,86 @@ struct SeriesData {
   size_t source_series_index = kInvalidStateIndex;
 };
 
+enum class ResolutionUnit : std::uint8_t {
+  kFixed = 0,
+  kSecond = 1,
+  kMinute = 2,
+  kHour = 3,
+  kDay = 4,
+  kWeek = 5,
+  kMonth = 6,
+};
+
+struct Resolution {
+  ResolutionUnit unit = ResolutionUnit::kMinute;
+  std::uint32_t multiplier = 1;
+  std::int64_t fixed_duration_ms = 60000;
+};
+
+enum class BucketOrigin : std::uint8_t {
+  kEpoch = 0,
+  kSession = 1,
+  kTimestamp = 2,
+};
+
+enum class OutsideSessionPolicy : std::uint8_t {
+  kIgnore = 0,
+  kReject = 1,
+};
+
+enum class CandleTimestampPolicy : std::uint8_t {
+  kBucketStart = 0,
+  kTradingDateUtc = 1,
+};
+
+struct CivilDate {
+  int year = 1970;
+  int month = 1;
+  int day = 1;
+};
+
+struct TimeZoneTransition {
+  std::int64_t at_utc_ms = 0;
+  int offset_seconds = 0;
+};
+
+struct TradingSessionConfig {
+  // ISO weekdays, bit 0 = Monday and bit 6 = Sunday. Overrides ignore this.
+  std::uint8_t weekday_mask = 0;
+  int start_seconds = 0;
+  int end_seconds = 0;
+  int start_day_offset = 0;
+  int end_day_offset = 0;
+};
+
+struct TradingCalendarOverrideConfig {
+  CivilDate date;
+  std::vector<TradingSessionConfig> sessions;
+};
+
+struct TradingCalendarConfig {
+  std::string time_zone = "UTC";
+  std::vector<TimeZoneTransition> transitions{{0, 0}};
+  std::int64_t transition_range_start_ms = 0;
+  std::int64_t transition_range_end_ms = 4133980800000LL;  // 2101-01-01.
+  std::vector<TradingSessionConfig> sessions;
+  std::vector<CivilDate> holidays;
+  std::vector<TradingCalendarOverrideConfig> overrides;
+  int week_starts_on = 1;  // ISO Monday=1, Sunday=7.
+  bool configured = false;
+};
+
+struct TradeAggregationConfig {
+  BucketOrigin bucket_origin = BucketOrigin::kEpoch;
+  std::int64_t origin_timestamp_ms = 0;
+  OutsideSessionPolicy outside_session = OutsideSessionPolicy::kIgnore;
+  CandleTimestampPolicy candle_timestamp = CandleTimestampPolicy::kBucketStart;
+  TradingCalendarConfig calendar;
+};
+
 struct ChartConfig {
-  double timeframe_ms = 60000.0;
+  Resolution resolution;
+  TradeAggregationConfig trade_aggregation;
   int initial_visible_count = 100;
   double default_scale = 1.0;
   double default_y_scale = 1.0;
@@ -299,6 +377,7 @@ enum class UpdateStatus : std::uint8_t {
   kApplied,
   kIgnoredOldTimestamp,
   kInvalidInput,
+  kIgnoredOutsideSession,
 };
 
 // Owns the candle store, viewport, gesture state, and cached render snapshot.
@@ -310,6 +389,7 @@ class ChartEngine {
   ChartEngine();
 
   void SetConfig(const ChartConfig& config);
+  void SetTradingCalendar(const TradingCalendarConfig& calendar);
   void SetPanes(const std::vector<PaneConfig>& panes, bool resizable);
   UpdateStatus AddSeries(const SeriesConfig& config);
   bool RemoveSeries(const std::string& series_id);
@@ -328,7 +408,8 @@ class ChartEngine {
 
   // Replaces history from packed [time, open, high, low, close, volume]
   // records. `values` may be null only when `value_count` is zero. Timestamps
-  // are milliseconds and must be strictly increasing and bucket-aligned.
+  // are milliseconds and must be strictly increasing. Ready-candle feeds own
+  // their timestamp semantics; trade aggregation alignment does not apply.
   UpdateStatus SetHistory(const double* values, size_t value_count);
 
   // Prepends packed candle records that strictly precede existing history.

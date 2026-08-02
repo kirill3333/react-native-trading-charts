@@ -130,7 +130,7 @@ describe('Binance native klines', () => {
     expect(BINANCE_INTERVALS[0]).toEqual({
       value: '1s',
       label: '1s',
-      timeframeMs: 1_000,
+      resolution: { unit: 'second' },
     });
     expect(klineTopic('BTCUSDT', '1s')).toBe('btcusdt@kline_1s');
   });

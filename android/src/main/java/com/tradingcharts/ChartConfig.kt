@@ -92,8 +92,52 @@ internal data class SeriesConfig(
     val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
 )
 
+internal data class ResolutionConfig(
+    val unit: Int = RESOLUTION_MINUTE,
+    val multiplier: Int = 1,
+    val durationMs: Long = 60_000L,
+)
+
+internal data class TimeZoneTransitionConfig(
+    val atUtcMs: Long,
+    val offsetSeconds: Int,
+)
+
+internal data class TradingSessionConfig(
+    val weekdayMask: Int,
+    val startSeconds: Int,
+    val endSeconds: Int,
+    val startDayOffset: Int,
+    val endDayOffset: Int,
+)
+
+internal data class TradingCalendarOverrideConfig(
+    val epochDay: Long,
+    val sessions: List<TradingSessionConfig>,
+)
+
+internal data class TradingCalendarConfig(
+    val configured: Boolean = false,
+    val timeZone: String = "UTC",
+    val transitions: List<TimeZoneTransitionConfig> = listOf(TimeZoneTransitionConfig(0L, 0)),
+    val transitionRangeEndMs: Long = 4_133_980_800_000L,
+    val sessions: List<TradingSessionConfig> = emptyList(),
+    val holidayEpochDays: LongArray = longArrayOf(),
+    val overrides: List<TradingCalendarOverrideConfig> = emptyList(),
+    val weekStartsOn: Int = 1,
+)
+
+internal data class TradeAggregationConfig(
+    val bucketOrigin: Int = BUCKET_ORIGIN_EPOCH,
+    val originTimestampMs: Long = 0L,
+    val outsideSession: Int = OUTSIDE_SESSION_IGNORE,
+    val candleTimestamp: Int = CANDLE_TIMESTAMP_BUCKET_START,
+    val calendar: TradingCalendarConfig = TradingCalendarConfig(),
+)
+
 internal data class ChartConfig(
-    val timeframeMs: Double = 60_000.0,
+    val resolution: ResolutionConfig = ResolutionConfig(),
+    val tradeAggregation: TradeAggregationConfig = TradeAggregationConfig(),
     val initialVisibleCount: Int = 100,
     val defaultScale: Double = 1.0,
     val defaultYScale: Double = 1.0,
@@ -217,7 +261,7 @@ internal data class ChartConfig(
   fun nativeNumbers(): DoubleArray {
     val area = seriesType == "area"
     return doubleArrayOf(
-        timeframeMs,
+        0.0,
         initialVisibleCount.toDouble(),
         showXAxis.nativeDouble(),
         xAxisHeight.toDouble(),
@@ -254,6 +298,13 @@ internal data class ChartConfig(
         (if (area) areaLineWidthPx else lineWidthPx).toDouble(),
         (if (area) areaLineGradientEnabled else lineGradientEnabled).nativeDouble(),
         lineGapThresholdMs,
+        resolution.unit.toDouble(),
+        resolution.multiplier.toDouble(),
+        resolution.durationMs.toDouble(),
+        tradeAggregation.bucketOrigin.toDouble(),
+        tradeAggregation.originTimestampMs.toDouble(),
+        tradeAggregation.outsideSession.toDouble(),
+        tradeAggregation.candleTimestamp.toDouble(),
     )
   }
 
@@ -289,7 +340,45 @@ internal data class ChartConfig(
     }
   }
 
-  fun nativeStrings() = arrayOf(xLocale, xTimeZone, valueFormat.locale, valueFormat.currencySymbol)
+  fun nativeStrings() =
+      arrayOf(
+          xLocale,
+          xTimeZone,
+          valueFormat.locale,
+          valueFormat.currencySymbol,
+          tradeAggregation.calendar.timeZone,
+      )
+
+  fun nativeTransitionTimes() =
+      tradeAggregation.calendar.transitions.map { it.atUtcMs }.toLongArray()
+
+  fun nativeTransitionOffsets() =
+      tradeAggregation.calendar.transitions.map { it.offsetSeconds }.toIntArray()
+
+  fun nativeTradingSessions() =
+      tradeAggregation.calendar.sessions.flatMap { it.nativeValues() }.toIntArray()
+
+  fun nativeHolidayEpochDays() = tradeAggregation.calendar.holidayEpochDays
+
+  fun nativeOverrideEpochDays() =
+      tradeAggregation.calendar.overrides.map { it.epochDay }.toLongArray()
+
+  fun nativeOverrideSessionOffsets() =
+      IntArray(tradeAggregation.calendar.overrides.size + 1).also { offsets ->
+        var count = 0
+        tradeAggregation.calendar.overrides.forEachIndexed { index, override ->
+          offsets[index] = count
+          count += override.sessions.size
+        }
+        offsets[offsets.lastIndex] = count
+      }
+
+  fun nativeOverrideSessions() =
+      tradeAggregation.calendar.overrides
+          .flatMap { override ->
+            override.sessions.flatMap { it.nativeValues(includeWeekday = false) }
+          }
+          .toIntArray()
 
   fun nativePaneNumbers(): DoubleArray =
       DoubleArray(panes.size * PANE_NUMBER_WIDTH).also { values ->
@@ -316,6 +405,28 @@ internal data class ChartConfig(
         ChartConfigJsonDecoder(json, density, scaledDensity).decode()
   }
 }
+
+internal const val RESOLUTION_FIXED = 0
+internal const val RESOLUTION_SECOND = 1
+internal const val RESOLUTION_MINUTE = 2
+internal const val RESOLUTION_HOUR = 3
+internal const val RESOLUTION_DAY = 4
+internal const val RESOLUTION_WEEK = 5
+internal const val RESOLUTION_MONTH = 6
+internal const val BUCKET_ORIGIN_EPOCH = 0
+internal const val BUCKET_ORIGIN_SESSION = 1
+internal const val BUCKET_ORIGIN_TIMESTAMP = 2
+internal const val OUTSIDE_SESSION_IGNORE = 0
+internal const val OUTSIDE_SESSION_REJECT = 1
+internal const val CANDLE_TIMESTAMP_BUCKET_START = 0
+internal const val CANDLE_TIMESTAMP_TRADING_DATE_UTC = 1
+
+private fun TradingSessionConfig.nativeValues(includeWeekday: Boolean = true): List<Int> =
+    if (includeWeekday) {
+      listOf(weekdayMask, startSeconds, endSeconds, startDayOffset, endDayOffset)
+    } else {
+      listOf(startSeconds, endSeconds, startDayOffset, endDayOffset)
+    }
 
 private fun Boolean.nativeDouble() = if (this) 1.0 else 0.0
 

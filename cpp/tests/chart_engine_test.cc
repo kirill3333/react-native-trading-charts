@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "cpp/internal/series_geometry.h"
+#include "cpp/internal/trading_time.h"
 
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
@@ -30,6 +31,30 @@ void ExpectNear(double actual, double expected, double tolerance = 1e-9) {
               << " of " << expected << '\n';
     assert(false);
   }
+}
+
+double UtcMilliseconds(int year, int month, int day, int hour = 0,
+                       int minute = 0) {
+  return static_cast<double>(trading_charts::internal::DaysFromCivil(
+             trading_charts::CivilDate{year, month, day})) *
+             static_cast<double>(
+                 trading_charts::internal::kMillisecondsPerDay) +
+         static_cast<double>((hour * 60 + minute) * 60 * 1000);
+}
+
+ChartConfig ExplicitResolution(trading_charts::ResolutionUnit unit,
+                               std::uint32_t multiplier = 1) {
+  ChartConfig config;
+  config.resolution.unit = unit;
+  config.resolution.multiplier = multiplier;
+  return config;
+}
+
+ChartConfig FixedResolution(std::int64_t duration_ms) {
+  ChartConfig config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kFixed);
+  config.resolution.fixed_duration_ms = duration_ms;
+  return config;
 }
 
 const std::vector<float>& ContentOf(
@@ -133,8 +158,8 @@ float RenderedCandleBodyCenter(const trading_charts::RenderSnapshot& snapshot,
 
 void TestTradeAggregation() {
   ChartEngine engine;
-  ChartConfig config;
-  config.timeframe_ms = 60000.0;
+  ChartConfig config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kMinute);
   engine.SetConfig(config);
 
   const double first[] = {1000.0, 10.0, 2.0};
@@ -151,6 +176,203 @@ void TestTradeAggregation() {
   ExpectNear(candle.low, 9.0);
   ExpectNear(candle.close, 9.0);
   ExpectNear(candle.volume, 6.0);
+}
+
+void TestFixedResolutionAggregation() {
+  ChartEngine engine;
+  engine.SetConfig(FixedResolution(250));
+
+  const double first[] = {124.0, 10.0, 1.0};
+  const double second[] = {249.0, 11.0, 2.0};
+  const double third[] = {250.0, 12.0, 3.0};
+  assert(engine.UpdateTrade(first, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(second, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(third, 3) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 2);
+  ExpectNear(engine.CandleAt(0).timestamp, 0.0);
+  ExpectNear(engine.CandleAt(0).close, 11.0);
+  ExpectNear(engine.CandleAt(1).timestamp, 250.0);
+}
+
+void TestCustomBucketOrigin() {
+  ChartEngine engine;
+  ChartConfig config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kHour);
+  config.trade_aggregation.bucket_origin =
+      trading_charts::BucketOrigin::kTimestamp;
+  config.trade_aggregation.origin_timestamp_ms = 30 * 60 * 1000;
+  engine.SetConfig(config);
+
+  const double first[] = {60.0 * 60.0 * 1000.0, 10.0, 1.0};
+  const double second[] = {89.0 * 60.0 * 1000.0, 12.0, 2.0};
+  const double third[] = {90.0 * 60.0 * 1000.0, 13.0, 3.0};
+  assert(engine.UpdateTrade(first, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(second, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(third, 3) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 2);
+  ExpectNear(engine.CandleAt(0).timestamp, 30.0 * 60.0 * 1000.0);
+  ExpectNear(engine.CandleAt(1).timestamp, 90.0 * 60.0 * 1000.0);
+}
+
+ChartConfig WeekdaySessionConfig(trading_charts::ResolutionUnit unit) {
+  ChartConfig config = ExplicitResolution(unit);
+  auto& calendar = config.trade_aggregation.calendar;
+  calendar.configured = true;
+  calendar.time_zone = "UTC";
+  calendar.transitions = {{0, 0}};
+  calendar.sessions = {{
+      0b00011111,
+      9 * 3600 + 30 * 60,
+      16 * 3600,
+      0,
+      0,
+  }};
+  config.trade_aggregation.bucket_origin =
+      trading_charts::BucketOrigin::kSession;
+  return config;
+}
+
+void TestSessionAlignedBucketsAndExclusiveClose() {
+  ChartEngine engine;
+  engine.SetConfig(WeekdaySessionConfig(trading_charts::ResolutionUnit::kHour));
+  const double before_open[] = {UtcMilliseconds(2026, 8, 3, 9, 29), 9.0, 1.0};
+  const double at_open[] = {UtcMilliseconds(2026, 8, 3, 9, 30), 10.0, 1.0};
+  const double first_end[] = {UtcMilliseconds(2026, 8, 3, 10, 29), 12.0, 1.0};
+  const double next[] = {UtcMilliseconds(2026, 8, 3, 10, 30), 13.0, 1.0};
+  const double at_close[] = {UtcMilliseconds(2026, 8, 3, 16, 0), 14.0, 1.0};
+  assert(engine.UpdateTrade(before_open, 3) ==
+         UpdateStatus::kIgnoredOutsideSession);
+  assert(engine.UpdateTrade(at_open, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(first_end, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(next, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(at_close, 3) ==
+         UpdateStatus::kIgnoredOutsideSession);
+  const double older_after_ignored[] = {UtcMilliseconds(2026, 8, 3, 15, 0),
+                                        15.0, 1.0};
+  assert(engine.UpdateTrade(older_after_ignored, 3) ==
+         UpdateStatus::kIgnoredOldTimestamp);
+  assert(engine.CandleCount() == 2);
+  ExpectNear(engine.CandleAt(0).timestamp, UtcMilliseconds(2026, 8, 3, 9, 30));
+  ExpectNear(engine.CandleAt(1).timestamp, UtcMilliseconds(2026, 8, 3, 10, 30));
+}
+
+void TestHolidayAndEarlyCloseOverride() {
+  ChartEngine engine;
+  ChartConfig config =
+      WeekdaySessionConfig(trading_charts::ResolutionUnit::kMinute);
+  config.trade_aggregation.calendar.holidays = {{2026, 8, 3}};
+  trading_charts::TradingCalendarOverrideConfig early_close;
+  early_close.date = {2026, 8, 4};
+  early_close.sessions = {{0, 9 * 3600 + 30 * 60, 13 * 3600, 0, 0}};
+  config.trade_aggregation.calendar.overrides = {early_close};
+  engine.SetConfig(config);
+
+  const double holiday[] = {UtcMilliseconds(2026, 8, 3, 10, 0), 10.0, 1.0};
+  const double before_close[] = {UtcMilliseconds(2026, 8, 4, 12, 59), 11.0,
+                                 1.0};
+  const double after_close[] = {UtcMilliseconds(2026, 8, 4, 13, 1), 12.0, 1.0};
+  assert(engine.UpdateTrade(holiday, 3) ==
+         UpdateStatus::kIgnoredOutsideSession);
+  assert(engine.UpdateTrade(before_close, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(after_close, 3) ==
+         UpdateStatus::kIgnoredOutsideSession);
+  assert(engine.CandleCount() == 1);
+}
+
+void TestHolidayAppliesToCalendarWithoutRecurringSessions() {
+  ChartEngine engine;
+  ChartConfig config = ExplicitResolution(trading_charts::ResolutionUnit::kDay);
+  auto& calendar = config.trade_aggregation.calendar;
+  calendar.configured = true;
+  calendar.time_zone = "UTC";
+  calendar.transitions = {{0, 0}};
+  calendar.holidays = {{2026, 8, 3}};
+  engine.SetConfig(config);
+
+  const double holiday[] = {UtcMilliseconds(2026, 8, 3, 12, 0), 10.0, 1.0};
+  const double next_day[] = {UtcMilliseconds(2026, 8, 4, 12, 0), 11.0, 1.0};
+  assert(engine.UpdateTrade(holiday, 3) ==
+         UpdateStatus::kIgnoredOutsideSession);
+  assert(engine.UpdateTrade(next_day, 3) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 1);
+  ExpectNear(engine.CandleAt(0).timestamp, UtcMilliseconds(2026, 8, 4));
+}
+
+void TestDstSessionBucketsUseUtcTransitions() {
+  ChartEngine engine;
+  ChartConfig config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kHour);
+  auto& calendar = config.trade_aggregation.calendar;
+  calendar.configured = true;
+  calendar.time_zone = "America/New_York";
+  calendar.transitions = {
+      {0, -5 * 3600},
+      {static_cast<std::int64_t>(UtcMilliseconds(2024, 3, 10, 7, 0)),
+       -4 * 3600},
+  };
+  calendar.sessions = {{
+      0b01000000,
+      1 * 3600,
+      4 * 3600,
+      0,
+      0,
+  }};
+  config.trade_aggregation.bucket_origin =
+      trading_charts::BucketOrigin::kSession;
+  engine.SetConfig(config);
+
+  const double before_jump[] = {UtcMilliseconds(2024, 3, 10, 6, 30), 10.0, 1.0};
+  const double after_jump[] = {UtcMilliseconds(2024, 3, 10, 7, 30), 11.0, 1.0};
+  assert(engine.UpdateTrade(before_jump, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(after_jump, 3) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 2);
+  ExpectNear(engine.CandleAt(0).timestamp, UtcMilliseconds(2024, 3, 10, 6, 0));
+  ExpectNear(engine.CandleAt(1).timestamp, UtcMilliseconds(2024, 3, 10, 7, 0));
+}
+
+void TestCalendarMonthBucketsAreNotThirtyDays() {
+  ChartEngine engine;
+  ChartConfig config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kMonth);
+  config.trade_aggregation.candle_timestamp =
+      trading_charts::CandleTimestampPolicy::kTradingDateUtc;
+  engine.SetConfig(config);
+  const double january[] = {UtcMilliseconds(2024, 1, 31, 12, 0), 10.0, 1.0};
+  const double february[] = {UtcMilliseconds(2024, 2, 29, 12, 0), 11.0, 1.0};
+  const double march[] = {UtcMilliseconds(2024, 3, 1, 0, 0), 12.0, 1.0};
+  assert(engine.UpdateTrade(january, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(february, 3) == UpdateStatus::kApplied);
+  assert(engine.UpdateTrade(march, 3) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 3);
+  ExpectNear(engine.CandleAt(0).timestamp, UtcMilliseconds(2024, 1, 1));
+  ExpectNear(engine.CandleAt(1).timestamp, UtcMilliseconds(2024, 2, 1));
+  ExpectNear(engine.CandleAt(2).timestamp, UtcMilliseconds(2024, 3, 1));
+}
+
+void TestCalendarWeekRespectsConfiguredWeekStart() {
+  const double sunday[] = {UtcMilliseconds(2026, 8, 2, 12, 0), 10.0, 1.0};
+  const double monday[] = {UtcMilliseconds(2026, 8, 3, 12, 0), 11.0, 1.0};
+
+  ChartConfig monday_config =
+      ExplicitResolution(trading_charts::ResolutionUnit::kWeek);
+  monday_config.trade_aggregation.candle_timestamp =
+      trading_charts::CandleTimestampPolicy::kTradingDateUtc;
+  ChartEngine monday_engine;
+  monday_engine.SetConfig(monday_config);
+  assert(monday_engine.UpdateTrade(sunday, 3) == UpdateStatus::kApplied);
+  assert(monday_engine.UpdateTrade(monday, 3) == UpdateStatus::kApplied);
+  assert(monday_engine.CandleCount() == 2);
+  ExpectNear(monday_engine.CandleAt(0).timestamp, UtcMilliseconds(2026, 7, 27));
+  ExpectNear(monday_engine.CandleAt(1).timestamp, UtcMilliseconds(2026, 8, 3));
+
+  ChartConfig sunday_config = monday_config;
+  sunday_config.trade_aggregation.calendar.week_starts_on = 7;
+  ChartEngine sunday_engine;
+  sunday_engine.SetConfig(sunday_config);
+  assert(sunday_engine.UpdateTrade(sunday, 3) == UpdateStatus::kApplied);
+  assert(sunday_engine.UpdateTrade(monday, 3) == UpdateStatus::kApplied);
+  assert(sunday_engine.CandleCount() == 1);
+  ExpectNear(sunday_engine.CandleAt(0).timestamp, UtcMilliseconds(2026, 8, 2));
 }
 
 void TestBucketTransitionAndNoGaps() {
@@ -279,11 +501,19 @@ void TestOldTradeIgnored() {
   ExpectNear(engine.CandleAt(0).close, 10.0);
 }
 
-void TestRejectsUnalignedHistory() {
+void TestAcceptsFeedDefinedCandleTimestamps() {
   ChartEngine engine;
-  const double history[] = {1.0, 10.0, 12.0, 9.0, 11.0, 4.0};
-  assert(engine.SetHistory(history, 6) == UpdateStatus::kInvalidInput);
-  assert(engine.CandleCount() == 0);
+  const double history[] = {
+      1000.0, 10.0, 12.0, 9.0, 11.0, 4.0, 61000.0, 11.0, 13.0, 10.0, 12.0, 5.0,
+  };
+  const double older[] = {17.0, 9.0, 11.0, 8.0, 10.0, 3.0};
+  const double next[] = {121123.0, 12.0, 14.0, 11.0, 13.0, 6.0};
+  assert(engine.SetHistory(history, 12) == UpdateStatus::kApplied);
+  assert(engine.PrependHistory(older, 6) == UpdateStatus::kApplied);
+  assert(engine.UpdateCandle(next, 6) == UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 4);
+  ExpectNear(engine.CandleAt(0).timestamp, 17.0);
+  ExpectNear(engine.CandleAt(3).timestamp, 121123.0);
 }
 
 void TestSnapshotAndAutoscale() {
@@ -1152,8 +1382,7 @@ void TestCrosshairRevisionKeepsStaticContentRevision() {
 
 void TestHybridHistoryUsesLocalCandleWidths() {
   ChartEngine engine;
-  ChartConfig config;
-  config.timeframe_ms = 1000.0;
+  ChartConfig config = FixedResolution(1000);
   config.initial_visible_count = 5;
   config.show_current_price = false;
   engine.SetConfig(config);
@@ -1177,8 +1406,7 @@ void TestHybridHistoryUsesLocalCandleWidths() {
 
 void TestLogicalSpacingUsesUniformCandleSlots() {
   ChartEngine engine;
-  ChartConfig config;
-  config.timeframe_ms = 1000.0;
+  ChartConfig config = FixedResolution(1000);
   config.initial_visible_count = 5;
   config.logical_spacing = true;
   config.show_current_price = false;
@@ -1915,8 +2143,7 @@ void TestLogicalSpacingAdditionalSeriesAlignment() {
 
 void TestSetConfigWithEquivalentValuesKeepsViewport() {
   ChartEngine engine;
-  ChartConfig config;
-  config.timeframe_ms = 60000.0;
+  ChartConfig config = FixedResolution(60000);
   config.initial_visible_count = 10;
   engine.SetConfig(config);
   engine.SetSize(800.0f, 500.0f);
@@ -1937,18 +2164,17 @@ void TestSetConfigWithEquivalentValuesKeepsViewport() {
   assert(engine.Zoom(2.0, 400.0f));
   const auto zoomed = engine.Snapshot();
 
-  // Values that normalize to the current config must not reset the viewport.
+  // Reapplying equivalent resolution values must not reset the viewport.
   ChartConfig equivalent = config;
-  equivalent.timeframe_ms = 60000.4;
   equivalent.initial_visible_count = 10;
   engine.SetConfig(equivalent);
   const auto kept = engine.Snapshot();
   ExpectNear(kept->visible_x_min, zoomed->visible_x_min);
   ExpectNear(kept->visible_x_max, zoomed->visible_x_max);
 
-  // A real timeframe change still resets the viewport.
+  // A real resolution change still resets the viewport.
   ChartConfig changed = config;
-  changed.timeframe_ms = 300000.0;
+  changed.resolution.fixed_duration_ms = 300000;
   engine.SetConfig(changed);
   const auto reset = engine.Snapshot();
   assert(reset->visible_x_min != zoomed->visible_x_min ||
@@ -2282,6 +2508,14 @@ void TestLineSegmentsKeepConstantWidthAtSharpTurns() {
 int main() noexcept {
   try {
     TestTradeAggregation();
+    TestFixedResolutionAggregation();
+    TestCustomBucketOrigin();
+    TestSessionAlignedBucketsAndExclusiveClose();
+    TestHolidayAndEarlyCloseOverride();
+    TestHolidayAppliesToCalendarWithoutRecurringSessions();
+    TestDstSessionBucketsUseUtcTransitions();
+    TestCalendarMonthBucketsAreNotThirtyDays();
+    TestCalendarWeekRespectsConfiguredWeekStart();
     TestBucketTransitionAndNoGaps();
     TestMixedTradeBatchReportsAppliedChange();
     TestHistoryContinuation();
@@ -2289,7 +2523,7 @@ int main() noexcept {
     TestCandlesReturnsAtomicCopyOfCurrentStore();
     TestPrependHistoryRejectsOverlap();
     TestOldTradeIgnored();
-    TestRejectsUnalignedHistory();
+    TestAcceptsFeedDefinedCandleTimestamps();
     TestSnapshotAndAutoscale();
     TestDisplayScaleKeepsAxisDensityStable();
     TestOneTickRangeUsesScaleMargins();

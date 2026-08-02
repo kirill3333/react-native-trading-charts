@@ -1,6 +1,10 @@
 package com.tradingcharts
 
 import android.graphics.Color
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 
 internal class ChartConfigJsonDecoder(
@@ -44,6 +48,8 @@ internal class ChartConfigJsonDecoder(
   private val priceExtremes = root.optJSONObject("priceExtremes")
   private val crosshair = root.getJSONObject("crosshair")
   private val tooltipLabels = crosshair.optJSONObject("tooltipLabels")
+  private val resolution = root.getJSONObject("resolution")
+  private val tradeAggregation = root.getJSONObject("tradeAggregation")
 
   fun decode(): ChartConfig {
     var config = decodeBase()
@@ -60,7 +66,8 @@ internal class ChartConfigJsonDecoder(
 
   private fun decodeBase() =
       ChartConfig(
-          timeframeMs = root.getDouble("timeframeMs"),
+          resolution = decodeResolution(),
+          tradeAggregation = decodeTradeAggregation(),
           initialVisibleCount = root.getInt("initialVisibleCount"),
           defaultScale = root.optDouble("defaultScale", 1.0),
           defaultYScale = yAxis.optDouble("defaultScale", 1.0),
@@ -75,6 +82,126 @@ internal class ChartConfigJsonDecoder(
           lineGapThresholdMs =
               root.optJSONObject("series")?.optDouble("gapThresholdMs", 0.0) ?: 0.0,
       )
+
+  private fun decodeResolution(): ResolutionConfig {
+    val unit =
+        when (resolution.getString("unit")) {
+          "fixed" -> RESOLUTION_FIXED
+          "second" -> RESOLUTION_SECOND
+          "minute" -> RESOLUTION_MINUTE
+          "hour" -> RESOLUTION_HOUR
+          "day" -> RESOLUTION_DAY
+          "week" -> RESOLUTION_WEEK
+          "month" -> RESOLUTION_MONTH
+          else -> throw IllegalArgumentException("Unsupported resolution unit")
+        }
+    val multiplier = resolution.optInt("multiplier", 1)
+    val durationMs = resolution.optLong("durationMs", 60_000L)
+    return ResolutionConfig(unit, multiplier, durationMs)
+  }
+
+  private fun decodeTradeAggregation(): TradeAggregationConfig {
+    val origin = tradeAggregation.getJSONObject("bucketOrigin")
+    val originType =
+        when (origin.getString("type")) {
+          "epoch" -> BUCKET_ORIGIN_EPOCH
+          "session" -> BUCKET_ORIGIN_SESSION
+          "timestamp" -> BUCKET_ORIGIN_TIMESTAMP
+          else -> throw IllegalArgumentException("Unsupported bucket origin")
+        }
+    val calendarJson = tradeAggregation.optJSONObject("calendar")
+    return TradeAggregationConfig(
+        bucketOrigin = originType,
+        originTimestampMs = origin.optLong("timestamp", 0L),
+        outsideSession =
+            if (tradeAggregation.getString("outsideSession") == "reject") {
+              OUTSIDE_SESSION_REJECT
+            } else {
+              OUTSIDE_SESSION_IGNORE
+            },
+        candleTimestamp =
+            if (tradeAggregation.getString("candleTimestamp") == "tradingDateUtc") {
+              CANDLE_TIMESTAMP_TRADING_DATE_UTC
+            } else {
+              CANDLE_TIMESTAMP_BUCKET_START
+            },
+        calendar =
+            if (calendarJson == null) TradingCalendarConfig() else decodeCalendar(calendarJson),
+    )
+  }
+
+  private fun decodeCalendar(value: JSONObject): TradingCalendarConfig {
+    val timeZone = value.getString("timeZone")
+    val sessionsJson = value.getJSONArray("sessions")
+    val sessions =
+        List(sessionsJson.length()) { index ->
+          val session = sessionsJson.getJSONObject(index)
+          val weekdays = session.getJSONArray("weekdays")
+          var weekdayMask = 0
+          repeat(weekdays.length()) { weekdayIndex ->
+            val weekday = weekdays.getInt(weekdayIndex)
+            weekdayMask = weekdayMask or (1 shl (weekday - 1))
+          }
+          decodeSession(session, weekdayMask)
+        }
+    val holidaysJson = value.getJSONArray("holidays")
+    val holidays =
+        LongArray(holidaysJson.length()) { index ->
+          LocalDate.parse(holidaysJson.getString(index)).toEpochDay()
+        }
+    val overridesJson = value.getJSONArray("overrides")
+    val overrides =
+        List(overridesJson.length()) { index ->
+          val override = overridesJson.getJSONObject(index)
+          val overrideSessionsJson = override.getJSONArray("sessions")
+          TradingCalendarOverrideConfig(
+              epochDay = LocalDate.parse(override.getString("date")).toEpochDay(),
+              sessions =
+                  List(overrideSessionsJson.length()) { sessionIndex ->
+                    decodeSession(overrideSessionsJson.getJSONObject(sessionIndex), 0)
+                  },
+          )
+        }
+    return TradingCalendarConfig(
+        configured = true,
+        timeZone = timeZone,
+        transitions = timeZoneTransitions(timeZone),
+        sessions = sessions,
+        holidayEpochDays = holidays,
+        overrides = overrides,
+        weekStartsOn = if (value.getString("weekStartsOn") == "sunday") 7 else 1,
+    )
+  }
+
+  private fun decodeSession(value: JSONObject, weekdayMask: Int) =
+      TradingSessionConfig(
+          weekdayMask = weekdayMask,
+          startSeconds = value.getInt("startSeconds"),
+          endSeconds = value.getInt("endSeconds"),
+          startDayOffset = value.getInt("startDayOffset"),
+          endDayOffset = value.getInt("endDayOffset"),
+      )
+
+  private fun timeZoneTransitions(timeZone: String): List<TimeZoneTransitionConfig> {
+    return TIME_ZONE_TRANSITION_CACHE.computeIfAbsent(timeZone) {
+      val rules = ZoneId.of(it).rules
+      val end = Instant.parse("2101-01-01T00:00:00Z")
+      val result =
+          mutableListOf(TimeZoneTransitionConfig(0L, rules.getOffset(Instant.EPOCH).totalSeconds))
+      var cursor = Instant.EPOCH.minusNanos(1)
+      var transition = rules.nextTransition(cursor)
+      while (transition != null && transition.instant.isBefore(end)) {
+        result +=
+            TimeZoneTransitionConfig(
+                transition.instant.toEpochMilli(),
+                transition.offsetAfter.totalSeconds,
+            )
+        cursor = transition.instant.plusNanos(1)
+        transition = rules.nextTransition(cursor)
+      }
+      result
+    }
+  }
 
   private fun decodePalette(config: ChartConfig) =
       config.copy(
@@ -386,6 +513,8 @@ internal class ChartConfigJsonDecoder(
     return parseChartColor(value)
   }
 }
+
+private val TIME_ZONE_TRANSITION_CACHE = ConcurrentHashMap<String, List<TimeZoneTransitionConfig>>()
 
 internal fun seriesConfigFromJson(
     json: String,

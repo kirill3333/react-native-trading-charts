@@ -15,16 +15,25 @@
 #include <vector>
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/trading_time.h"
 
+using trading_charts::BucketOrigin;
+using trading_charts::CandleTimestampPolicy;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
 using trading_charts::OhlcValueSource;
+using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
 using trading_charts::RenderSnapshot;
+using trading_charts::ResolutionUnit;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
+using trading_charts::TimeZoneTransition;
+using trading_charts::TradingCalendarConfig;
+using trading_charts::TradingCalendarOverrideConfig;
+using trading_charts::TradingSessionConfig;
 using trading_charts::UpdateStatus;
 
 namespace {
@@ -35,7 +44,8 @@ constexpr size_t ToIndex(Enum value) {
 }
 
 enum class ConfigNumberIndex : std::uint8_t {
-  kTimeframeMs,
+  // Positional ABI placeholder. Keep all following indices stable.
+  kReservedConfig0,
   kInitialVisibleCount,
   kShowXAxis,
   kXAxisHeight,
@@ -72,6 +82,13 @@ enum class ConfigNumberIndex : std::uint8_t {
   kLineWidth,
   kLineGradientEnabled,
   kLineGapThresholdMs,
+  kResolutionUnit,
+  kResolutionMultiplier,
+  kFixedResolutionDurationMs,
+  kBucketOrigin,
+  kOriginTimestampMs,
+  kOutsideSession,
+  kCandleTimestamp,
   kCount,
 };
 
@@ -159,7 +176,7 @@ inline constexpr jsize kColorChannelCount = 4;
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 37);
+static_assert(kConfigNumberCount == 44);
 static_assert(kSnapshotMetaCount == 51);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
@@ -190,6 +207,8 @@ int StatusValue(UpdateStatus status) {
       return 1;
     case UpdateStatus::kInvalidInput:
       return 2;
+    case UpdateStatus::kIgnoredOutsideSession:
+      return 3;
   }
   return 2;
 }
@@ -201,6 +220,26 @@ std::vector<double> CopyDoubles(JNIEnv* env, jdoubleArray values) {
   const jsize count = env->GetArrayLength(values);
   std::vector<double> result(static_cast<size_t>(count));
   env->GetDoubleArrayRegion(values, 0, count, result.data());
+  return result;
+}
+
+std::vector<jlong> CopyLongs(JNIEnv* env, jlongArray values) {
+  if (!values) {
+    return {};
+  }
+  const jsize count = env->GetArrayLength(values);
+  std::vector<jlong> result(static_cast<size_t>(count));
+  env->GetLongArrayRegion(values, 0, count, result.data());
+  return result;
+}
+
+std::vector<jint> CopyInts(JNIEnv* env, jintArray values) {
+  if (!values) {
+    return {};
+  }
+  const jsize count = env->GetArrayLength(values);
+  std::vector<jint> result(static_cast<size_t>(count));
+  env->GetIntArrayRegion(values, 0, count, result.data());
   return result;
 }
 
@@ -279,7 +318,6 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
                  config_colors[offset + 2], config_colors[offset + 3]};
   };
   ChartConfig config;
-  config.timeframe_ms = number_at(ConfigNumberIndex::kTimeframeMs);
   config.initial_visible_count =
       static_cast<int>(number_at(ConfigNumberIndex::kInitialVisibleCount));
   config.show_x_axis = number_at(ConfigNumberIndex::kShowXAxis) != 0;
@@ -367,6 +405,37 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     config.line_gap_threshold_ms =
         number_at(ConfigNumberIndex::kLineGapThresholdMs);
   }
+  if (number_count >= static_cast<jsize>(kConfigNumberCount)) {
+    const int unit =
+        static_cast<int>(number_at(ConfigNumberIndex::kResolutionUnit));
+    config.resolution.unit = unit == 1   ? ResolutionUnit::kSecond
+                             : unit == 2 ? ResolutionUnit::kMinute
+                             : unit == 3 ? ResolutionUnit::kHour
+                             : unit == 4 ? ResolutionUnit::kDay
+                             : unit == 5 ? ResolutionUnit::kWeek
+                             : unit == 6 ? ResolutionUnit::kMonth
+                                         : ResolutionUnit::kFixed;
+    config.resolution.multiplier = static_cast<std::uint32_t>(
+        std::max(number_at(ConfigNumberIndex::kResolutionMultiplier), 1.0));
+    config.resolution.fixed_duration_ms = static_cast<std::int64_t>(std::max(
+        number_at(ConfigNumberIndex::kFixedResolutionDurationMs), 1.0));
+    const int origin =
+        static_cast<int>(number_at(ConfigNumberIndex::kBucketOrigin));
+    config.trade_aggregation.bucket_origin =
+        origin == 1   ? BucketOrigin::kSession
+        : origin == 2 ? BucketOrigin::kTimestamp
+                      : BucketOrigin::kEpoch;
+    config.trade_aggregation.origin_timestamp_ms = static_cast<std::int64_t>(
+        number_at(ConfigNumberIndex::kOriginTimestampMs));
+    config.trade_aggregation.outside_session =
+        number_at(ConfigNumberIndex::kOutsideSession) == 1.0
+            ? OutsideSessionPolicy::kReject
+            : OutsideSessionPolicy::kIgnore;
+    config.trade_aggregation.candle_timestamp =
+        number_at(ConfigNumberIndex::kCandleTimestamp) == 1.0
+            ? CandleTimestampPolicy::kTradingDateUtc
+            : CandleTimestampPolicy::kBucketStart;
+  }
   config.background = color_at(ConfigColorIndex::kBackground);
   config.grid = color_at(ConfigColorIndex::kGrid);
   config.axis_text = color_at(ConfigColorIndex::kAxisText);
@@ -409,6 +478,93 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.y_locale = StringAt(env, strings, 2, "en-GB");
   config.currency_symbol = StringAt(env, strings, 3, "");
   instance->SetConfig(config);
+}
+
+JNIEXPORT void JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetTradingCalendar(
+    JNIEnv* env, jclass, jlong handle, jboolean configured, jstring time_zone,
+    jlong transition_range_end_ms, jlongArray transition_times,
+    jintArray transition_offsets, jintArray sessions, jlongArray holiday_days,
+    jlongArray override_days, jintArray override_session_offsets,
+    jintArray override_sessions, jint week_starts_on) {
+  ChartEngine* instance = EngineFromHandle(handle);
+  if (!instance) {
+    return;
+  }
+  const std::vector<jlong> times = CopyLongs(env, transition_times);
+  const std::vector<jint> offsets = CopyInts(env, transition_offsets);
+  const std::vector<jint> session_values = CopyInts(env, sessions);
+  const std::vector<jlong> holidays = CopyLongs(env, holiday_days);
+  const std::vector<jlong> override_dates = CopyLongs(env, override_days);
+  const std::vector<jint> override_offsets =
+      CopyInts(env, override_session_offsets);
+  const std::vector<jint> override_values = CopyInts(env, override_sessions);
+  constexpr size_t kSessionWidth = 5;
+  constexpr size_t kOverrideSessionWidth = 4;
+  if (times.size() != offsets.size() ||
+      session_values.size() % kSessionWidth != 0 ||
+      override_offsets.size() != override_dates.size() + 1 ||
+      override_values.size() % kOverrideSessionWidth != 0) {
+    return;
+  }
+
+  TradingCalendarConfig calendar;
+  calendar.configured = configured == JNI_TRUE;
+  calendar.time_zone = CopyString(env, time_zone);
+  calendar.transition_range_start_ms = 0;
+  calendar.transition_range_end_ms =
+      static_cast<std::int64_t>(transition_range_end_ms);
+  calendar.week_starts_on = week_starts_on == 7 ? 7 : 1;
+  calendar.transitions.reserve(times.size());
+  for (size_t index = 0; index < times.size(); ++index) {
+    calendar.transitions.push_back(TimeZoneTransition{
+        static_cast<std::int64_t>(times[index]),
+        static_cast<int>(offsets[index]),
+    });
+  }
+  calendar.sessions.reserve(session_values.size() / kSessionWidth);
+  for (size_t index = 0; index < session_values.size();
+       index += kSessionWidth) {
+    calendar.sessions.push_back(TradingSessionConfig{
+        static_cast<std::uint8_t>(session_values[index]),
+        static_cast<int>(session_values[index + 1]),
+        static_cast<int>(session_values[index + 2]),
+        static_cast<int>(session_values[index + 3]),
+        static_cast<int>(session_values[index + 4]),
+    });
+  }
+  calendar.holidays.reserve(holidays.size());
+  for (jlong day : holidays) {
+    calendar.holidays.push_back(trading_charts::internal::CivilFromDays(
+        static_cast<std::int64_t>(day)));
+  }
+  calendar.overrides.reserve(override_dates.size());
+  for (size_t index = 0; index < override_dates.size(); ++index) {
+    const int first = override_offsets[index];
+    const int last = override_offsets[index + 1];
+    const size_t session_count = override_values.size() / kOverrideSessionWidth;
+    if (first < 0 || last < first ||
+        static_cast<size_t>(last) > session_count) {
+      return;
+    }
+    TradingCalendarOverrideConfig override_config;
+    override_config.date = trading_charts::internal::CivilFromDays(
+        static_cast<std::int64_t>(override_dates[index]));
+    override_config.sessions.reserve(static_cast<size_t>(last - first));
+    for (int session_index = first; session_index < last; ++session_index) {
+      const size_t offset =
+          static_cast<size_t>(session_index) * kOverrideSessionWidth;
+      override_config.sessions.push_back(TradingSessionConfig{
+          0,
+          static_cast<int>(override_values[offset]),
+          static_cast<int>(override_values[offset + 1]),
+          static_cast<int>(override_values[offset + 2]),
+          static_cast<int>(override_values[offset + 3]),
+      });
+    }
+    calendar.overrides.push_back(std::move(override_config));
+  }
+  instance->SetTradingCalendar(calendar);
 }
 
 JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetPanes(

@@ -14,7 +14,8 @@ import { type TradingChartsViewProps } from './types';
 
 export const TradingChartsView = memo(function TradingChartsView({
   chartId,
-  timeframeMs,
+  resolution,
+  tradeAggregation,
   initialVisibleCount,
   defaultScale,
   series,
@@ -47,7 +48,8 @@ export const TradingChartsView = memo(function TradingChartsView({
       JSON.stringify(
         resolveChartConfig({
           chartId,
-          timeframeMs,
+          resolution,
+          tradeAggregation,
           initialVisibleCount,
           defaultScale,
           series,
@@ -78,9 +80,10 @@ export const TradingChartsView = memo(function TradingChartsView({
       panes,
       panesResizable,
       priceExtremes,
+      resolution,
       series,
       theme,
-      timeframeMs,
+      tradeAggregation,
       xAxis,
       yAxis,
     ]

@@ -15,9 +15,14 @@
 #import "TradingChartsRegistry.h"
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/trading_time.h"
 
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 using facebook::react::ComponentDescriptorProvider;
 using facebook::react::Props;
@@ -26,16 +31,23 @@ using facebook::react::TradingChartsViewEventEmitter;
 using facebook::react::TradingChartsViewProps;
 using facebook::react::concreteComponentDescriptorProvider;
 using trading_charts::Candle;
+using trading_charts::BucketOrigin;
+using trading_charts::CandleTimestampPolicy;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::OhlcValueSource;
+using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
+using trading_charts::ResolutionUnit;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
+using trading_charts::TimeZoneTransition;
+using trading_charts::TradingCalendarOverrideConfig;
+using trading_charts::TradingSessionConfig;
 using TCColor = trading_charts::Color;
 
 static bool TCCandleEqual(const Candle &left, const Candle &right) {
@@ -131,10 +143,81 @@ NSArray<NSNumber *> *TCArrayOrEmpty(id value) {
   return [value isKindOfClass:NSArray.class] ? value : @[];
 }
 
+NSArray *TCJsonArrayOrEmpty(id value) {
+  return [value isKindOfClass:NSArray.class] ? value : @[];
+}
+
 std::vector<double> TCDoubles(NSArray<NSNumber *> *values) {
   std::vector<double> result;
   result.reserve(values.count);
   for (NSNumber *value in values) result.push_back(value.doubleValue);
+  return result;
+}
+
+ResolutionUnit TCResolutionUnit(NSString *value) {
+  if ([value isEqualToString:@"second"]) return ResolutionUnit::kSecond;
+  if ([value isEqualToString:@"minute"]) return ResolutionUnit::kMinute;
+  if ([value isEqualToString:@"hour"]) return ResolutionUnit::kHour;
+  if ([value isEqualToString:@"day"]) return ResolutionUnit::kDay;
+  if ([value isEqualToString:@"week"]) return ResolutionUnit::kWeek;
+  if ([value isEqualToString:@"month"]) return ResolutionUnit::kMonth;
+  return ResolutionUnit::kFixed;
+}
+
+trading_charts::CivilDate TCCivilDate(NSString *value) {
+  int year = 1970;
+  int month = 1;
+  int day = 1;
+  if ([value isKindOfClass:NSString.class]) {
+    std::sscanf(value.UTF8String, "%d-%d-%d", &year, &month, &day);
+  }
+  return trading_charts::CivilDate{year, month, day};
+}
+
+TradingSessionConfig TCSessionConfig(NSDictionary *value,
+                                     std::uint8_t weekdayMask) {
+  return TradingSessionConfig{
+      weekdayMask,
+      [value[@"startSeconds"] intValue],
+      [value[@"endSeconds"] intValue],
+      [value[@"startDayOffset"] intValue],
+      [value[@"endDayOffset"] intValue],
+  };
+}
+
+std::vector<TimeZoneTransition> TCTimeZoneTransitions(NSTimeZone *timeZone) {
+  const std::string cacheKey = timeZone.name.UTF8String ?: "UTC";
+  static std::mutex cacheMutex;
+  static std::unordered_map<std::string, std::vector<TimeZoneTransition>> cache;
+  {
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    const auto existing = cache.find(cacheKey);
+    if (existing != cache.end()) return existing->second;
+  }
+
+  constexpr NSTimeInterval kRangeEndSeconds = 4133980800.0;  // 2101-01-01.
+  NSDate *epoch = [NSDate dateWithTimeIntervalSince1970:0];
+  NSDate *rangeEnd = [NSDate dateWithTimeIntervalSince1970:kRangeEndSeconds];
+  std::vector<TimeZoneTransition> result;
+  result.push_back(TimeZoneTransition{
+      0, static_cast<int>([timeZone secondsFromGMTForDate:epoch])});
+  NSDate *cursor = [epoch dateByAddingTimeInterval:-1.0];
+  while (true) {
+    NSDate *transition =
+        [timeZone nextDaylightSavingTimeTransitionAfterDate:cursor];
+    if (!transition || [transition compare:rangeEnd] != NSOrderedAscending) break;
+    NSDate *after = [transition dateByAddingTimeInterval:1.0];
+    result.push_back(TimeZoneTransition{
+        static_cast<std::int64_t>(
+            std::llround(transition.timeIntervalSince1970 * 1000.0)),
+        static_cast<int>([timeZone secondsFromGMTForDate:after]),
+    });
+    cursor = after;
+  }
+  {
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    cache.emplace(cacheKey, result);
+  }
   return result;
 }
 
@@ -143,6 +226,8 @@ void TCLogStatus(UpdateStatus status, NSString *operation) {
     NSLog(@"[TradingCharts] %@ ignored an out-of-order timestamp", operation);
   } else if (status == UpdateStatus::kInvalidInput) {
     NSLog(@"[TradingCharts] %@ received invalid data", operation);
+  } else if (status == UpdateStatus::kIgnoredOutsideSession) {
+    NSLog(@"[TradingCharts] %@ ignored a trade outside the configured session", operation);
   }
 }
 
@@ -2064,7 +2149,74 @@ struct TCTextPresentation {
   NSDictionary *priceExtremes = root[@"priceExtremes"];
   NSDictionary *crosshair = root[@"crosshair"];
   NSDictionary *tooltipLabels = crosshair[@"tooltipLabels"];
-  _config.timeframe_ms = [root[@"timeframeMs"] doubleValue];
+  NSDictionary *resolution = root[@"resolution"];
+  NSDictionary *tradeAggregation = root[@"tradeAggregation"];
+  NSDictionary *bucketOrigin = tradeAggregation[@"bucketOrigin"];
+  _config.resolution.unit = TCResolutionUnit(resolution[@"unit"]);
+  _config.resolution.multiplier =
+      static_cast<std::uint32_t>([resolution[@"multiplier"] unsignedIntValue]);
+  _config.resolution.fixed_duration_ms =
+      _config.resolution.unit == ResolutionUnit::kFixed
+          ? [resolution[@"durationMs"] longLongValue]
+          : 60000;
+  NSString *originType = bucketOrigin[@"type"];
+  _config.trade_aggregation.bucket_origin =
+      [originType isEqualToString:@"session"]
+          ? BucketOrigin::kSession
+          : ([originType isEqualToString:@"timestamp"]
+                 ? BucketOrigin::kTimestamp
+                 : BucketOrigin::kEpoch);
+  _config.trade_aggregation.origin_timestamp_ms =
+      [bucketOrigin[@"timestamp"] longLongValue];
+  _config.trade_aggregation.outside_session =
+      [tradeAggregation[@"outsideSession"] isEqualToString:@"reject"]
+          ? OutsideSessionPolicy::kReject
+          : OutsideSessionPolicy::kIgnore;
+  _config.trade_aggregation.candle_timestamp =
+      [tradeAggregation[@"candleTimestamp"] isEqualToString:@"tradingDateUtc"]
+          ? CandleTimestampPolicy::kTradingDateUtc
+          : CandleTimestampPolicy::kBucketStart;
+  _config.trade_aggregation.calendar = trading_charts::TradingCalendarConfig{};
+  NSDictionary *calendar = tradeAggregation[@"calendar"];
+  if ([calendar isKindOfClass:NSDictionary.class]) {
+    auto &nativeCalendar = _config.trade_aggregation.calendar;
+    nativeCalendar.configured = true;
+    NSString *timeZoneName = calendar[@"timeZone"];
+    nativeCalendar.time_zone = timeZoneName.UTF8String ?: "UTC";
+    NSTimeZone *timeZone = [NSTimeZone timeZoneWithName:timeZoneName];
+    if (!timeZone) timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    nativeCalendar.transitions = TCTimeZoneTransitions(timeZone);
+    nativeCalendar.transition_range_start_ms = 0;
+    nativeCalendar.transition_range_end_ms = 4133980800000LL;
+    nativeCalendar.week_starts_on =
+        [calendar[@"weekStartsOn"] isEqualToString:@"sunday"] ? 7 : 1;
+    for (NSDictionary *session in TCJsonArrayOrEmpty(calendar[@"sessions"])) {
+      if (![session isKindOfClass:NSDictionary.class]) continue;
+      std::uint8_t weekdayMask = 0;
+      for (NSNumber *weekday in TCJsonArrayOrEmpty(session[@"weekdays"])) {
+        const int value = weekday.intValue;
+        if (value >= 1 && value <= 7) {
+          weekdayMask = static_cast<std::uint8_t>(
+              weekdayMask | static_cast<std::uint8_t>(1U << (value - 1)));
+        }
+      }
+      nativeCalendar.sessions.push_back(TCSessionConfig(session, weekdayMask));
+    }
+    for (NSString *holiday in TCJsonArrayOrEmpty(calendar[@"holidays"])) {
+      nativeCalendar.holidays.push_back(TCCivilDate(holiday));
+    }
+    for (NSDictionary *override in TCJsonArrayOrEmpty(calendar[@"overrides"])) {
+      if (![override isKindOfClass:NSDictionary.class]) continue;
+      TradingCalendarOverrideConfig nativeOverride;
+      nativeOverride.date = TCCivilDate(override[@"date"]);
+      for (NSDictionary *session in TCJsonArrayOrEmpty(override[@"sessions"])) {
+        if ([session isKindOfClass:NSDictionary.class]) {
+          nativeOverride.sessions.push_back(TCSessionConfig(session, 0));
+        }
+      }
+      nativeCalendar.overrides.push_back(std::move(nativeOverride));
+    }
+  }
   _config.initial_visible_count = [root[@"initialVisibleCount"] intValue];
   _config.default_scale = root[@"defaultScale"]
       ? [root[@"defaultScale"] doubleValue]

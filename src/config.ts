@@ -12,13 +12,18 @@ import {
   type OhlcValueSource,
   type PriceDisplayFormat,
   type PriceValueFormat,
+  type ResolvedChartResolution,
   type ResolvedChartAppearance,
   type ResolvedChartConfig,
   type ResolvedChartFormatters,
   type ResolvedChartTextStyle,
   type ResolvedPriceDisplayFormat,
+  type ResolvedTradeAggregationOptions,
+  type ResolvedTradingSessionSegment,
   type SignificantValueFormat,
   type TradingChartsViewProps,
+  type TradingSessionSegment,
+  type TradingWeekday,
   type VolumeValueFormat,
   type YAxisValueFormat,
 } from './types';
@@ -114,6 +119,251 @@ function optionalGapThreshold(value: number | undefined, name: string) {
   return value == null ? undefined : finitePositive(value, name);
 }
 
+const WEEKDAY_NUMBER: Record<TradingWeekday, number> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+  sunday: 7,
+};
+
+function positiveSafeInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function nonNegativeSafeInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${name} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function resolveResolution(
+  props: TradingChartsViewProps
+): ResolvedChartResolution {
+  const resolution = props.resolution ?? { unit: 'minute' as const };
+  if (resolution.unit === 'fixed') {
+    return {
+      unit: 'fixed',
+      durationMs: positiveSafeInteger(
+        resolution.durationMs,
+        'resolution.durationMs'
+      ),
+    };
+  }
+  if (
+    resolution.unit !== 'second' &&
+    resolution.unit !== 'minute' &&
+    resolution.unit !== 'hour' &&
+    resolution.unit !== 'day' &&
+    resolution.unit !== 'week' &&
+    resolution.unit !== 'month'
+  ) {
+    throw new TypeError(
+      "resolution.unit must be 'fixed', 'second', 'minute', 'hour', 'day', 'week' or 'month'"
+    );
+  }
+  const multiplier = positiveSafeInteger(
+    resolution.multiplier ?? 1,
+    'resolution.multiplier'
+  );
+  if (multiplier > 2_147_483_647) {
+    throw new TypeError('resolution.multiplier must be at most 2147483647');
+  }
+  return {
+    unit: resolution.unit,
+    multiplier,
+  };
+}
+
+function parseClock(value: string, name: string): number {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (match == null) {
+    throw new TypeError(`${name} must use HH:mm or HH:mm:ss`);
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? 0);
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new TypeError(`${name} is not a valid wall-clock time`);
+  }
+  return hour * 3600 + minute * 60 + second;
+}
+
+function validateDate(value: string, name: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match == null) {
+    throw new TypeError(`${name} must use YYYY-MM-DD`);
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new TypeError(`${name} is not a valid calendar date`);
+  }
+  return value;
+}
+
+function validateTimeZone(value: string, name: string): string {
+  const timeZone = nonEmpty(value, name);
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
+  } catch {
+    throw new TypeError(`${name} must be a valid IANA time zone`);
+  }
+  return timeZone;
+}
+
+function resolveSessionSegment(
+  segment: TradingSessionSegment,
+  name: string
+): ResolvedTradingSessionSegment {
+  const startSeconds = parseClock(segment.start, `${name}.start`);
+  const endSeconds = parseClock(segment.end, `${name}.end`);
+  const startDayOffset = segment.startDayOffset ?? 0;
+  const endDayOffset =
+    segment.endDayOffset ?? (endSeconds <= startSeconds ? 1 : 0);
+  if (startDayOffset !== -1 && startDayOffset !== 0) {
+    throw new TypeError(`${name}.startDayOffset must be -1 or 0`);
+  }
+  if (endDayOffset !== 0 && endDayOffset !== 1) {
+    throw new TypeError(`${name}.endDayOffset must be 0 or 1`);
+  }
+  if (
+    endDayOffset * 86_400 + endSeconds <=
+    startDayOffset * 86_400 + startSeconds
+  ) {
+    throw new TypeError(`${name} must end after it starts`);
+  }
+  return { startSeconds, endSeconds, startDayOffset, endDayOffset };
+}
+
+function resolveTradeAggregation(
+  props: TradingChartsViewProps,
+  resolution: ResolvedChartResolution
+): ResolvedTradeAggregationOptions {
+  const options = props.tradeAggregation;
+  const rawOrigin = options?.bucketOrigin ?? 'epoch';
+  const bucketOrigin =
+    rawOrigin === 'epoch' || rawOrigin === 'session'
+      ? { type: rawOrigin }
+      : {
+          type: 'timestamp' as const,
+          timestamp: nonNegativeSafeInteger(
+            rawOrigin.timestamp,
+            'tradeAggregation.bucketOrigin.timestamp'
+          ),
+        };
+  const outsideSession = options?.outsideSession ?? 'ignore';
+  if (outsideSession !== 'ignore' && outsideSession !== 'reject') {
+    throw new TypeError(
+      "tradeAggregation.outsideSession must be 'ignore' or 'reject'"
+    );
+  }
+  const candleTimestamp = options?.candleTimestamp ?? 'bucketStart';
+  if (
+    candleTimestamp !== 'bucketStart' &&
+    candleTimestamp !== 'tradingDateUtc'
+  ) {
+    throw new TypeError(
+      "tradeAggregation.candleTimestamp must be 'bucketStart' or 'tradingDateUtc'"
+    );
+  }
+  const calendarUnit =
+    resolution.unit === 'day' ||
+    resolution.unit === 'week' ||
+    resolution.unit === 'month';
+  if (calendarUnit && bucketOrigin.type !== 'epoch') {
+    throw new TypeError(
+      'calendar resolutions currently require bucketOrigin epoch'
+    );
+  }
+  if (!calendarUnit && candleTimestamp === 'tradingDateUtc') {
+    throw new TypeError(
+      'candleTimestamp tradingDateUtc requires day, week or month resolution'
+    );
+  }
+
+  const calendar = options?.calendar;
+  if (calendar == null) {
+    return { bucketOrigin, outsideSession, candleTimestamp };
+  }
+  const timeZone = validateTimeZone(
+    calendar.timeZone,
+    'tradeAggregation.calendar.timeZone'
+  );
+  const sessions = (calendar.sessions ?? []).map((session, index) => {
+    const name = `tradeAggregation.calendar.sessions[${index}]`;
+    if (session.days.length === 0) {
+      throw new TypeError(`${name}.days must not be empty`);
+    }
+    const weekdays = [
+      ...new Set(
+        session.days.map((day) => {
+          const weekday = WEEKDAY_NUMBER[day];
+          if (weekday == null) {
+            throw new TypeError(`${name}.days contains an invalid weekday`);
+          }
+          return weekday;
+        })
+      ),
+    ].sort((a, b) => a - b);
+    return { ...resolveSessionSegment(session, name), weekdays };
+  });
+  const holidays = [
+    ...new Set(
+      (calendar.holidays ?? []).map((date, index) =>
+        validateDate(date, `tradeAggregation.calendar.holidays[${index}]`)
+      )
+    ),
+  ].sort();
+  const seenOverrides = new Set<string>();
+  const overrides = (calendar.overrides ?? [])
+    .map((override, index) => {
+      const name = `tradeAggregation.calendar.overrides[${index}]`;
+      const date = validateDate(override.date, `${name}.date`);
+      if (seenOverrides.has(date)) {
+        throw new TypeError(`duplicate trading-calendar override for ${date}`);
+      }
+      seenOverrides.add(date);
+      return {
+        date,
+        sessions: override.sessions.map((session, sessionIndex) =>
+          resolveSessionSegment(session, `${name}.sessions[${sessionIndex}]`)
+        ),
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const weekStartsOn = calendar.weekStartsOn ?? 'monday';
+  if (weekStartsOn !== 'monday' && weekStartsOn !== 'sunday') {
+    throw new TypeError(
+      "tradeAggregation.calendar.weekStartsOn must be 'monday' or 'sunday'"
+    );
+  }
+  return {
+    bucketOrigin,
+    calendar: {
+      timeZone,
+      sessions,
+      holidays,
+      overrides,
+      weekStartsOn,
+    },
+    outsideSession,
+    candleTimestamp,
+  };
+}
+
 function resolveScaleMargins(
   value: ChartPaneOptions['priceScale']['scaleMargins'] | undefined,
   fallback: { top: number; bottom: number },
@@ -190,10 +440,7 @@ function resolveBorder(
   return {
     color: color(input?.color ?? '#00000000', `${name}.color`),
     width: finiteNonNegative(input?.width ?? 0, `${name}.width`),
-    radius: finiteNonNegative(
-      input?.radius ?? defaultRadius,
-      `${name}.radius`
-    ),
+    radius: finiteNonNegative(input?.radius ?? defaultRadius, `${name}.radius`),
   };
 }
 
@@ -272,9 +519,7 @@ function resolveDisplayFormat(
   if (type === 'significant') {
     const significantDigits =
       (input?.type === 'significant' ? input.significantDigits : undefined) ??
-      (fallback.type === 'significant'
-        ? fallback.significantDigits
-        : 3);
+      (fallback.type === 'significant' ? fallback.significantDigits : 3);
     if (
       !Number.isInteger(significantDigits) ||
       significantDigits < 1 ||
@@ -432,10 +677,7 @@ function resolveAppearance(
     backgroundColor,
     grid: {
       color: gridColor,
-      opacity: opacity(
-        input?.grid?.opacity ?? 0.75,
-        'appearance.grid.opacity'
-      ),
+      opacity: opacity(input?.grid?.opacity ?? 0.75, 'appearance.grid.opacity'),
     },
     candles: { upColor, downColor },
     bars: {
@@ -637,26 +879,14 @@ function resolveFormatters(
           'HH:mm:ss',
           'formatters.date.xAxis.seconds'
         ),
-        time: pattern(
-          xInput?.time,
-          'HH:mm',
-          'formatters.date.xAxis.time'
-        ),
-        day: pattern(
-          xInput?.day,
-          'd MMM',
-          'formatters.date.xAxis.day'
-        ),
+        time: pattern(xInput?.time, 'HH:mm', 'formatters.date.xAxis.time'),
+        day: pattern(xInput?.day, 'd MMM', 'formatters.date.xAxis.day'),
         month: pattern(
           xInput?.month,
           'MMM yyyy',
           'formatters.date.xAxis.month'
         ),
-        year: pattern(
-          xInput?.year,
-          'yyyy',
-          'formatters.date.xAxis.year'
-        ),
+        year: pattern(xInput?.year, 'yyyy', 'formatters.date.xAxis.year'),
       },
       crosshairTimeBadge: datePattern(
         input?.date?.crosshairTimeBadge,
@@ -710,10 +940,7 @@ export function resolveAdditionalSeriesOptions(
     throw new TypeError(`${name}.seriesId 'main' is reserved`);
   }
   const paneId = identifier(options.paneId, `${name}.paneId`);
-  const priceScaleId = identifier(
-    options.priceScaleId,
-    `${name}.priceScaleId`
-  );
+  const priceScaleId = identifier(options.priceScaleId, `${name}.priceScaleId`);
   if (options.type !== 'histogram') {
     if (
       options.type !== 'candlestick' &&
@@ -748,16 +975,10 @@ export function resolveAdditionalSeriesOptions(
         options.type === 'area' ? options.appearance?.fill : undefined;
       if (areaFill != null) {
         if (areaFill.topColor != null) {
-          color(
-            areaFill.topColor,
-            `${name}.appearance.fill.topColor`
-          );
+          color(areaFill.topColor, `${name}.appearance.fill.topColor`);
         }
         if (areaFill.bottomColor != null) {
-          color(
-            areaFill.bottomColor,
-            `${name}.appearance.fill.bottomColor`
-          );
+          color(areaFill.bottomColor, `${name}.appearance.fill.bottomColor`);
         }
       }
       return {
@@ -815,13 +1036,8 @@ export function resolveChartConfig(
   if (typeof props.chartId !== 'string' || props.chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
   }
-  const timeframeMs = finitePositive(
-    props.timeframeMs ?? 60_000,
-    'timeframeMs'
-  );
-  if (!Number.isSafeInteger(timeframeMs)) {
-    throw new TypeError('timeframeMs must be a positive integer');
-  }
+  const resolution = resolveResolution(props);
+  const tradeAggregation = resolveTradeAggregation(props, resolution);
   const initialVisibleCount = props.initialVisibleCount ?? 100;
   if (!Number.isInteger(initialVisibleCount) || initialVisibleCount <= 0) {
     throw new TypeError('initialVisibleCount must be a positive integer');
@@ -936,16 +1152,13 @@ export function resolveChartConfig(
     const paneValueFormat = pane.priceScale.valueFormat;
     return {
       paneId,
-      heightWeight: finitePositive(
-        pane.heightWeight,
-        `${name}.heightWeight`
-      ),
+      heightWeight: finitePositive(pane.heightWeight, `${name}.heightWeight`),
       minHeight: finitePositive(pane.minHeight ?? 48, `${name}.minHeight`),
       priceScale: {
         priceScaleId,
         visible:
           pane.priceScale.visible ??
-          (paneId === 'main' ? props.yAxis?.visible ?? true : true),
+          (paneId === 'main' ? (props.yAxis?.visible ?? true) : true),
         scaleMargins: resolveScaleMargins(
           pane.priceScale.scaleMargins,
           paneId === 'main' ? scaleMargins : { top: 0.1, bottom: 0 },
@@ -981,20 +1194,17 @@ export function resolveChartConfig(
     const name = `additionalSeries[${index}]`;
     const seriesId = identifier(item.seriesId, `${name}.seriesId`);
     if (seriesId === 'main') {
-      throw new TypeError("additionalSeries cannot use reserved seriesId 'main'");
+      throw new TypeError(
+        "additionalSeries cannot use reserved seriesId 'main'"
+      );
     }
     if (seenSeriesIds.has(seriesId)) {
       throw new TypeError(`duplicate seriesId '${seriesId}'`);
     }
     seenSeriesIds.add(seriesId);
     const paneId = identifier(item.paneId, `${name}.paneId`);
-    const priceScaleId = identifier(
-      item.priceScaleId,
-      `${name}.priceScaleId`
-    );
-    const pane = orderedPanes.find(
-      (candidate) => candidate.paneId === paneId
-    );
+    const priceScaleId = identifier(item.priceScaleId, `${name}.priceScaleId`);
+    const pane = orderedPanes.find((candidate) => candidate.paneId === paneId);
     if (pane == null) {
       throw new TypeError(`${name}.paneId references an unknown pane`);
     }
@@ -1051,7 +1261,8 @@ export function resolveChartConfig(
   });
 
   return {
-    timeframeMs,
+    resolution,
+    tradeAggregation,
     initialVisibleCount,
     defaultScale,
     series: resolvedSeries,
@@ -1080,8 +1291,7 @@ export function resolveChartConfig(
     gestures: {
       pan: props.gestures?.pan ?? true,
       zoom: props.gestures?.zoom ?? true,
-      yAxisScale:
-        props.gestures?.yAxisScale ?? props.gestures?.zoom ?? true,
+      yAxisScale: props.gestures?.yAxisScale ?? props.gestures?.zoom ?? true,
     },
     currentPrice: {
       visible: props.currentPrice?.visible ?? true,

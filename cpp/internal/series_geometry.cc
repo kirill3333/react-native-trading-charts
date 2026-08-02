@@ -11,6 +11,7 @@
 #include <limits>
 #include <vector>
 
+#include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
 
 namespace trading_charts::internal {
@@ -314,7 +315,9 @@ size_t SampleCount(const SeriesGeometryInput& input) {
 }
 
 double XDomainUnit(const SeriesGeometryInput& input) {
-  return input.config.logical_spacing ? 1.0 : input.config.timeframe_ms;
+  return input.config.logical_spacing
+             ? 1.0
+             : NominalResolutionMilliseconds(input.config.resolution);
 }
 
 // Maps a series candle to its logical x domain. `hint` is a cursor into

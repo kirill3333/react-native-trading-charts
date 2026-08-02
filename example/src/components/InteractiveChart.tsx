@@ -3,6 +3,7 @@ import { StyleSheet } from 'react-native';
 import {
   TradingChartsView,
   type AdditionalChartSeriesOptions,
+  type ChartResolution,
   type ChartPaneOptions,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
@@ -15,7 +16,7 @@ import {
 
 type InteractiveChartProps = {
   chartId: string;
-  timeframeMs: number;
+  resolution: ChartResolution;
   lastPrice: number;
   precision: number;
   minMove: number;
@@ -26,7 +27,7 @@ type InteractiveChartProps = {
 
 export const InteractiveChart = memo(function InteractiveChart({
   chartId,
-  timeframeMs,
+  resolution,
   lastPrice,
   precision,
   minMove,
@@ -106,7 +107,7 @@ export const InteractiveChart = memo(function InteractiveChart({
       panes={panes}
       panesResizable
       style={styles.chart}
-      timeframeMs={timeframeMs}
+      resolution={resolution}
       xAxis={chartConfig.xAxis}
       yAxis={chartConfig.yAxis}
     />

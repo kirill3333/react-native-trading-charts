@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   TradingCharts,
+  type ChartResolution,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
 
@@ -129,7 +130,7 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
 type IntervalOption<TInterval extends string> = {
   value: TInterval;
   label: string;
-  timeframeMs: number;
+  resolution: ChartResolution;
 };
 
 type ChartController<TTicker, TInterval extends string> = {
@@ -175,7 +176,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
-  const timeframeMs = intervalConfig?.timeframeMs ?? 60_000;
+  const resolution = intervalConfig?.resolution ?? { unit: 'minute' as const };
 
   const subscribe = useCallback(
     (listener: () => void) => controller.subscribe(ticker, interval, listener),
@@ -342,7 +343,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               onVisibleRangeChange={handleVisibleRangeChange}
               precision={ticker.precision}
               showVolume={showVolume}
-              timeframeMs={timeframeMs}
+              resolution={resolution}
               volumeHeightWeight={volumeHeightWeight}
             />
             <ConnectionBadge status={status} />
@@ -370,7 +371,9 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             accessibilityRole="button"
             disabled={!showVolume}
             onPress={() =>
-              setVolumeHeightWeight((weight) => (weight >= 1.5 ? 0.6 : weight + 0.3))
+              setVolumeHeightWeight((weight) =>
+                weight >= 1.5 ? 0.6 : weight + 0.3
+              )
             }
             style={({ pressed }) => [
               styles.chartControlButton,

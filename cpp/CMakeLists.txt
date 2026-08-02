@@ -8,6 +8,7 @@ add_library(
   internal/pane_layout.cc
   internal/render_snapshot_builder.cc
   internal/series_geometry.cc
+  internal/trading_time.cc
 )
 
 target_include_directories(

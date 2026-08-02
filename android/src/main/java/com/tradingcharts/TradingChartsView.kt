@@ -476,6 +476,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     when (status) {
       1 -> Log.w(TAG, "$operation ignored an out-of-order timestamp")
       2 -> Log.e(TAG, "$operation received invalid data")
+      3 -> Log.w(TAG, "$operation ignored a trade outside the configured session")
     }
   }
 

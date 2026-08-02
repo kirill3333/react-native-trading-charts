@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "cpp/internal/render_snapshot_builder.h"
+#include "cpp/internal/trading_time.h"
 
 namespace trading_charts {
 namespace {
@@ -24,6 +25,12 @@ constexpr double kMaxYRangeMultiplier = 10.0;
 template <typename T>
 bool IsFinite(T value) {
   return std::isfinite(value);
+}
+
+bool IsValidTimestamp(double value) {
+  constexpr double kMaxSafeInteger = 9007199254740991.0;
+  return IsFinite(value) && value >= 0.0 && value <= kMaxSafeInteger &&
+         std::trunc(value) == value;
 }
 
 OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
@@ -37,18 +44,11 @@ OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
   return OhlcValueSource::kClose;
 }
 
-bool IsAlignedTimestamp(double timestamp, double timeframe_ms) {
-  if (!(timestamp >= 0.0) || !(timeframe_ms >= 1.0)) {
-    return false;
-  }
-  return std::fmod(timestamp, timeframe_ms) == 0.0;
-}
-
 bool IsValidCandle(const Candle& candle) {
-  return IsFinite(candle.timestamp) && candle.timestamp >= 0.0 &&
-         IsFinite(candle.open) && IsFinite(candle.high) &&
-         IsFinite(candle.low) && IsFinite(candle.close) &&
-         IsFinite(candle.volume) && candle.volume >= 0.0 &&
+  return IsValidTimestamp(candle.timestamp) && IsFinite(candle.open) &&
+         IsFinite(candle.high) && IsFinite(candle.low) &&
+         IsFinite(candle.close) && IsFinite(candle.volume) &&
+         candle.volume >= 0.0 &&
          candle.high >= std::max(candle.open, candle.close) &&
          candle.low <= std::min(candle.open, candle.close);
 }
@@ -114,7 +114,30 @@ ParsedHistogram ParseHistogram(const double* values, size_t value_count) {
 }
 
 ChartConfig NormalizeConfig(ChartConfig config) {
-  config.timeframe_ms = std::max(std::round(config.timeframe_ms), 1.0);
+  config.resolution.multiplier = std::max(config.resolution.multiplier, 1U);
+  config.resolution.fixed_duration_ms =
+      std::max(config.resolution.fixed_duration_ms, std::int64_t{1});
+  auto& calendar = config.trade_aggregation.calendar;
+  std::sort(
+      calendar.transitions.begin(), calendar.transitions.end(),
+      [](const TimeZoneTransition& first, const TimeZoneTransition& second) {
+        return first.at_utc_ms < second.at_utc_ms;
+      });
+  if (calendar.transitions.empty()) {
+    calendar.transitions.push_back(TimeZoneTransition{0, 0});
+  }
+  std::sort(calendar.holidays.begin(), calendar.holidays.end(),
+            [](const CivilDate& first, const CivilDate& second) {
+              return internal::DaysFromCivil(first) <
+                     internal::DaysFromCivil(second);
+            });
+  std::sort(calendar.overrides.begin(), calendar.overrides.end(),
+            [](const TradingCalendarOverrideConfig& first,
+               const TradingCalendarOverrideConfig& second) {
+              return internal::DaysFromCivil(first.date) <
+                     internal::DaysFromCivil(second.date);
+            });
+  calendar.week_starts_on = calendar.week_starts_on == 7 ? 7 : 1;
   config.initial_visible_count = std::max(config.initial_visible_count, 1);
   if (!IsFinite(config.default_scale) || !(config.default_scale > 0.0)) {
     config.default_scale = 1.0;
@@ -198,7 +221,11 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
   const bool viewport_defaults_changed =
       config_.initial_visible_count !=
           normalized_config.initial_visible_count ||
-      config_.timeframe_ms != normalized_config.timeframe_ms ||
+      config_.resolution.unit != normalized_config.resolution.unit ||
+      config_.resolution.multiplier !=
+          normalized_config.resolution.multiplier ||
+      config_.resolution.fixed_duration_ms !=
+          normalized_config.resolution.fixed_duration_ms ||
       config_.logical_spacing != normalized_config.logical_spacing;
   config_ = std::move(normalized_config);
   if (!panes_.empty()) {
@@ -214,6 +241,33 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
   if (!config_.crosshair_enabled) {
     crosshair_active_ = false;
   }
+  MarkDirtyLocked();
+}
+
+void ChartEngine::SetTradingCalendar(const TradingCalendarConfig& calendar) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  config_.trade_aggregation.calendar = calendar;
+  auto& normalized = config_.trade_aggregation.calendar;
+  std::sort(
+      normalized.transitions.begin(), normalized.transitions.end(),
+      [](const TimeZoneTransition& first, const TimeZoneTransition& second) {
+        return first.at_utc_ms < second.at_utc_ms;
+      });
+  if (normalized.transitions.empty()) {
+    normalized.transitions.push_back(TimeZoneTransition{0, 0});
+  }
+  std::sort(normalized.holidays.begin(), normalized.holidays.end(),
+            [](const CivilDate& first, const CivilDate& second) {
+              return internal::DaysFromCivil(first) <
+                     internal::DaysFromCivil(second);
+            });
+  std::sort(normalized.overrides.begin(), normalized.overrides.end(),
+            [](const TradingCalendarOverrideConfig& first,
+               const TradingCalendarOverrideConfig& second) {
+              return internal::DaysFromCivil(first.date) <
+                     internal::DaysFromCivil(second.date);
+            });
+  normalized.week_starts_on = normalized.week_starts_on == 7 ? 7 : 1;
   MarkDirtyLocked();
 }
 
@@ -568,7 +622,9 @@ bool ChartEngine::SetPaneHeight(const std::string& pane_id,
 }
 
 double ChartEngine::XDomainUnitLocked() const {
-  return config_.logical_spacing ? 1.0 : config_.timeframe_ms;
+  return config_.logical_spacing
+             ? 1.0
+             : internal::NominalResolutionMilliseconds(config_.resolution);
 }
 
 double ChartEngine::CandleXLocked(size_t index) const {
@@ -607,11 +663,6 @@ UpdateStatus ChartEngine::SetHistory(const double* values, size_t value_count) {
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  for (const Candle& candle : parsed.candles) {
-    if (!IsAlignedTimestamp(candle.timestamp, config_.timeframe_ms)) {
-      return UpdateStatus::kInvalidInput;
-    }
-  }
   candles_ = std::move(parsed.candles);
   last_trade_timestamp_ = candles_.back().timestamp;
   crosshair_active_ = false;
@@ -628,11 +679,6 @@ UpdateStatus ChartEngine::PrependHistory(const double* values,
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  for (const Candle& candle : parsed.candles) {
-    if (!IsAlignedTimestamp(candle.timestamp, config_.timeframe_ms)) {
-      return UpdateStatus::kInvalidInput;
-    }
-  }
   if (!candles_.empty() &&
       parsed.candles.back().timestamp >= candles_.front().timestamp) {
     return UpdateStatus::kInvalidInput;
@@ -667,9 +713,6 @@ UpdateStatus ChartEngine::UpdateCandle(const double* values,
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!IsAlignedTimestamp(candle.timestamp, config_.timeframe_ms)) {
-    return UpdateStatus::kInvalidInput;
-  }
   if (candles_.empty()) {
     candles_.push_back(candle);
     last_trade_timestamp_ = candle.timestamp;
@@ -698,16 +741,28 @@ UpdateStatus ChartEngine::UpdateCandle(const double* values,
 
 UpdateStatus ChartEngine::UpdateTradeLocked(double timestamp, double price,
                                             double size) {
-  if (!IsFinite(timestamp) || timestamp < 0.0 || !IsFinite(price) ||
-      !IsFinite(size) || size < 0.0) {
+  if (!IsValidTimestamp(timestamp) || !IsFinite(price) || !IsFinite(size) ||
+      size < 0.0) {
     return UpdateStatus::kInvalidInput;
   }
   if (last_trade_timestamp_.has_value() && timestamp < *last_trade_timestamp_) {
     return UpdateStatus::kIgnoredOldTimestamp;
   }
 
-  const double bucket =
-      std::floor(timestamp / config_.timeframe_ms) * config_.timeframe_ms;
+  const internal::BucketLookupResult lookup = internal::BucketForTimestamp(
+      config_, static_cast<std::int64_t>(timestamp));
+  if (lookup.status == internal::BucketLookupStatus::kInvalid) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (lookup.status == internal::BucketLookupStatus::kOutsideSession) {
+    if (config_.trade_aggregation.outside_session ==
+        OutsideSessionPolicy::kIgnore) {
+      last_trade_timestamp_ = timestamp;
+      return UpdateStatus::kIgnoredOutsideSession;
+    }
+    return UpdateStatus::kInvalidInput;
+  }
+  const double bucket = static_cast<double>(lookup.bucket.key_timestamp_ms);
   if (candles_.empty()) {
     candles_.push_back(Candle{bucket, price, price, price, price, size});
     last_trade_timestamp_ = timestamp;
@@ -763,7 +818,7 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
   }
   std::lock_guard<std::mutex> lock(mutex_);
   for (size_t i = 0; i < value_count; i += kTradeValueCount) {
-    if (!IsFinite(values[i]) || values[i] < 0.0 || !IsFinite(values[i + 1]) ||
+    if (!IsValidTimestamp(values[i]) || !IsFinite(values[i + 1]) ||
         !IsFinite(values[i + 2]) || values[i + 2] < 0.0) {
       return UpdateStatus::kInvalidInput;
     }
@@ -776,7 +831,8 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
     if (status == UpdateStatus::kInvalidInput) {
       return status;
     }
-    if (status == UpdateStatus::kIgnoredOldTimestamp) {
+    if (status == UpdateStatus::kIgnoredOldTimestamp ||
+        status == UpdateStatus::kIgnoredOutsideSession) {
       result = status;
     }
     if (status == UpdateStatus::kApplied) {

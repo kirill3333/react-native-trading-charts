@@ -14,6 +14,8 @@ readonly cpp_files=(
   cpp/internal/render_snapshot_builder.cc
   cpp/internal/series_geometry.h
   cpp/internal/series_geometry.cc
+  cpp/internal/trading_time.h
+  cpp/internal/trading_time.cc
   cpp/internal/triangle_geometry.h
   cpp/tests/chart_engine_header_test.cc
   cpp/tests/chart_engine_test.cc
