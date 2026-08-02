@@ -1582,8 +1582,9 @@ struct TCTextPresentation {
         // the bottom instead of extending the tooltip beyond its content.
         CGFloat rowsHeight = values.count * _tooltipRowHeight;
         CGFloat boxHeight = headerHeight + rowsHeight + 18;
-        CGFloat boxX = current.crosshair_x > current.width / 2 ? current.plot.left + 8
-                                                              : current.plot.right - boxWidth - 8;
+        const CGFloat plotMidX = (current.plot.left + current.plot.right) * 0.5;
+        CGFloat boxX = current.crosshair_x > plotMidX ? current.plot.left + 8
+                                                      : current.plot.right - boxWidth - 8;
         CGRect box = CGRectMake(boxX, current.plot.top + 8, boxWidth, boxHeight);
         if (!CGRectEqualToRect(_tooltipBackgroundLayer.frame, box)) {
           _tooltipBackgroundLayer.frame = box;

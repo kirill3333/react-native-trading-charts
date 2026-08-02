@@ -617,8 +617,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private fun drawTooltip(canvas: Canvas, frame: ChartSnapshot) {
     val layout = prepareTooltipLayout(frame)
     val config = frame.config
+    val plotMidX = (frame.plotLeft + frame.plotRight) / 2f
     val left =
-        if (frame.crosshairX > frame.width / 2f) frame.plotLeft + 8f * density
+        if (frame.crosshairX > plotMidX) frame.plotLeft + 8f * density
         else frame.plotRight - layout.width - 8f * density
     val rect = scratchRect
     rect.set(
