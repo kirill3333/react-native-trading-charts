@@ -26,6 +26,11 @@ const SPACING_OPTIONS = [
   { label: 'Time', value: 'time' },
   { label: 'Logical', value: 'logical' },
 ] as const;
+const SERIES_LINE_WIDTH_OPTIONS = [
+  { label: 'Thin', value: 1 },
+  { label: 'Medium', value: 1.5 },
+  { label: 'Thick', value: 2.5 },
+] as const;
 const POSITION_OPTIONS = [
   { label: 'Left', value: 'left' },
   { label: 'Right', value: 'right' },
@@ -99,6 +104,17 @@ export function SettingsScreen() {
             options={SERIES_OPTIONS}
             value={settings.seriesType}
           />
+          {(settings.seriesType === 'line' ||
+            settings.seriesType === 'area') && (
+            <SettingSegments
+              label="Line width"
+              onValueChange={(seriesLineWidth) =>
+                updateSettings({ seriesLineWidth })
+              }
+              options={SERIES_LINE_WIDTH_OPTIONS}
+              value={settings.seriesLineWidth}
+            />
+          )}
         </SettingsSection>
 
         <SettingsSection title="Theme">

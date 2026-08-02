@@ -8,9 +8,11 @@ export type ScaleMarginPreset = 'tight' | 'default' | 'loose';
 export type CrosshairLineStyleSetting = 'solid' | 'dashed';
 export type ChartLocale = 'en-GB' | 'en-US';
 export type ChartTimeZone = 'utc' | 'device';
+export type SeriesLineWidth = 1 | 1.5 | 2.5;
 
 export type ChartSettings = {
   seriesType: ChartSeriesType;
+  seriesLineWidth: SeriesLineWidth;
   themeMode: ChartThemeMode;
   xAxisVisible: boolean;
   xAxisShowSeconds: boolean;
@@ -37,6 +39,7 @@ export type ChartSettings = {
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   seriesType: 'candlestick',
+  seriesLineWidth: 1.5,
   themeMode: 'default',
   xAxisVisible: true,
   xAxisShowSeconds: false,

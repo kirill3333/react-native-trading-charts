@@ -67,10 +67,10 @@ internal class ChartConfigJsonDecoder(
           displayScale = density,
           seriesType = seriesType,
           barLineWidthPx = barsAppearance.optDouble("lineWidth", 1.0).toFloat() * density,
-          lineWidthPx = lineAppearance.optDouble("width", 2.0).toFloat() * density,
+          lineWidthPx = lineAppearance.optDouble("width", 1.5).toFloat() * density,
           lineSource = root.optJSONObject("series")?.optString("source", "close") ?: "close",
           lineGradientEnabled = lineGradient != null,
-          areaLineWidthPx = areaAppearance.optDouble("width", 2.0).toFloat() * density,
+          areaLineWidthPx = areaAppearance.optDouble("width", 1.5).toFloat() * density,
           areaLineGradientEnabled = areaGradient != null,
           lineGapThresholdMs =
               root.optJSONObject("series")?.optDouble("gapThresholdMs", 0.0) ?: 0.0,

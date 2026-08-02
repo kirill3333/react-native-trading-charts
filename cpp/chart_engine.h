@@ -137,7 +137,7 @@ struct ChartConfig {
   float display_scale = 1.0f;
   SeriesType series_type = SeriesType::kCandlestick;
   float bar_line_width = 1.0f;
-  float line_width = 2.0f;
+  float line_width = 1.5f;
   double line_gap_threshold_ms = 0.0;
   OhlcValueSource line_source = OhlcValueSource::kClose;
   bool line_gradient_enabled = false;

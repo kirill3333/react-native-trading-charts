@@ -223,7 +223,9 @@ solid and vertical-gradient lines render identically on Metal and GLES:
 `'close'`. It drives the line, autoscale, visible extrema, and current-price
 value while crosshair selection remains full OHLCV. Missing timestamps are
 connected by default; when `gapThresholdMs` is provided, larger gaps split the
-line. Gradient colors are evaluated vertically inside the series pane.
+line. Gradient colors are evaluated vertically inside the series pane. Line
+and area strokes default to `1.5` points on iOS and density-independent pixels
+on Android; set the corresponding appearance `width` to customize them.
 
 Use `'area'` for the same OHLC source and gap semantics with a filled region
 under the line. The fill uses one vertical gradient across the full pane, so a

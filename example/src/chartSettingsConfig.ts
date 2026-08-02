@@ -20,12 +20,12 @@ const STANDARD_APPEARANCE: ChartAppearance = {
   candles: { upColor: '#38D98A', downColor: '#FF3B64' },
   bars: { upColor: '#38D98A', downColor: '#FF3B64', lineWidth: 1 },
   line: {
-    width: 2.5,
+    width: 1.5,
     color: '#2E90F5',
     gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
   },
   area: {
-    width: 2.5,
+    width: 1.5,
     color: '#2E90F5',
     fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
   },
@@ -71,12 +71,12 @@ const HIGH_CONTRAST_APPEARANCE: ChartAppearance = {
   candles: { upColor: '#21C99A', downColor: '#E31B5F' },
   bars: { upColor: '#21C99A', downColor: '#E31B5F', lineWidth: 1 },
   line: {
-    width: 2.5,
+    width: 1.5,
     color: '#2E90F5',
     gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
   },
   area: {
-    width: 2.5,
+    width: 1.5,
     color: '#60A5FA',
     fill: { topColor: '#60A5FA80', bottomColor: '#60A5FA00' },
   },
@@ -234,6 +234,14 @@ export function buildChartViewConfig(
         : { type: settings.seriesType },
     appearance: {
       ...appearancePreset,
+      line: {
+        ...appearancePreset.line,
+        width: settings.seriesLineWidth,
+      },
+      area: {
+        ...appearancePreset.area,
+        width: settings.seriesLineWidth,
+      },
       tooltip: {
         ...appearancePreset.tooltip,
         backgroundOpacity: settings.crosshairTooltipOpacity,

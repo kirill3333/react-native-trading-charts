@@ -139,7 +139,7 @@ ChartConfig NormalizeConfig(ChartConfig config) {
     config.bar_line_width = config.display_scale;
   }
   if (!IsFinite(config.line_width) || !(config.line_width > 0.0f)) {
-    config.line_width = 2.0f * config.display_scale;
+    config.line_width = 1.5f * config.display_scale;
   }
   if (!IsFinite(config.line_gap_threshold_ms) ||
       config.line_gap_threshold_ms < 0.0) {

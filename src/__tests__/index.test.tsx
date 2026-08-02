@@ -990,7 +990,7 @@ describe('chart config', () => {
     });
     expect(defaults.series).toEqual({ type: 'area', source: 'close' });
     expect(defaults.appearance.area).toEqual({
-      width: 2,
+      width: 1.5,
       color: '#2E90F5',
       fill: { topColor: '#2E90F540', bottomColor: '#2E90F500' },
     });

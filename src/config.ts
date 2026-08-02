@@ -354,7 +354,7 @@ function resolveAppearance(
     'appearance.bars.lineWidth'
   );
   const lineWidth = finitePositive(
-    input?.line?.width ?? 2,
+    input?.line?.width ?? 1.5,
     'appearance.line.width'
   );
   const lineColor = color(
@@ -376,7 +376,7 @@ function resolveAppearance(
           ),
         };
   const areaWidth = finitePositive(
-    input?.area?.width ?? 2,
+    input?.area?.width ?? 1.5,
     'appearance.area.width'
   );
   const areaColor = color(

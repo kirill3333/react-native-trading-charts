@@ -2087,7 +2087,7 @@ struct TCTextPresentation {
       : 1.0f;
   _lineAppearanceWidth = lineAppearance[@"width"]
       ? [lineAppearance[@"width"] floatValue]
-      : 2.0f;
+      : 1.5f;
   _lineAppearanceColor = TCColorFromHex(lineAppearance[@"color"], _config.up);
   NSDictionary *lineGradient = lineAppearance[@"gradient"];
   _lineAppearanceGradientEnabled =
@@ -2098,7 +2098,7 @@ struct TCTextPresentation {
       lineGradient[@"bottomColor"], _lineAppearanceColor);
   _areaAppearanceWidth = areaAppearance[@"width"]
       ? [areaAppearance[@"width"] floatValue]
-      : 2.0f;
+      : 1.5f;
   _areaAppearanceColor = TCColorFromHex(areaAppearance[@"color"], _config.up);
   NSDictionary *areaGradient = areaAppearance[@"gradient"];
   _areaAppearanceGradientEnabled =
