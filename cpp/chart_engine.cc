@@ -131,7 +131,8 @@ ChartConfig NormalizeConfig(ChartConfig config) {
   if (config.series_type != SeriesType::kCandlestick &&
       config.series_type != SeriesType::kBar &&
       config.series_type != SeriesType::kHollowCandlestick &&
-      config.series_type != SeriesType::kLine) {
+      config.series_type != SeriesType::kLine &&
+      config.series_type != SeriesType::kArea) {
     config.series_type = SeriesType::kCandlestick;
   }
   if (!IsFinite(config.bar_line_width) || !(config.bar_line_width > 0.0f)) {
@@ -352,7 +353,7 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
        config.type != SeriesType::kHollowCandlestick &&
        config.type != SeriesType::kBar &&
        config.type != SeriesType::kHistogram &&
-       config.type != SeriesType::kLine)) {
+       config.type != SeriesType::kLine && config.type != SeriesType::kArea)) {
     return UpdateStatus::kInvalidInput;
   }
   std::lock_guard<std::mutex> lock(mutex_);

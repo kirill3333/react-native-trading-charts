@@ -1767,6 +1767,18 @@ struct TCTextPresentation {
   CFTimeInterval _lastDecelerationTimestamp;
   CFTimeInterval _pastEdgeWaitStartedAt;
   ChartConfig _config;
+  float _lineAppearanceWidth;
+  TCColor _lineAppearanceColor;
+  TCColor _lineAppearanceGradientTop;
+  TCColor _lineAppearanceGradientBottom;
+  BOOL _lineAppearanceGradientEnabled;
+  float _areaAppearanceWidth;
+  TCColor _areaAppearanceColor;
+  TCColor _areaAppearanceGradientTop;
+  TCColor _areaAppearanceGradientBottom;
+  BOOL _areaAppearanceGradientEnabled;
+  TCColor _areaFillTop;
+  TCColor _areaFillBottom;
   NSInteger _lastFirstVisibleIndex;
   NSInteger _lastLastVisibleIndex;
   NSInteger _lastTotalCandleCount;
@@ -1787,6 +1799,16 @@ struct TCTextPresentation {
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     _engine = std::make_shared<ChartEngine>();
+    _lineAppearanceWidth = _config.line_width;
+    _lineAppearanceColor = _config.line;
+    _lineAppearanceGradientTop = _config.line_gradient_top;
+    _lineAppearanceGradientBottom = _config.line_gradient_bottom;
+    _areaAppearanceWidth = _config.line_width;
+    _areaAppearanceColor = _config.line;
+    _areaAppearanceGradientTop = _config.line_gradient_top;
+    _areaAppearanceGradientBottom = _config.line_gradient_bottom;
+    _areaFillTop = _config.area_fill_top;
+    _areaFillBottom = _config.area_fill_bottom;
     _declarativeSeriesIds = [NSMutableSet new];
     _lastFirstVisibleIndex = -1;
     _lastLastVisibleIndex = -1;
@@ -2019,9 +2041,11 @@ struct TCTextPresentation {
   NSDictionary *candlesAppearance = appearance[@"candles"];
   NSDictionary *barsAppearance = appearance[@"bars"];
   NSDictionary *lineAppearance = appearance[@"line"];
+  NSDictionary *areaAppearance = appearance[@"area"];
   NSDictionary *series = root[@"series"];
   const bool usesBars = [series[@"type"] isEqualToString:@"bar"];
   const bool usesLine = [series[@"type"] isEqualToString:@"line"];
+  const bool usesArea = [series[@"type"] isEqualToString:@"area"];
   const bool usesHollowCandlesticks =
       [series[@"type"] isEqualToString:@"hollowCandlestick"];
   NSDictionary *seriesAppearance = usesBars ? barsAppearance : candlesAppearance;
@@ -2055,21 +2079,50 @@ struct TCTextPresentation {
                : (usesHollowCandlesticks
                       ? SeriesType::kHollowCandlestick
                       : (usesLine ? SeriesType::kLine
-                                  : SeriesType::kCandlestick));
+                                  : (usesArea ? SeriesType::kArea
+                                              : SeriesType::kCandlestick)));
   _config.bar_line_width = barsAppearance[@"lineWidth"]
       ? [barsAppearance[@"lineWidth"] floatValue]
       : 1.0f;
-  _config.line_width = lineAppearance[@"width"]
+  _lineAppearanceWidth = lineAppearance[@"width"]
       ? [lineAppearance[@"width"] floatValue]
       : 2.0f;
-  _config.line = TCColorFromHex(lineAppearance[@"color"], _config.up);
+  _lineAppearanceColor = TCColorFromHex(lineAppearance[@"color"], _config.up);
   NSDictionary *lineGradient = lineAppearance[@"gradient"];
-  _config.line_gradient_enabled =
+  _lineAppearanceGradientEnabled =
       [lineGradient isKindOfClass:NSDictionary.class];
-  _config.line_gradient_top = TCColorFromHex(
-      lineGradient[@"topColor"], _config.line);
-  _config.line_gradient_bottom = TCColorFromHex(
-      lineGradient[@"bottomColor"], _config.line);
+  _lineAppearanceGradientTop = TCColorFromHex(
+      lineGradient[@"topColor"], _lineAppearanceColor);
+  _lineAppearanceGradientBottom = TCColorFromHex(
+      lineGradient[@"bottomColor"], _lineAppearanceColor);
+  _areaAppearanceWidth = areaAppearance[@"width"]
+      ? [areaAppearance[@"width"] floatValue]
+      : 2.0f;
+  _areaAppearanceColor = TCColorFromHex(areaAppearance[@"color"], _config.up);
+  NSDictionary *areaGradient = areaAppearance[@"gradient"];
+  _areaAppearanceGradientEnabled =
+      [areaGradient isKindOfClass:NSDictionary.class];
+  _areaAppearanceGradientTop = TCColorFromHex(
+      areaGradient[@"topColor"], _areaAppearanceColor);
+  _areaAppearanceGradientBottom = TCColorFromHex(
+      areaGradient[@"bottomColor"], _areaAppearanceColor);
+  NSDictionary *areaFill = areaAppearance[@"fill"];
+  _areaFillTop = TCColorFromHex(areaFill[@"topColor"], _config.area_fill_top);
+  _areaFillBottom = TCColorFromHex(
+      areaFill[@"bottomColor"], _config.area_fill_bottom);
+  _config.line_width = usesArea ? _areaAppearanceWidth : _lineAppearanceWidth;
+  _config.line = usesArea ? _areaAppearanceColor : _lineAppearanceColor;
+  _config.line_gradient_enabled = usesArea
+      ? _areaAppearanceGradientEnabled
+      : _lineAppearanceGradientEnabled;
+  _config.line_gradient_top = usesArea
+      ? _areaAppearanceGradientTop
+      : _lineAppearanceGradientTop;
+  _config.line_gradient_bottom = usesArea
+      ? _areaAppearanceGradientBottom
+      : _lineAppearanceGradientBottom;
+  _config.area_fill_top = _areaFillTop;
+  _config.area_fill_bottom = _areaFillBottom;
   NSString *lineSource = series[@"source"];
   _config.line_source =
       [lineSource isEqualToString:@"open"]
@@ -2223,6 +2276,8 @@ struct TCTextPresentation {
     config.type = SeriesType::kHistogram;
   } else if ([type isEqualToString:@"line"]) {
     config.type = SeriesType::kLine;
+  } else if ([type isEqualToString:@"area"]) {
+    config.type = SeriesType::kArea;
   }
   id source = item[@"source"];
   if ([source isKindOfClass:NSDictionary.class] &&
@@ -2234,7 +2289,8 @@ struct TCTextPresentation {
   config.color = TCColorFromHex(appearance[@"color"], _config.axis_text);
   config.up = TCColorFromHex(appearance[@"upColor"], _config.up);
   config.down = TCColorFromHex(appearance[@"downColor"], _config.down);
-  if (config.type == SeriesType::kLine) {
+  if (trading_charts::IsLineLikeSeries(config.type)) {
+    const bool area = config.type == SeriesType::kArea;
     NSString *valueSource =
         [source isKindOfClass:NSString.class] ? source : @"close";
     config.line_source =
@@ -2247,8 +2303,10 @@ struct TCTextPresentation {
                           : OhlcValueSource::kClose));
     config.line_width = appearance[@"width"]
         ? [appearance[@"width"] floatValue]
-        : _config.line_width;
-    config.color = TCColorFromHex(appearance[@"color"], _config.line);
+        : (area ? _areaAppearanceWidth : _lineAppearanceWidth);
+    config.color = TCColorFromHex(
+        appearance[@"color"],
+        area ? _areaAppearanceColor : _lineAppearanceColor);
     NSDictionary *gradient = appearance[@"gradient"];
     config.line_gradient_enabled =
         [gradient isKindOfClass:NSDictionary.class];
@@ -2256,6 +2314,12 @@ struct TCTextPresentation {
         gradient[@"topColor"], config.color);
     config.line_gradient_bottom = TCColorFromHex(
         gradient[@"bottomColor"], config.color);
+    if (area) {
+      NSDictionary *fill = appearance[@"fill"];
+      config.area_fill_top = TCColorFromHex(fill[@"topColor"], _areaFillTop);
+      config.area_fill_bottom = TCColorFromHex(
+          fill[@"bottomColor"], _areaFillBottom);
+    }
     config.line_gap_threshold_ms = item[@"gapThresholdMs"]
         ? [item[@"gapThresholdMs"] doubleValue]
         : 0.0;

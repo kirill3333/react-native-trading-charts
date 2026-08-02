@@ -386,7 +386,7 @@ class RenderSnapshotBuilder {
     }
     minimum_candle_ = range_begin;
     maximum_candle_ = range_begin;
-    const bool line = input_.config.series_type == SeriesType::kLine;
+    const bool line = IsLineLikeSeries(input_.config.series_type);
     double raw_min = line ? CandleValue(*range_begin, input_.config.line_source)
                           : range_begin->low;
     double raw_max = line ? raw_min : range_begin->high;
@@ -582,8 +582,8 @@ class RenderSnapshotBuilder {
   template <typename Callback>
   void VisitLineGapAnchors(const SeriesData& series, const SeriesWindow& window,
                            Callback&& callback) const {
-    if (series.config.type != SeriesType::kLine ||
-        window.first != window.last || series.candles.empty()) {
+    if (!IsLineLikeSeries(series.config.type) || window.first != window.last ||
+        series.candles.empty()) {
       return;
     }
     // Logical spacing can only render timestamps present in the main store;
@@ -623,7 +623,7 @@ class RenderSnapshotBuilder {
         }
       } else {
         const auto include_candle = [&](const Candle& candle) {
-          if (series.config.type == SeriesType::kLine) {
+          if (IsLineLikeSeries(series.config.type)) {
             const double value = CandleValue(candle, series.config.line_source);
             minimum = std::min(minimum, value);
             maximum = std::max(maximum, value);
@@ -671,7 +671,7 @@ class RenderSnapshotBuilder {
         } else {
           const auto include_candle = [&](const Candle& candle) {
             has_value = true;
-            if (series.config.type == SeriesType::kLine) {
+            if (IsLineLikeSeries(series.config.type)) {
               const double value =
                   CandleValue(candle, series.config.line_source);
               raw_min = std::min(raw_min, value);
@@ -890,7 +890,7 @@ class RenderSnapshotBuilder {
       config.line_width = series.config.line_width;
       size_t first = window.first;
       size_t last = window.last;
-      if (series.config.type == SeriesType::kLine) {
+      if (IsLineLikeSeries(series.config.type)) {
         if (first > 0) {
           --first;
         }
@@ -953,7 +953,7 @@ class RenderSnapshotBuilder {
         static_cast<size_t>(std::distance(input_.candles.cbegin(), lower_));
     size_t end =
         static_cast<size_t>(std::distance(input_.candles.cbegin(), upper_));
-    if (input_.config.series_type == SeriesType::kLine) {
+    if (IsLineLikeSeries(input_.config.series_type)) {
       if (first > 0) {
         --first;
       }
@@ -1044,7 +1044,7 @@ class RenderSnapshotBuilder {
         continue;
       }
       if (series.candles.empty() || (window.first >= window.last &&
-                                     series.config.type != SeriesType::kLine)) {
+                                     !IsLineLikeSeries(series.config.type))) {
         continue;
       }
       ChartConfig config = input_.config;
@@ -1057,11 +1057,13 @@ class RenderSnapshotBuilder {
       config.line_gradient_top = series.config.line_gradient_top;
       config.line_gradient_bottom = series.config.line_gradient_bottom;
       config.line_gradient_enabled = series.config.line_gradient_enabled;
+      config.area_fill_top = series.config.area_fill_top;
+      config.area_fill_bottom = series.config.area_fill_bottom;
       config.line_source = series.config.line_source;
       config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
       size_t first = window.first;
       size_t last = window.last;
-      if (series.config.type == SeriesType::kLine) {
+      if (IsLineLikeSeries(series.config.type)) {
         if (first > 0) {
           --first;
         }
@@ -1109,7 +1111,7 @@ class RenderSnapshotBuilder {
     }
 
     const double current_value =
-        input_.config.series_type == SeriesType::kLine
+        IsLineLikeSeries(input_.config.series_type)
             ? CandleValue(current, input_.config.line_source)
             : current.close;
     snapshot_->current_price = current_value;

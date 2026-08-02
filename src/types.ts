@@ -27,7 +27,8 @@ export type ChartSeriesType =
   | 'candlestick'
   | 'hollowCandlestick'
   | 'bar'
-  | 'line';
+  | 'line'
+  | 'area';
 
 export type OhlcValueSource = 'open' | 'high' | 'low' | 'close';
 
@@ -40,6 +41,13 @@ export type ChartLineAppearance = {
   };
 };
 
+export type ChartAreaAppearance = ChartLineAppearance & {
+  fill?: {
+    topColor?: string;
+    bottomColor?: string;
+  };
+};
+
 export type ChartSeriesOptions =
   | {
       type?: 'candlestick' | 'hollowCandlestick' | 'bar';
@@ -47,7 +55,7 @@ export type ChartSeriesOptions =
       gapThresholdMs?: never;
     }
   | {
-      type: 'line';
+      type: 'line' | 'area';
       source?: OhlcValueSource;
       gapThresholdMs?: number;
     };
@@ -93,6 +101,12 @@ export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
         source?: OhlcValueSource;
         gapThresholdMs?: number;
         appearance?: ChartLineAppearance;
+      }
+    | {
+        type: 'area';
+        source?: OhlcValueSource;
+        gapThresholdMs?: number;
+        appearance?: ChartAreaAppearance;
       }
   );
 
@@ -189,6 +203,7 @@ export type ChartAppearance = {
     lineWidth?: number;
   };
   line?: ChartLineAppearance;
+  area?: ChartAreaAppearance;
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
   priceExtremes?: {
@@ -393,7 +408,7 @@ export type ResolvedChartConfig = {
   series:
     | { type: 'candlestick' | 'hollowCandlestick' | 'bar' }
     | {
-        type: 'line';
+        type: 'line' | 'area';
         source: OhlcValueSource;
         gapThresholdMs?: number;
       };
@@ -459,6 +474,12 @@ export type ResolvedChartAppearance = {
     width: number;
     color: string;
     gradient?: { topColor: string; bottomColor: string };
+  };
+  area: {
+    width: number;
+    color: string;
+    gradient?: { topColor: string; bottomColor: string };
+    fill: { topColor: string; bottomColor: string };
   };
   xAxis: { text: ResolvedChartTextStyle };
   yAxis: { text: ResolvedChartTextStyle };

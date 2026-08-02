@@ -42,7 +42,12 @@ enum class SeriesType : std::uint8_t {
   kHollowCandlestick = 2,
   kHistogram = 3,
   kLine = 4,
+  kArea = 5,
 };
+
+inline bool IsLineLikeSeries(SeriesType type) {
+  return type == SeriesType::kLine || type == SeriesType::kArea;
+}
 
 enum class OhlcValueSource : std::uint8_t {
   kOpen = 0,
@@ -104,6 +109,10 @@ struct SeriesConfig {
                           1.0f};
   Color line_gradient_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
                              1.0f};
+  Color area_fill_top{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                      64.0f / 255.0f};
+  Color area_fill_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                         0.0f};
   float line_width = 1.0f;
   double line_gap_threshold_ms = 0.0;
   OhlcValueSource line_source = OhlcValueSource::kClose;
@@ -143,6 +152,10 @@ struct ChartConfig {
                           1.0f};
   Color line_gradient_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
                              1.0f};
+  Color area_fill_top{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                      64.0f / 255.0f};
+  Color area_fill_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                         0.0f};
   Color crosshair{168.0f / 255.0f, 162.0f / 255.0f, 179.0f / 255.0f, 1.0f};
   Color tooltip_background{27.0f / 255.0f, 23.0f / 255.0f, 35.0f / 255.0f,
                            1.0f};

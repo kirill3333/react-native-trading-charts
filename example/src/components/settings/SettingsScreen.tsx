@@ -20,6 +20,7 @@ const SERIES_OPTIONS = [
   { label: 'Hollow', value: 'hollowCandlestick' },
   { label: 'Bars', value: 'bar' },
   { label: 'Line', value: 'line' },
+  { label: 'Area', value: 'area' },
 ] as const;
 const SPACING_OPTIONS = [
   { label: 'Time', value: 'time' },

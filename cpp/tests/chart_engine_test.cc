@@ -2106,6 +2106,110 @@ void TestLineSourceAutoscaleCurrentPriceAndGradient() {
   }
 }
 
+void TestAreaFillAndLineLikeSemantics() {
+  ChartConfig geometry_config;
+  geometry_config.series_type = SeriesType::kArea;
+  geometry_config.line_width = 4.0f;
+  geometry_config.line_source = OhlcValueSource::kClose;
+  geometry_config.line = {0.0f, 1.0f, 0.0f, 1.0f};
+  geometry_config.area_fill_top = {1.0f, 0.0f, 0.0f, 0.5f};
+  geometry_config.area_fill_bottom = {0.0f, 0.0f, 1.0f, 0.0f};
+  const std::vector<Candle> candles{
+      {0.0, 25.0, 25.0, 25.0, 25.0, 0.0},
+      {1.0, 75.0, 75.0, 75.0, 75.0, 0.0},
+  };
+  std::vector<float> vertices;
+  trading_charts::internal::AppendSeriesGeometry(
+      trading_charts::internal::SeriesGeometryInput{
+          geometry_config,
+          candles,
+          0,
+          candles.size(),
+          {0.0f, 0.0f, 100.0f, 100.0f},
+          -0.125,
+          1.125,
+          0.0,
+          100.0,
+          nullptr},
+      vertices);
+
+  // The first quad is the fill: top vertices follow the line and sample one
+  // pane-wide vertical gradient, while bottom vertices land on the pane bottom.
+  // The opaque stroke is appended after it.
+  assert(vertices.size() > 36);
+  ExpectNear(vertices[1], 75.0);
+  ExpectNear(vertices[7], 25.0);
+  ExpectNear(vertices[13], 100.0);
+  ExpectNear(vertices[2], 0.25);
+  ExpectNear(vertices[4], 0.75);
+  ExpectNear(vertices[5], 0.125);
+  ExpectNear(vertices[8], 0.75);
+  ExpectNear(vertices[10], 0.25);
+  ExpectNear(vertices[11], 0.375);
+  ExpectNear(vertices[17], 0.0);
+  ExpectNear(vertices[35], 0.0);
+  ExpectNear(vertices[41], 1.0);
+
+  ChartConfig split_config = geometry_config;
+  split_config.line_gap_threshold_ms = 0.5;
+  std::vector<float> split_vertices;
+  trading_charts::internal::AppendSeriesGeometry(
+      trading_charts::internal::SeriesGeometryInput{
+          split_config,
+          candles,
+          0,
+          candles.size(),
+          {0.0f, 0.0f, 100.0f, 100.0f},
+          -0.125,
+          1.125,
+          0.0,
+          100.0,
+          nullptr},
+      split_vertices);
+  assert(split_vertices.empty());
+
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 2;
+  config.series_type = SeriesType::kArea;
+  config.line_source = OhlcValueSource::kLow;
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 300.0f);
+  const double history[] = {
+      0.0, 10.0, 30.0, 5.0, 20.0, 1.0, 60000.0, 20.0, 40.0, 7.0, 30.0, 1.0,
+  };
+  assert(engine.SetHistory(history, 12) == UpdateStatus::kApplied);
+  const auto snapshot = engine.Snapshot();
+  ExpectNear(snapshot->visible_minimum.value, 5.0);
+  ExpectNear(snapshot->visible_maximum.value, 7.0);
+  ExpectNear(snapshot->current_price, 7.0);
+  engine.SetCrosshair(true, snapshot->plot.left, snapshot->plot.top);
+  assert(engine.Snapshot()->content_vertices == snapshot->content_vertices);
+
+  ChartEngine additional;
+  ChartConfig additional_config;
+  additional_config.initial_visible_count = 2;
+  additional_config.show_current_price = false;
+  additional.SetConfig(additional_config);
+  additional.SetSize(600.0f, 300.0f);
+  assert(additional.SetHistory(history, 12) == UpdateStatus::kApplied);
+  SeriesConfig area;
+  area.series_id = "comparison-area";
+  area.type = SeriesType::kArea;
+  area.pane_id = "main";
+  area.price_scale_id = "main";
+  area.line_source = OhlcValueSource::kClose;
+  assert(additional.AddSeries(area) == UpdateStatus::kApplied);
+  const double comparison[] = {
+      0.0, 80.0, 85.0, 75.0, 80.0, 1.0, 60000.0, 90.0, 95.0, 85.0, 90.0, 1.0,
+  };
+  assert(additional.SetSeriesData("comparison-area", comparison, 12, false) ==
+         UpdateStatus::kApplied);
+  const auto additional_snapshot = additional.Snapshot();
+  assert(additional_snapshot->visible_y_max >= 90.0);
+  assert(additional_snapshot->content_vertices != nullptr);
+}
+
 void TestLineGapThresholdAndContentReuse() {
   const double history[] = {
       0.0, 10.0, 12.0, 9.0, 11.0, 1.0, 600000.0, 20.0, 22.0, 19.0, 21.0, 1.0,
@@ -2233,6 +2337,7 @@ int main() noexcept {
     TestCrosshairOnlySnapshotReusesContent();
     TestPaneLayoutEdgeCasesMatchHitTesting();
     TestLineSourceAutoscaleCurrentPriceAndGradient();
+    TestAreaFillAndLineLikeSemantics();
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
     std::cout << "ChartEngineTests passed\n";

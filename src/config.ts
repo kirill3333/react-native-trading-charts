@@ -73,6 +73,10 @@ function color(value: string, name: string): string {
   return value;
 }
 
+function colorWithAlpha(value: string, alpha: string): string {
+  return `${value.slice(0, 7)}${alpha}`;
+}
+
 function nonEmpty(value: string, name: string): string {
   if (value.trim().length === 0) {
     throw new TypeError(`${name} must be a non-empty string`);
@@ -371,14 +375,47 @@ function resolveAppearance(
             'appearance.line.gradient.bottomColor'
           ),
         };
+  const areaWidth = finitePositive(
+    input?.area?.width ?? 2,
+    'appearance.area.width'
+  );
+  const areaColor = color(
+    input?.area?.color ?? theme.upColor,
+    'appearance.area.color'
+  );
+  const areaGradient = input?.area?.gradient;
+  const resolvedAreaGradient =
+    areaGradient == null
+      ? undefined
+      : {
+          topColor: color(
+            areaGradient.topColor,
+            'appearance.area.gradient.topColor'
+          ),
+          bottomColor: color(
+            areaGradient.bottomColor,
+            'appearance.area.gradient.bottomColor'
+          ),
+        };
+  const areaFill = {
+    topColor: color(
+      input?.area?.fill?.topColor ?? colorWithAlpha(areaColor, '40'),
+      'appearance.area.fill.topColor'
+    ),
+    bottomColor: color(
+      input?.area?.fill?.bottomColor ?? colorWithAlpha(areaColor, '00'),
+      'appearance.area.fill.bottomColor'
+    ),
+  };
   let activeUpColor = upColor;
   let activeDownColor = downColor;
   if (seriesType === 'bar') {
     activeUpColor = barUpColor;
     activeDownColor = barDownColor;
-  } else if (seriesType === 'line') {
-    activeUpColor = lineColor;
-    activeDownColor = lineColor;
+  } else if (seriesType === 'line' || seriesType === 'area') {
+    const activeColor = seriesType === 'area' ? areaColor : lineColor;
+    activeUpColor = activeColor;
+    activeDownColor = activeColor;
   }
   const axisColor = color(theme.axisTextColor, 'theme.axisTextColor');
   const crosshairColor = color(
@@ -412,6 +449,14 @@ function resolveAppearance(
       ...(resolvedLineGradient == null
         ? null
         : { gradient: resolvedLineGradient }),
+    },
+    area: {
+      width: areaWidth,
+      color: areaColor,
+      ...(resolvedAreaGradient == null
+        ? null
+        : { gradient: resolvedAreaGradient }),
+      fill: areaFill,
     },
     xAxis: {
       text: resolveTextStyle(
@@ -674,13 +719,14 @@ export function resolveAdditionalSeriesOptions(
       options.type !== 'candlestick' &&
       options.type !== 'hollowCandlestick' &&
       options.type !== 'bar' &&
-      options.type !== 'line'
+      options.type !== 'line' &&
+      options.type !== 'area'
     ) {
       throw new TypeError(
-        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line' or 'histogram'`
+        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'histogram'`
       );
     }
-    if (options.type === 'line') {
+    if (options.type === 'line' || options.type === 'area') {
       const appearance = options.appearance;
       if (appearance?.width != null) {
         finitePositive(appearance.width, `${name}.appearance.width`);
@@ -697,6 +743,22 @@ export function resolveAdditionalSeriesOptions(
           appearance.gradient.bottomColor,
           `${name}.appearance.gradient.bottomColor`
         );
+      }
+      const areaFill =
+        options.type === 'area' ? options.appearance?.fill : undefined;
+      if (areaFill != null) {
+        if (areaFill.topColor != null) {
+          color(
+            areaFill.topColor,
+            `${name}.appearance.fill.topColor`
+          );
+        }
+        if (areaFill.bottomColor != null) {
+          color(
+            areaFill.bottomColor,
+            `${name}.appearance.fill.bottomColor`
+          );
+        }
       }
       return {
         ...options,
@@ -770,16 +832,17 @@ export function resolveChartConfig(
     seriesType !== 'candlestick' &&
     seriesType !== 'hollowCandlestick' &&
     seriesType !== 'bar' &&
-    seriesType !== 'line'
+    seriesType !== 'line' &&
+    seriesType !== 'area'
   ) {
     throw new TypeError(
-      "series.type must be 'candlestick', 'hollowCandlestick', 'bar' or 'line'"
+      "series.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line' or 'area'"
     );
   }
   const resolvedSeries =
-    seriesType === 'line'
+    seriesType === 'line' || seriesType === 'area'
       ? {
-          type: 'line' as const,
+          type: seriesType,
           source: ohlcValueSource(props.series?.source, 'series.source'),
           ...(props.series?.gapThresholdMs == null
             ? null
@@ -941,10 +1004,10 @@ export function resolveChartConfig(
       );
     }
     if (item.type !== 'histogram') {
-      if (item.type === 'line') {
+      if (item.type === 'line' || item.type === 'area') {
         const resolved = resolveAdditionalSeriesOptions(item, name);
-        if (resolved.type !== 'line') {
-          throw new TypeError(`${name}.type must remain 'line'`);
+        if (resolved.type !== item.type) {
+          throw new TypeError(`${name}.type must remain '${item.type}'`);
         }
         return resolved;
       }

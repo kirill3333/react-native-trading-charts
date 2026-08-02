@@ -91,6 +91,8 @@ enum class ConfigColorIndex : std::uint8_t {
   kLine = 48,
   kLineGradientTop = 52,
   kLineGradientBottom = 56,
+  kAreaFillTop = 60,
+  kAreaFillBottom = 64,
 };
 
 enum class SnapshotMetaIndex : std::uint8_t {
@@ -152,6 +154,7 @@ inline constexpr jsize kLegacyConfigNumberCount = 22;
 inline constexpr jsize kLegacyConfigColorCount = 32;
 inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
+inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
@@ -164,6 +167,8 @@ static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
 static_assert(ToIndex(ConfigColorIndex::kLineGradientBottom) +
                   kColorChannelCount ==
               kLineConfigColorCount);
+static_assert(ToIndex(ConfigColorIndex::kAreaFillBottom) + kColorChannelCount ==
+              kAreaConfigColorCount);
 
 ChartEngine* EngineFromHandle(jlong handle) {
   // JNI represents opaque native handles as jlong values.
@@ -255,7 +260,7 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
   std::array<jdouble, kConfigNumberCount> config_numbers{};
-  std::array<jfloat, kLineConfigColorCount> config_colors{};
+  std::array<jfloat, kAreaConfigColorCount> config_colors{};
   env->GetDoubleArrayRegion(
       numbers, 0,
       std::min(number_count, static_cast<jsize>(config_numbers.size())),
@@ -340,6 +345,8 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       config.series_type = SeriesType::kHollowCandlestick;
     } else if (series_type == 4.0) {
       config.series_type = SeriesType::kLine;
+    } else if (series_type == 5.0) {
+      config.series_type = SeriesType::kArea;
     }
   }
   config.bar_line_width =
@@ -393,6 +400,10 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     config.line_gradient_top = config.line;
     config.line_gradient_bottom = config.line;
   }
+  if (color_count >= kAreaConfigColorCount) {
+    config.area_fill_top = color_at(ConfigColorIndex::kAreaFillTop);
+    config.area_fill_bottom = color_at(ConfigColorIndex::kAreaFillBottom);
+  }
   config.x_locale = StringAt(env, strings, 0, "en-GB");
   config.x_time_zone = StringAt(env, strings, 1, "UTC");
   config.y_locale = StringAt(env, strings, 2, "en-GB");
@@ -445,9 +456,9 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   const auto values = CopyDoubles(env, numbers);
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
-  std::array<jfloat, 20> color_values{};
+  std::array<jfloat, 28> color_values{};
   env->GetFloatArrayRegion(colors, 0,
-                           std::min(color_count, static_cast<jsize>(20)),
+                           std::min(color_count, static_cast<jsize>(28)),
                            color_values.data());
   const auto color_at = [&](size_t offset) {
     return Color{color_values[offset], color_values[offset + 1],
@@ -467,6 +478,8 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
     series.type = SeriesType::kHistogram;
   } else if (type == 4) {
     series.type = SeriesType::kLine;
+  } else if (type == 5) {
+    series.type = SeriesType::kArea;
   }
   series.source =
       values[1] == 1.0 ? SeriesSource::kOhlcvVolume : SeriesSource::kData;
@@ -491,6 +504,10 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   } else {
     series.line_gradient_top = series.color;
     series.line_gradient_bottom = series.color;
+  }
+  if (color_count >= 28) {
+    series.area_fill_top = color_at(20);
+    series.area_fill_bottom = color_at(24);
   }
   return StatusValue(instance->AddSeries(series));
 }

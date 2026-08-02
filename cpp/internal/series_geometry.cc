@@ -20,6 +20,7 @@ constexpr size_t kCandlestickQuadsPerSample = 2;
 constexpr size_t kHollowCandlestickQuadsPerSample = 6;
 constexpr size_t kBarQuadsPerSample = 3;
 constexpr size_t kLineQuadsPerSample = 8;
+constexpr size_t kAreaQuadsPerSample = kLineQuadsPerSample + 1;
 constexpr float kBarTickSlotRatio = 0.45f;
 constexpr float kLineMiterLimit = 4.0f;
 
@@ -555,14 +556,63 @@ void AppendBarGeometry(const SeriesGeometryInput& input,
   });
 }
 
-void AppendLineGeometry(const SeriesGeometryInput& input,
-                        std::vector<float>& vertices) {
+Color AreaFillColorAtY(const SeriesGeometryInput& input, float y) {
+  const float height = input.plot.Height();
+  if (!(height > 0.0f)) {
+    return input.config.area_fill_bottom;
+  }
+  const float amount = std::clamp((y - input.plot.top) / height, 0.0f, 1.0f);
+  return InterpolateColor(input.config.area_fill_top,
+                          input.config.area_fill_bottom, amount);
+}
+
+class AreaFillBuilder {
+ public:
+  AreaFillBuilder(const SeriesGeometryInput& input,
+                  std::vector<float>& vertices)
+      : input_(input), vertices_(vertices) {}
+
+  void AddPoint(const LinePoint& point) {
+    if (!has_previous_) {
+      previous_ = point;
+      has_previous_ = true;
+      return;
+    }
+    if (previous_.x == point.x && previous_.y == point.y) {
+      previous_ = point;
+      return;
+    }
+    const ColoredVertex previous_top{previous_.x, previous_.y,
+                                     AreaFillColorAtY(input_, previous_.y)};
+    const ColoredVertex current_top{point.x, point.y,
+                                    AreaFillColorAtY(input_, point.y)};
+    const ColoredVertex current_bottom{point.x, input_.plot.bottom,
+                                       input_.config.area_fill_bottom};
+    const ColoredVertex previous_bottom{previous_.x, input_.plot.bottom,
+                                        input_.config.area_fill_bottom};
+    AppendClippedTriangle(vertices_, previous_top, current_top, current_bottom,
+                          input_.plot);
+    AppendClippedTriangle(vertices_, previous_top, current_bottom,
+                          previous_bottom, input_.plot);
+    previous_ = point;
+  }
+
+  void Finish() { has_previous_ = false; }
+
+ private:
+  const SeriesGeometryInput& input_;
+  std::vector<float>& vertices_;
+  LinePoint previous_;
+  bool has_previous_ = false;
+};
+
+template <typename Builder>
+void AppendLinePath(const SeriesGeometryInput& input, Builder& builder) {
   if (input.first_index >= input.end_index ||
       input.end_index > input.candles.size()) {
     return;
   }
 
-  LineStrokeBuilder stroke(input, vertices);
   std::vector<Candle>::const_iterator hint = input.candles.begin();
   if (input.logical_reference != nullptr) {
     hint = std::lower_bound(input.logical_reference->begin(),
@@ -596,7 +646,7 @@ void AppendLineGeometry(const SeriesGeometryInput& input,
     size_t previous_index = std::numeric_limits<size_t>::max();
     for (const LinePoint& point : points) {
       if (point.index != previous_index) {
-        stroke.AddPoint(point);
+        builder.AddPoint(point);
         previous_index = point.index;
       }
     }
@@ -621,7 +671,7 @@ void AppendLineGeometry(const SeriesGeometryInput& input,
         candle.timestamp - previous_timestamp >
             input.config.line_gap_threshold_ms) {
       flush_bucket();
-      stroke.Finish();
+      builder.Finish();
     }
     previous_timestamp = candle.timestamp;
     has_previous_timestamp = true;
@@ -647,7 +697,21 @@ void AppendLineGeometry(const SeriesGeometryInput& input,
     bucket_last = point;
   }
   flush_bucket();
-  stroke.Finish();
+  builder.Finish();
+}
+
+void AppendLineGeometry(const SeriesGeometryInput& input,
+                        std::vector<float>& vertices) {
+  LineStrokeBuilder stroke(input, vertices);
+  AppendLinePath(input, stroke);
+}
+
+void AppendAreaGeometry(const SeriesGeometryInput& input,
+                        std::vector<float>& vertices) {
+  AreaFillBuilder fill(input, vertices);
+  AppendLinePath(input, fill);
+  LineStrokeBuilder stroke(input, vertices);
+  AppendLinePath(input, stroke);
 }
 
 }  // namespace
@@ -664,6 +728,8 @@ size_t SeriesQuadsPerSample(SeriesType type) {
       return 1;
     case SeriesType::kLine:
       return kLineQuadsPerSample;
+    case SeriesType::kArea:
+      return kAreaQuadsPerSample;
   }
   return kCandlestickQuadsPerSample;
 }
@@ -672,12 +738,13 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
   if (input.config.series_type == SeriesType::kHistogram) {
     return 0;
   }
-  if (input.config.series_type == SeriesType::kLine) {
+  if (IsLineLikeSeries(input.config.series_type)) {
     const size_t visible_count = input.end_index - input.first_index;
     const size_t columns =
         static_cast<size_t>(std::max(1.0f, std::ceil(input.plot.Width()))) + 2;
     const size_t point_count = std::min(visible_count, columns * 4);
-    return point_count * kLineQuadsPerSample * kFloatsPerQuad;
+    return point_count * SeriesQuadsPerSample(input.config.series_type) *
+           kFloatsPerQuad;
   }
   return SampleCount(input) * SeriesQuadsPerSample(input.config.series_type) *
          kFloatsPerQuad;
@@ -699,6 +766,9 @@ void AppendSeriesGeometry(const SeriesGeometryInput& input,
       return;
     case SeriesType::kLine:
       AppendLineGeometry(input, vertices);
+      return;
+    case SeriesType::kArea:
+      AppendAreaGeometry(input, vertices);
       return;
   }
 }

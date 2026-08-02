@@ -5,6 +5,24 @@ import java.nio.ByteBuffer
 
 private const val CONTENT_FLOATS_PER_VERTEX = 6
 
+private fun String.nativeSeriesType() =
+    when (this) {
+      "bar" -> 1.0
+      "hollowCandlestick" -> 2.0
+      "histogram" -> 3.0
+      "line" -> 4.0
+      "area" -> 5.0
+      else -> 0.0
+    }
+
+private fun String.nativeLineSource() =
+    when (this) {
+      "open" -> 0.0
+      "high" -> 1.0
+      "low" -> 2.0
+      else -> 3.0
+    }
+
 internal data class AxisTick(val value: Double, val position: Float)
 
 internal data class PriceExtremumSnapshot(
@@ -294,13 +312,15 @@ internal object ChartEngineNative {
   }
 
   fun addSeries(handle: Long, series: SeriesConfig): Int {
-    val colors = FloatArray(20)
+    val colors = FloatArray(28)
     listOf(
             series.color,
             series.upColor,
             series.downColor,
             series.lineGradientTopColor,
             series.lineGradientBottomColor,
+            series.areaFillTopColor,
+            series.areaFillBottomColor,
         )
         .forEachIndexed { index, color ->
           colors[index * 4] = Color.red(color) / 255f
@@ -317,23 +337,12 @@ internal object ChartEngineNative {
             series.sourceSeriesId,
         ),
         doubleArrayOf(
-            when (series.type) {
-              "bar" -> 1.0
-              "hollowCandlestick" -> 2.0
-              "histogram" -> 3.0
-              "line" -> 4.0
-              else -> 0.0
-            },
+            series.type.nativeSeriesType(),
             if (series.sourceType == "ohlcvVolume") 1.0 else 0.0,
             if (series.visible) 1.0 else 0.0,
             if (series.declarative) 1.0 else 0.0,
             series.lineWidthPx.toDouble(),
-            when (series.lineSource) {
-              "open" -> 0.0
-              "high" -> 1.0
-              "low" -> 2.0
-              else -> 3.0
-            },
+            series.lineSource.nativeLineSource(),
             if (series.lineGradientEnabled) 1.0 else 0.0,
             series.lineGapThresholdMs,
         ),

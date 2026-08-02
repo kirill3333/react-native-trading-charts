@@ -24,6 +24,11 @@ const STANDARD_APPEARANCE: ChartAppearance = {
     color: '#2E90F5',
     gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
   },
+  area: {
+    width: 2.5,
+    color: '#2E90F5',
+    fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+  },
   xAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   yAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
   priceExtremes: {
@@ -69,6 +74,11 @@ const HIGH_CONTRAST_APPEARANCE: ChartAppearance = {
     width: 2.5,
     color: '#2E90F5',
     gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
+  },
+  area: {
+    width: 2.5,
+    color: '#60A5FA',
+    fill: { topColor: '#60A5FA80', bottomColor: '#60A5FA00' },
   },
   xAxis: {
     text: { color: '#FFFFFF', fontSize: 11, fontWeight: 'semibold' },
@@ -219,8 +229,8 @@ export function buildChartViewConfig(
 
   return {
     series:
-      settings.seriesType === 'line'
-        ? { type: 'line', source: 'close' }
+      settings.seriesType === 'line' || settings.seriesType === 'area'
+        ? { type: settings.seriesType, source: 'close' }
         : { type: settings.seriesType },
     appearance: {
       ...appearancePreset,

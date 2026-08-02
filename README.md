@@ -225,6 +225,31 @@ value while crosshair selection remains full OHLCV. Missing timestamps are
 connected by default; when `gapThresholdMs` is provided, larger gaps split the
 line. Gradient colors are evaluated vertically inside the series pane.
 
+Use `'area'` for the same OHLC source and gap semantics with a filled region
+under the line. The fill uses one vertical gradient across the full pane, so a
+given screen height has the same color and opacity across the chart:
+
+```tsx
+<TradingChartsView
+  chartId="area"
+  series={{ type: 'area', source: 'close', gapThresholdMs: 300_000 }}
+  appearance={{
+    area: {
+      width: 2.5,
+      color: '#2E90F5',
+      fill: {
+        topColor: '#2E90F566',
+        bottomColor: '#2E90F500',
+      },
+    },
+  }}
+/>
+```
+
+When fill colors are omitted, the area uses the line RGB with approximately
+25% alpha at the pane top and zero alpha at the pane bottom. Both colors accept
+`#RRGGBB` and `#RRGGBBAA`.
+
 ### Multiple panes, series, and volume
 
 All panes share the `main` series time viewport while keeping independent
@@ -299,8 +324,9 @@ TradingCharts.setPaneHeight('btc-1m', 'volume', 1.5);
 ```
 
 The additional supported OHLC types are `candlestick`,
-`hollowCandlestick`, `bar`, and `line`. Additional line series accept the same
-`source`, `gapThresholdMs`, and `appearance` fields:
+`hollowCandlestick`, `bar`, `line`, and `area`. Additional line and area series
+accept the same `source`, `gapThresholdMs`, and stroke `appearance` fields;
+area appearance also accepts `fill`:
 
 ```tsx
 TradingCharts.addSeries('btc-1m', {
@@ -310,6 +336,19 @@ TradingCharts.addSeries('btc-1m', {
   priceScaleId: 'main',
   source: 'high',
   appearance: { width: 2, color: '#FFAA00' },
+});
+
+TradingCharts.addSeries('btc-1m', {
+  seriesId: 'area-comparison',
+  type: 'area',
+  paneId: 'main',
+  priceScaleId: 'main',
+  source: 'close',
+  appearance: {
+    width: 2,
+    color: '#2E90F5',
+    fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+  },
 });
 ```
 

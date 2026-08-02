@@ -229,6 +229,38 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('resolves imperative area series options before sending them', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'area-comparison',
+      type: 'area',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: 'close',
+      gapThresholdMs: 180_000,
+      appearance: {
+        width: 3,
+        color: '#2E90F5',
+        fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+      },
+    });
+
+    const call = mockNativeModule.addSeries.mock.calls[0]!;
+    expect(JSON.parse(call[1] as string)).toEqual({
+      seriesId: 'area-comparison',
+      type: 'area',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: 'close',
+      gapThresholdMs: 180_000,
+      visible: true,
+      appearance: {
+        width: 3,
+        color: '#2E90F5',
+        fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+      },
+    });
+  });
+
   it('rejects invalid imperative addSeries options', () => {
     expect(() =>
       resolveAdditionalSeriesOptions({
@@ -250,7 +282,7 @@ describe('TradingCharts data API', () => {
     expect(() =>
       resolveAdditionalSeriesOptions({
         seriesId: 'comparison',
-        type: 'area' as 'bar',
+        type: 'mountain' as 'bar',
         paneId: 'main',
         priceScaleId: 'main',
       })
@@ -950,6 +982,51 @@ describe('chart config', () => {
     });
   });
 
+  it('resolves area defaults, fill colors and line-like semantics', () => {
+    const defaults = resolveChartConfig({
+      chartId: 'area-defaults',
+      series: { type: 'area' },
+      theme: { upColor: '#2E90F5' },
+    });
+    expect(defaults.series).toEqual({ type: 'area', source: 'close' });
+    expect(defaults.appearance.area).toEqual({
+      width: 2,
+      color: '#2E90F5',
+      fill: { topColor: '#2E90F540', bottomColor: '#2E90F500' },
+    });
+
+    const custom = resolveChartConfig({
+      chartId: 'area-custom',
+      series: { type: 'area', source: 'high', gapThresholdMs: 90_000 },
+      appearance: {
+        area: {
+          width: 2.5,
+          color: '#3366FF',
+          gradient: { topColor: '#66AAFF', bottomColor: '#2244AA' },
+          fill: { topColor: '#3366FF80', bottomColor: '#11224400' },
+        },
+      },
+    });
+    expect(custom.series).toEqual({
+      type: 'area',
+      source: 'high',
+      gapThresholdMs: 90_000,
+    });
+    expect(custom.appearance.area).toEqual({
+      width: 2.5,
+      color: '#3366FF',
+      gradient: { topColor: '#66AAFF', bottomColor: '#2244AA' },
+      fill: { topColor: '#3366FF80', bottomColor: '#11224400' },
+    });
+    expect(custom.appearance.currentPrice).toMatchObject({
+      line: { upColor: '#3366FF', downColor: '#3366FF' },
+      label: {
+        upBackgroundColor: '#3366FF',
+        downBackgroundColor: '#3366FF',
+      },
+    });
+  });
+
   it('resolves independent native date and price formatters', () => {
     const resolved = resolveChartConfig({
       chartId: 'formatters',
@@ -1011,7 +1088,7 @@ describe('chart config', () => {
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-series',
-        series: { type: 'area' as never },
+        series: { type: 'mountain' as never },
       })
     ).toThrow('series.type');
     expect(() =>
@@ -1032,6 +1109,12 @@ describe('chart config', () => {
         appearance: { line: { width: 0 } },
       })
     ).toThrow('appearance.line.width');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-area-fill',
+        appearance: { area: { fill: { topColor: 'blue' } } },
+      })
+    ).toThrow('appearance.area.fill.topColor');
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-bar-width',

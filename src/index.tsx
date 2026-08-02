@@ -5,6 +5,7 @@ export type { TradeBatcher, TradeBatcherOptions } from './tradeBatcher';
 export type {
   ChartTheme,
   ChartAppearance,
+  ChartAreaAppearance,
   ChartLineAppearance,
   ChartBadgeStyle,
   ChartBorderStyle,

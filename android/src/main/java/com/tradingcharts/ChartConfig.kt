@@ -88,6 +88,8 @@ internal data class SeriesConfig(
     val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
     val lineGradientEnabled: Boolean = false,
     val lineGapThresholdMs: Double = 0.0,
+    val areaFillTopColor: Int = Color.argb(64, 56, 217, 138),
+    val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
 )
 
 internal data class ChartConfig(
@@ -110,6 +112,13 @@ internal data class ChartConfig(
     val lineColor: Int = Color.rgb(56, 217, 138),
     val lineGradientTopColor: Int = Color.rgb(56, 217, 138),
     val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
+    val areaLineWidthPx: Float = 2f,
+    val areaLineColor: Int = Color.rgb(56, 217, 138),
+    val areaLineGradientEnabled: Boolean = false,
+    val areaLineGradientTopColor: Int = Color.rgb(56, 217, 138),
+    val areaLineGradientBottomColor: Int = Color.rgb(56, 217, 138),
+    val areaFillTopColor: Int = Color.argb(64, 56, 217, 138),
+    val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
     val crosshairColor: Int = Color.rgb(168, 162, 179),
     val tooltipBackgroundColor: Int = Color.rgb(27, 23, 35),
     val tooltipTextColor: Int = Color.rgb(245, 242, 250),
@@ -205,48 +214,51 @@ internal data class ChartConfig(
     val additionalSeries: List<SeriesConfig> = emptyList(),
     val panesResizable: Boolean = false,
 ) {
-  fun nativeNumbers() =
-      doubleArrayOf(
-          timeframeMs,
-          initialVisibleCount.toDouble(),
-          showXAxis.nativeDouble(),
-          xAxisHeight.toDouble(),
-          showSeconds.nativeDouble(),
-          showYAxis.nativeDouble(),
-          yAxisOnRight.nativeDouble(),
-          yAxisWidth.toDouble(),
-          valueFormat.compact.nativeDouble(),
-          valueFormat.precision.toDouble(),
-          valueFormat.minMove,
-          valueFormat.useGrouping.nativeDouble(),
-          allowPan.nativeDouble(),
-          allowZoom.nativeDouble(),
-          showCurrentPrice.nativeDouble(),
-          showCurrentPriceLabel.nativeDouble(),
-          crosshairEnabled.nativeDouble(),
-          showTooltip.nativeDouble(),
-          yScaleMarginTop,
-          yScaleMarginBottom,
-          displayScale.toDouble(),
-          logicalSpacing.nativeDouble(),
-          pinCurrentPriceToEdge.nativeDouble(),
-          showPriceExtremes.nativeDouble(),
-          defaultScale,
-          crosshairDashed.nativeDouble(),
-          tooltipBackgroundOpacity.toDouble(),
-          gridOpacity.toDouble(),
-          crosshairOpacity.toDouble(),
-          defaultYScale,
-          allowYAxisScale.nativeDouble(),
-          seriesType.nativeSeriesType(),
-          barLineWidthPx.toDouble(),
-          lineSource.nativeLineSource(),
-          lineWidthPx.toDouble(),
-          lineGradientEnabled.nativeDouble(),
-          lineGapThresholdMs,
-      )
+  fun nativeNumbers(): DoubleArray {
+    val area = seriesType == "area"
+    return doubleArrayOf(
+        timeframeMs,
+        initialVisibleCount.toDouble(),
+        showXAxis.nativeDouble(),
+        xAxisHeight.toDouble(),
+        showSeconds.nativeDouble(),
+        showYAxis.nativeDouble(),
+        yAxisOnRight.nativeDouble(),
+        yAxisWidth.toDouble(),
+        valueFormat.compact.nativeDouble(),
+        valueFormat.precision.toDouble(),
+        valueFormat.minMove,
+        valueFormat.useGrouping.nativeDouble(),
+        allowPan.nativeDouble(),
+        allowZoom.nativeDouble(),
+        showCurrentPrice.nativeDouble(),
+        showCurrentPriceLabel.nativeDouble(),
+        crosshairEnabled.nativeDouble(),
+        showTooltip.nativeDouble(),
+        yScaleMarginTop,
+        yScaleMarginBottom,
+        displayScale.toDouble(),
+        logicalSpacing.nativeDouble(),
+        pinCurrentPriceToEdge.nativeDouble(),
+        showPriceExtremes.nativeDouble(),
+        defaultScale,
+        crosshairDashed.nativeDouble(),
+        tooltipBackgroundOpacity.toDouble(),
+        gridOpacity.toDouble(),
+        crosshairOpacity.toDouble(),
+        defaultYScale,
+        allowYAxisScale.nativeDouble(),
+        seriesType.nativeSeriesType(),
+        barLineWidthPx.toDouble(),
+        lineSource.nativeLineSource(),
+        (if (area) areaLineWidthPx else lineWidthPx).toDouble(),
+        (if (area) areaLineGradientEnabled else lineGradientEnabled).nativeDouble(),
+        lineGapThresholdMs,
+    )
+  }
 
   fun nativeColors(): FloatArray {
+    val area = seriesType == "area"
     val values =
         intArrayOf(
             backgroundColor,
@@ -261,9 +273,11 @@ internal data class ChartConfig(
             currentPriceLineDownColor,
             currentPriceLabelUpColor,
             currentPriceLabelDownColor,
-            lineColor,
-            lineGradientTopColor,
-            lineGradientBottomColor,
+            if (area) areaLineColor else lineColor,
+            if (area) areaLineGradientTopColor else lineGradientTopColor,
+            if (area) areaLineGradientBottomColor else lineGradientBottomColor,
+            areaFillTopColor,
+            areaFillBottomColor,
         )
     return FloatArray(values.size * 4).also { output ->
       values.forEachIndexed { index, color ->
@@ -310,6 +324,7 @@ private fun String.nativeSeriesType() =
       "bar" -> 1.0
       "hollowCandlestick" -> 2.0
       "line" -> 4.0
+      "area" -> 5.0
       else -> 0.0
     }
 

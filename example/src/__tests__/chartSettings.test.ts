@@ -116,6 +116,21 @@ describe('chart settings', () => {
     });
   });
 
+  it('switches the example to the close area preset', () => {
+    const config = buildChartViewConfig(
+      settingsWith({ seriesType: 'area' }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 },
+      'Europe/London'
+    );
+
+    expect(config.series).toEqual({ type: 'area', source: 'close' });
+    expect(config.appearance.area).toEqual({
+      width: 2.5,
+      color: '#2E90F5',
+      fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+    });
+  });
+
   it('builds the complete high contrast and formatting presets', () => {
     const config = buildChartViewConfig(
       settingsWith({
