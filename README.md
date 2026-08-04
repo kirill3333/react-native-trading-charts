@@ -1,26 +1,97 @@
 # react-native-trading-charts
 
-Native OHLC charts for React Native's New Architecture. A shared C++ engine owns
-the candle store, raw-trade aggregation, viewport, autoscale and render snapshots;
-Metal on iOS and GLES3 on Android draw the chart on demand.
+`react-native-trading-charts` is a high-speed, resource-efficient React Native
+library for rendering live and historical trading data from traditional and
+crypto markets. React owns configuration and data delivery; native code owns
+chart state, gestures, geometry, and rendering.
+
+The library uses a shared C++ chart and geometry engine, Metal on iOS, and
+OpenGL ES 3 on Android. Frames are rendered on demand, immutable snapshots are
+reused between updates, and high-frequency trade streams can be batched before
+they cross the native boundary.
+
+## Why Native Trading Charts?
+
+React Native trading charts are commonly built with either a WebView or a
+general-purpose 2D engine such as Skia. Both are useful tools, but each carries
+costs that are unnecessary for a purpose-built OHLC renderer.
+
+A WebView embeds a browser runtime and its view lifecycle. Chart updates pass
+through an additional execution context, while the browser still handles the
+JavaScript, DOM, CSS, layout, and rendering pipeline required by the charting
+application. That flexibility is valuable for reusing web charts, but it makes
+native performance and resource usage harder to control.
+
+Skia provides an extensive cross-platform 2D graphics API. Trading charts need
+only a small subset of that functionality, while the application still carries
+the runtime and memory cost of a general-purpose graphics engine.
+
+`react-native-trading-charts` takes a narrower approach: trading semantics and
+geometry live in a small shared C++ engine, while each platform uses its native
+GPU API and native text stack. The result is designed specifically for dense,
+frequently updated market data without introducing a browser or a third-party
+2D rendering runtime.
+
+## Key Features
+
+- **Zero third-party runtime dependencies beyond React Native.** React and
+  React Native are peer dependencies; the package does not add a browser,
+  graphics framework, or utility runtime.
+- **Shared C++ engine and geometry.** Candle storage, raw-trade aggregation,
+  viewport behavior, autoscale, ticks, selection, and tessellation are shared
+  by iOS and Android.
+- **Native GPU rendering.** Metal renders on iOS and OpenGL ES 3 renders on
+  Android.
+- **Resource-efficient frames.** Rendering is on demand, unchanged snapshots
+  are cached, and content geometry is reused for crosshair-only updates.
+- **Multiple display types.** Candlestick, hollow candlestick, OHLC bar, line,
+  area, and histogram series are supported.
+- **Multiple panes and series.** Add independently scaled panes, derived volume,
+  comparison series, and custom histogram data.
+- **Detailed presentation control.** Configure themes, role-specific styles,
+  native number/date formatting, axes, badges, and tooltips.
+- **Streaming-ready data APIs.** Send completed candles, raw trades, batches,
+  or use the built-in trade batcher to reduce native calls.
+- **Native interaction.** Pan, pinch zoom, Y-axis scaling, momentum, crosshair,
+  current-price overlays, and visible extrema are handled natively.
 
 ## Installation
 
-```sh
-npm install react-native-trading-charts
-cd ios && pod install
-```
+> **TODO:** npm installation commands will be added here.
 
-The first release supports Fabric/New Architecture applications on iOS and
-Android.
+## Table of Contents
 
-## Usage
+- [Quick Start](#quick-start)
+- [Data and Streaming](#data-and-streaming)
+- [Series Types](#series-types)
+  - [Candlestick](#candlestick)
+  - [Hollow Candlestick](#hollow-candlestick)
+  - [OHLC Bar](#ohlc-bar)
+  - [Line](#line)
+  - [Area](#area)
+  - [Histogram](#histogram)
+- [Styling and Theming](#styling-and-theming)
+- [Multiple Panes and Additional Series](#multiple-panes-and-additional-series)
+- [Time, Resolution, and Trade Aggregation](#time-resolution-and-trade-aggregation)
+- [Axes and Value Formatting](#axes-and-value-formatting)
+- [Gestures and Viewport](#gestures-and-viewport)
+- [Crosshair and Price Overlays](#crosshair-and-price-overlays)
+- [Events](#events)
+- [Imperative API](#imperative-api)
+- [Architecture and Performance](#architecture-and-performance)
+- [Platform Support and Limitations](#platform-support-and-limitations)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Quick Start
+
+Create a view with a stable `chartId`, then send data to that ID through
+`TradingCharts`:
 
 ```tsx
 import {
   TradingCharts,
   TradingChartsView,
-  createTradeBatcher,
   type OhlcCandle,
 } from 'react-native-trading-charts';
 
@@ -35,68 +106,19 @@ const history: OhlcCandle[] = [
   },
 ];
 
-export function Chart() {
+export function BtcChart() {
   return (
     <TradingChartsView
       style={{ flex: 1 }}
       chartId="btc-1m"
       resolution={{ unit: 'minute' }}
-      initialVisibleCount={100}
-      defaultScale={1.25}
       series={{ type: 'candlestick' }}
-      xAxis={{ locale: 'en-GB', timeZone: 'UTC', spacing: 'time' }}
-      yAxis={{
-        position: 'right',
-        defaultScale: 1,
-        scaleMargins: { top: 0.2, bottom: 0.1 },
-        valueFormat: {
-          type: 'price',
-          precision: 2,
-          minMove: 0.01,
-          locale: 'en-GB',
-        },
-      }}
-      gestures={{ pan: true, zoom: true, yAxisScale: true }}
-      currentPrice={{ visible: true, showLabel: true, pinToEdge: true }}
-      priceExtremes={{ visible: true }}
-      theme={{
-        crosshairColor: '#A8A2B3',
-        tooltipBackgroundColor: '#1B1723',
-        tooltipTextColor: '#F5F2FA',
-      }}
-      crosshair={{
-        enabled: true,
-        showTooltip: true,
-        tooltipBackgroundOpacity: 0.85,
-        lineStyle: 'dashed',
-        tooltipLabels: {
-          open: 'Open',
-          close: 'Close',
-          high: 'High',
-          low: 'Low',
-          amplitude: 'Amplitude',
-          changePercent: 'Change %',
-          change: 'Change',
-          volume: 'Volume',
-        },
-      }}
-      onSelectedCandleChange={(candle) => {
-        // `null` is emitted once when the crosshair selection is cleared.
-        console.log('Selected candle', candle);
-      }}
-      onScaleChange={({ scale }) => {
-        console.log('Horizontal scale', scale);
-      }}
-      onYAxisScaleChange={({ scale }) => {
-        console.log('Y-axis scale', scale);
-      }}
     />
   );
 }
 
 TradingCharts.setHistory('btc-1m', history);
 
-// A ready WebSocket kline can replace the current candle or append a new one.
 TradingCharts.updateCandle('btc-1m', {
   timestamp: 1_720_000_060_000,
   open: 64_633,
@@ -105,46 +127,458 @@ TradingCharts.updateCandle('btc-1m', {
   close: 64_642,
   volume: 3.1,
 });
-
-// Raw trades are aggregated according to resolution/tradeAggregation in C++.
-TradingCharts.updateTrade('btc-1m', {
-  timestamp: Date.now(),
-  price: 64_642,
-  size: 0.02,
-});
-
-// Prefer batches for burst/high-frequency feeds.
-TradingCharts.updateTrades('btc-1m', incomingTrades);
-
-// For high-frequency streams that deliver one trade at a time, the batcher
-// reduces JS-to-native calls by forwarding one updateTrades call per interval.
-const batcher = createTradeBatcher('btc-1m', { intervalMs: 32 });
-ws.onmessage = (message) => batcher.add(parseTrade(message));
-
-// Programmatic zoom is anchored to the right edge of the visible range.
-// Values greater than 1 zoom in; values between 0 and 1 zoom out.
-TradingCharts.zoom('btc-1m', 1.25);
-
-// Show the complete loaded history and restore automatic Y scaling.
-TradingCharts.fitContent('btc-1m');
-
-// Read an atomic copy of every candle currently stored by the native engine.
-const currentCandles = await TradingCharts.getCandles('btc-1m');
 ```
 
-`chartId` must be unique and stable while the view is mounted. Calls made before
-mount are retained by the native registry and replayed when that chart registers.
-The library does not open a WebSocket; networking and reconnect logic stay in the
-application.
+`chartId` must be unique and stable while the view is mounted. Write commands
+sent before mount are retained by the native registry and replayed when the
+matching chart registers. Reads are not queued.
 
-Raw trades must be ordered by non-decreasing millisecond timestamp. Empty time
-buckets are not synthesized. A trade in the final history bucket continues that
-candle; an older trade is ignored with a development warning.
+The library does not open a WebSocket or make network requests. The consuming
+application owns subscriptions, authentication, reconnect logic, parsing, and
+delivery of market data.
 
-### Trading time and aggregation
+### `TradingChartsView` props
 
-`resolution` describes market time rather than an arbitrary millisecond
-duration:
+The component also accepts standard React Native `ViewProps`, including
+`style` and accessibility props.
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `chartId` | `string` | Required | Unique, non-empty ID used by the imperative API and native registry. |
+| `resolution` | `ChartResolution` | `{ unit: 'minute', multiplier: 1 }` | Raw-trade aggregation interval. |
+| `tradeAggregation` | `TradeAggregationOptions` | Epoch-aligned, ignore out-of-session trades | Calendar and bucket behavior for raw trades. |
+| `initialVisibleCount` | Positive integer | `100` | Number of candles targeted by the initial viewport. |
+| `defaultScale` | Positive number | `1` | Initial horizontal zoom applied after `initialVisibleCount`. |
+| `series` | `ChartSeriesOptions` | `{ type: 'candlestick' }` | Main-series display type and value source. |
+| `panes` | `ChartPaneOptions[]` | One `main` pane | Pane layout and pane price scales. |
+| `additionalSeries` | `AdditionalChartSeriesOptions[]` | `[]` | Series rendered in addition to the reserved `main` series. |
+| `panesResizable` | `boolean` | `true` when multiple panes exist | Enables dragging pane separators. |
+| `theme` | `ChartTheme` | Dark theme | High-level color tokens. |
+| `appearance` | `ChartAppearance` | Derived from `theme` | Role-specific native presentation. |
+| `formatters` | `ChartFormatters` | Derived from axis options | Role-specific date and price formats. |
+| `xAxis` | `XAxisOptions` | Visible, time spacing, UTC | Time-axis behavior and dimensions. |
+| `yAxis` | `YAxisOptions` | Visible on the right | Main price-axis behavior and formatting. |
+| `gestures` | `GestureOptions` | All enabled | Native pan, horizontal zoom, and Y-scale gestures. |
+| `currentPrice` | `CurrentPriceOptions` | Visible with edge-pinned label | Latest-price line and badge behavior. |
+| `priceExtremes` | `PriceExtremesOptions` | Visible | Visible high/low labels. |
+| `crosshair` | `CrosshairOptions` | Enabled with tooltip | Crosshair interaction and tooltip behavior. |
+| `onVisibleRangeChange` | `(event) => void` | `undefined` | Receives visible candle range changes. |
+| `onScaleChange` | `(event) => void` | `undefined` | Receives user-driven horizontal scale changes. |
+| `onYAxisScaleChange` | `(event) => void` | `undefined` | Receives user-driven main Y-scale changes. |
+| `onPaneResize` | `(event) => void` | `undefined` | Receives interactive pane size changes. |
+| `onPriceScaleChange` | `(event) => void` | `undefined` | Receives per-pane price-scale changes. |
+| `onSelectedCandleChange` | `(candle: OhlcCandle \| null) => void` | `undefined` | Receives crosshair selection changes. |
+
+## Data and Streaming
+
+The native engine stores OHLCV candles. You can provide ready candles from an
+exchange, aggregate raw trades in native code, or feed standalone data to an
+additional histogram series.
+
+### Data shapes
+
+#### `OhlcCandle`
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `timestamp` | Non-negative safe-integer milliseconds | Required | Candle timestamp. History must be strictly increasing. |
+| `open` | Finite number | Required | Opening price. |
+| `high` | Finite number | Required | Highest price. |
+| `low` | Finite number | Required | Lowest price. |
+| `close` | Finite number | Required | Closing price. |
+| `volume` | Finite number | `0` | Traded volume. Native storage cannot distinguish omitted volume from zero. |
+
+#### `TradeEvent`
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `timestamp` | Non-negative safe-integer milliseconds | Required | Trade time; batches must be non-decreasing. |
+| `price` | Finite number | Required | Executed trade price. |
+| `size` | Finite number | `0` | Executed size added to candle volume. |
+
+#### `HistogramPoint`
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `timestamp` | Non-negative safe-integer milliseconds | Required | Bar timestamp; arrays must be strictly increasing. |
+| `value` | Finite number | Required | Positive or negative histogram value. |
+
+### Loading and updating data
+
+| Method | Arguments | Returns | Description |
+| --- | --- | --- | --- |
+| `setHistory` | `chartId, OhlcCandle[]` | `void` | Replaces main history and restores configured initial scales. |
+| `prependHistory` | `chartId, OhlcCandle[]` | `void` | Prepends older, strictly ordered main history. |
+| `updateCandle` | `chartId, OhlcCandle` | `void` | Replaces the last candle at the same timestamp or appends a newer candle. |
+| `updateTrade` | `chartId, TradeEvent` | `void` | Aggregates one raw trade using the configured resolution. |
+| `updateTrades` | `chartId, TradeEvent[]` | `void` | Aggregates a non-decreasing batch in one native call. |
+| `setSeriesData` | `chartId, seriesId, points[]` | `void` | Replaces an additional series data set. |
+| `prependSeriesData` | `chartId, seriesId, points[]` | `void` | Prepends older additional-series data. |
+| `updateSeriesData` | `chartId, seriesId, point` | `void` | Replaces the last point or appends a newer one. |
+
+Ready candles keep their feed-provided timestamps; they are not forced onto raw
+trade buckets. `setHistory` and `prependHistory` require strictly increasing
+timestamps. Trade batches allow equal timestamps but not decreasing ones.
+Empty raw-trade buckets are not synthesized, and trades older than the current
+native aggregate are ignored.
+
+### High-frequency trade batching
+
+For feeds that deliver one trade per message, `createTradeBatcher` reduces
+JS-to-native calls by forwarding one batch per interval:
+
+```tsx
+import { createTradeBatcher } from 'react-native-trading-charts';
+
+const batcher = createTradeBatcher('btc-1m', { intervalMs: 32 });
+
+ws.onmessage = (message) => {
+  batcher.add(parseTrade(message.data));
+};
+
+// Flush before a controlled transition, then dispose on teardown.
+batcher.flush();
+batcher.dispose();
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `intervalMs` | Integer from `1` to `2_147_483_647` | `32` | Maximum delay before queued trades are forwarded. |
+
+| Batcher method | Arguments | Returns | Description |
+| --- | --- | --- | --- |
+| `add` | `TradeEvent` | `void` | Validates and queues one non-decreasing trade. |
+| `flush` | None | `void` | Immediately sends the queued batch. |
+| `dispose` | None | `void` | Cancels the timer, drops queued trades, and permanently stops the batcher. |
+
+## Series Types
+
+The main `series` changes how the same OHLCV store is rendered. It does not
+change the data shape returned by `getCandles` or selected by the crosshair.
+
+### Candlestick
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  series={{ type: 'candlestick' }}
+  appearance={{ candles: { upColor: '#00A88F', downColor: '#FF334F' } }}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `series.type` | `'candlestick'` | `'candlestick'` | Filled OHLC candle bodies with high/low wicks. |
+| `appearance.candles.upColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.upColor` | Color used when `close >= open`. |
+| `appearance.candles.downColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.downColor` | Color used when `close < open`. |
+
+### Hollow Candlestick
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  series={{ type: 'hollowCandlestick' }}
+  appearance={{ candles: { upColor: '#00A88F', downColor: '#FF334F' } }}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `series.type` | `'hollowCandlestick'` | — | Uses outlined rising bodies and filled falling bodies. |
+| `appearance.candles.upColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.upColor` | Rising outline and wick color. |
+| `appearance.candles.downColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.downColor` | Falling body and wick color. |
+
+The hollow outline uses the same native thickness as the wick.
+
+### OHLC Bar
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  series={{ type: 'bar' }}
+  appearance={{ bars: { upColor: '#00A88F', downColor: '#FF334F', lineWidth: 1 } }}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `series.type` | `'bar'` | — | Draws a high-low stem, left open tick, and right close tick. |
+| `appearance.bars.upColor` | Color | `appearance.candles.upColor` | Rising bar color. |
+| `appearance.bars.downColor` | Color | `appearance.candles.downColor` | Falling bar color. |
+| `appearance.bars.lineWidth` | Positive number | `1` | Width in iOS points or Android density-independent units. |
+
+### Line
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  series={{ type: 'line', source: 'close', gapThresholdMs: 300_000 }}
+  appearance={{ line: { width: 2, color: '#2E90F5' } }}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `series.type` | `'line'` | — | Renders one OHLC field as a tessellated line. |
+| `series.source` | `'open'`, `'high'`, `'low'`, `'close'` | `'close'` | Value used for geometry, autoscale, extrema, and current price. |
+| `series.gapThresholdMs` | Positive milliseconds | `undefined` | Splits the line when a timestamp gap exceeds this value. |
+| `appearance.line.width` | Positive number | `1.5` | Native stroke width. |
+| `appearance.line.color` | Color | `theme.upColor` | Solid line color and fallback active-series color. |
+| `appearance.line.gradient.topColor` | Color | `undefined` | Top color of an optional vertical stroke gradient. |
+| `appearance.line.gradient.bottomColor` | Color | `undefined` | Bottom color of an optional vertical stroke gradient. |
+
+### Area
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  series={{ type: 'area', source: 'close' }}
+  appearance={{
+    area: {
+      width: 2,
+      color: '#2E90F5',
+      fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
+    },
+  }}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `series.type` | `'area'` | — | Renders an OHLC source line with a pane-wide fill. |
+| `series.source` | `'open'`, `'high'`, `'low'`, `'close'` | `'close'` | Value used by the series. |
+| `series.gapThresholdMs` | Positive milliseconds | `undefined` | Splits line and fill across larger gaps. |
+| `appearance.area.width` | Positive number | `1.5` | Outline width. |
+| `appearance.area.color` | Color | `theme.upColor` | Outline color and base color for default fill. |
+| `appearance.area.gradient` | `{ topColor, bottomColor }` | `undefined` | Optional vertical gradient for the outline. |
+| `appearance.area.fill.topColor` | Color | Area color with `0x40` alpha | Fill color at the pane top. |
+| `appearance.area.fill.bottomColor` | Color | Area color with `0x00` alpha | Fill color at the pane bottom. |
+
+### Histogram
+
+Histogram is available as an additional series, not as the reserved main
+series. It can derive volume without copying it into a second JS data set or
+receive standalone `HistogramPoint` values.
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  panes={panes}
+  additionalSeries={[
+    {
+      seriesId: 'volume',
+      type: 'histogram',
+      paneId: 'volume',
+      priceScaleId: 'volume',
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+      appearance: { upColor: '#38D98A80', downColor: '#FF3B6480' },
+    },
+  ]}
+/>
+```
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `type` | `'histogram'` | Required | Selects histogram geometry. |
+| `source` | `{ type: 'data' }` or `{ type: 'ohlcvVolume', seriesId }` | `{ type: 'data' }` | Uses standalone points or derives volume from an OHLC series. |
+| `appearance.color` | Color | `theme.axisTextColor` | Color for standalone positive/negative values when directional colors are not selected by derived OHLC volume. |
+| `appearance.upColor` | Color | `theme.upColor` | Derived-volume color when source candle closes up. |
+| `appearance.downColor` | Color | `theme.downColor` | Derived-volume color when source candle closes down. |
+
+## Styling and Theming
+
+`theme` provides a compact set of color tokens. `appearance` targets individual
+roles and takes precedence over the corresponding theme value. Colors accept
+`#RRGGBB` or `#RRGGBBAA`.
+
+### Theme
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `backgroundColor` | Color | `#100C18` | Chart background. |
+| `gridColor` | Color | `#292431` | Grid fallback. |
+| `axisTextColor` | Color | `#9791A5` | Axis, extrema, and some additional-series fallback text/color. |
+| `upColor` | Color | `#38D98A` | Rising-series fallback. |
+| `downColor` | Color | `#FF3B64` | Falling-series fallback. |
+| `crosshairColor` | Color | `#A8A2B3` | Crosshair line and badge fallback. |
+| `tooltipBackgroundColor` | Color | `#1B1723` | Tooltip background fallback. |
+| `tooltipTextColor` | Color | `#F5F2FA` | Tooltip text fallback. |
+
+### Appearance groups
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `backgroundColor` | Color | `theme.backgroundColor` | Role-specific background override. |
+| `grid.color` | Color | `theme.gridColor` | Grid color. |
+| `grid.opacity` | Number from `0` to `1` | `0.75` | Grid alpha multiplier. |
+| `candles.upColor` / `downColor` | Color | Theme direction colors | Candlestick colors and bar fallbacks. |
+| `bars.*` | Bar appearance | Candle colors, width `1` | OHLC bar presentation. |
+| `line.*` | Line appearance | Theme up color, width `1.5` | Main line presentation. |
+| `area.*` | Area appearance | Theme up color, width `1.5` | Main area outline and fill. |
+| `xAxis.text` / `yAxis.text` | `ChartTextStyle` | `theme.axisTextColor` | Native axis text styles. |
+| `priceExtremes.*` | Text and colors | Axis/background colors | Visible high/low label presentation. |
+| `currentPrice.*` | Line and directional badge | Active-series colors | Latest-price presentation. |
+| `crosshair.*` | Line and badges | `theme.crosshairColor` | Selection line and axis badges. |
+| `tooltip.*` | Text, colors, opacity, border | Tooltip theme colors | OHLCV tooltip presentation. |
+
+#### Text, badge, and border properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `text.color` | Color | Role fallback | Text color. |
+| `text.fontFamily` | Non-empty string | Platform monospace | Font already bundled by the consuming application. |
+| `text.fontSize` | Positive number | Native role default | Points on iOS and scaled pixels on Android. |
+| `text.fontWeight` | `'regular'`, `'medium'`, `'semibold'`, `'bold'` | Native role default | Requested font weight. |
+| `badge.backgroundColor` | Color | Role fallback | Non-directional badge background. |
+| `badge.upBackgroundColor` | Color | Active up color | Current-price badge background for rising candles. |
+| `badge.downBackgroundColor` | Color | Active down color | Current-price badge background for falling candles. |
+| `badge.text` | `ChartTextStyle` | Role fallback | Badge text style. |
+| `badge.border` | `ChartBorderStyle` | Transparent, width `0` | Badge border. |
+| `border.color` | Color | `#00000000` | Border color. |
+| `border.width` | Non-negative number | `0` | Border width. |
+| `border.radius` | Non-negative number | `4` for badges, `8` for tooltip | Corner radius. |
+
+#### Overlay appearance properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `priceExtremes.text` | `ChartTextStyle` | Axis text style | High/low text. |
+| `priceExtremes.connectorColor` | Color | Axis text color | Connector line. |
+| `priceExtremes.backgroundColor` | Color | Chart background | Label backing color. |
+| `currentPrice.line.upColor` / `downColor` | Color | Active-series colors | Current-price line colors. |
+| `currentPrice.label` | `ChartDirectionalBadgeStyle` | Active-series backgrounds | Current-price badge. |
+| `crosshair.line.color` | Color | `theme.crosshairColor` | Crosshair line color. |
+| `crosshair.line.opacity` | Number from `0` to `1` | `0.85` | Crosshair line opacity. |
+| `crosshair.priceLabel` / `timeLabel` | `ChartBadgeStyle` | Crosshair-colored background | Crosshair axis badges. |
+| `tooltip.backgroundColor` | Color | `theme.tooltipBackgroundColor` | Tooltip panel color. |
+| `tooltip.backgroundOpacity` | Number from `0` to `1` | `crosshair.tooltipBackgroundOpacity` | Tooltip panel opacity. |
+| `tooltip.headerText` / `labelText` / `valueText` | `ChartTextStyle` | `theme.tooltipTextColor` | Tooltip typography. |
+| `tooltip.positiveValueColor` / `negativeValueColor` | Color | Active-series colors | Directional value colors. |
+| `tooltip.border` | `ChartBorderStyle` | Transparent, width `0`, radius `8` | Tooltip border. |
+
+Axis regions do not automatically grow for larger fonts. Increase
+`xAxis.height` or `yAxis.width` when a custom style needs more space.
+
+## Multiple Panes and Additional Series
+
+All panes share the main time viewport and keep independent autoscale ranges.
+When `panes` is supplied, it must include the reserved `main` pane with the
+reserved `main` price scale. One visible price scale is supported per pane.
+
+```tsx
+const panes = [
+  {
+    paneId: 'main',
+    heightWeight: 3,
+    priceScale: { priceScaleId: 'main' },
+  },
+  {
+    paneId: 'volume',
+    heightWeight: 1,
+    minHeight: 56,
+    priceScale: {
+      priceScaleId: 'volume',
+      valueFormat: { type: 'volume', precision: 1 },
+    },
+  },
+];
+
+<TradingChartsView
+  chartId="btc-1m"
+  panes={panes}
+  panesResizable
+  additionalSeries={[
+    {
+      seriesId: 'volume',
+      type: 'histogram',
+      paneId: 'volume',
+      priceScaleId: 'volume',
+      source: { type: 'ohlcvVolume', seriesId: 'main' },
+    },
+  ]}
+/>
+```
+
+### Pane properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `paneId` | Unique non-empty string | Required | Pane identifier; `main` is reserved for the primary pane. |
+| `heightWeight` | Positive number | Required | Relative height compared with other panes. |
+| `minHeight` | Positive number | `48` | Minimum height in native view units. |
+| `priceScale.priceScaleId` | Unique non-empty string | Required | Scale ID; the main pane must use `main`. |
+| `priceScale.visible` | `boolean` | `true` | Shows the pane price scale. |
+| `priceScale.scaleMargins` | `{ top, bottom }` | Main: `{ 0.2, 0.1 }`; others: `{ 0.1, 0 }` | Pane-specific autoscale margins. |
+| `priceScale.valueFormat` | Price, compact, significant, or volume format | Main Y format | Pane scale number format. |
+
+### Additional-series properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `seriesId` | Unique non-empty string except `main` | Required | Runtime/declarative series identifier. |
+| `paneId` | Existing pane ID | Required | Target pane. |
+| `priceScaleId` | Target pane's scale ID | Required | Must match the pane price scale. |
+| `visible` | `boolean` | `true` | Controls rendering without removing the series. |
+| `type` | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'` | Required | Series geometry. |
+| `source` | OHLC field or histogram source | Type-specific | Line/area value field or histogram data source. |
+| `gapThresholdMs` | Positive milliseconds | `undefined` | Optional line/area gap splitting. |
+| `appearance` | Type-specific style | Theme fallback | Optional line, area, or histogram style. |
+
+Derived volume follows its OHLC source automatically when history, candle, or
+trade updates arrive. Standalone series use `setSeriesData`,
+`prependSeriesData`, and `updateSeriesData`.
+
+## Time, Resolution, and Trade Aggregation
+
+All timestamps are milliseconds. `resolution` defines how raw trades become
+candles; ready OHLC candles retain the timestamps supplied by the feed.
+
+### Resolution
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `unit` | `'second'`, `'minute'`, `'hour'`, `'day'`, `'week'`, `'month'` | `'minute'` | Calendar-aware resolution unit. |
+| `multiplier` | Positive integer | `1` | Number of units in one bucket. |
+| `unit` | `'fixed'` | — | Selects an exact elapsed duration. |
+| `durationMs` | Positive safe integer | Required for `'fixed'` | Exact fixed bucket duration. |
+
+Daily, weekly, and monthly resolutions follow calendar boundaries; a month is
+not treated as 30 days. Fixed resolutions never acquire calendar-duration
+semantics.
+
+### Aggregation properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `bucketOrigin` | `'epoch'`, `'session'`, `{ timestamp }` | `'epoch'` | Aligns intraday or fixed buckets. |
+| `calendar` | `TradingCalendar` | `undefined` | Defines market sessions and trading dates. |
+| `outsideSession` | `'ignore'`, `'reject'` | `'ignore'` | Ignores off-session trades or reports invalid input. |
+| `candleTimestamp` | `'bucketStart'`, `'tradingDateUtc'` | `'bucketStart'` | Timestamp convention; trading-date UTC is for day/week/month only. |
+
+### Calendar properties
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `timeZone` | IANA time-zone string | Required | Controls session/calendar boundaries, including DST. |
+| `sessions` | `TradingSession[]` | `[]` | Recurring weekly trading sessions. |
+| `holidays` | `YYYY-MM-DD[]` | `[]` | Fully closed trading dates. |
+| `overrides` | `TradingCalendarOverride[]` | `[]` | Date-specific hours; an empty session list closes the date. |
+| `weekStartsOn` | `'monday'`, `'sunday'` | `'monday'` | Weekly bucket boundary. |
+
+| Session property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `days` | Weekday names | Required for recurring sessions | Days on which the segment opens. |
+| `start` / `end` | `HH:mm` or `HH:mm:ss` | Required | Local session times; end is exclusive. |
+| `startDayOffset` | `-1` or `0` | `0` | Moves the start to the prior trading-date day. |
+| `endDayOffset` | `0` or `1` | Inferred for overnight sessions | Moves the end to the following day. |
+
+Crypto markets typically need only an epoch-aligned resolution:
+
+```tsx
+resolution={{ unit: 'minute' }}
+```
+
+Traditional market sessions can anchor intraday buckets to each open:
 
 ```tsx
 <TradingChartsView
@@ -152,7 +586,6 @@ duration:
   resolution={{ unit: 'hour' }}
   tradeAggregation={{
     bucketOrigin: 'session',
-    outsideSession: 'ignore',
     calendar: {
       timeZone: 'America/New_York',
       sessions: [
@@ -164,212 +597,204 @@ duration:
       ],
       holidays: ['2026-12-25'],
       overrides: [
-        {
-          date: '2026-11-27',
-          sessions: [{ start: '09:30', end: '13:00' }],
-        },
+        { date: '2026-11-27', sessions: [{ start: '09:30', end: '13:00' }] },
       ],
     },
   }}
 />
 ```
 
-Supported units are `second`, `minute`, `hour`, `day`, `week`, and `month`,
-with an optional positive integer `multiplier`. Intraday resolutions can start
-at the UTC epoch (the default), at each session open, or at a custom timestamp:
-
-```tsx
-tradeAggregation={{ bucketOrigin: { timestamp: 1_700_000_000_000 } }}
-```
-
-Daily, weekly, and monthly resolutions use calendar boundaries; a month is not
-treated as 30 days. `calendar.timeZone` determines session and calendar
-boundaries and includes DST changes. `xAxis.timeZone` only controls label
-formatting, so it may be configured independently. Session ends are exclusive.
-Trades outside the calendar are ignored by default; set `outsideSession` to
-`'reject'` to report them as invalid input. An override with an empty
-`sessions` array closes that trading date.
-
-Ready OHLC candles passed to `setHistory`, `prependHistory`, or `updateCandle`
-keep their feed-provided timestamps. They only need to be finite, non-negative,
-safe-integer milliseconds; history timestamps must be strictly increasing, and
-`updateCandle` may replace the last timestamp. They are not forced onto the
-configured raw-trade buckets. When ready candles and raw trades share one chart,
-their timestamp convention should match.
-
-For duration-based intervals that cannot be expressed as an integer calendar
-unit, use a fixed resolution:
+Use an exact interval when no calendar unit represents the feed:
 
 ```tsx
 resolution={{ unit: 'fixed', durationMs: 250 }}
 ```
 
-Fixed resolutions are UTC epoch-aligned by default and never acquire calendar
-semantics: `durationMs` always means an exact elapsed duration. Use
-`bucketOrigin: 'session'` or a custom timestamp to change their alignment.
+`calendar.timeZone` affects aggregation boundaries. `xAxis.timeZone` affects
+labels only and can be configured independently.
 
-`defaultScale` defaults to `1` and scales the initial horizontal viewport after
-`initialVisibleCount` is applied. Values greater than `1` zoom in; values between
-`0` and `1` zoom out. The scale is restored by the next `setHistory`. Changing
-the prop on a populated chart does not move the current viewport until then.
+## Axes and Value Formatting
 
-`onSelectedCandleChange` receives the selected OHLCV candle when the crosshair
-moves to a different candle or that candle's values change. It receives `null`
-once when the selection is cleared; moving within the same unchanged candle does
-not emit another callback.
+### X axis
 
-### Series rendering
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `visible` | `boolean` | `true` | Shows the time axis. |
+| `height` | Positive number | `26` | Axis height in native view units. |
+| `locale` | Locale string | `'en-GB'` | Legacy/default date locale. |
+| `timeZone` | IANA time-zone string | `'UTC'` | Legacy/default label time zone. |
+| `showSeconds` | `boolean` | `false` | Enables second-level axis labels. |
+| `spacing` | `'time'`, `'logical'` | `'time'` | Uses elapsed milliseconds or uniform candle-index slots. |
 
-`series.type` selects how the native GPU renders the same OHLCV store.
-`'candlestick'` is the default. Use `'hollowCandlestick'` for hollow rising
-candles and filled falling candles:
+### Y axis
 
-```tsx
-<TradingChartsView
-  chartId="hollow"
-  series={{ type: 'hollowCandlestick' }}
-  appearance={{
-    candles: {
-      upColor: '#00A88F',
-      downColor: '#FF334F',
-    },
-  }}
-/>
-```
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `visible` | `boolean` | `true` | Shows the main price axis. |
+| `position` | `'left'`, `'right'` | `'right'` | Places the main price axis. |
+| `width` | Positive number | `64` | Axis width in native view units. |
+| `defaultScale` | Number from `0.1` to `10` | `1` | Baseline vertical scale restored by history loads and `fitContent`. |
+| `scaleMargins.top` | Non-negative fraction | `0.2` | Reserved space above visible values. |
+| `scaleMargins.bottom` | Non-negative fraction | `0.1` | Reserved space below visible values. |
+| `valueFormat` | `YAxisValueFormat` | Price format | Legacy/main Y-axis formatter; `formatters.price.yAxis` wins. |
 
-Hollow candlesticks reuse `appearance.candles`: candles where `close >= open`
-use the up color and an outlined body, while candles where `close < open` use
-the down color and a filled body. The outline uses the same native thickness as
-the wick.
+Scale margins must sum to less than `1`. When visible values are equal,
+autoscale expands the range using `minMove`.
 
-Use `'bar'` for an OHLC bar with a high-low stem, open tick on the left and
-close tick on the right:
+### Price formats
 
-```tsx
-<TradingChartsView
-  chartId="bars"
-  series={{ type: 'bar' }}
-  appearance={{
-    bars: {
-      upColor: '#00A88F',
-      downColor: '#FF334F',
-      lineWidth: 1,
-    },
-  }}
-/>
-```
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `type` | `'price'` | `'price'` | Fixed decimal formatting. |
+| `precision` | Integer `0...12` | `2` | Decimal precision. |
+| `type` | `'compact'` | — | Compact suffix formatting for large values. |
+| `precision` | Integer `0...8` | `2` | Compact precision. |
+| `type` | `'significant'` | — | Significant digits with compact crypto zero-count notation. |
+| `significantDigits` | Integer `1...8` | `3` | Significant digits to display. |
+| `minMove` | Positive number | `0.01` | Real instrument tick size; omitted from display-only formats. |
+| `locale` | Locale string | `'en-GB'` | Native number locale. |
+| `currencySymbol` | `string` | `''` | Prefix displayed with prices. |
+| `useGrouping` | `boolean` | `true` | Enables locale grouping where supported. |
 
-Bar colors fall back to `appearance.candles`, then `theme`. `lineWidth` uses
-points on iOS and density-independent pixels on Android. Changing `series.type`
-at runtime keeps the native candle store, viewport, Y scale and crosshair
-selection; it only schedules a new render snapshot. Data methods and
-`onSelectedCandleChange` remain OHLCV-based for every render type.
+Volume formats use `type: 'volume'`, `precision` defaulting to `2`, locale
+defaulting to `en-GB`, and `useGrouping` defaulting to `true`.
 
-Use `'line'` to plot one OHLC field as a triangle-tessellated polyline. The GPU
-still receives the same RGBA triangle vertices as every other series type, so
-solid and vertical-gradient lines render identically on Metal and GLES:
+### Role-specific formatters
 
-```tsx
-<TradingChartsView
-  chartId="line"
-  series={{ type: 'line', source: 'close', gapThresholdMs: 300_000 }}
-  appearance={{
-    line: {
-      width: 2.5,
-      color: '#2E90F5',
-      gradient: {
-        topColor: '#C51BFF',
-        bottomColor: '#2E90F5',
-      },
-    },
-  }}
-/>
-```
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `date.xAxis.locale` | Locale string | `xAxis.locale` | Locale for adaptive X-axis labels. |
+| `date.xAxis.timeZone` | IANA time zone | `xAxis.timeZone` | Time zone for adaptive X-axis labels. |
+| `date.xAxis.seconds` | ICU pattern | `'HH:mm:ss'` | Second-span label format. |
+| `date.xAxis.time` | ICU pattern | `'HH:mm'` | Intraday label format. |
+| `date.xAxis.day` | ICU pattern | `'d MMM'` | Day label format. |
+| `date.xAxis.month` | ICU pattern | `'MMM yyyy'` | Month label format. |
+| `date.xAxis.year` | ICU pattern | `'yyyy'` | Year label format. |
+| `date.crosshairTimeBadge` | `{ pattern, locale?, timeZone? }` | `'d MMM yyyy HH:mm:ss'` | Crosshair time badge format. |
+| `date.tooltipHeader` | `{ pattern, locale?, timeZone? }` | `'d MMM yyyy HH:mm:ss'` | Tooltip header format. |
+| `price.yAxis` | `YAxisValueFormat` | `yAxis.valueFormat` | Main Y-axis format. |
+| `price.priceExtremes` | `PriceDisplayFormat` | Main Y format | Visible high/low format. |
+| `price.currentPrice` | `PriceDisplayFormat` | Main Y format | Current-price format. |
+| `price.crosshairPrice` | `PriceDisplayFormat` | Main Y format | Crosshair price badge format. |
+| `price.tooltip` | `PriceDisplayFormat` | Main Y format | Tooltip OHLC value format. |
 
-`source` accepts `'open'`, `'high'`, `'low'`, or `'close'` and defaults to
-`'close'`. It drives the line, autoscale, visible extrema, and current-price
-value while crosshair selection remains full OHLCV. Missing timestamps are
-connected by default; when `gapThresholdMs` is provided, larger gaps split the
-line. Gradient colors are evaluated vertically inside the series pane. Line
-and area strokes default to `1.5` points on iOS and density-independent pixels
-on Android; set the corresponding appearance `width` to customize them.
+Date patterns use Unicode/ICU syntax. Role-specific `formatters` override the
+legacy `xAxis` and `yAxis.valueFormat` values.
 
-Use `'area'` for the same OHLC source and gap semantics with a filled region
-under the line. The fill uses one vertical gradient across the full pane, so a
-given screen height has the same color and opacity across the chart:
+## Gestures and Viewport
 
-```tsx
-<TradingChartsView
-  chartId="area"
-  series={{ type: 'area', source: 'close', gapThresholdMs: 300_000 }}
-  appearance={{
-    area: {
-      width: 2.5,
-      color: '#2E90F5',
-      fill: {
-        topColor: '#2E90F566',
-        bottomColor: '#2E90F500',
-      },
-    },
-  }}
-/>
-```
+Horizontal panning includes native momentum and stops at the available data
+boundaries. Pinch gestures zoom the time range. A one-finger vertical drag that
+starts in the Y-axis lane scales that pane's visible price range.
 
-When fill colors are omitted, the area uses the line RGB with approximately
-25% alpha at the pane top and zero alpha at the pane bottom. Both colors accept
-`#RRGGBB` and `#RRGGBBAA`.
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `initialVisibleCount` | Positive integer | `100` | Initial candle-count target. |
+| `defaultScale` | Positive number | `1` | Initial horizontal scale; above `1` zooms in. |
+| `gestures.pan` | `boolean` | `true` | Enables horizontal pan and momentum. |
+| `gestures.zoom` | `boolean` | `true` | Enables pinch zoom. |
+| `gestures.yAxisScale` | `boolean` | `gestures.zoom` | Enables vertical scaling from an axis lane. |
+| `yAxis.defaultScale` | Number from `0.1` to `10` | `1` | Default vertical scale. |
 
-### Multiple panes, series, and volume
+`TradingCharts.zoom(chartId, scale)` applies programmatic horizontal scaling
+anchored to the right edge. `TradingCharts.fitContent(chartId)` shows all loaded
+history and restores automatic Y scaling. These commands work even when touch
+zoom is disabled. Only user gestures emit scale events.
 
-All panes share the `main` series time viewport while keeping independent
-autoscale ranges. When `panes` is supplied it must contain the reserved `main`
-pane and `main` price scale:
+## Crosshair and Price Overlays
 
-```tsx
-<TradingChartsView
-  chartId="btc-1m"
-  panes={[
-    {
-      paneId: 'main',
-      heightWeight: 3,
-      priceScale: { priceScaleId: 'main' },
-    },
-    {
-      paneId: 'volume',
-      heightWeight: 1,
-      minHeight: 56,
-      priceScale: {
-        priceScaleId: 'volume',
-        valueFormat: { type: 'volume', precision: 1 },
-      },
-    },
-  ]}
-  additionalSeries={[
-    {
-      seriesId: 'volume',
-      type: 'histogram',
-      paneId: 'volume',
-      priceScaleId: 'volume',
-      source: { type: 'ohlcvVolume', seriesId: 'main' },
-      appearance: {
-        upColor: '#38D98A80',
-        downColor: '#FF3B6480',
-      },
-    },
-  ]}
-  panesResizable
-  onPaneResize={(event) => {
-    console.log(event.firstPaneId, event.firstHeightWeight);
-  }}
-  onPriceScaleChange={(event) => {
-    console.log(event.paneId, event.scale);
-  }}
-/>
-```
+A single tap pins the crosshair to the nearest candle. Drag to move the pinned
+selection and tap again to clear it. Long press tracks the finger and remains
+pinned after release.
 
-Derived volume reads OHLCV data directly from its source series, so
-`setHistory`, candle updates, prepends, and raw trades update it without a
-second data copy. Runtime series use the same pane definitions:
+### Crosshair
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | Enables selection gestures and crosshair rendering. |
+| `showTooltip` | `boolean` | `true` | Shows the OHLCV tooltip. |
+| `tooltipBackgroundOpacity` | Number from `0` to `1` | `1` | Legacy tooltip opacity and appearance fallback. |
+| `lineStyle` | `'solid'`, `'dashed'` | `'solid'` | Crosshair line pattern. |
+| `tooltipLabels` | `CrosshairTooltipLabels` | English labels | Localizes tooltip row labels. |
+
+| Tooltip label property | Default | Description |
+| --- | --- | --- |
+| `open` / `close` / `high` / `low` | `Open` / `Close` / `High` / `Low` | OHLC row labels. |
+| `amplitude` | `Amplitude` | High-low amplitude label. |
+| `changePercent` | `Change %` | Percentage change from open. |
+| `change` | `Change` | Absolute change from open. |
+| `volume` | `Volume` | Volume row label. |
+
+Percentages display an em dash when the candle open is zero. Volume uses a
+compact format without the Y-axis currency symbol.
+
+### Current price and extrema
+
+| Property | Type / values | Default | Description |
+| --- | --- | --- | --- |
+| `currentPrice.visible` | `boolean` | `true` | Shows the latest-price line and eligible label. |
+| `currentPrice.showLabel` | `boolean` | `true` | Shows the Y-axis latest-price badge. |
+| `currentPrice.pinToEdge` | `boolean` | `true` | Pins an off-screen price label to the nearest Y edge. |
+| `priceExtremes.visible` | `boolean` | `true` | Labels visible high and low values. |
+
+When a pinned current price is outside the visible Y range, its line is hidden
+and its label remains at the edge. Set `pinToEdge: false` to hide the label too.
+An extremum outside a manually scaled viewport remains hidden.
+
+## Events
+
+| Property | Payload | Emission behavior | Description |
+| --- | --- | --- | --- |
+| `onVisibleRangeChange` | `VisibleRangeChangeEvent` | Visible indexes or total count changed | Reports honest visible candle ranges; suppressed in data gaps. |
+| `onScaleChange` | `{ scale }` | User horizontal pinch, at most once per frame | Absolute horizontal scale. |
+| `onYAxisScaleChange` | `{ scale }` | User main-axis drag, at most once per frame | Absolute main Y scale. |
+| `onPaneResize` | `PaneResizeEvent` | Separator drag | Reports both adjacent pane weights. |
+| `onPriceScaleChange` | `PriceScaleChangeEvent` | User pane-axis drag | Reports the affected pane and scale. |
+| `onSelectedCandleChange` | `OhlcCandle \| null` | Selected candle/value changed or selection cleared | Full OHLCV selection. |
+
+### Event payloads
+
+| Event | Property | Type | Description |
+| --- | --- | --- | --- |
+| Visible range | `from`, `to` | `number` | Visible time boundaries in milliseconds. |
+| Visible range | `firstVisibleIndex`, `lastVisibleIndex` | `number` | Inclusive visible main-series indexes. |
+| Visible range | `totalCount` | `number` | Total main candle count. |
+| Visible range | `atStart`, `atEnd` | `boolean` | Whether the viewport touches a data boundary. |
+| Scale | `scale` | `number` | Absolute scale where `1` is the configured baseline. |
+| Pane resize | `firstPaneId`, `secondPaneId` | `string` | Adjacent pane IDs. |
+| Pane resize | `firstHeightWeight`, `secondHeightWeight` | `number` | Current relative weights. |
+| Pane resize | `finished` | `boolean` | Whether the drag has ended. |
+| Price scale | `paneId`, `priceScaleId` | `string` | Changed pane and scale IDs. |
+| Price scale | `scale` | `number` | Absolute price scale. |
+| Selected candle | `timestamp`, `open`, `high`, `low`, `close`, `volume` | `number` | Selected OHLCV values exposed as `OhlcCandle`. |
+
+Moving within the same unchanged candle does not emit another selection. A
+cleared selection emits `null` once. Programmatic `zoom`, `fitContent`, and
+`setHistory` do not emit gesture scale events.
+
+## Imperative API
+
+All commands use the stable `chartId` of a `TradingChartsView`.
+
+| Method | Arguments | Returns | Description |
+| --- | --- | --- | --- |
+| `addSeries` | `chartId, AdditionalChartSeriesOptions` | `void` | Adds or configures a runtime additional series. |
+| `setSeriesData` | `chartId, seriesId, points[]` | `void` | Replaces runtime series data. |
+| `prependSeriesData` | `chartId, seriesId, points[]` | `void` | Prepends older runtime series data. |
+| `updateSeriesData` | `chartId, seriesId, point` | `void` | Updates the last runtime point or appends one. |
+| `removeSeries` | `chartId, seriesId` | `void` | Removes a non-`main` series. |
+| `setPaneHeight` | `chartId, paneId, heightWeight` | `void` | Sets a positive pane height weight. |
+| `setHistory` | `chartId, OhlcCandle[]` | `void` | Replaces main history. |
+| `prependHistory` | `chartId, OhlcCandle[]` | `void` | Prepends main history. |
+| `updateCandle` | `chartId, OhlcCandle` | `void` | Replaces or appends the latest candle. |
+| `updateTrade` | `chartId, TradeEvent` | `void` | Aggregates one trade. |
+| `updateTrades` | `chartId, TradeEvent[]` | `void` | Aggregates a trade batch. |
+| `getCandles` | `chartId` | `Promise<OhlcCandle[]>` | Reads an atomic copy of native main history. |
+| `zoom` | `chartId, positive scale` | `void` | Scales the horizontal viewport from its right edge. |
+| `fitContent` | `chartId` | `void` | Fits loaded history and resets automatic Y scaling. |
+| `clear` | `chartId` | `void` | Clears chart data. |
+
+Runtime additional series use pane definitions already supplied to the view:
 
 ```tsx
 TradingCharts.addSeries('btc-1m', {
@@ -385,252 +810,65 @@ TradingCharts.setSeriesData('btc-1m', 'momentum', [
   { timestamp: 1_720_000_000_000, value: -4.2 },
   { timestamp: 1_720_000_060_000, value: 7.1 },
 ]);
-TradingCharts.updateSeriesData('btc-1m', 'momentum', {
-  timestamp: 1_720_000_060_000,
-  value: 8.3,
-});
-TradingCharts.setPaneHeight('btc-1m', 'volume', 1.5);
 ```
 
-The additional supported OHLC types are `candlestick`,
-`hollowCandlestick`, `bar`, `line`, and `area`. Additional line and area series
-accept the same `source`, `gapThresholdMs`, and stroke `appearance` fields;
-area appearance also accepts `fill`:
+Read the current native candle store when application state needs an atomic
+snapshot:
 
 ```tsx
-TradingCharts.addSeries('btc-1m', {
-  seriesId: 'comparison',
-  type: 'line',
-  paneId: 'main',
-  priceScaleId: 'main',
-  source: 'high',
-  appearance: { width: 2, color: '#FFAA00' },
-});
-
-TradingCharts.addSeries('btc-1m', {
-  seriesId: 'area-comparison',
-  type: 'area',
-  paneId: 'main',
-  priceScaleId: 'main',
-  source: 'close',
-  appearance: {
-    width: 2,
-    color: '#2E90F5',
-    fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
-  },
-});
+const candles = await TradingCharts.getCandles('btc-1m');
 ```
 
-`prependSeriesData` follows the same ordering
-rules as main history, and `removeSeries` cannot remove the reserved `main`
-series. One visible price scale is supported per pane.
+A mounted empty chart returns `[]`. The promise rejects with
+`E_CHART_NOT_MOUNTED` when the ID is not mounted; unlike writes, reads are not
+retained for replay.
 
-`onScaleChange` reports horizontal pinch changes and `onYAxisScaleChange`
-reports vertical drags that start in the Y-axis lane. Both callbacks receive an
-absolute `{ scale }`: `1` is the baseline, values above `1` make candles
-visually wider or taller, and values below `1` make them narrower or shorter.
-Only user gestures emit these events. Native code coalesces gesture updates to
-at most one event of each type per rendered frame; `TradingCharts.zoom`,
-`fitContent`, and `setHistory` do not emit them.
+## Architecture and Performance
 
-`TradingCharts.getCandles(chartId)` asynchronously returns an atomic copy of all
-OHLCV candles in the native store, including changes produced by candle/trade
-updates and prepended history. A mounted empty chart returns `[]`. The Promise
-rejects with code `E_CHART_NOT_MOUNTED` when `chartId` is not mounted; unlike
-write commands, reads are not retained for later replay.
-
-A single tap immediately pins the crosshair to the nearest candle. While pinned,
-a one-finger drag moves the selection and another single tap clears it. Long
-press still tracks the finger, but releasing it now leaves the selection pinned.
-
-The tooltip shows Open, Close, High, Low, amplitude, absolute and percentage
-change, and volume. Amplitude and percentage change use the candle open as the
-baseline; percentages are shown as an em dash when the open is zero. Volume is
-formatted compactly without the Y-axis currency symbol. Labels can be localized
-through `crosshair.tooltipLabels`. Use `crosshair.tooltipBackgroundOpacity` for
-background alpha and `crosshair.lineStyle` to select solid or dashed lines; line
-and tooltip colors remain in `theme`.
-
-## Appearance and formatters
-
-Use `appearance` for role-specific native styling. Colors accept `#RRGGBB` or
-`#RRGGBBAA`; font sizes use points on iOS and scaled pixels on Android. A custom
-`fontFamily` must already be bundled by the consuming application. Missing
-families fall back to the platform monospace font.
-
-```tsx
-<TradingChartsView
-  chartId="styled"
-  appearance={{
-    backgroundColor: '#FAFAFC',
-    grid: { color: '#D9DCE4', opacity: 0.7 },
-    candles: { upColor: '#159A68', downColor: '#D6455D' },
-    bars: { upColor: '#159A68', downColor: '#D6455D', lineWidth: 1 },
-    xAxis: { text: { color: '#596173', fontSize: 11 } },
-    yAxis: { text: { color: '#303747', fontSize: 11 } },
-    priceExtremes: {
-      text: { color: '#596173' },
-      connectorColor: '#9097A6',
-      backgroundColor: '#FAFAFC',
-    },
-    currentPrice: {
-      line: { upColor: '#159A68', downColor: '#D6455D' },
-      label: {
-        upBackgroundColor: '#159A68',
-        downBackgroundColor: '#D6455D',
-        text: { color: '#FFFFFF', fontWeight: 'semibold' },
-        border: { color: '#FFFFFF80', width: 1, radius: 5 },
-      },
-    },
-    crosshair: {
-      line: { color: '#596173', opacity: 0.8 },
-      priceLabel: {
-        backgroundColor: '#303747',
-        text: { color: '#FFFFFF' },
-        border: { color: '#9097A6', width: 1, radius: 5 },
-      },
-      timeLabel: {
-        backgroundColor: '#303747',
-        text: { color: '#FFFFFF' },
-        border: { color: '#9097A6', width: 1, radius: 5 },
-      },
-    },
-    tooltip: {
-      backgroundColor: '#FFFFFF',
-      backgroundOpacity: 0.96,
-      headerText: { color: '#171B24', fontWeight: 'semibold' },
-      labelText: { color: '#71798A' },
-      valueText: { color: '#171B24' },
-      positiveValueColor: '#159A68',
-      negativeValueColor: '#D6455D',
-      border: { color: '#D9DCE4', width: 1, radius: 8 },
-    },
-  }}
-  formatters={{
-    date: {
-      xAxis: {
-        locale: 'en-GB',
-        timeZone: 'UTC',
-        seconds: 'HH:mm:ss',
-        time: 'HH:mm',
-        day: 'dd MMM',
-        month: 'MMM yyyy',
-        year: 'yyyy',
-      },
-      crosshairTimeBadge: { pattern: 'dd MMM HH:mm:ss' },
-      tooltipHeader: { pattern: 'dd MMM yyyy HH:mm:ss' },
-    },
-    price: {
-      yAxis: { type: 'price', precision: 2, minMove: 0.01 },
-      priceExtremes: { type: 'price', precision: 2 },
-      currentPrice: { type: 'price', precision: 2, currencySymbol: '$' },
-      crosshairPrice: { type: 'price', precision: 4 },
-      tooltip: { type: 'price', precision: 4, useGrouping: false },
-    },
-  }}
-/>
+```text
+React configuration and market data
+                |
+                v
+Fabric view / TurboModule command registry
+                |
+                v
+Shared C++ state, aggregation, viewport, and geometry
+                |
+        immutable render snapshot
+           /                 \
+          v                   v
+  Metal + Core Animation   OpenGL ES 3 + Canvas
+          iOS                  Android
 ```
 
-Date patterns use Unicode/ICU syntax. The X-axis keeps its adaptive span-based
-selection and substitutes the configured five patterns. `theme`,
-`yAxis.valueFormat`, and `crosshair.tooltipBackgroundOpacity` remain supported;
-role-specific values in `appearance` and `formatters` take precedence. Axis
-regions do not auto-grow for larger fonts, so adjust `xAxis.height` or
-`yAxis.width` when necessary.
+The native registry routes commands by `chartId` and keeps a bounded queue for
+views that have not mounted yet. Data or gesture mutations mark the engine
+snapshot dirty and request one platform frame; repeated requests before the
+next display refresh are coalesced. An idle chart does not continuously render.
 
-`xAxis.spacing` defaults to `'time'`, where horizontal distance represents
-elapsed time. Use `'logical'` to give every candle one uniform slot regardless
-of timestamp gaps. Logical spacing keeps timestamps for axis labels and the
-crosshair while pan, zoom and live following operate by candle index.
+Snapshots are immutable and cached. Large content geometry and small overlay
+geometry are tracked separately, so moving only the crosshair can reuse the
+existing chart vertices. GPU buffers grow to capacity and are reused instead
+of being recreated during steady-state interaction. For high-frequency feeds,
+`updateTrades` and `createTradeBatcher` reduce bridge calls and engine
+mutations.
 
-`currentPrice.pinToEdge` defaults to `true`. When the latest price is outside
-the visible Y range, its label stays pinned to the upper or lower Y-axis edge
-while the price line is hidden. Set `currentPrice={{ pinToEdge: false }}` to
-hide the label too while its price is outside the range. `showLabel: false`
-hides only the label.
+## Platform Support and Limitations
 
-`priceExtremes.visible` defaults to `true` and labels the highest wick and
-lowest wick among the visible candles. The labels use the same native
-`yAxis.valueFormat` formatter and axis text style as the Y-axis. Set
-`priceExtremes={{ visible: false }}` to hide them. An extremum outside a
-manually scaled Y viewport is hidden until it returns to the plot.
+| Property | Supported value | Notes |
+| --- | --- | --- |
+| Platforms | iOS and Android | Metal on iOS; OpenGL ES 3 on Android. |
+| React Native architecture | New Architecture / Fabric | The first release targets Fabric applications. |
+| Data ownership | Application-owned | Networking, WebSockets, parsing, and reconnect logic are outside the library. |
+| Time unit | Milliseconds | Candle timestamps must be safe integers. |
+| Price scales | One visible scale per pane | Each pane keeps an independent autoscale range. |
+| Custom fonts | App-bundled fonts | Missing families fall back to the platform monospace font. |
+| Main identifiers | `paneId: 'main'`, `priceScaleId: 'main'`, `seriesId: 'main'` | Reserved and cannot be reused or removed. |
+| Native coordinates | iOS points, Android pixels internally | Public dimensions are converted consistently by the platform configuration. |
 
-For market-cap axes, use the compact formatter:
-
-```tsx
-yAxis={{
-  scaleMargins: { top: 0.2, bottom: 0.1 },
-  valueFormat: {
-    type: 'compact',
-    precision: 2,
-    minMove: 1,
-    currencySymbol: '$',
-    locale: 'en-GB',
-  },
-}}
-```
-
-For very small crypto prices, use the significant formatter:
-
-```tsx
-yAxis={{
-  valueFormat: {
-    type: 'significant',
-    significantDigits: 3,
-    minMove: 0.00000001,
-    currencySymbol: '$',
-    locale: 'en-GB',
-  },
-}}
-```
-
-`significantDigits` accepts values from `1` through `8`. Values with one or more
-zeros after the decimal separator use crypto zero-count notation, where the
-subscript is the number of zeros before the first significant digit:
-`0.056602` becomes `$0.0₁566`, `0.001898` becomes `$0.0₂19`, and `0.0000058`
-becomes `$0.0₅58`. Other values use ordinary localized significant digits, so
-the same formatter remains usable while the market crosses price magnitudes.
-`minMove` remains the instrument's real tick size; it does not control when
-zero-count notation is selected.
-
-The example app's `Auto` Y-axis format selects `significant` when the current
-market price is below `0.1`, where there is at least one leading fractional
-zero. This keeps axes concise at prices such as `0.056602` without collapsing
-the distinct ticks of markets trading close to `1`. Current-price, crosshair,
-extrema, and tooltip values keep the full `price` format so exact executable
-prices remain visible.
-
-`scaleMargins` reserves a fraction of the plot above and below the visible price
-range. Both values must be non-negative and their sum must be less than `1`.
-Defaults are `top: 0.2` and `bottom: 0.1`. When all visible values are equal,
-autoscale expands the range using `minMove`, so pass the instrument's real tick
-size instead of deriving it from the latest price.
-
-With `gestures.zoom` enabled, pinch gestures scale the visible time range and a
-one-finger vertical drag that starts on the Y axis scales the visible price
-range. Set `gestures.yAxisScale` independently to enable or disable that Y-axis
-gesture. When omitted, it inherits `gestures.zoom` for backward compatibility;
-a disabled Y-axis gesture consumes the axis-lane drag without turning it into a
-horizontal pan. Drag up to narrow the range or down to expand it.
-
-`yAxis.defaultScale` defaults to `1` and accepts values from `0.1` through `10`.
-It is restored on the first history load, every `setHistory`, and
-`TradingCharts.fitContent`. The selected Y scale is otherwise preserved while
-autoscale follows the visible candles.
-
-`TradingCharts.zoom(chartId, scale)` provides the same horizontal scaling from
-application controls, anchored to the right edge of the current viewport. A
-scale greater than `1` zooms in and a scale between `0` and `1` zooms out.
-`TradingCharts.fitContent(chartId)` shows the full loaded history and restores
-the configured `yAxis.defaultScale`. These programmatic commands work even when
-`gestures.zoom` is disabled; the option controls touch gestures only.
-
-With `gestures.pan` enabled, a quick horizontal swipe continues scrolling with
-native momentum and slows to a stop at the beginning or end of the data.
-
-The same native formatter is used for Y ticks, visible price extremes, the
-live-price badge, crosshair badge and OHLC tooltip. X labels adapt to the
-visible time span and use the configured native locale and timezone.
+Changing the main `series.type` at runtime keeps the native candle store,
+viewport, Y scale, and crosshair selection. The library does not synthesize
+empty time buckets.
 
 ## Contributing
 
