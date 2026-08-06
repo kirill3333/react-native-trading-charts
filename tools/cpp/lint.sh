@@ -8,6 +8,7 @@ readonly script_dir="$(
 tool_dir="$(bash "$script_dir/bootstrap.sh")"
 readonly tool_dir
 readonly cpp_files=(
+  cpp/benchmarks/chart_engine_benchmark.cc
   cpp/chart_engine.h
   cpp/chart_engine.cc
   cpp/internal/render_snapshot_builder.h

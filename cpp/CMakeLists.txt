@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(trading_charts_engine LANGUAGES CXX)
 
+option(
+  TRADING_CHARTS_BUILD_BENCHMARKS
+  "Build standalone ChartEngine benchmarks"
+  OFF
+)
+
 add_library(
   trading_charts_engine
   STATIC
@@ -51,3 +57,31 @@ endif()
 
 enable_testing()
 add_test(NAME chart_engine_test COMMAND chart_engine_test)
+
+if(TRADING_CHARTS_BUILD_BENCHMARKS)
+  include(FetchContent)
+
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+
+  FetchContent_Declare(
+    google_benchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG v1.9.5
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(google_benchmark)
+
+  add_executable(
+    chart_engine_benchmark
+    benchmarks/chart_engine_benchmark.cc
+  )
+  target_link_libraries(
+    chart_engine_benchmark
+    PRIVATE
+    benchmark::benchmark_main
+    trading_charts_engine
+  )
+endif()
