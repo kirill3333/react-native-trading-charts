@@ -22,8 +22,13 @@ constexpr size_t kHollowCandlestickQuadsPerSample = 6;
 constexpr size_t kBarQuadsPerSample = 3;
 constexpr size_t kLineQuadsPerSample = 8;
 constexpr size_t kAreaQuadsPerSample = kLineQuadsPerSample + 1;
+constexpr size_t kRoundedCandlestickQuadsPerSample = 11;
+constexpr size_t kRoundedHollowCandlestickQuadsPerSample = 22;
 constexpr float kBarTickSlotRatio = 0.45f;
 constexpr float kLineMiterLimit = 4.0f;
+constexpr float kPi = 3.14159265358979323846f;
+constexpr int kMaxCornerSegments = 4;
+constexpr size_t kMaxRoundedBoundaryPoints = 4 * (kMaxCornerSegments + 1);
 
 struct SeriesSample {
   const Candle& candle;
@@ -47,6 +52,113 @@ struct Vector2 {
   float x = 0.0f;
   float y = 0.0f;
 };
+
+int RoundedCornerSegments(float radius, float display_scale) {
+  const float scale = display_scale > 0.0f ? display_scale : 1.0f;
+  return std::clamp(static_cast<int>(std::ceil(radius / (2.0f * scale))), 1,
+                    kMaxCornerSegments);
+}
+
+size_t BuildRoundedRectBoundary(
+    float left, float top, float right, float bottom, float radius,
+    int corner_segments,
+    std::array<Vector2, kMaxRoundedBoundaryPoints>& points) {
+  const std::array<Vector2, 4> centers = {
+      Vector2{right - radius, top + radius},
+      Vector2{right - radius, bottom - radius},
+      Vector2{left + radius, bottom - radius},
+      Vector2{left + radius, top + radius},
+  };
+  const std::array<float, 4> start_angles = {
+      -kPi * 0.5f,
+      0.0f,
+      kPi * 0.5f,
+      kPi,
+  };
+  size_t count = 0;
+  for (size_t corner = 0; corner < centers.size(); ++corner) {
+    for (int segment = 0; segment <= corner_segments; ++segment) {
+      const float amount =
+          static_cast<float>(segment) / static_cast<float>(corner_segments);
+      const float angle = start_angles[corner] + amount * kPi * 0.5f;
+      points[count++] = Vector2{
+          centers[corner].x + std::cos(angle) * radius,
+          centers[corner].y + std::sin(angle) * radius,
+      };
+    }
+  }
+  return count;
+}
+
+void AppendSolidTriangle(std::vector<float>& vertices, Vector2 first,
+                         Vector2 second, Vector2 third, const Rect& clip,
+                         const Color& color) {
+  AppendClippedTriangle(vertices, ColoredVertex{first.x, first.y, color},
+                        ColoredVertex{second.x, second.y, color},
+                        ColoredVertex{third.x, third.y, color}, clip);
+}
+
+void AppendRoundedRect(std::vector<float>& vertices, float left, float top,
+                       float right, float bottom, float requested_radius,
+                       float display_scale, const Rect& clip,
+                       const Color& color) {
+  if (!(right > left) || !(bottom > top)) {
+    return;
+  }
+  const float radius = std::min(
+      requested_radius, std::min((right - left) * 0.5f, (bottom - top) * 0.5f));
+  if (!(radius > 0.0f)) {
+    AppendClippedQuad(vertices, left, top, right, bottom, clip, color);
+    return;
+  }
+  const int corner_segments = RoundedCornerSegments(radius, display_scale);
+  std::array<Vector2, kMaxRoundedBoundaryPoints> boundary{};
+  const size_t count = BuildRoundedRectBoundary(
+      left, top, right, bottom, radius, corner_segments, boundary);
+  const Vector2 center{(left + right) * 0.5f, (top + bottom) * 0.5f};
+  for (size_t index = 0; index < count; ++index) {
+    AppendSolidTriangle(vertices, center, boundary[index],
+                        boundary[(index + 1) % count], clip, color);
+  }
+}
+
+void AppendRoundedRectOutline(std::vector<float>& vertices, float left,
+                              float top, float right, float bottom,
+                              float requested_radius, float stroke_width,
+                              float display_scale, const Rect& clip,
+                              const Color& color) {
+  const float radius = std::min(
+      requested_radius, std::min((right - left) * 0.5f, (bottom - top) * 0.5f));
+  const float inner_left = left + stroke_width;
+  const float inner_top = top + stroke_width;
+  const float inner_right = right - stroke_width;
+  const float inner_bottom = bottom - stroke_width;
+  if (!(radius > 0.0f) || !(inner_right > inner_left) ||
+      !(inner_bottom > inner_top)) {
+    AppendRoundedRect(vertices, left, top, right, bottom, requested_radius,
+                      display_scale, clip, color);
+    return;
+  }
+
+  const int corner_segments = RoundedCornerSegments(radius, display_scale);
+  const float inner_radius =
+      std::min(std::max(0.0f, radius - stroke_width),
+               std::min((inner_right - inner_left) * 0.5f,
+                        (inner_bottom - inner_top) * 0.5f));
+  std::array<Vector2, kMaxRoundedBoundaryPoints> outer{};
+  std::array<Vector2, kMaxRoundedBoundaryPoints> inner{};
+  const size_t count = BuildRoundedRectBoundary(left, top, right, bottom,
+                                                radius, corner_segments, outer);
+  BuildRoundedRectBoundary(inner_left, inner_top, inner_right, inner_bottom,
+                           inner_radius, corner_segments, inner);
+  for (size_t index = 0; index < count; ++index) {
+    const size_t next = (index + 1) % count;
+    AppendSolidTriangle(vertices, outer[index], outer[next], inner[next], clip,
+                        color);
+    AppendSolidTriangle(vertices, outer[index], inner[next], inner[index], clip,
+                        color);
+  }
+}
 
 Vector2 Add(Vector2 first, Vector2 second) {
   return Vector2{first.x + second.x, first.y + second.y};
@@ -450,10 +562,17 @@ void AppendCandlestickGeometry(const SeriesGeometryInput& input,
     if (body_bottom - body_top < 1.0f) {
       body_bottom = body_top + 1.0f;
     }
-    AppendQuad(
-        vertices, std::max(input.plot.left, sample.x - body_width * 0.5f),
-        body_top, std::min(input.plot.right, sample.x + body_width * 0.5f),
-        body_bottom, color);
+    const float body_left =
+        std::max(input.plot.left, sample.x - body_width * 0.5f);
+    const float body_right =
+        std::min(input.plot.right, sample.x + body_width * 0.5f);
+    if (input.config.candle_radius > 0.0f) {
+      AppendRoundedRect(vertices, body_left, body_top, body_right, body_bottom,
+                        input.config.candle_radius, input.config.display_scale,
+                        input.plot, color);
+    } else {
+      AppendQuad(vertices, body_left, body_top, body_right, body_bottom, color);
+    }
   });
 }
 
@@ -495,7 +614,14 @@ void AppendHollowCandlestickGeometry(const SeriesGeometryInput& input,
                         sample.x + wick_width * 0.5f,
                         std::max(wick_bottom, wick_top + 1.0f), input.plot,
                         color);
-      AppendQuad(vertices, body_left, body_top, body_right, body_bottom, color);
+      if (input.config.candle_radius > 0.0f) {
+        AppendRoundedRect(vertices, body_left, body_top, body_right,
+                          body_bottom, input.config.candle_radius,
+                          input.config.display_scale, input.plot, color);
+      } else {
+        AppendQuad(vertices, body_left, body_top, body_right, body_bottom,
+                   color);
+      }
       return;
     }
 
@@ -510,7 +636,22 @@ void AppendHollowCandlestickGeometry(const SeriesGeometryInput& input,
     const float visible_body_height = body_bottom - body_top;
     if (visible_body_width <= wick_width * 2.0f ||
         visible_body_height <= wick_width * 2.0f) {
-      AppendQuad(vertices, body_left, body_top, body_right, body_bottom, color);
+      if (input.config.candle_radius > 0.0f) {
+        AppendRoundedRect(vertices, body_left, body_top, body_right,
+                          body_bottom, input.config.candle_radius,
+                          input.config.display_scale, input.plot, color);
+      } else {
+        AppendQuad(vertices, body_left, body_top, body_right, body_bottom,
+                   color);
+      }
+      return;
+    }
+
+    if (input.config.candle_radius > 0.0f) {
+      AppendRoundedRectOutline(vertices, body_left, body_top, body_right,
+                               body_bottom, input.config.candle_radius,
+                               wick_width, input.config.display_scale,
+                               input.plot, color);
       return;
     }
 
@@ -749,8 +890,15 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
     return point_count * SeriesQuadsPerSample(input.config.series_type) *
            kFloatsPerQuad;
   }
-  return SampleCount(input) * SeriesQuadsPerSample(input.config.series_type) *
-         kFloatsPerQuad;
+  size_t quads_per_sample = SeriesQuadsPerSample(input.config.series_type);
+  if (input.config.candle_radius > 0.0f) {
+    if (input.config.series_type == SeriesType::kCandlestick) {
+      quads_per_sample = kRoundedCandlestickQuadsPerSample;
+    } else if (input.config.series_type == SeriesType::kHollowCandlestick) {
+      quads_per_sample = kRoundedHollowCandlestickQuadsPerSample;
+    }
+  }
+  return SampleCount(input) * quads_per_sample * kFloatsPerQuad;
 }
 
 void AppendSeriesGeometry(const SeriesGeometryInput& input,

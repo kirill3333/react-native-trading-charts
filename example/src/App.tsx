@@ -3,13 +3,26 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChartSettingsProvider } from './chartSettings';
 import { AppNavigation } from './navigation';
+import { useAppTheme } from './themeContext';
+
+function ThemedApp() {
+  const theme = useAppTheme();
+  return (
+    <>
+      <StatusBar
+        backgroundColor={theme.colors.background}
+        barStyle={theme.statusBarStyle}
+      />
+      <AppNavigation />
+    </>
+  );
+}
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar backgroundColor="#100C18" barStyle="light-content" />
       <ChartSettingsProvider>
-        <AppNavigation />
+        <ThemedApp />
       </ChartSettingsProvider>
     </SafeAreaProvider>
   );

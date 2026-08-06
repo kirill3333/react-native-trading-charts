@@ -641,7 +641,9 @@ struct TCTextPresentation {
   NSCache<NSString *, TCTextLayout *> *_tooltipLayoutCache;
   NSCache<NSString *, TCTextLayout *> *_tooltipBlockLayoutCache;
   TCTextLayout *_tooltipLabelsLayout;
-  std::array<std::string, 8> _tooltipLabelKeys;
+  std::vector<std::string> _tooltipLabelKeys;
+  NSArray<NSString *> *_tooltipFields;
+  BOOL _showTooltipHeader;
   CGFloat _tooltipMaxLabelWidth;
   CGFloat _tooltipRowHeight;
   bool _tooltipLabelsReady;
@@ -707,6 +709,11 @@ struct TCTextPresentation {
     _tooltipLayoutCache.countLimit = 256;
     _tooltipBlockLayoutCache = [NSCache new];
     _tooltipBlockLayoutCache.countLimit = 256;
+    _tooltipFields = @[
+      @"open", @"close", @"high", @"low", @"amplitude",
+      @"changePercent", @"change", @"volume"
+    ];
+    _showTooltipHeader = YES;
 
     _badgeAttributes = @{
       NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightSemibold],
@@ -767,6 +774,20 @@ struct TCTextPresentation {
       ? root[@"formatters"] : @{};
   _panesConfig = [root[@"panes"] isKindOfClass:NSArray.class]
       ? root[@"panes"] : @[];
+  NSDictionary *crosshair = [root[@"crosshair"] isKindOfClass:NSDictionary.class]
+      ? root[@"crosshair"] : @{};
+  NSArray *tooltipFields = [crosshair[@"tooltipFields"] isKindOfClass:NSArray.class]
+      ? crosshair[@"tooltipFields"] : nil;
+  if (tooltipFields) {
+    _tooltipFields = [tooltipFields copy];
+  } else {
+    _tooltipFields = @[
+      @"open", @"close", @"high", @"low", @"amplitude",
+      @"changePercent", @"change", @"volume"
+    ];
+  }
+  _showTooltipHeader = crosshair[@"showTooltipHeader"]
+      ? [crosshair[@"showTooltipHeader"] boolValue] : YES;
   ++_presentationVersion;
 }
 
@@ -938,16 +959,34 @@ struct TCTextPresentation {
 }
 
 - (void)prepareTooltipLabels:(const ChartConfig &)config metrics:(TCOverlayUpdateMetrics *)metrics {
-  const std::array<std::string, 8> keys = {
-      config.tooltip_label_open,   config.tooltip_label_close,     config.tooltip_label_high,
-      config.tooltip_label_low,    config.tooltip_label_amplitude, config.tooltip_label_change_percent,
-      config.tooltip_label_change, config.tooltip_label_volume,
-  };
+  std::vector<std::string> keys;
+  keys.reserve(_tooltipFields.count);
+  NSMutableArray<NSString *> *labels =
+      [NSMutableArray arrayWithCapacity:_tooltipFields.count];
+  for (NSString *field in _tooltipFields) {
+    const std::string *label = nullptr;
+    if ([field isEqualToString:@"open"]) label = &config.tooltip_label_open;
+    else if ([field isEqualToString:@"close"]) label = &config.tooltip_label_close;
+    else if ([field isEqualToString:@"high"]) label = &config.tooltip_label_high;
+    else if ([field isEqualToString:@"low"]) label = &config.tooltip_label_low;
+    else if ([field isEqualToString:@"amplitude"]) label = &config.tooltip_label_amplitude;
+    else if ([field isEqualToString:@"changePercent"])
+      label = &config.tooltip_label_change_percent;
+    else if ([field isEqualToString:@"change"]) label = &config.tooltip_label_change;
+    else if ([field isEqualToString:@"volume"]) label = &config.tooltip_label_volume;
+    if (!label) continue;
+    NSString *text = [NSString stringWithUTF8String:label->c_str()] ?: @"";
+    [labels addObject:text];
+    keys.emplace_back(std::string(field.UTF8String ?: "") + "\x1f" + *label);
+  }
   if (_tooltipLabelsReady && _tooltipLabelKeys == keys) return;
 
-  NSMutableArray<NSString *> *labels = [NSMutableArray arrayWithCapacity:keys.size()];
-  for (const std::string &key : keys) {
-    [labels addObject:[NSString stringWithUTF8String:key.c_str()] ?: @""];
+  if (labels.count == 0) {
+    _tooltipLabelKeys = std::move(keys);
+    _tooltipLabelsLayout = nil;
+    _tooltipMaxLabelWidth = 0;
+    _tooltipLabelsReady = true;
+    return;
   }
   NSString *text = [labels componentsJoinedByString:@"\n"];
   NSString *cacheKey = [@"labels\x1f" stringByAppendingString:text];
@@ -966,11 +1005,14 @@ struct TCTextPresentation {
 }
 
 - (TCTextLayout *)tooltipValuesLayout:(NSArray<NSString *> *)values
+                               fields:(NSArray<NSString *> *)fields
                       changeDirection:(NSInteger)changeDirection
                               metrics:(TCOverlayUpdateMetrics *)metrics {
   NSString *text = [values componentsJoinedByString:@"\n"];
+  NSString *fieldKey = [fields componentsJoinedByString:@","];
   NSString *cacheKey =
-      [NSString stringWithFormat:@"values:%ld\x1f%@", static_cast<long>(changeDirection), text];
+      [NSString stringWithFormat:@"values:%ld\x1f%@\x1f%@",
+                                 static_cast<long>(changeDirection), fieldKey, text];
   TCTextLayout *layout = [_tooltipBlockLayoutCache objectForKey:cacheKey];
   if (layout) {
     ++metrics->layoutCacheHits;
@@ -986,7 +1028,9 @@ struct TCTextPresentation {
   }
   NSMutableAttributedString *attributedString = [NSMutableAttributedString new];
   for (NSUInteger index = 0; index < values.count; ++index) {
-    const BOOL changeRow = index == 5 || index == 6;
+    NSString *field = fields[index];
+    const BOOL changeRow = [field isEqualToString:@"changePercent"] ||
+        [field isEqualToString:@"change"];
     NSString *line = index == 0 ? values[index] : [@"\n" stringByAppendingString:values[index]];
     [attributedString
         appendAttributedString:[[NSAttributedString alloc]
@@ -1632,35 +1676,64 @@ struct TCTextPresentation {
                 metrics:&metrics];
       ++visibleSelectionLabels;
 
-      if (config.show_tooltip) {
+      const BOOL hasTooltipContent = _showTooltipHeader || _tooltipFields.count > 0;
+      if (config.show_tooltip && hasTooltipContent) {
         [self prepareTooltipLabels:config metrics:&metrics];
         const auto &c = current.selected_candle;
-        NSString *header = [self formatTime:c.timestamp formatIndex:timeFormatIndex full:YES tooltip:YES];
-        NSArray<NSString *> *values = @[
-          [self formatValue:c.open role:@"tooltip" snapshot:current],
-          [self formatValue:c.close role:@"tooltip" snapshot:current],
-          [self formatValue:c.high role:@"tooltip" snapshot:current],
-          [self formatValue:c.low role:@"tooltip" snapshot:current],
-          [self formatPercentage:current.selected_amplitude_percent
-                           valid:current.selected_percentages_valid],
-          [self formatPercentage:current.selected_change_percent
-                           valid:current.selected_percentages_valid],
-          [self formatValue:current.selected_change role:@"tooltip" snapshot:current],
-          [self formatVolume:c.volume],
-        ];
-        TCTextLayout *headerLayout = [self layoutForText:header
-                                              attributes:_tooltipAttributes
-                                                   cache:_tooltipLayoutCache
-                                                 metrics:&metrics];
+        NSMutableArray<NSString *> *activeFields =
+            [NSMutableArray arrayWithCapacity:_tooltipFields.count];
+        NSMutableArray<NSString *> *values =
+            [NSMutableArray arrayWithCapacity:_tooltipFields.count];
+        for (NSString *field in _tooltipFields) {
+          NSString *value = nil;
+          if ([field isEqualToString:@"open"])
+            value = [self formatValue:c.open role:@"tooltip" snapshot:current];
+          else if ([field isEqualToString:@"close"])
+            value = [self formatValue:c.close role:@"tooltip" snapshot:current];
+          else if ([field isEqualToString:@"high"])
+            value = [self formatValue:c.high role:@"tooltip" snapshot:current];
+          else if ([field isEqualToString:@"low"])
+            value = [self formatValue:c.low role:@"tooltip" snapshot:current];
+          else if ([field isEqualToString:@"amplitude"])
+            value = [self formatPercentage:current.selected_amplitude_percent
+                                      valid:current.selected_percentages_valid];
+          else if ([field isEqualToString:@"changePercent"])
+            value = [self formatPercentage:current.selected_change_percent
+                                      valid:current.selected_percentages_valid];
+          else if ([field isEqualToString:@"change"])
+            value = [self formatValue:current.selected_change role:@"tooltip" snapshot:current];
+          else if ([field isEqualToString:@"volume"])
+            value = [self formatVolume:c.volume];
+          if (!value) continue;
+          [activeFields addObject:field];
+          [values addObject:value];
+        }
+        TCTextLayout *headerLayout = nil;
+        if (_showTooltipHeader) {
+          NSString *header = [self formatTime:c.timestamp
+                                  formatIndex:timeFormatIndex
+                                         full:YES
+                                      tooltip:YES];
+          headerLayout = [self layoutForText:header
+                                  attributes:_tooltipAttributes
+                                       cache:_tooltipLayoutCache
+                                     metrics:&metrics];
+        }
         const NSInteger changeDirection = current.selected_change > 0.0   ? 1
                                           : current.selected_change < 0.0 ? -1
                                                                          : 0;
-        TCTextLayout *valuesLayout = [self tooltipValuesLayout:values
-                                               changeDirection:changeDirection
-                                                       metrics:&metrics];
-        CGFloat boxWidth =
-            MAX(headerLayout.size.width, _tooltipMaxLabelWidth + 12 + valuesLayout.size.width) + 20;
-        CGFloat headerHeight = MAX(17, headerLayout.size.height);
+        TCTextLayout *valuesLayout = values.count > 0
+            ? [self tooltipValuesLayout:values
+                                 fields:activeFields
+                        changeDirection:changeDirection
+                                metrics:&metrics]
+            : nil;
+        const CGFloat headerWidth = _showTooltipHeader ? headerLayout.size.width : 0;
+        const CGFloat rowsWidth = values.count > 0
+            ? _tooltipMaxLabelWidth + 12 + valuesLayout.size.width
+            : 0;
+        CGFloat boxWidth = MAX(headerWidth, rowsWidth) + 20;
+        CGFloat headerHeight = _showTooltipHeader ? MAX(17, headerLayout.size.height) : 0;
         // NSAttributedString.size can include extra paragraph-layout height for
         // multiline strings. The rows themselves use this exact line height,
         // so derive the background from the row count to keep 9pt padding at
@@ -1696,35 +1769,42 @@ struct TCTextPresentation {
           _tooltipBackgroundLayer.hidden = NO;
         }
         CGFloat y = box.origin.y + 9;
-        TCTextLayerItem *headerItem = [self itemAtIndex:0
-                                                 inPool:_tooltipLineLayers
-                                            parentLayer:_tooltipContainer];
-        [self applyLayout:headerLayout
-                   toItem:headerItem
-                    frame:CGRectMake(box.origin.x + 10, y, headerLayout.size.width,
-                                     headerLayout.size.height)
-                  metrics:&metrics];
-        y += headerHeight;
-        ++visibleSelectionLabels;
-        const CGFloat valueX = box.origin.x + 10 + _tooltipMaxLabelWidth + 12;
-        TCTextLayerItem *labelsItem = [self itemAtIndex:1
-                                                 inPool:_tooltipLineLayers
-                                            parentLayer:_tooltipContainer];
-        [self applyLayout:_tooltipLabelsLayout
-                   toItem:labelsItem
-                    frame:CGRectMake(box.origin.x + 10, y, _tooltipLabelsLayout.size.width,
-                                     rowsHeight)
-                  metrics:&metrics];
-        TCTextLayerItem *valuesItem = [self itemAtIndex:0
-                                                 inPool:_tooltipValueLayers
-                                            parentLayer:_tooltipContainer];
-        [self applyLayout:valuesLayout
-                   toItem:valuesItem
-                    frame:CGRectMake(valueX, y, valuesLayout.size.width, rowsHeight)
-                  metrics:&metrics];
-        visibleSelectionLabels += values.count * 2;
-        [self hideItemsInPool:_tooltipLineLayers fromIndex:2];
-        [self hideItemsInPool:_tooltipValueLayers fromIndex:1];
+        NSUInteger nextLineIndex = 0;
+        if (_showTooltipHeader) {
+          TCTextLayerItem *headerItem = [self itemAtIndex:nextLineIndex++
+                                                   inPool:_tooltipLineLayers
+                                              parentLayer:_tooltipContainer];
+          [self applyLayout:headerLayout
+                     toItem:headerItem
+                      frame:CGRectMake(box.origin.x + 10, y, headerLayout.size.width,
+                                       headerLayout.size.height)
+                    metrics:&metrics];
+          y += headerHeight;
+          ++visibleSelectionLabels;
+        }
+        if (values.count > 0) {
+          const CGFloat valueX = box.origin.x + 10 + _tooltipMaxLabelWidth + 12;
+          TCTextLayerItem *labelsItem = [self itemAtIndex:nextLineIndex++
+                                                   inPool:_tooltipLineLayers
+                                              parentLayer:_tooltipContainer];
+          [self applyLayout:_tooltipLabelsLayout
+                     toItem:labelsItem
+                      frame:CGRectMake(box.origin.x + 10, y, _tooltipLabelsLayout.size.width,
+                                       rowsHeight)
+                    metrics:&metrics];
+          TCTextLayerItem *valuesItem = [self itemAtIndex:0
+                                                   inPool:_tooltipValueLayers
+                                              parentLayer:_tooltipContainer];
+          [self applyLayout:valuesLayout
+                     toItem:valuesItem
+                      frame:CGRectMake(valueX, y, valuesLayout.size.width, rowsHeight)
+                    metrics:&metrics];
+          visibleSelectionLabels += values.count * 2;
+          [self hideItemsInPool:_tooltipValueLayers fromIndex:1];
+        } else {
+          [self hideItemsInPool:_tooltipValueLayers fromIndex:0];
+        }
+        [self hideItemsInPool:_tooltipLineLayers fromIndex:nextLineIndex];
       } else if (!_tooltipContainer.hidden) {
         _tooltipContainer.hidden = YES;
       }
@@ -1746,7 +1826,9 @@ struct TCTextPresentation {
         static_cast<unsigned long>(visibleSelectionLabels),
         static_cast<unsigned long>(selectionTextUpdates),
         static_cast<unsigned long>(metrics.frameUpdates - selectionFrameUpdatesBefore),
-        static_cast<unsigned long>(current.crosshair_visible && config.show_tooltip ? 8 : 0));
+        static_cast<unsigned long>(current.crosshair_visible && config.show_tooltip
+                                       ? _tooltipFields.count
+                                       : 0));
   }
 
   os_signpost_id_t transactionSignpostID = os_signpost_id_generate(performanceLog);
@@ -2134,6 +2216,7 @@ struct TCTextPresentation {
   const bool usesArea = [series[@"type"] isEqualToString:@"area"];
   const bool usesHollowCandlesticks =
       [series[@"type"] isEqualToString:@"hollowCandlestick"];
+  _config.candle_radius = [candlesAppearance[@"radius"] floatValue];
   NSDictionary *seriesAppearance = usesBars ? barsAppearance : candlesAppearance;
   NSDictionary *currentAppearance = appearance[@"currentPrice"];
   NSDictionary *currentLineAppearance = currentAppearance[@"line"];

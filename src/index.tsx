@@ -28,6 +28,7 @@ export type {
   CompactValueFormat,
   CrosshairLineStyle,
   CrosshairOptions,
+  CrosshairTooltipField,
   CrosshairTooltipLabels,
   CurrentPriceOptions,
   DatePatternFormat,

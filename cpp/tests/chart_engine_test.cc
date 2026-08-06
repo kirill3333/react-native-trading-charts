@@ -1588,6 +1588,113 @@ void TestHollowCandlestickGeometry() {
   ExpectNear(doji_body.color.a, 0.4f);
 }
 
+void TestRoundedCandlestickGeometry() {
+  const std::vector<Candle> candle = {
+      Candle{0.0, 25.0, 90.0, 10.0, 75.0, 1.0},
+  };
+  const auto render = [&](SeriesType type, float radius, double visible_min,
+                          double visible_max) {
+    ChartConfig config;
+    config.series_type = type;
+    config.candle_radius = radius;
+    config.show_current_price = false;
+    const trading_charts::internal::SeriesGeometryInput input{
+        config,
+        candle,
+        0,
+        candle.size(),
+        {0.0f, 0.0f, 100.0f, 100.0f},
+        visible_min,
+        visible_max,
+        0.0,
+        100.0,
+        nullptr};
+    std::vector<float> vertices;
+    const size_t capacity =
+        trading_charts::internal::SeriesGeometryFloatCapacity(input);
+    vertices.reserve(capacity);
+    trading_charts::internal::AppendSeriesGeometry(input, vertices);
+    assert(vertices.size() <= capacity);
+    for (size_t index = 0; index < vertices.size(); index += 6) {
+      assert(std::isfinite(vertices[index]));
+      assert(std::isfinite(vertices[index + 1]));
+    }
+    return vertices;
+  };
+
+  const std::vector<float> sharp =
+      render(SeriesType::kCandlestick, 0.0f, -30000.0, 30000.0);
+  const std::vector<float> rounded =
+      render(SeriesType::kCandlestick, 6.0f, -30000.0, 30000.0);
+  assert(rounded.size() > sharp.size());
+
+  constexpr size_t kFloatsPerQuad = size_t{6} * 6;
+  for (size_t index = 0; index < rounded.size(); index += 6) {
+    assert(rounded[index] >= 0.0f);
+    assert(rounded[index] <= 100.0f);
+    assert(rounded[index + 1] >= 0.0f);
+    assert(rounded[index + 1] <= 100.0f);
+  }
+  float body_left = rounded[kFloatsPerQuad];
+  float body_top = rounded[kFloatsPerQuad + 1];
+  float body_right = body_left;
+  float body_bottom = body_top;
+  for (size_t index = kFloatsPerQuad; index < rounded.size(); index += 6) {
+    body_left = std::min(body_left, rounded[index]);
+    body_top = std::min(body_top, rounded[index + 1]);
+    body_right = std::max(body_right, rounded[index]);
+    body_bottom = std::max(body_bottom, rounded[index + 1]);
+  }
+  bool contains_sharp_corner = false;
+  for (size_t index = kFloatsPerQuad; index < rounded.size(); index += 6) {
+    contains_sharp_corner =
+        contains_sharp_corner ||
+        ((rounded[index] == body_left || rounded[index] == body_right) &&
+         (rounded[index + 1] == body_top || rounded[index + 1] == body_bottom));
+  }
+  assert(!contains_sharp_corner);
+
+  const std::vector<float> clamped =
+      render(SeriesType::kCandlestick, 14.0f, -30000.0, 30000.0);
+  const std::vector<float> oversized =
+      render(SeriesType::kCandlestick, 1000.0f, -30000.0, 30000.0);
+  assert(clamped == oversized);
+
+  const std::vector<float> hollow =
+      render(SeriesType::kHollowCandlestick, 6.0f, -30000.0, 30000.0);
+  const std::vector<float> sharp_hollow =
+      render(SeriesType::kHollowCandlestick, 0.0f, -30000.0, 30000.0);
+  assert(hollow.size() > sharp_hollow.size());
+
+  const std::vector<float> clipped =
+      render(SeriesType::kCandlestick, 6.0f, 0.0, 60000.0);
+  assert(!clipped.empty());
+  for (size_t index = kFloatsPerQuad; index < clipped.size(); index += 6) {
+    assert(clipped[index] >= 0.0f);
+    assert(clipped[index] <= 100.0f);
+    assert(clipped[index + 1] >= 0.0f);
+    assert(clipped[index + 1] <= 100.0f);
+  }
+
+  ChartConfig doji_config;
+  doji_config.series_type = SeriesType::kCandlestick;
+  doji_config.candle_radius = 1000.0f;
+  const std::vector<Candle> doji = {
+      Candle{0.0, 50.0, 60.0, 40.0, 50.0, 1.0},
+  };
+  const trading_charts::internal::SeriesGeometryInput doji_input{
+      doji_config, doji,    0,   doji.size(), {0.0f, 0.0f, 100.0f, 100.0f},
+      -30000.0,    30000.0, 0.0, 100.0,       nullptr};
+  std::vector<float> doji_vertices;
+  trading_charts::internal::AppendSeriesGeometry(doji_input, doji_vertices);
+  assert(doji_vertices.size() <=
+         trading_charts::internal::SeriesGeometryFloatCapacity(doji_input));
+  for (size_t index = 0; index < doji_vertices.size(); index += 6) {
+    assert(std::isfinite(doji_vertices[index]));
+    assert(std::isfinite(doji_vertices[index + 1]));
+  }
+}
+
 void TestHollowCandlestickSpacingAndClipping() {
   constexpr size_t kFloatsPerQuad = size_t{6} * 6;
   const double candles[] = {
@@ -2557,6 +2664,7 @@ int main() noexcept {
     TestLogicalSpacingUsesUniformCandleSlots();
     TestBarGeometryAndRuntimeSwitch();
     TestHollowCandlestickGeometry();
+    TestRoundedCandlestickGeometry();
     TestHollowCandlestickSpacingAndClipping();
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();

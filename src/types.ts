@@ -270,6 +270,7 @@ export type ChartAppearance = {
   candles?: {
     upColor?: string;
     downColor?: string;
+    radius?: number;
   };
   bars?: {
     upColor?: string;
@@ -429,11 +430,23 @@ export type CrosshairTooltipLabels = {
   volume?: string;
 };
 
+export type CrosshairTooltipField =
+  | 'open'
+  | 'close'
+  | 'high'
+  | 'low'
+  | 'amplitude'
+  | 'changePercent'
+  | 'change'
+  | 'volume';
+
 export type CrosshairOptions = {
   enabled?: boolean;
   showTooltip?: boolean;
+  showTooltipHeader?: boolean;
   tooltipBackgroundOpacity?: number;
   lineStyle?: CrosshairLineStyle;
+  tooltipFields?: ReadonlyArray<CrosshairTooltipField>;
   tooltipLabels?: CrosshairTooltipLabels;
 };
 
@@ -540,7 +553,7 @@ export type ResolvedChartBorderStyle = Required<ChartBorderStyle>;
 export type ResolvedChartAppearance = {
   backgroundColor: string;
   grid: { color: string; opacity: number };
-  candles: { upColor: string; downColor: string };
+  candles: { upColor: string; downColor: string; radius: number };
   bars: { upColor: string; downColor: string; lineWidth: number };
   line: {
     width: number;

@@ -550,8 +550,19 @@ describe('chart config', () => {
     expect(price.crosshair).toEqual({
       enabled: true,
       showTooltip: true,
+      showTooltipHeader: true,
       tooltipBackgroundOpacity: 1,
       lineStyle: 'solid',
+      tooltipFields: [
+        'open',
+        'close',
+        'high',
+        'low',
+        'amplitude',
+        'changePercent',
+        'change',
+        'volume',
+      ],
       tooltipLabels: {
         open: 'Open',
         close: 'Close',
@@ -717,12 +728,16 @@ describe('chart config', () => {
       crosshair: {
         tooltipBackgroundOpacity: 0.55,
         lineStyle: 'dashed',
+        showTooltipHeader: false,
+        tooltipFields: ['volume', 'close', 'changePercent'],
         tooltipLabels: { open: 'Открытие', volume: 'Объём' },
       },
     });
     expect(resolved.crosshair).toMatchObject({
       tooltipBackgroundOpacity: 0.55,
       lineStyle: 'dashed',
+      showTooltipHeader: false,
+      tooltipFields: ['volume', 'close', 'changePercent'],
       tooltipLabels: {
         open: 'Открытие',
         close: 'Close',
@@ -735,6 +750,8 @@ describe('chart config', () => {
     expect(serialized.crosshair).toMatchObject({
       tooltipBackgroundOpacity: 0.55,
       lineStyle: 'dashed',
+      showTooltipHeader: false,
+      tooltipFields: ['volume', 'close', 'changePercent'],
       tooltipLabels: { open: 'Открытие', volume: 'Объём' },
     });
     expect(() =>
@@ -755,6 +772,24 @@ describe('chart config', () => {
         crosshair: { lineStyle: 'dotted' as 'solid' },
       })
     ).toThrow('crosshair.lineStyle');
+    expect(
+      resolveChartConfig({
+        chartId: 'empty-tooltip',
+        crosshair: { tooltipFields: [], showTooltipHeader: false },
+      }).crosshair
+    ).toMatchObject({ tooltipFields: [], showTooltipHeader: false });
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'unknown-tooltip-field',
+        crosshair: { tooltipFields: ['unknown' as 'open'] },
+      })
+    ).toThrow('crosshair.tooltipFields[0]');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'duplicate-tooltip-field',
+        crosshair: { tooltipFields: ['open', 'open'] },
+      })
+    ).toThrow('duplicate field');
   });
 
   it('accepts valid scale margins and rejects invalid ranges', () => {
@@ -916,7 +951,7 @@ describe('chart config', () => {
       appearance: {
         backgroundColor: '#FAFAFA',
         grid: { color: '#CCCCCC80', opacity: 0.5 },
-        candles: { upColor: '#008800' },
+        candles: { upColor: '#008800', radius: 3.5 },
         xAxis: {
           text: {
             color: '#222222',
@@ -941,7 +976,7 @@ describe('chart config', () => {
     expect(resolved.appearance).toMatchObject({
       backgroundColor: '#FAFAFA',
       grid: { color: '#CCCCCC80', opacity: 0.5 },
-      candles: { upColor: '#008800', downColor: '#FF3B64' },
+      candles: { upColor: '#008800', downColor: '#FF3B64', radius: 3.5 },
       xAxis: {
         text: {
           color: '#222222',
@@ -1016,6 +1051,7 @@ describe('chart config', () => {
     expect(resolved.appearance.candles).toEqual({
       upColor: '#00A88F',
       downColor: '#FF334F',
+      radius: 0,
     });
     expect(resolved.appearance.currentPrice).toMatchObject({
       line: { upColor: '#00A88F', downColor: '#FF334F' },
@@ -1208,6 +1244,12 @@ describe('chart config', () => {
         appearance: { bars: { lineWidth: 0 } },
       })
     ).toThrow('appearance.bars.lineWidth');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'bad-candle-radius',
+        appearance: { candles: { radius: -1 } },
+      })
+    ).toThrow('appearance.candles.radius');
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-color',

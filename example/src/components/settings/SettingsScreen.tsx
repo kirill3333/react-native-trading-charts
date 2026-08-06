@@ -10,6 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useChartSettings } from '../../chartSettings';
+import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { useAppTheme } from '../../themeContext';
 import { SettingSegments } from './SettingSegments';
 import { SettingsRow } from './SettingsRow';
 import { SettingsSection } from './SettingsSection';
@@ -66,6 +68,8 @@ const TIME_ZONE_OPTIONS = [
 export function SettingsScreen() {
   const navigation = useNavigation();
   const { resetSettings, settings, updateSettings } = useChartSettings();
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   const currentPriceDetailsDisabled = !settings.currentPriceVisible;
   const pinToEdgeDisabled =
     currentPriceDetailsDisabled || !settings.currentPriceShowLabel;
@@ -119,14 +123,14 @@ export function SettingsScreen() {
 
         <SettingsSection title="Theme">
           <SettingSwitch
-            description="Brighter price series and white chart labels"
-            label="High contrast"
-            onValueChange={(highContrast) =>
+            description="Use light colors across the app and chart"
+            label="Light theme"
+            onValueChange={(lightTheme) =>
               updateSettings({
-                themeMode: highContrast ? 'highContrast' : 'default',
+                themeMode: lightTheme ? 'light' : 'dark',
               })
             }
-            value={settings.themeMode === 'highContrast'}
+            value={settings.themeMode === 'light'}
           />
         </SettingsSection>
 
@@ -301,8 +305,9 @@ export function SettingsScreen() {
               onChangeText={(currencySymbol) =>
                 updateSettings({ currencySymbol })
               }
+              keyboardAppearance={theme.dark ? 'dark' : 'light'}
               placeholder="None"
-              placeholderTextColor="#6F6979"
+              placeholderTextColor={theme.colors.inputPlaceholder}
               selectTextOnFocus
               style={styles.input}
               value={settings.currencySymbol}
@@ -326,52 +331,63 @@ export function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { backgroundColor: '#100C18', flex: 1 },
-  header: {
-    alignItems: 'center',
-    borderBottomColor: '#292431',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 56,
-    paddingHorizontal: 14,
-  },
-  headerSpacer: { width: 64 },
-  title: {
-    color: '#F6F3FA',
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  closeButton: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    minHeight: 40,
-    width: 64,
-  },
-  closeText: { color: '#C2B9FF', fontSize: 14, fontWeight: '800' },
-  content: { paddingHorizontal: 14, paddingTop: 22, paddingBottom: 32 },
-  input: {
-    backgroundColor: '#100C18',
-    borderColor: '#393242',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: '#FFFFFF',
-    fontSize: 13,
-    minHeight: 36,
-    minWidth: 76,
-    paddingHorizontal: 10,
-    textAlign: 'center',
-  },
-  restoreButton: {
-    alignItems: 'center',
-    borderColor: '#51485E',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    justifyContent: 'center',
-    minHeight: 46,
-  },
-  restoreText: { color: '#C2B9FF', fontSize: 14, fontWeight: '800' },
-  pressed: { opacity: 0.7 },
-});
+function createStyles(colors: AppThemeColors) {
+  return StyleSheet.create({
+    safeArea: { backgroundColor: colors.background, flex: 1 },
+    header: {
+      alignItems: 'center',
+      borderBottomColor: colors.borderSubtle,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 56,
+      paddingHorizontal: 14,
+    },
+    headerSpacer: { width: 64 },
+    title: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 17,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    closeButton: {
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      minHeight: 40,
+      width: 64,
+    },
+    closeText: { color: colors.accentText, fontSize: 14, fontWeight: '800' },
+    content: { paddingHorizontal: 14, paddingTop: 22, paddingBottom: 32 },
+    input: {
+      backgroundColor: colors.background,
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: colors.text,
+      fontSize: 13,
+      minHeight: 36,
+      minWidth: 76,
+      paddingHorizontal: 10,
+      textAlign: 'center',
+    },
+    restoreButton: {
+      alignItems: 'center',
+      borderColor: colors.border,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      justifyContent: 'center',
+      minHeight: 46,
+    },
+    restoreText: {
+      color: colors.accentText,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    pressed: { opacity: 0.7 },
+  });
+}
+
+const THEMED_STYLES = {
+  dark: createStyles(APP_THEMES.dark.colors),
+  light: createStyles(APP_THEMES.light.colors),
+};

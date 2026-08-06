@@ -10,14 +10,17 @@ import {
   hyperliquidChartDataController,
 } from './chartDataController';
 import { SettingsScreen } from './components/settings/SettingsScreen';
-import { ChartScreen } from './screens/ChartScreen';
+import {
+  ChartScreen,
+  type ChartRouteParams,
+} from './screens/ChartScreen';
 import { MarketsScreen } from './screens/MarketsScreen';
+import { useAppTheme } from './themeContext';
 
 const RootStack = createNativeStackNavigator({
   initialRouteName: 'Markets',
   screenOptions: {
     animation: 'default',
-    contentStyle: { backgroundColor: '#100C18' },
     headerShown: false,
   },
   groups: {
@@ -37,18 +40,21 @@ const RootStack = createNativeStackNavigator({
 });
 
 export type RootStackParamList = StaticParamList<typeof RootStack>;
+type RootStackType = typeof RootStack;
+type RootRoute =
+  | { name: 'Markets'; params?: undefined }
+  | { name: 'ChartSettings'; params?: undefined }
+  | { name: 'Chart'; params: ChartRouteParams };
 
-declare global {
-  namespace ReactNavigation {
-    interface RootParamList extends RootStackParamList {}
-  }
+declare module '@react-navigation/core' {
+  interface RootNavigator extends RootStackType {}
 }
 
 const Navigation = createStaticNavigation(RootStack);
 const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function synchronizeChartSession() {
-  const route = navigationRef.getCurrentRoute();
+  const route = navigationRef.getCurrentRoute() as RootRoute | undefined;
   const routeName = route?.name;
   if (routeName === 'ChartSettings') {
     return;
@@ -69,11 +75,13 @@ function synchronizeChartSession() {
 }
 
 export function AppNavigation() {
+  const theme = useAppTheme();
   return (
     <Navigation
       onReady={synchronizeChartSession}
       onStateChange={synchronizeChartSession}
       ref={navigationRef}
+      theme={theme.navigationTheme}
     />
   );
 }

@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -20,6 +21,8 @@ import {
   fetchHyperliquidTickers,
   type HyperliquidTicker,
 } from '../hyperliquid';
+import { APP_THEMES, type AppThemeColors } from '../theme';
+import { useAppTheme } from '../themeContext';
 
 const ROW_HEIGHT = 73;
 
@@ -95,7 +98,10 @@ function useProviderTickers(provider: MarketProvider) {
   const controllersRef = useRef<
     Partial<Record<MarketProvider, AbortController>>
   >({});
-  statesRef.current = states;
+
+  useEffect(() => {
+    statesRef.current = states;
+  }, [states]);
 
   const load = useCallback(async (target: MarketProvider, refresh: boolean) => {
     controllersRef.current[target]?.abort();
@@ -190,6 +196,8 @@ type ErrorStateProps = {
 };
 
 function ErrorState({ title, message, onRetry }: ErrorStateProps) {
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   return (
     <View style={styles.centerState}>
       <Text style={styles.errorTitle}>{title}</Text>
@@ -211,6 +219,8 @@ type TickerRowProps = {
 };
 
 function TickerRow({ ticker, onPress }: TickerRowProps) {
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   const positive = ticker.change24hPercent >= 0;
   const change = `${positive ? '+' : ''}${ticker.change24hPercent.toFixed(2)}%`;
   const pair = tickerPair(ticker);
@@ -254,6 +264,8 @@ type MarketsHeaderProps = {
 };
 
 function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   return (
     <View style={styles.marketsHeader}>
       <View accessibilityRole="tablist" style={styles.providerTabs}>
@@ -296,6 +308,8 @@ function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
 
 export function MarketsScreen() {
   const navigation = useNavigation();
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   const [provider, setProvider] = useState<MarketProvider>('binance');
   const { tickers, loading, loaded, refreshing, error, retry, refresh } =
     useProviderTickers(provider);
@@ -330,7 +344,7 @@ export function MarketsScreen() {
   if ((!loaded || loading) && tickers.length === 0) {
     content = (
       <View style={styles.centerState}>
-        <ActivityIndicator color="#8D7CFF" size="large" />
+        <ActivityIndicator color={theme.colors.accent} size="large" />
         <Text style={styles.loadingText}>
           Loading {provider === 'binance' ? 'Binance' : 'Hyperliquid'} markets…
         </Text>
@@ -376,10 +390,17 @@ export function MarketsScreen() {
           initialNumToRender={14}
           key={provider}
           keyExtractor={(item) => `${provider}:${item.symbol}`}
-          onRefresh={() => {
-            void refresh();
-          }}
-          refreshing={refreshing}
+          refreshControl={
+            <RefreshControl
+              colors={[theme.colors.accent]}
+              onRefresh={() => {
+                void refresh();
+              }}
+              progressBackgroundColor={theme.colors.surface}
+              refreshing={refreshing}
+              tintColor={theme.colors.accent}
+            />
+          }
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
         />
@@ -397,143 +418,168 @@ export function MarketsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#100C18' },
-  screen: { flex: 1, backgroundColor: '#100C18' },
-  marketsHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
-  },
-  providerTabs: {
-    backgroundColor: '#1A1522',
-    borderColor: '#292431',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    marginBottom: 20,
-    padding: 3,
-  },
-  providerTab: {
-    alignItems: 'center',
-    borderRadius: 9,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 38,
-  },
-  providerTabSelected: { backgroundColor: '#7562F4' },
-  providerTabText: { color: '#8F899B', fontSize: 13, fontWeight: '700' },
-  providerTabTextSelected: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  screenTitle: {
-    color: '#F6F3FA',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-  },
-  screenSubtitle: { color: '#8F899B', fontSize: 14, marginTop: 5 },
-  columnLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderBottomColor: '#292431',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingBottom: 9,
-  },
-  columnLabel: {
-    color: '#696374',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.7,
-  },
-  tickerRow: {
-    alignItems: 'center',
-    borderBottomColor: '#211C29',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    height: ROW_HEIGHT,
-    paddingHorizontal: 20,
-  },
-  tickerRowPressed: { backgroundColor: '#1A1522' },
-  tickerIdentity: { flex: 1 },
-  tickerSymbol: { color: '#F6F3FA', fontSize: 16, fontWeight: '700' },
-  quoteSymbol: { color: '#777181', fontSize: 12, fontWeight: '600' },
-  turnoverText: { color: '#777181', fontSize: 12, marginTop: 6 },
-  tickerPriceBlock: { alignItems: 'flex-end', minWidth: 112 },
-  tickerPrice: {
-    color: '#EDEAF2',
-    fontSize: 15,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '600',
-  },
-  positiveText: {
-    color: '#38D98A',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    marginTop: 5,
-  },
-  negativeText: {
-    color: '#FF5C7C',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    marginTop: 5,
-  },
-  disclosure: {
-    color: '#514B5B',
-    fontSize: 26,
-    marginLeft: 12,
-    marginTop: -3,
-  },
-  centerState: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    padding: 28,
-  },
-  loadingText: { color: '#8F899B', fontSize: 14, marginTop: 14 },
-  errorTitle: {
-    color: '#F6F3FA',
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  errorMessage: {
-    color: '#8F899B',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 8,
-    maxWidth: 320,
-    textAlign: 'center',
-  },
-  retryButton: {
-    backgroundColor: '#7562F4',
-    borderRadius: 10,
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-  },
-  retryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  inlineError: {
-    alignItems: 'center',
-    backgroundColor: '#2A1721',
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 8,
-  },
-  inlineErrorText: { color: '#E9A8B8', flex: 1, fontSize: 12 },
-  inlineRetry: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 12,
-  },
-  pressed: { opacity: 0.7 },
-});
+function createStyles(colors: AppThemeColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    screen: { flex: 1, backgroundColor: colors.background },
+    marketsHeader: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 20,
+    },
+    providerTabs: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.borderSubtle,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      marginBottom: 20,
+      padding: 3,
+    },
+    providerTab: {
+      alignItems: 'center',
+      borderRadius: 9,
+      flex: 1,
+      justifyContent: 'center',
+      minHeight: 38,
+    },
+    providerTabSelected: { backgroundColor: colors.accent },
+    providerTabText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    providerTabTextSelected: {
+      color: colors.onAccent,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    screenTitle: {
+      color: colors.text,
+      fontSize: 32,
+      fontWeight: '800',
+      letterSpacing: -0.8,
+    },
+    screenSubtitle: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      marginTop: 5,
+    },
+    columnLabels: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      borderBottomColor: colors.borderSubtle,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 20,
+      paddingBottom: 9,
+    },
+    columnLabel: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.7,
+    },
+    tickerRow: {
+      alignItems: 'center',
+      borderBottomColor: colors.borderSubtle,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      height: ROW_HEIGHT,
+      paddingHorizontal: 20,
+    },
+    tickerRowPressed: { backgroundColor: colors.pressed },
+    tickerIdentity: { flex: 1 },
+    tickerSymbol: { color: colors.text, fontSize: 16, fontWeight: '700' },
+    quoteSymbol: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+    turnoverText: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
+    tickerPriceBlock: { alignItems: 'flex-end', minWidth: 112 },
+    tickerPrice: {
+      color: colors.text,
+      fontSize: 15,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '600',
+    },
+    positiveText: {
+      color: colors.positive,
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      marginTop: 5,
+    },
+    negativeText: {
+      color: colors.negative,
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      marginTop: 5,
+    },
+    disclosure: {
+      color: colors.textMuted,
+      fontSize: 26,
+      marginLeft: 12,
+      marginTop: -3,
+    },
+    centerState: {
+      alignItems: 'center',
+      flex: 1,
+      justifyContent: 'center',
+      padding: 28,
+    },
+    loadingText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      marginTop: 14,
+    },
+    errorTitle: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    errorMessage: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 8,
+      maxWidth: 320,
+      textAlign: 'center',
+    },
+    retryButton: {
+      backgroundColor: colors.accent,
+      borderRadius: 10,
+      marginTop: 18,
+      paddingHorizontal: 18,
+      paddingVertical: 11,
+    },
+    retryButtonText: {
+      color: colors.onAccent,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    inlineError: {
+      alignItems: 'center',
+      backgroundColor: colors.errorSurface,
+      borderColor: colors.errorBorder,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      marginHorizontal: 20,
+      marginBottom: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 8,
+    },
+    inlineErrorText: { color: colors.errorText, flex: 1, fontSize: 12 },
+    inlineRetry: {
+      color: colors.accentText,
+      fontSize: 12,
+      fontWeight: '700',
+      marginLeft: 12,
+    },
+    pressed: { opacity: 0.7 },
+  });
+}
+
+const THEMED_STYLES = {
+  dark: createStyles(APP_THEMES.dark.colors),
+  light: createStyles(APP_THEMES.light.colors),
+};

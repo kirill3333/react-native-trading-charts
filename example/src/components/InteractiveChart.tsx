@@ -13,6 +13,7 @@ import {
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
+import { useAppTheme } from '../themeContext';
 
 type InteractiveChartProps = {
   chartId: string;
@@ -36,6 +37,7 @@ export const InteractiveChart = memo(function InteractiveChart({
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
+  const theme = useAppTheme();
   const useSignificantPriceFormat = shouldUseSignificantPriceFormat(lastPrice);
   const chartConfig = useMemo(
     () =>
@@ -81,13 +83,13 @@ export const InteractiveChart = memo(function InteractiveChart({
               priceScaleId: 'volume',
               source: { type: 'ohlcvVolume', seriesId: 'main' },
               appearance: {
-                upColor: '#38D98A80',
-                downColor: '#FF3B6480',
+                upColor: theme.volumeUpColor,
+                downColor: theme.volumeDownColor,
               },
             },
           ]
         : undefined,
-    [showVolume]
+    [showVolume, theme.volumeDownColor, theme.volumeUpColor]
   );
 
   return (

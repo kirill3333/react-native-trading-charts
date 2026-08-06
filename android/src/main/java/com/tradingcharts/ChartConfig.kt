@@ -143,6 +143,7 @@ internal data class ChartConfig(
     val defaultYScale: Double = 1.0,
     val displayScale: Float = 1f,
     val seriesType: String = "candlestick",
+    val candleRadiusPx: Float = 0f,
     val barLineWidthPx: Float = 1f,
     val lineWidthPx: Float = 1.5f,
     val lineSource: String = "close",
@@ -238,8 +239,20 @@ internal data class ChartConfig(
     val showPriceExtremes: Boolean = true,
     val crosshairEnabled: Boolean = true,
     val showTooltip: Boolean = true,
+    val showTooltipHeader: Boolean = true,
     val tooltipBackgroundOpacity: Float = 1f,
     val crosshairDashed: Boolean = false,
+    val tooltipFields: List<String> =
+        listOf(
+            "open",
+            "close",
+            "high",
+            "low",
+            "amplitude",
+            "changePercent",
+            "change",
+            "volume",
+        ),
     val tooltipLabels: CrosshairTooltipLabels = CrosshairTooltipLabels(),
     val panes: List<PaneConfig> =
         listOf(
@@ -305,6 +318,7 @@ internal data class ChartConfig(
         tradeAggregation.originTimestampMs.toDouble(),
         tradeAggregation.outsideSession.toDouble(),
         tradeAggregation.candleTimestamp.toDouble(),
+        candleRadiusPx.toDouble(),
     )
   }
 

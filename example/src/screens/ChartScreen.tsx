@@ -40,8 +40,10 @@ import {
   type HyperliquidTicker,
 } from '../hyperliquid';
 import { InteractiveChart } from '../components/InteractiveChart';
+import { APP_THEMES, type AppThemeColors } from '../theme';
+import { useAppTheme } from '../themeContext';
 
-type ChartRouteParams =
+export type ChartRouteParams =
   | {
       provider: 'binance';
       ticker: BinanceTicker;
@@ -86,6 +88,8 @@ type ConnectionBadgeProps = {
 };
 
 function ConnectionBadge({ status }: ConnectionBadgeProps) {
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   if (status === 'historical' || status === 'error' || status === 'no-data') {
     return null;
   }
@@ -112,7 +116,7 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
   return (
     <View pointerEvents="none" style={styles.connectionBadge}>
       {status !== 'paused' && status !== 'offline' ? (
-        <ActivityIndicator color="#C2B9FF" size="small" />
+        <ActivityIndicator color={theme.colors.accentText} size="small" />
       ) : null}
       <Text
         style={[
@@ -170,6 +174,8 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   venueLabel,
 }: ChartContentProps<TTicker, TInterval>) {
   const navigation = useNavigation();
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
   const [volumeHeightWeight, setVolumeHeightWeight] = useState(1);
@@ -252,7 +258,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
         </Pressable>
       );
     },
-    [changeInterval, interval]
+    [changeInterval, interval, styles]
   );
 
   const hasError = status === 'error' || status === 'no-data';
@@ -361,7 +367,9 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             ]}
           >
             <MaterialIcons
-              color={showVolume ? '#38D98A' : '#7D7689'}
+              color={
+                showVolume ? theme.colors.positive : theme.colors.iconMuted
+              }
               name="bar-chart"
               size={24}
             />
@@ -382,7 +390,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             ]}
           >
             <Text style={styles.chartSizeButtonText}>V</Text>
-            <MaterialIcons color="#C2B9FF" name="height" size={18} />
+            <MaterialIcons
+              color={theme.colors.accentText}
+              name="height"
+              size={18}
+            />
           </Pressable>
           <Pressable
             accessibilityLabel="Zoom in chart"
@@ -394,7 +406,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <MaterialIcons color="#F6F3FA" name="zoom-in" size={24} />
+            <MaterialIcons color={theme.colors.text} name="zoom-in" size={24} />
           </Pressable>
           <Pressable
             accessibilityLabel="Zoom out chart"
@@ -406,7 +418,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <MaterialIcons color="#F6F3FA" name="zoom-out" size={24} />
+            <MaterialIcons
+              color={theme.colors.text}
+              name="zoom-out"
+              size={24}
+            />
           </Pressable>
           <Pressable
             accessibilityLabel="Fit entire chart"
@@ -418,7 +434,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <MaterialIcons color="#C2B9FF" name="zoom-out-map" size={24} />
+            <MaterialIcons
+              color={theme.colors.accentText}
+              name="zoom-out-map"
+              size={24}
+            />
           </Pressable>
           <Pressable
             accessibilityLabel="Open chart settings"
@@ -430,7 +450,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               pressed && styles.pressed,
             ]}
           >
-            <MaterialIcons color="#C2B9FF" name="settings" size={24} />
+            <MaterialIcons
+              color={theme.colors.accentText}
+              name="settings"
+              size={24}
+            />
           </Pressable>
           <Pressable
             accessibilityLabel="Reduce chart to half height"
@@ -449,7 +473,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
           >
             <Text style={styles.chartSizeButtonText}>½</Text>
             <MaterialIcons
-              color="#C2B9FF"
+              color={theme.colors.accentText}
               name="height"
               size={20}
               style={styles.chartSizeButtonIcon}
@@ -468,7 +492,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             ]}
           >
             <MaterialIcons
-              color="#C2B9FF"
+              color={theme.colors.accentText}
               name="height"
               size={20}
               style={styles.chartSizeButtonIcon}
@@ -511,197 +535,208 @@ export function ChartScreen({ route }: ChartScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#100C18' },
-  screen: { flex: 1, backgroundColor: '#100C18' },
-  chartHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    minHeight: 72,
-    paddingHorizontal: 12,
-  },
-  backButton: {
-    alignItems: 'center',
-    borderRadius: 20,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  backIcon: {
-    color: '#F6F3FA',
-    fontSize: 38,
-    fontWeight: '300',
-    lineHeight: 38,
-    marginTop: -3,
-  },
-  chartTitleBlock: { flex: 1, marginLeft: 4 },
-  chartTitle: { color: '#F6F3FA', fontSize: 18, fontWeight: '800' },
-  quoteSymbol: { color: '#777181', fontSize: 12, fontWeight: '600' },
-  chartSubtitle: { color: '#777181', fontSize: 12, marginTop: 4 },
-  headerPriceBlock: { alignItems: 'flex-end', paddingRight: 8 },
-  headerPrice: {
-    color: '#F6F3FA',
-    fontSize: 14,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-  },
-  positiveText: {
-    color: '#38D98A',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    marginTop: 5,
-  },
-  negativeText: {
-    color: '#FF5C7C',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    marginTop: 5,
-  },
-  intervalBar: {
-    borderBottomColor: '#292431',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#292431',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexGrow: 0,
-  },
-  intervalBarContent: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  intervalButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    justifyContent: 'center',
-    marginRight: 6,
-    minWidth: 48,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  intervalButtonSelected: { backgroundColor: '#7562F4' },
-  intervalText: { color: '#8F899B', fontSize: 13, fontWeight: '700' },
-  intervalTextSelected: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  chartErrorBanner: {
-    alignItems: 'center',
-    backgroundColor: '#2A1721',
-    borderBottomColor: '#4A2634',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    minHeight: 42,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  chartErrorText: {
-    color: '#E9A8B8',
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  chartErrorRetry: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 12,
-  },
-  chartViewport: { flex: 1 },
-  chartContainer: { position: 'relative' },
-  chartContainerExpanded: { flex: 1, position: 'relative' },
-  chartControls: {
-    alignItems: 'center',
-    borderTopColor: '#292431',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  chartControlButton: {
-    alignItems: 'center',
-    backgroundColor: '#211B2B',
-    borderColor: '#393242',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 40,
-    justifyContent: 'center',
-    marginHorizontal: 4,
-    minWidth: 48,
-    width: 48,
-  },
-  chartSizeControls: {
-    borderTopColor: '#292431',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  chartSizeButton: {
-    alignItems: 'center',
-    backgroundColor: '#211B2B',
-    borderColor: '#393242',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    flexDirection: 'row',
-    height: 40,
-    justifyContent: 'center',
-    marginHorizontal: 4,
-  },
-  chartSizeButtonDisabled: { opacity: 0.4 },
-  chartSizeButtonIcon: { marginRight: 6 },
-  chartSizeButtonText: {
-    color: '#C2B9FF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  liveBadge: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(20, 40, 33, 0.9)',
-    borderRadius: 12,
-    flexDirection: 'row',
-    left: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    position: 'absolute',
-    top: 12,
-  },
-  liveDot: {
-    backgroundColor: '#38D98A',
-    borderRadius: 4,
-    height: 7,
-    marginRight: 6,
-    width: 7,
-  },
-  liveText: {
-    color: '#75E8AD',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  connectionBadge: {
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(27, 23, 35, 0.94)',
-    borderColor: '#393242',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    position: 'absolute',
-    top: 12,
-  },
-  connectionText: {
-    color: '#C2BCCB',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  connectionTextWithoutSpinner: { marginLeft: 0 },
-  pressed: { opacity: 0.7 },
-});
+function createStyles(colors: AppThemeColors) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    screen: { flex: 1, backgroundColor: colors.background },
+    chartHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      minHeight: 72,
+      paddingHorizontal: 12,
+    },
+    backButton: {
+      alignItems: 'center',
+      borderRadius: 20,
+      height: 40,
+      justifyContent: 'center',
+      width: 40,
+    },
+    backIcon: {
+      color: colors.text,
+      fontSize: 38,
+      fontWeight: '300',
+      lineHeight: 38,
+      marginTop: -3,
+    },
+    chartTitleBlock: { flex: 1, marginLeft: 4 },
+    chartTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+    quoteSymbol: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+    chartSubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
+    headerPriceBlock: { alignItems: 'flex-end', paddingRight: 8 },
+    headerPrice: {
+      color: colors.text,
+      fontSize: 14,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+    },
+    positiveText: {
+      color: colors.positive,
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      marginTop: 5,
+    },
+    negativeText: {
+      color: colors.negative,
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      marginTop: 5,
+    },
+    intervalBar: {
+      borderBottomColor: colors.borderSubtle,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.borderSubtle,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      flexGrow: 0,
+    },
+    intervalBarContent: {
+      flexDirection: 'row',
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    intervalButton: {
+      alignItems: 'center',
+      borderRadius: 8,
+      justifyContent: 'center',
+      marginRight: 6,
+      minWidth: 48,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    intervalButtonSelected: { backgroundColor: colors.accent },
+    intervalText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    intervalTextSelected: {
+      color: colors.onAccent,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    chartErrorBanner: {
+      alignItems: 'center',
+      backgroundColor: colors.errorSurface,
+      borderBottomColor: colors.errorBorder,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      minHeight: 42,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    chartErrorText: {
+      color: colors.errorText,
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 16,
+    },
+    chartErrorRetry: {
+      color: colors.accentText,
+      fontSize: 12,
+      fontWeight: '700',
+      marginLeft: 12,
+    },
+    chartViewport: { flex: 1 },
+    chartContainer: { position: 'relative' },
+    chartContainerExpanded: { flex: 1, position: 'relative' },
+    chartControls: {
+      alignItems: 'center',
+      borderTopColor: colors.borderSubtle,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    chartControlButton: {
+      alignItems: 'center',
+      backgroundColor: colors.control,
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 40,
+      justifyContent: 'center',
+      marginHorizontal: 4,
+      minWidth: 48,
+      width: 48,
+    },
+    chartSizeControls: {
+      borderTopColor: colors.borderSubtle,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    chartSizeButton: {
+      alignItems: 'center',
+      backgroundColor: colors.control,
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      flex: 1,
+      flexDirection: 'row',
+      height: 40,
+      justifyContent: 'center',
+      marginHorizontal: 4,
+    },
+    chartSizeButtonDisabled: { opacity: 0.4 },
+    chartSizeButtonIcon: { marginRight: 6 },
+    chartSizeButtonText: {
+      color: colors.accentText,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    liveBadge: {
+      alignItems: 'center',
+      backgroundColor: colors.liveSurface,
+      borderRadius: 12,
+      flexDirection: 'row',
+      left: 12,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      position: 'absolute',
+      top: 12,
+    },
+    liveDot: {
+      backgroundColor: colors.positive,
+      borderRadius: 4,
+      height: 7,
+      marginRight: 6,
+      width: 7,
+    },
+    liveText: {
+      color: colors.liveText,
+      fontSize: 10,
+      fontWeight: '900',
+      letterSpacing: 0.8,
+    },
+    connectionBadge: {
+      alignItems: 'center',
+      alignSelf: 'center',
+      backgroundColor: colors.connectionSurface,
+      borderColor: colors.border,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      position: 'absolute',
+      top: 12,
+    },
+    connectionText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    connectionTextWithoutSpinner: { marginLeft: 0 },
+    pressed: { opacity: 0.7 },
+  });
+}
+
+const THEMED_STYLES = {
+  dark: createStyles(APP_THEMES.dark.colors),
+  light: createStyles(APP_THEMES.light.colors),
+};

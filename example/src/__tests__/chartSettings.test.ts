@@ -9,6 +9,7 @@ import {
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
+import { APP_THEMES } from '../theme';
 
 function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
   return { ...DEFAULT_CHART_SETTINGS, ...patch };
@@ -19,7 +20,7 @@ describe('chart settings', () => {
     expect(DEFAULT_CHART_SETTINGS).toMatchObject({
       seriesType: 'candlestick',
       seriesLineWidth: 1.5,
-      themeMode: 'default',
+      themeMode: 'dark',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',
       yAxisScaleMargins: 'default',
@@ -36,7 +37,7 @@ describe('chart settings', () => {
       type: 'update',
       patch: {
         seriesType: 'bar',
-        themeMode: 'highContrast',
+        themeMode: 'light',
         panEnabled: false,
         yAxisPosition: 'left',
       },
@@ -44,7 +45,7 @@ describe('chart settings', () => {
 
     expect(updated).toMatchObject({
       seriesType: 'bar',
-      themeMode: 'highContrast',
+      themeMode: 'light',
       panEnabled: false,
       yAxisPosition: 'left',
       zoomEnabled: true,
@@ -133,20 +134,37 @@ describe('chart settings', () => {
   });
 
   it('applies the selected width to line and area appearances', () => {
-    const config = buildChartViewConfig(
+    const darkConfig = buildChartViewConfig(
       settingsWith({ seriesType: 'area', seriesLineWidth: 2.5 }),
       { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 }
     );
+    const lightConfig = buildChartViewConfig(
+      settingsWith({
+        seriesType: 'line',
+        seriesLineWidth: 2.5,
+        themeMode: 'light',
+      }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 }
+    );
 
-    expect(config.appearance.line?.width).toBe(2.5);
-    expect(config.appearance.area?.width).toBe(2.5);
+    expect(darkConfig.appearance.line?.width).toBe(2.5);
+    expect(darkConfig.appearance.area?.width).toBe(2.5);
+    expect(lightConfig.appearance.line).toEqual({
+      width: 2.5,
+      color: '#2962FF',
+    });
+    expect(lightConfig.appearance.area).toEqual({
+      width: 2.5,
+      color: '#2962FF',
+      fill: { topColor: '#2962FF33', bottomColor: '#2962FF00' },
+    });
   });
 
-  it('builds the complete high contrast and formatting presets', () => {
+  it('builds the complete light and formatting presets', () => {
     const config = buildChartViewConfig(
       settingsWith({
         seriesType: 'bar',
-        themeMode: 'highContrast',
+        themeMode: 'light',
         crosshairTooltipOpacity: 1,
         currencySymbol: '$',
         locale: 'en-US',
@@ -159,20 +177,27 @@ describe('chart settings', () => {
     );
 
     expect(config.appearance).toMatchObject({
-      backgroundColor: '#000000',
-      grid: { color: '#20242A' },
-      candles: { upColor: '#21C99A', downColor: '#E31B5F' },
+      backgroundColor: '#FFFFFF',
+      grid: { color: '#E0E3EB', opacity: 0.75 },
+      candles: { upColor: '#089981', downColor: '#F23645' },
       bars: {
-        upColor: '#21C99A',
-        downColor: '#E31B5F',
+        upColor: '#089981',
+        downColor: '#F23645',
         lineWidth: 1,
       },
-      xAxis: { text: { color: '#FFFFFF', fontWeight: 'semibold' } },
+      xAxis: { text: { color: '#2A2E39' } },
+      currentPrice: {
+        label: {
+          upBackgroundColor: '#089981',
+          downBackgroundColor: '#F23645',
+          text: { color: '#FFFFFF', fontWeight: 'semibold' },
+        },
+      },
       tooltip: {
-        backgroundColor: '#08090A',
+        backgroundColor: '#FFFFFF',
         backgroundOpacity: 1,
-        valueText: { color: '#FFFFFF', fontWeight: 'semibold' },
-        border: { color: '#4B5563', width: 1, radius: 8 },
+        valueText: { color: '#131722' },
+        border: { color: '#E0E3EB', width: 1, radius: 8 },
       },
     });
     expect(config.series).toEqual({ type: 'bar' });
@@ -209,16 +234,32 @@ describe('chart settings', () => {
       minMove: 1,
       precision: 0,
     });
+    const lightOpacity = buildChartViewConfig(
+      settingsWith({ themeMode: 'light', crosshairTooltipOpacity: 1 }),
+      { useSignificantPriceFormat: false, minMove: 1, precision: 0 }
+    );
 
     expect(translucent.appearance.tooltip?.backgroundOpacity).toBe(0.6);
     expect(defaultOpacity.appearance.tooltip?.backgroundOpacity).toBe(0.85);
+    expect(lightOpacity.appearance.tooltip?.backgroundOpacity).toBe(1);
+    expect(APP_THEMES.dark.chartAppearance.tooltip?.backgroundOpacity).toBe(
+      undefined
+    );
+    expect(APP_THEMES.light.chartAppearance.tooltip?.backgroundOpacity).toBe(
+      undefined
+    );
+  });
+
+  it('exposes only dark and light example themes', () => {
+    expect(Object.keys(APP_THEMES)).toEqual(['dark', 'light']);
   });
 
   it('uses zero-count formatting only for the Y axis of tiny markets', () => {
-    const config = buildChartViewConfig(
-      DEFAULT_CHART_SETTINGS,
-      { useSignificantPriceFormat: true, minMove: 0.00000001, precision: 8 }
-    );
+    const config = buildChartViewConfig(DEFAULT_CHART_SETTINGS, {
+      useSignificantPriceFormat: true,
+      minMove: 0.00000001,
+      precision: 8,
+    });
 
     expect(config.yAxis.valueFormat).toEqual({
       type: 'significant',

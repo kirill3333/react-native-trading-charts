@@ -262,7 +262,9 @@ change the data shape returned by `getCandles` or selected by the crosshair.
 <TradingChartsView
   chartId="btc-1m"
   series={{ type: 'candlestick' }}
-  appearance={{ candles: { upColor: '#00A88F', downColor: '#FF334F' } }}
+  appearance={{
+    candles: { upColor: '#00A88F', downColor: '#FF334F', radius: 3 },
+  }}
 />
 ```
 
@@ -271,6 +273,7 @@ change the data shape returned by `getCandles` or selected by the crosshair.
 | `series.type` | `'candlestick'` | `'candlestick'` | Filled OHLC candle bodies with high/low wicks. |
 | `appearance.candles.upColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.upColor` | Color used when `close >= open`. |
 | `appearance.candles.downColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.downColor` | Color used when `close < open`. |
+| `appearance.candles.radius` | Non-negative number | `0` | Body corner radius in iOS points or Android density-independent units. Wicks remain square. |
 
 ### Hollow Candlestick
 
@@ -287,6 +290,7 @@ change the data shape returned by `getCandles` or selected by the crosshair.
 | `series.type` | `'hollowCandlestick'` | — | Uses outlined rising bodies and filled falling bodies. |
 | `appearance.candles.upColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.upColor` | Rising outline and wick color. |
 | `appearance.candles.downColor` | `#RRGGBB` or `#RRGGBBAA` | `theme.downColor` | Falling body and wick color. |
+| `appearance.candles.radius` | Non-negative number | `0` | Corner radius for outlined rising and filled falling bodies. |
 
 The hollow outline uses the same native thickness as the wick.
 
@@ -412,6 +416,7 @@ roles and takes precedence over the corresponding theme value. Colors accept
 | `grid.color` | Color | `theme.gridColor` | Grid color. |
 | `grid.opacity` | Number from `0` to `1` | `0.75` | Grid alpha multiplier. |
 | `candles.upColor` / `downColor` | Color | Theme direction colors | Candlestick colors and bar fallbacks. |
+| `candles.radius` | Non-negative number | `0` | Candlestick body corner radius. |
 | `bars.*` | Bar appearance | Candle colors, width `1` | OHLC bar presentation. |
 | `line.*` | Line appearance | Theme up color, width `1.5` | Main line presentation. |
 | `area.*` | Area appearance | Theme up color, width `1.5` | Main area outline and fill. |
@@ -709,12 +714,28 @@ pinned after release.
 
 ### Crosshair
 
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  appearance={{
+    candles: { radius: 3 },
+    currentPrice: { label: { border: { radius: 7 } } },
+  }}
+  crosshair={{
+    tooltipFields: ['close', 'changePercent', 'volume'],
+    showTooltipHeader: false,
+  }}
+/>
+```
+
 | Property | Type / values | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | Enables selection gestures and crosshair rendering. |
 | `showTooltip` | `boolean` | `true` | Shows the OHLCV tooltip. |
+| `showTooltipHeader` | `boolean` | `true` | Shows the formatted date/time heading. |
 | `tooltipBackgroundOpacity` | Number from `0` to `1` | `1` | Legacy tooltip opacity and appearance fallback. |
 | `lineStyle` | `'solid'`, `'dashed'` | `'solid'` | Crosshair line pattern. |
+| `tooltipFields` | `ReadonlyArray<CrosshairTooltipField>` | All fields in the order below | Selects and orders tooltip rows. Unknown or duplicate fields are rejected; an empty array is allowed. |
 | `tooltipLabels` | `CrosshairTooltipLabels` | English labels | Localizes tooltip row labels. |
 
 | Tooltip label property | Default | Description |
@@ -727,6 +748,9 @@ pinned after release.
 
 Percentages display an em dash when the candle open is zero. Volume uses a
 compact format without the Y-axis currency symbol.
+When `tooltipFields` is empty, the tooltip contains only its header. If
+`showTooltipHeader` is also `false`, no tooltip panel is drawn even when
+`showTooltip` is `true`.
 
 ### Current price and extrema
 

@@ -1,5 +1,6 @@
 import { Switch } from 'react-native';
 
+import { useAppTheme } from '../../themeContext';
 import { SettingsRow } from './SettingsRow';
 
 type SettingSwitchProps = {
@@ -17,15 +18,16 @@ export function SettingSwitch({
   onValueChange,
   value,
 }: SettingSwitchProps) {
+  const { colors } = useAppTheme();
   return (
     <SettingsRow description={description} disabled={disabled} label={label}>
       <Switch
         accessibilityLabel={label}
         disabled={disabled}
-        ios_backgroundColor="#393242"
+        ios_backgroundColor={colors.switchTrackOff}
         onValueChange={onValueChange}
-        thumbColor="#FFFFFF"
-        trackColor={{ false: '#393242', true: '#7562F4' }}
+        thumbColor={colors.switchThumb}
+        trackColor={{ false: colors.switchTrackOff, true: colors.accent }}
         value={value}
       />
     </SettingsRow>

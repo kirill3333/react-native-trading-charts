@@ -214,6 +214,7 @@ struct ChartConfig {
   double default_y_scale = 1.0;
   float display_scale = 1.0f;
   SeriesType series_type = SeriesType::kCandlestick;
+  float candle_radius = 0.0f;
   float bar_line_width = 1.0f;
   float line_width = 1.5f;
   double line_gap_threshold_ms = 0.0;

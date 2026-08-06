@@ -8,6 +8,7 @@ import {
   type ChartTheme,
   type ChartTextStyle,
   type CompactValueFormat,
+  type CrosshairTooltipField,
   type NormalizedAdditionalChartSeriesOptions,
   type OhlcValueSource,
   type PriceDisplayFormat,
@@ -50,6 +51,21 @@ const DEFAULT_CROSSHAIR_TOOLTIP_LABELS = {
   volume: 'Volume',
 } as const;
 
+const DEFAULT_CROSSHAIR_TOOLTIP_FIELDS: ReadonlyArray<CrosshairTooltipField> = [
+  'open',
+  'close',
+  'high',
+  'low',
+  'amplitude',
+  'changePercent',
+  'change',
+  'volume',
+];
+
+const CROSSHAIR_TOOLTIP_FIELD_SET = new Set<string>(
+  DEFAULT_CROSSHAIR_TOOLTIP_FIELDS
+);
+
 function finitePositive(value: number, name: string): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive finite number`);
@@ -62,6 +78,30 @@ function finiteNonNegative(value: number, name: string): number {
     throw new TypeError(`${name} must be a non-negative finite number`);
   }
   return value;
+}
+
+function resolveTooltipFields(
+  input: ReadonlyArray<CrosshairTooltipField> | undefined
+): CrosshairTooltipField[] {
+  const fields = input ?? DEFAULT_CROSSHAIR_TOOLTIP_FIELDS;
+  if (!Array.isArray(fields)) {
+    throw new TypeError('crosshair.tooltipFields must be an array');
+  }
+  const seen = new Set<string>();
+  return fields.map((field, index) => {
+    if (!CROSSHAIR_TOOLTIP_FIELD_SET.has(field)) {
+      throw new TypeError(
+        `crosshair.tooltipFields[${index}] is not a supported tooltip field`
+      );
+    }
+    if (seen.has(field)) {
+      throw new TypeError(
+        `crosshair.tooltipFields contains duplicate field '${field}'`
+      );
+    }
+    seen.add(field);
+    return field;
+  });
 }
 
 function opacity(value: number, name: string): number {
@@ -679,7 +719,14 @@ function resolveAppearance(
       color: gridColor,
       opacity: opacity(input?.grid?.opacity ?? 0.75, 'appearance.grid.opacity'),
     },
-    candles: { upColor, downColor },
+    candles: {
+      upColor,
+      downColor,
+      radius: finiteNonNegative(
+        input?.candles?.radius ?? 0,
+        'appearance.candles.radius'
+      ),
+    },
     bars: {
       upColor: barUpColor,
       downColor: barDownColor,
@@ -1304,8 +1351,10 @@ export function resolveChartConfig(
     crosshair: {
       enabled: props.crosshair?.enabled ?? true,
       showTooltip: props.crosshair?.showTooltip ?? true,
+      showTooltipHeader: props.crosshair?.showTooltipHeader ?? true,
       tooltipBackgroundOpacity,
       lineStyle: crosshairLineStyle,
+      tooltipFields: resolveTooltipFields(props.crosshair?.tooltipFields),
       tooltipLabels: {
         ...DEFAULT_CROSSHAIR_TOOLTIP_LABELS,
         ...props.crosshair?.tooltipLabels,

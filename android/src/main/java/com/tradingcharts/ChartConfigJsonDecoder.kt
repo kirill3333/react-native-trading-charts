@@ -73,6 +73,7 @@ internal class ChartConfigJsonDecoder(
           defaultYScale = yAxis.optDouble("defaultScale", 1.0),
           displayScale = density,
           seriesType = seriesType,
+          candleRadiusPx = candlesAppearance.optDouble("radius", 0.0).toFloat() * density,
           barLineWidthPx = barsAppearance.optDouble("lineWidth", 1.0).toFloat() * density,
           lineWidthPx = lineAppearance.optDouble("width", 1.5).toFloat() * density,
           lineSource = root.optJSONObject("series")?.optString("source", "close") ?: "close",
@@ -393,7 +394,12 @@ internal class ChartConfigJsonDecoder(
           showPriceExtremes = priceExtremes?.optBoolean("visible", true) ?: true,
           crosshairEnabled = crosshair.getBoolean("enabled"),
           showTooltip = crosshair.getBoolean("showTooltip"),
+          showTooltipHeader = crosshair.optBoolean("showTooltipHeader", true),
           crosshairDashed = crosshair.optString("lineStyle", "solid") == "dashed",
+          tooltipFields =
+              crosshair.optJSONArray("tooltipFields")?.let { fields ->
+                List(fields.length()) { index -> fields.getString(index) }
+              } ?: config.tooltipFields,
           tooltipLabels =
               CrosshairTooltipLabels(
                   open = tooltipLabels?.optString("open", "Open") ?: "Open",

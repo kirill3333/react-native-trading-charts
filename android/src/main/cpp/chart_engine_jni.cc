@@ -89,6 +89,7 @@ enum class ConfigNumberIndex : std::uint8_t {
   kOriginTimestampMs,
   kOutsideSession,
   kCandleTimestamp,
+  kCandleRadius,
   kCount,
 };
 
@@ -176,7 +177,7 @@ inline constexpr jsize kColorChannelCount = 4;
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 44);
+static_assert(kConfigNumberCount == 45);
 static_assert(kSnapshotMetaCount == 51);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
@@ -405,7 +406,8 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     config.line_gap_threshold_ms =
         number_at(ConfigNumberIndex::kLineGapThresholdMs);
   }
-  if (number_count >= static_cast<jsize>(kConfigNumberCount)) {
+  if (number_count >
+      static_cast<jsize>(ToIndex(ConfigNumberIndex::kCandleTimestamp))) {
     const int unit =
         static_cast<int>(number_at(ConfigNumberIndex::kResolutionUnit));
     config.resolution.unit = unit == 1   ? ResolutionUnit::kSecond
@@ -436,6 +438,11 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
             ? CandleTimestampPolicy::kTradingDateUtc
             : CandleTimestampPolicy::kBucketStart;
   }
+  config.candle_radius =
+      number_count >
+              static_cast<jsize>(ToIndex(ConfigNumberIndex::kCandleRadius))
+          ? static_cast<float>(number_at(ConfigNumberIndex::kCandleRadius))
+          : 0.0f;
   config.background = color_at(ConfigColorIndex::kBackground);
   config.grid = color_at(ConfigColorIndex::kGrid);
   config.axis_text = color_at(ConfigColorIndex::kAxisText);

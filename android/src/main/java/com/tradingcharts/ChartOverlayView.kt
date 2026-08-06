@@ -46,6 +46,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private data class TooltipLayout(
       val header: String,
+      val showHeader: Boolean,
       val rows: List<TooltipRow>,
       val width: Float,
       val height: Float,
@@ -389,7 +390,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
     if (frame.crosshairVisible) {
       drawCrosshairBadges(canvas, frame)
-      if (config.showTooltip) drawTooltip(canvas, frame)
+      if (config.showTooltip && (config.showTooltipHeader || config.tooltipFields.isNotEmpty())) {
+        drawTooltip(canvas, frame)
+      }
     }
   }
 
@@ -636,9 +639,14 @@ internal class ChartOverlayView(context: Context) : View(context) {
         Color.argb(alpha, Color.red(background), Color.green(background), Color.blue(background)),
         config.tooltipBorder,
     )
-    var baseline = rect.top + 9f * density - tooltipHeaderPaint.ascent()
-    canvas.drawText(layout.header, rect.left + 10f * density, baseline, tooltipHeaderPaint)
-    baseline += layout.headerHeight
+    var baseline: Float
+    if (layout.showHeader) {
+      baseline = rect.top + 9f * density - tooltipHeaderPaint.ascent()
+      canvas.drawText(layout.header, rect.left + 10f * density, baseline, tooltipHeaderPaint)
+      baseline += layout.headerHeight
+    } else {
+      baseline = rect.top + 9f * density - tooltipLabelPaint.ascent()
+    }
     layout.rows.forEach { row ->
       canvas.drawText(row.label, rect.left + 10f * density, baseline, tooltipLabelPaint)
       tooltipValuePaint.color = row.valueColor
@@ -654,7 +662,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
     val config = frame.config
     val rows = buildTooltipRows(frame, c, config)
-    val layout = createTooltipLayout(c, rows)
+    val layout = createTooltipLayout(c, rows, config)
     cacheTooltipLayout(frame, c, config, layout)
     return layout
   }
@@ -683,61 +691,80 @@ internal class ChartOverlayView(context: Context) : View(context) {
           frame.selectedChange < 0 -> config.tooltipNegativeValueColor
           else -> config.tooltipValueTextStyle.color
         }
-    val rows =
-        listOf(
+    return config.tooltipFields.map { field ->
+      when (field) {
+        "open" ->
             TooltipRow(
                 labels.open,
                 formatValue(candle[1], tooltipValueFormat),
                 config.tooltipValueTextStyle.color,
-            ),
+            )
+        "close" ->
             TooltipRow(
                 labels.close,
                 formatValue(candle[4], tooltipValueFormat),
                 config.tooltipValueTextStyle.color,
-            ),
+            )
+        "high" ->
             TooltipRow(
                 labels.high,
                 formatValue(candle[2], tooltipValueFormat),
                 config.tooltipValueTextStyle.color,
-            ),
+            )
+        "low" ->
             TooltipRow(
                 labels.low,
                 formatValue(candle[3], tooltipValueFormat),
                 config.tooltipValueTextStyle.color,
-            ),
+            )
+        "amplitude" ->
             TooltipRow(
                 labels.amplitude,
                 formatPercent(frame.selectedAmplitudePercent, frame.selectedPercentagesValid),
                 config.tooltipValueTextStyle.color,
-            ),
+            )
+        "changePercent" ->
             TooltipRow(
                 labels.changePercent,
                 formatPercent(frame.selectedChangePercent, frame.selectedPercentagesValid),
                 changeColor,
-            ),
+            )
+        "change" ->
             TooltipRow(
                 labels.change,
                 formatValue(frame.selectedChange, tooltipValueFormat),
                 changeColor,
-            ),
+            )
+        "volume" ->
             TooltipRow(
                 labels.volume,
                 formatVolume(candle[5]),
                 config.tooltipValueTextStyle.color,
-            ),
-        )
-    return rows
+            )
+        else -> error("Unsupported tooltip field: $field")
+      }
+    }
   }
 
-  private fun createTooltipLayout(candle: DoubleArray, rows: List<TooltipRow>): TooltipLayout {
-    val header = tooltipHeaderDateFormat.format(Date(candle[0].toLong()))
-    val labelWidth = rows.maxOf { tooltipLabelPaint.measureText(it.label) }
-    val valueWidth = rows.maxOf { tooltipValuePaint.measureText(it.value) }
+  private fun createTooltipLayout(
+      candle: DoubleArray,
+      rows: List<TooltipRow>,
+      config: ChartConfig,
+  ): TooltipLayout {
+    val showHeader = config.showTooltipHeader
+    val header = if (showHeader) tooltipHeaderDateFormat.format(Date(candle[0].toLong())) else ""
+    val labelWidth = rows.maxOfOrNull { tooltipLabelPaint.measureText(it.label) } ?: 0f
+    val valueWidth = rows.maxOfOrNull { tooltipValuePaint.measureText(it.value) } ?: 0f
     val valueXOffset = 10f * density + labelWidth + 12f * density
+    val rowsWidth = if (rows.isEmpty()) 0f else labelWidth + 12f * density + valueWidth
     val contentWidth =
-        max(tooltipHeaderPaint.measureText(header), labelWidth + 12f * density + valueWidth)
+        max(if (showHeader) tooltipHeaderPaint.measureText(header) else 0f, rowsWidth)
     val headerHeight =
-        max(17f * density, tooltipHeaderPaint.descent() - tooltipHeaderPaint.ascent())
+        if (showHeader) {
+          max(17f * density, tooltipHeaderPaint.descent() - tooltipHeaderPaint.ascent())
+        } else {
+          0f
+        }
     val rowHeight =
         max(
             17f * density,
@@ -748,6 +775,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
         )
     return TooltipLayout(
         header,
+        showHeader,
         rows,
         contentWidth + 20f * density,
         18f * density + headerHeight + rows.size * rowHeight,

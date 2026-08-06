@@ -158,6 +158,9 @@ ChartConfig NormalizeConfig(ChartConfig config) {
       config.series_type != SeriesType::kArea) {
     config.series_type = SeriesType::kCandlestick;
   }
+  if (!IsFinite(config.candle_radius) || config.candle_radius < 0.0f) {
+    config.candle_radius = 0.0f;
+  }
   if (!IsFinite(config.bar_line_width) || !(config.bar_line_width > 0.0f)) {
     config.bar_line_width = config.display_scale;
   }

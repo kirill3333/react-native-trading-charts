@@ -13,116 +13,7 @@ import {
 } from 'react-native-trading-charts';
 
 import { type ChartSettings } from './chartSettingsState';
-
-const STANDARD_APPEARANCE: ChartAppearance = {
-  backgroundColor: '#100C18',
-  grid: { color: '#292431', opacity: 0.65 },
-  candles: { upColor: '#38D98A', downColor: '#FF3B64' },
-  bars: { upColor: '#38D98A', downColor: '#FF3B64', lineWidth: 1 },
-  line: {
-    width: 1.5,
-    color: '#2E90F5',
-    gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
-  },
-  area: {
-    width: 1.5,
-    color: '#2E90F5',
-    fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
-  },
-  xAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
-  yAxis: { text: { color: '#9791A5', fontSize: 10.5 } },
-  priceExtremes: {
-    text: { color: '#B8B1C4', fontSize: 10.5 },
-    connectorColor: '#777181',
-    backgroundColor: '#100C18',
-  },
-  currentPrice: {
-    line: { upColor: '#38D98A', downColor: '#FF3B64' },
-    label: {
-      upBackgroundColor: '#38D98A',
-      downBackgroundColor: '#FF3B64',
-      text: { color: '#100C18', fontWeight: 'semibold' },
-    },
-  },
-  crosshair: {
-    line: { color: '#A8A2B3', opacity: 0.85 },
-    priceLabel: {
-      backgroundColor: '#A8A2B3',
-      text: { color: '#100C18', fontWeight: 'semibold' },
-    },
-    timeLabel: {
-      backgroundColor: '#A8A2B3',
-      text: { color: '#100C18', fontWeight: 'semibold' },
-    },
-  },
-  tooltip: {
-    backgroundColor: '#1B1723',
-    headerText: { color: '#FFFFFF', fontWeight: 'semibold' },
-    labelText: { color: '#9791A5' },
-    valueText: { color: '#F5F2FA' },
-    positiveValueColor: '#38D98A',
-    negativeValueColor: '#FF3B64',
-  },
-};
-
-const HIGH_CONTRAST_APPEARANCE: ChartAppearance = {
-  backgroundColor: '#000000',
-  grid: { color: '#20242A', opacity: 0.85 },
-  candles: { upColor: '#21C99A', downColor: '#E31B5F' },
-  bars: { upColor: '#21C99A', downColor: '#E31B5F', lineWidth: 1 },
-  line: {
-    width: 1.5,
-    color: '#2E90F5',
-    gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
-  },
-  area: {
-    width: 1.5,
-    color: '#60A5FA',
-    fill: { topColor: '#60A5FA80', bottomColor: '#60A5FA00' },
-  },
-  xAxis: {
-    text: { color: '#FFFFFF', fontSize: 11, fontWeight: 'semibold' },
-  },
-  yAxis: {
-    text: { color: '#FFFFFF', fontSize: 11, fontWeight: 'semibold' },
-  },
-  priceExtremes: {
-    text: { color: '#E5E7EB', fontSize: 11, fontWeight: 'semibold' },
-    connectorColor: '#E5E7EB',
-    backgroundColor: '#000000',
-  },
-  currentPrice: {
-    line: { upColor: '#21C99A', downColor: '#E31B5F' },
-    label: {
-      upBackgroundColor: '#21C99A',
-      downBackgroundColor: '#E31B5F',
-      text: { color: '#000000', fontWeight: 'bold' },
-      border: { color: '#FFFFFF', width: 1, radius: 5 },
-    },
-  },
-  crosshair: {
-    line: { color: '#F3F4F6', opacity: 1 },
-    priceLabel: {
-      backgroundColor: '#F3F4F6',
-      text: { color: '#000000', fontWeight: 'bold' },
-      border: { color: '#FFFFFF', width: 1, radius: 5 },
-    },
-    timeLabel: {
-      backgroundColor: '#F3F4F6',
-      text: { color: '#000000', fontWeight: 'bold' },
-      border: { color: '#FFFFFF', width: 1, radius: 5 },
-    },
-  },
-  tooltip: {
-    backgroundColor: '#08090A',
-    headerText: { color: '#FFFFFF', fontWeight: 'bold' },
-    labelText: { color: '#E5E7EB', fontWeight: 'semibold' },
-    valueText: { color: '#FFFFFF', fontWeight: 'semibold' },
-    positiveValueColor: '#21C99A',
-    negativeValueColor: '#E31B5F',
-    border: { color: '#4B5563', width: 1, radius: 8 },
-  },
-};
+import { APP_THEMES } from './theme';
 
 export const SCALE_MARGIN_PRESETS = {
   tight: { top: 0.1, bottom: 0.1 },
@@ -222,10 +113,7 @@ export function buildChartViewConfig(
     };
   }
 
-  const appearancePreset =
-    settings.themeMode === 'highContrast'
-      ? HIGH_CONTRAST_APPEARANCE
-      : STANDARD_APPEARANCE;
+  const appearancePreset = APP_THEMES[settings.themeMode].chartAppearance;
 
   return {
     series:

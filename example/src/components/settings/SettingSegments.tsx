@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { useAppTheme } from '../../themeContext';
 import { SettingsRow } from './SettingsRow';
 
 export type SettingSegmentOption<TValue extends string | number> = {
@@ -24,6 +26,8 @@ export function SettingSegments<TValue extends string | number>({
   options,
   value,
 }: SettingSegmentsProps<TValue>) {
+  const theme = useAppTheme();
+  const styles = THEMED_STYLES[theme.mode];
   return (
     <SettingsRow description={description} disabled={disabled} label={label}>
       <View accessibilityRole="radiogroup" style={styles.group}>
@@ -54,25 +58,32 @@ export function SettingSegments<TValue extends string | number>({
   );
 }
 
-const styles = StyleSheet.create({
-  group: {
-    backgroundColor: '#100C18',
-    borderColor: '#393242',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    padding: 2,
-  },
-  option: {
-    alignItems: 'center',
-    borderRadius: 6,
-    justifyContent: 'center',
-    minHeight: 30,
-    minWidth: 48,
-    paddingHorizontal: 8,
-  },
-  optionSelected: { backgroundColor: '#7562F4' },
-  text: { color: '#8F899B', fontSize: 11, fontWeight: '700' },
-  textSelected: { color: '#FFFFFF', fontWeight: '800' },
-  pressed: { opacity: 0.7 },
-});
+function createStyles(colors: AppThemeColors) {
+  return StyleSheet.create({
+    group: {
+      backgroundColor: colors.background,
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      padding: 2,
+    },
+    option: {
+      alignItems: 'center',
+      borderRadius: 6,
+      justifyContent: 'center',
+      minHeight: 30,
+      minWidth: 48,
+      paddingHorizontal: 8,
+    },
+    optionSelected: { backgroundColor: colors.accent },
+    text: { color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+    textSelected: { color: colors.onAccent, fontWeight: '800' },
+    pressed: { opacity: 0.7 },
+  });
+}
+
+const THEMED_STYLES = {
+  dark: createStyles(APP_THEMES.dark.colors),
+  light: createStyles(APP_THEMES.light.colors),
+};

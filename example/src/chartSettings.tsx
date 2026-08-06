@@ -12,6 +12,7 @@ import {
   chartSettingsReducer,
   type ChartSettings,
 } from './chartSettingsState';
+import { AppThemeProvider } from './themeContext';
 
 type ChartSettingsContextValue = {
   settings: ChartSettings;
@@ -47,7 +48,7 @@ export function ChartSettingsProvider({
 
   return (
     <ChartSettingsContext.Provider value={value}>
-      {children}
+      <AppThemeProvider mode={settings.themeMode}>{children}</AppThemeProvider>
     </ChartSettingsContext.Provider>
   );
 }
