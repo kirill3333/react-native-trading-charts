@@ -15,6 +15,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0A11C0013C10000100000001 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		0A11C0023C10000100000001 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		0A11C0033C10000100000001 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		0A11C0043C10000100000001 /* Signing.local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.local.xcconfig.example; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* TradingChartsExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TradingChartsExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = TradingChartsExample/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = TradingChartsExample/Info.plist; sourceTree = "<group>"; };
@@ -39,6 +43,17 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A11C0053C10000100000001 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				0A11C0013C10000100000001 /* Debug.xcconfig */,
+				0A11C0023C10000100000001 /* Release.xcconfig */,
+				0A11C0033C10000100000001 /* Signing.xcconfig */,
+				0A11C0043C10000100000001 /* Signing.local.xcconfig.example */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* TradingChartsExample */ = {
 			isa = PBXGroup;
 			children = (
@@ -70,6 +85,7 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
+				0A11C0053C10000100000001 /* Config */,
 				13B07FAE1A68108700A75B9A /* TradingChartsExample */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
@@ -255,12 +271,11 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-TradingChartsExample.debug.xcconfig */;
+			baseConfigurationReference = 0A11C0013C10000100000001 /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = U9A4WGGYR5;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = TradingChartsExample/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -274,7 +289,6 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = tradingcharts.example;
 				PRODUCT_NAME = TradingChartsExample;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -286,12 +300,11 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-TradingChartsExample.release.xcconfig */;
+			baseConfigurationReference = 0A11C0023C10000100000001 /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = U9A4WGGYR5;
 				INFOPLIST_FILE = TradingChartsExample/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -304,7 +317,6 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = tradingcharts.example;
 				PRODUCT_NAME = TradingChartsExample;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;

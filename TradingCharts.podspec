@@ -14,6 +14,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/kirill3333/react-native-trading-charts.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift,cpp,metal}", "cpp/**/*.{h,cc}"
+  s.exclude_files = "cpp/tests/**/*", "cpp/benchmarks/**/*"
   s.private_header_files = "ios/**/*.h", "cpp/**/*.h"
   s.frameworks = "Metal", "MetalKit"
   s.pod_target_xcconfig = {

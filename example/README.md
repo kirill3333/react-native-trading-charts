@@ -48,6 +48,18 @@ Then, and every time you update your native dependencies, run:
 bundle exec pod install
 ```
 
+The simulator does not require signing configuration. To run the example on a
+physical device, create a local signing config that will not be committed:
+
+```sh
+cp ios/Config/Signing.local.xcconfig.example ios/Config/Signing.local.xcconfig
+```
+
+Edit `ios/Config/Signing.local.xcconfig` and replace the example values with
+your Apple Developer Team ID and a bundle identifier unique to your account.
+Signing remains automatic, and your Apple ID and certificates stay managed by
+Xcode and Keychain.
+
 For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
 
 ```sh

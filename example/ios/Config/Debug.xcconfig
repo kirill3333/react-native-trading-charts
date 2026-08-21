@@ -1,0 +1,2 @@
+#include? "../Pods/Target Support Files/Pods-TradingChartsExample/Pods-TradingChartsExample.debug.xcconfig"
+#include "Signing.xcconfig"

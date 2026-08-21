@@ -1,0 +1,10 @@
+// Simulator builds work without a local signing configuration. Developers who
+// run on a physical device override these values in Signing.local.xcconfig.
+EXAMPLE_DEVELOPMENT_TEAM =
+EXAMPLE_BUNDLE_IDENTIFIER = tradingcharts.example
+
+#include? "Signing.local.xcconfig"
+
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM = $(EXAMPLE_DEVELOPMENT_TEAM)
+PRODUCT_BUNDLE_IDENTIFIER = $(EXAMPLE_BUNDLE_IDENTIFIER)

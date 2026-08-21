@@ -1,0 +1,4 @@
+// Copy this file to Signing.local.xcconfig and use values from your Apple
+// Developer account. The local file is ignored by Git.
+EXAMPLE_DEVELOPMENT_TEAM = ABCDE12345
+EXAMPLE_BUNDLE_IDENTIFIER = com.yourname.TradingChartsExample
