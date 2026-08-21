@@ -78,6 +78,7 @@ struct HistogramPoint {
 enum class SeriesSource : std::uint8_t {
   kData = 0,
   kOhlcvVolume = 1,
+  kOhlcvRsi = 2,
 };
 
 struct PaneConfig {
@@ -119,12 +120,24 @@ struct SeriesConfig {
   bool line_gradient_enabled = false;
   bool visible = true;
   bool declarative = false;
+  std::uint32_t rsi_period = 14;
+  double rsi_oversold = 30.0;
+  double rsi_overbought = 70.0;
+  Color rsi_level_line{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 0.5f};
+  Color rsi_band{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
+                 20.0f / 255.0f};
+};
+
+struct RsiSmoothingState {
+  double average_gain = 0.0;
+  double average_loss = 0.0;
 };
 
 struct SeriesData {
   SeriesConfig config;
   std::vector<Candle> candles;
   std::vector<HistogramPoint> histogram;
+  std::vector<RsiSmoothingState> rsi_states;
   size_t pane_index = kInvalidStateIndex;
   size_t source_series_index = kInvalidStateIndex;
 };
@@ -301,6 +314,7 @@ struct Rect {
 struct AxisTick {
   double value = 0.0;
   float position = 0.0f;
+  bool grid_visible = true;
 };
 
 struct PriceExtremum {
@@ -323,7 +337,19 @@ struct PaneSnapshot {
   size_t y_tick_count = 0;
   bool scale_visible = true;
   bool volume_format = false;
+  bool rsi_scale = false;
   int precision = 2;
+};
+
+struct RsiLegend {
+  std::string pane_id;
+  size_t pane_index = 0;
+  std::uint32_t period = 14;
+  double value = 0.0;
+  double latest_value = 0.0;
+  Color color;
+  bool has_value = false;
+  bool has_latest_value = false;
 };
 
 // Immutable render state published to the platform GPU and text overlays.
@@ -355,6 +381,7 @@ struct RenderSnapshot {
   std::vector<AxisTick> y_ticks;
   std::vector<AxisTick> pane_y_ticks;
   std::vector<PaneSnapshot> panes;
+  std::vector<RsiLegend> rsi_legends;
   PriceExtremum visible_maximum;
   PriceExtremum visible_minimum;
   Candle selected_candle;
@@ -490,6 +517,14 @@ class ChartEngine {
   SeriesData* FindSeriesLocked(const std::string& series_id);
   const SeriesData* FindSeriesLocked(const std::string& series_id) const;
   void RebuildSeriesIndicesLocked();
+  const std::vector<Candle>* SourceCandlesLocked(
+      const SeriesData& series) const;
+  void RebuildRsiSeriesLocked(size_t series_index,
+                              size_t first_changed_source_index);
+  void RefreshRsiDependentsLocked(const std::string& source_series_id,
+                                  size_t first_changed_source_index);
+  void RebuildAllRsiLocked();
+  bool PaneHasRsiLocked(size_t pane_index) const;
   void ClampViewportLocked();
   bool IsAtLiveEdgeLocked() const;
   UpdateStatus UpdateTradeLocked(double timestamp, double price, double size);

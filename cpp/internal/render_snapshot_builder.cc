@@ -216,9 +216,11 @@ class RenderSnapshotBuilder {
     ComputeSeriesWindows();
     CalculateYRange();
     CalculateAdditionalPaneRanges();
+    BuildRsiLegends();
     AddExtrema();
     AddTicks();
     ReserveGeometry();
+    AddRsiBackgroundGeometry();
     AddGridGeometry();
     AddSeriesGeometry();
     AddAdditionalSeriesGeometry();
@@ -256,6 +258,10 @@ class RenderSnapshotBuilder {
     snapshot_->selected_amplitude_percent = 0.0;
     snapshot_->selected_percentages_valid = false;
     snapshot_->active_pane_index = 0;
+    for (RsiLegend& legend : snapshot_->rsi_legends) {
+      legend.value = legend.latest_value;
+      legend.has_value = legend.has_latest_value;
+    }
     pane_y_min_.clear();
     pane_y_max_.clear();
     pane_y_min_.reserve(snapshot_->panes.size());
@@ -297,6 +303,12 @@ class RenderSnapshotBuilder {
       pane_snapshot.height_weight = pane.height_weight;
       pane_snapshot.scale_visible = pane.scale_visible;
       pane_snapshot.volume_format = pane.volume_format;
+      pane_snapshot.rsi_scale = std::any_of(
+          input_.additional_series.begin(), input_.additional_series.end(),
+          [&](const SeriesData& series) {
+            return series.pane_index == index &&
+                   series.config.source == SeriesSource::kOhlcvRsi;
+          });
       pane_snapshot.precision = pane.precision;
       snapshot_->panes.push_back(std::move(pane_snapshot));
     }
@@ -645,6 +657,14 @@ class RenderSnapshotBuilder {
   void CalculateAdditionalPaneRanges() {
     for (size_t pane_index = 1; pane_index < snapshot_->panes.size();
          ++pane_index) {
+      if (snapshot_->panes[pane_index].rsi_scale) {
+        pane_y_min_[pane_index] = 0.0;
+        pane_y_max_[pane_index] = 100.0;
+        snapshot_->panes[pane_index].visible_y_min = 0.0;
+        snapshot_->panes[pane_index].visible_y_max = 100.0;
+        snapshot_->panes[pane_index].y_axis_scale = 1.0;
+        continue;
+      }
       bool has_value = false;
       double raw_min = std::numeric_limits<double>::infinity();
       double raw_max = -std::numeric_limits<double>::infinity();
@@ -857,6 +877,46 @@ class RenderSnapshotBuilder {
                 pane.plot.Height();
         snapshot_->pane_y_ticks.push_back(AxisTick{value, position});
       }
+      if (pane.rsi_scale) {
+        // Pane boundaries already carry the neighboring pane separator (and
+        // the X axis at the bottom). Avoid stacking 100/0 labels directly on
+        // those edges; the configured RSI levels are added below and the
+        // fixed projection remains 0...100.
+        auto pane_ticks_begin = snapshot_->pane_y_ticks.begin() +
+                                static_cast<std::ptrdiff_t>(pane.y_tick_offset);
+        snapshot_->pane_y_ticks.erase(
+            std::remove_if(pane_ticks_begin, snapshot_->pane_y_ticks.end(),
+                           [](const AxisTick& tick) {
+                             return tick.value <= 0.0 || tick.value >= 100.0;
+                           }),
+            snapshot_->pane_y_ticks.end());
+        for (const SeriesData& series : input_.additional_series) {
+          if (series.pane_index != pane_index ||
+              series.config.source != SeriesSource::kOhlcvRsi) {
+            continue;
+          }
+          for (double value :
+               {series.config.rsi_oversold, series.config.rsi_overbought}) {
+            const auto begin = snapshot_->pane_y_ticks.begin() +
+                               static_cast<std::ptrdiff_t>(pane.y_tick_offset);
+            const bool exists =
+                std::any_of(begin, snapshot_->pane_y_ticks.end(),
+                            [&](const AxisTick& tick) {
+                              return std::abs(tick.value - value) < 1e-9;
+                            });
+            if (!exists) {
+              snapshot_->pane_y_ticks.push_back(
+                  AxisTick{value, ProjectPaneY(pane_index, value), false});
+            }
+          }
+        }
+        auto begin = snapshot_->pane_y_ticks.begin() +
+                     static_cast<std::ptrdiff_t>(pane.y_tick_offset);
+        std::sort(begin, snapshot_->pane_y_ticks.end(),
+                  [](const AxisTick& first, const AxisTick& second) {
+                    return first.value < second.value;
+                  });
+      }
       pane.y_tick_count = snapshot_->pane_y_ticks.size() - pane.y_tick_offset;
     }
   }
@@ -882,6 +942,13 @@ class RenderSnapshotBuilder {
         continue;
       }
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvRsi) {
+        const Rect& pane_plot = snapshot_->panes[series.pane_index].plot;
+        const float step = 7.0f * input_.config.display_scale;
+        float_count +=
+            (1 + 2 * SegmentCount(pane_plot.left, pane_plot.right, step)) *
+            kFloatsPerQuad;
+      }
       if (series.config.type == SeriesType::kHistogram) {
         float_count += (window.last - window.first) * kFloatsPerQuad;
         continue;
@@ -944,9 +1011,35 @@ class RenderSnapshotBuilder {
       for (size_t index = 0; index < pane.y_tick_count; ++index) {
         const AxisTick& tick =
             snapshot_->pane_y_ticks[pane.y_tick_offset + index];
-        AppendQuad(*content_vertices_, pane.plot.left, tick.position - 0.5f,
-                   pane.plot.right, tick.position + 0.5f, grid);
+        if (tick.grid_visible) {
+          AppendQuad(*content_vertices_, pane.plot.left, tick.position - 0.5f,
+                     pane.plot.right, tick.position + 0.5f, grid);
+        }
       }
+    }
+  }
+
+  void AddRsiBackgroundGeometry() {
+    for (const SeriesData& series : input_.additional_series) {
+      if (!series.config.visible ||
+          series.config.source != SeriesSource::kOhlcvRsi ||
+          series.pane_index >= snapshot_->panes.size()) {
+        continue;
+      }
+      const size_t pane_index = series.pane_index;
+      const Rect& plot = snapshot_->panes[pane_index].plot;
+      const float overbought_y =
+          ProjectPaneY(pane_index, series.config.rsi_overbought);
+      const float oversold_y =
+          ProjectPaneY(pane_index, series.config.rsi_oversold);
+      AppendClippedQuad(*content_vertices_, plot.left, overbought_y, plot.right,
+                        oversold_y, plot, series.config.rsi_band);
+      EmitDashedHorizontal(*content_vertices_, overbought_y, plot.left,
+                           plot.right, input_.config.display_scale,
+                           series.config.rsi_level_line);
+      EmitDashedHorizontal(*content_vertices_, oversold_y, plot.left,
+                           plot.right, input_.config.display_scale,
+                           series.config.rsi_level_line);
     }
   }
 
@@ -1152,6 +1245,53 @@ class RenderSnapshotBuilder {
     }
   }
 
+  void BuildRsiLegends() {
+    snapshot_->rsi_legends.clear();
+    for (const SeriesData& series : input_.additional_series) {
+      if (!series.config.visible ||
+          series.config.source != SeriesSource::kOhlcvRsi ||
+          series.pane_index >= snapshot_->panes.size()) {
+        continue;
+      }
+      RsiLegend legend;
+      legend.pane_id = series.config.pane_id;
+      legend.pane_index = series.pane_index;
+      legend.period = series.config.rsi_period;
+      legend.color = series.config.color;
+      if (!series.candles.empty()) {
+        legend.latest_value = series.candles.back().close;
+        legend.value = legend.latest_value;
+        legend.has_latest_value = true;
+        legend.has_value = true;
+      }
+      snapshot_->rsi_legends.push_back(std::move(legend));
+    }
+  }
+
+  void SelectRsiLegendValues(double timestamp) {
+    size_t legend_index = 0;
+    for (const SeriesData& series : input_.additional_series) {
+      if (!series.config.visible ||
+          series.config.source != SeriesSource::kOhlcvRsi ||
+          series.pane_index >= snapshot_->panes.size()) {
+        continue;
+      }
+      RsiLegend& legend = snapshot_->rsi_legends[legend_index++];
+      const auto point =
+          std::lower_bound(series.candles.begin(), series.candles.end(),
+                           timestamp, [](const Candle& candle, double value) {
+                             return candle.timestamp < value;
+                           });
+      if (point != series.candles.end() && point->timestamp == timestamp) {
+        legend.value = point->close;
+        legend.has_value = true;
+      } else {
+        legend.value = 0.0;
+        legend.has_value = false;
+      }
+    }
+  }
+
   void AddCrosshair() {
     if (!input_.crosshair_active || !input_.config.crosshair_enabled) {
       return;
@@ -1205,6 +1345,7 @@ class RenderSnapshotBuilder {
 
     snapshot_->crosshair_visible = true;
     snapshot_->selected_candle = *nearest;
+    SelectRsiLegendValues(nearest->timestamp);
     snapshot_->crosshair_x =
         std::clamp(ProjectX(CandleX(nearest_index)), snapshot_->plot.left,
                    snapshot_->plot.right);

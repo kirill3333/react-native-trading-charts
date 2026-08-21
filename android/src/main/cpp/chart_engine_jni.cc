@@ -619,9 +619,9 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   const auto values = CopyDoubles(env, numbers);
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
-  std::array<jfloat, 28> color_values{};
+  std::array<jfloat, 36> color_values{};
   env->GetFloatArrayRegion(colors, 0,
-                           std::min(color_count, static_cast<jsize>(28)),
+                           std::min(color_count, static_cast<jsize>(36)),
                            color_values.data());
   const auto color_at = [&](size_t offset) {
     return Color{color_values[offset], color_values[offset + 1],
@@ -644,8 +644,9 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   } else if (type == 5) {
     series.type = SeriesType::kArea;
   }
-  series.source =
-      values[1] == 1.0 ? SeriesSource::kOhlcvVolume : SeriesSource::kData;
+  series.source = values[1] == 1.0   ? SeriesSource::kOhlcvVolume
+                  : values[1] == 2.0 ? SeriesSource::kOhlcvRsi
+                                     : SeriesSource::kData;
   series.visible = values[2] != 0.0;
   series.declarative = values[3] != 0.0;
   series.line_width = static_cast<float>(values[4]);
@@ -671,6 +672,15 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   if (color_count >= 28) {
     series.area_fill_top = color_at(20);
     series.area_fill_bottom = color_at(24);
+  }
+  if (number_count >= 11) {
+    series.rsi_period = static_cast<std::uint32_t>(std::max(values[8], 0.0));
+    series.rsi_oversold = values[9];
+    series.rsi_overbought = values[10];
+  }
+  if (color_count >= 36) {
+    series.rsi_level_line = color_at(28);
+    series.rsi_band = color_at(32);
   }
   return StatusValue(instance->AddSeries(series));
 }
@@ -1078,7 +1088,7 @@ JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
                                                              jclass,
                                                              jlong handle) {
-  constexpr size_t kWidth = 13;
+  constexpr size_t kWidth = 14;
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
   std::vector<double> packed;
@@ -1098,6 +1108,35 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
       packed.push_back(pane.scale_visible ? 1.0 : 0.0);
       packed.push_back(pane.volume_format ? 1.0 : 0.0);
       packed.push_back(static_cast<double>(pane.precision));
+      packed.push_back(pane.rsi_scale ? 1.0 : 0.0);
+    }
+  }
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
+  if (!packed.empty()) {
+    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
+                              packed.data());
+  }
+  return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRsiLegends(
+    JNIEnv* env, jclass, jlong handle) {
+  constexpr size_t kWidth = 8;
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  std::vector<double> packed;
+  if (value) {
+    packed.reserve(value->rsi_legends.size() * kWidth);
+    for (const auto& legend : value->rsi_legends) {
+      packed.push_back(static_cast<double>(legend.pane_index));
+      packed.push_back(static_cast<double>(legend.period));
+      packed.push_back(legend.value);
+      packed.push_back(legend.has_value ? 1.0 : 0.0);
+      packed.push_back(legend.color.r);
+      packed.push_back(legend.color.g);
+      packed.push_back(legend.color.b);
+      packed.push_back(legend.color.a);
     }
   }
   jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));

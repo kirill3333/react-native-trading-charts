@@ -20,6 +20,9 @@ describe('chart settings', () => {
     expect(DEFAULT_CHART_SETTINGS).toMatchObject({
       seriesType: 'candlestick',
       seriesLineWidth: 1.5,
+      mainPaneHeightWeight: 3,
+      volumePaneHeightWeight: 1,
+      rsiPaneHeightWeight: 1,
       themeMode: 'dark',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',

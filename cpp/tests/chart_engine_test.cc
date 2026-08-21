@@ -8,16 +8,19 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 
+using trading_charts::AxisTick;
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
+using trading_charts::PaneSnapshot;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
@@ -2056,6 +2059,180 @@ void TestVolumePaneTickMinimumDependsOnHeight() {
              10.0);
 }
 
+void TestDerivedRsiPaneAndIncrementalUpdates() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 20;
+  config.logical_spacing = true;
+  engine.SetConfig(config);
+  engine.SetSize(800.0f, 500.0f);
+
+  PaneConfig main;
+  main.height_weight = 3.0;
+  PaneConfig rsi_pane;
+  rsi_pane.pane_id = "rsi";
+  rsi_pane.price_scale_id = "rsi";
+  rsi_pane.height_weight = 1.0;
+  rsi_pane.precision = 4;
+  rsi_pane.min_move = 0.0001;
+  engine.SetPanes({main, rsi_pane}, true);
+
+  SeriesConfig rsi;
+  rsi.series_id = "rsi";
+  rsi.pane_id = "rsi";
+  rsi.price_scale_id = "rsi";
+  rsi.type = SeriesType::kLine;
+  rsi.source = SeriesSource::kOhlcvRsi;
+  rsi.source_series_id = "main";
+  rsi.rsi_period = 3;
+  rsi.rsi_oversold = 30.0;
+  rsi.rsi_overbought = 70.0;
+  assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
+  const double direct_rsi[] = {0.0, 50.0, 50.0, 50.0, 50.0, 0.0};
+  assert(engine.SetSeriesData("rsi", direct_rsi,
+                              trading_charts::kCandleValueCount,
+                              false) == UpdateStatus::kInvalidInput);
+
+  const std::vector<double> closes{1.0, 2.0, 3.0, 2.0, 2.0, 4.0};
+  std::vector<double> history;
+  for (size_t index = 0; index < closes.size(); ++index) {
+    const double close = closes[index];
+    history.insert(history.end(), {static_cast<double>(index) * 60'000.0, close,
+                                   close, close, close, 1.0});
+  }
+  assert(engine.SetHistory(history.data(), history.size()) ==
+         UpdateStatus::kApplied);
+
+  const auto snapshot = engine.Snapshot();
+  assert(snapshot->panes.size() == 2);
+  assert(snapshot->panes[1].rsi_scale);
+  ExpectNear(snapshot->panes[1].visible_y_min, 0.0);
+  ExpectNear(snapshot->panes[1].visible_y_max, 100.0);
+  assert(snapshot->rsi_legends.size() == 1);
+  assert(snapshot->rsi_legends[0].has_value);
+  ExpectNear(snapshot->rsi_legends[0].value, 86.6666666667, 1e-6);
+  bool has_oversold = false;
+  bool has_overbought = false;
+  bool has_boundary_tick = false;
+  size_t oversold_count = 0;
+  size_t overbought_count = 0;
+  const PaneSnapshot& pane = snapshot->panes[1];
+  for (size_t index = 0; index < pane.y_tick_count; ++index) {
+    const AxisTick& tick = snapshot->pane_y_ticks[pane.y_tick_offset + index];
+    has_oversold = has_oversold || std::abs(tick.value - 30.0) < 1e-9;
+    has_overbought = has_overbought || std::abs(tick.value - 70.0) < 1e-9;
+    has_boundary_tick =
+        has_boundary_tick || tick.value <= 0.0 || tick.value >= 100.0;
+    oversold_count += std::abs(tick.value - 30.0) < 1e-9 ? 1 : 0;
+    overbought_count += std::abs(tick.value - 70.0) < 1e-9 ? 1 : 0;
+  }
+  assert(has_oversold && has_overbought);
+  assert(!has_boundary_tick);
+  assert(oversold_count == 1 && overbought_count == 1);
+  assert(!engine.ScaleYAt(20.0f, (pane.plot.top + pane.plot.bottom) * 0.5f));
+
+  const double replacement[] = {5.0 * 60'000.0, 3.0, 3.0, 3.0, 3.0, 1.0};
+  assert(engine.UpdateCandle(replacement, trading_charts::kCandleValueCount) ==
+         UpdateStatus::kApplied);
+  const auto replaced = engine.Snapshot();
+  ExpectNear(replaced->rsi_legends[0].value, 80.9523809524, 1e-6);
+
+  const PaneSnapshot& selected_pane = replaced->panes[1];
+  const float selected_x =
+      selected_pane.plot.left +
+      static_cast<float>((3.0 + 0.5) /
+                         (static_cast<double>(closes.size()) + 2.0)) *
+          selected_pane.plot.Width();
+  engine.SetCrosshair(
+      true, selected_x,
+      (selected_pane.plot.top + selected_pane.plot.bottom) * 0.5f);
+  const auto selected = engine.Snapshot();
+  assert(selected->content_revision == replaced->content_revision);
+  assert(selected->content_vertices == replaced->content_vertices);
+  assert(selected->rsi_legends[0].has_value);
+  ExpectNear(selected->rsi_legends[0].value, 66.6666666667, 1e-6);
+}
+
+void TestRsiEdgeValuesAndWarmup() {
+  const auto value_for = [](const std::vector<double>& closes) {
+    ChartEngine engine;
+    engine.SetSize(500.0f, 300.0f);
+    PaneConfig main;
+    PaneConfig indicator;
+    indicator.pane_id = "rsi";
+    indicator.price_scale_id = "rsi";
+    engine.SetPanes({main, indicator}, false);
+    SeriesConfig rsi;
+    rsi.series_id = "rsi";
+    rsi.pane_id = "rsi";
+    rsi.price_scale_id = "rsi";
+    rsi.type = SeriesType::kLine;
+    rsi.source = SeriesSource::kOhlcvRsi;
+    rsi.source_series_id = "main";
+    rsi.rsi_period = 2;
+    assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
+    std::vector<double> history;
+    for (size_t index = 0; index < closes.size(); ++index) {
+      const double close = closes[index];
+      history.insert(history.end(), {static_cast<double>(index) * 60'000.0,
+                                     close, close, close, close, 1.0});
+    }
+    assert(engine.SetHistory(history.data(), history.size()) ==
+           UpdateStatus::kApplied);
+    const auto snapshot = engine.Snapshot();
+    assert(snapshot->rsi_legends.size() == 1);
+    return snapshot->rsi_legends[0].has_value
+               ? snapshot->rsi_legends[0].value
+               : std::numeric_limits<double>::quiet_NaN();
+  };
+
+  ExpectNear(value_for({1.0, 2.0, 3.0}), 100.0);
+  ExpectNear(value_for({3.0, 2.0, 1.0}), 0.0);
+  ExpectNear(value_for({2.0, 2.0, 2.0}), 50.0);
+  assert(std::isnan(value_for({1.0, 2.0})));
+}
+
+void TestRsiFlatAndCascadeRemoval() {
+  ChartEngine engine;
+  engine.SetSize(600.0f, 400.0f);
+  PaneConfig main;
+  PaneConfig indicator;
+  indicator.pane_id = "indicator";
+  indicator.price_scale_id = "indicator";
+  engine.SetPanes({main, indicator}, false);
+
+  SeriesConfig source;
+  source.series_id = "source";
+  source.pane_id = "indicator";
+  source.price_scale_id = "indicator";
+  source.type = SeriesType::kLine;
+  assert(engine.AddSeries(source) == UpdateStatus::kApplied);
+  const double values[] = {
+      0.0,  10.0, 10.0, 10.0, 10.0, 1.0,  1.0,  10.0, 10.0,
+      10.0, 10.0, 1.0,  2.0,  10.0, 10.0, 10.0, 10.0, 1.0,
+  };
+  assert(engine.SetSeriesData("source", values,
+                              sizeof(values) / sizeof(values[0]),
+                              false) == UpdateStatus::kApplied);
+  assert(engine.SetHistory(values, sizeof(values) / sizeof(values[0])) ==
+         UpdateStatus::kApplied);
+
+  SeriesConfig rsi;
+  rsi.series_id = "flat-rsi";
+  rsi.pane_id = "indicator";
+  rsi.price_scale_id = "indicator";
+  rsi.type = SeriesType::kLine;
+  rsi.source = SeriesSource::kOhlcvRsi;
+  rsi.source_series_id = "source";
+  rsi.rsi_period = 2;
+  assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
+  const auto snapshot = engine.Snapshot();
+  assert(snapshot->rsi_legends.size() == 1);
+  ExpectNear(snapshot->rsi_legends[0].value, 50.0);
+  assert(engine.RemoveSeries("source"));
+  assert(!engine.RemoveSeries("flat-rsi"));
+}
+
 void TestCustomHistogramAndRuntimePaneWeights() {
   ChartEngine engine;
   ChartConfig config;
@@ -2670,6 +2847,9 @@ int main() noexcept {
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestMultiPaneSeriesAndDerivedVolume();
     TestVolumePaneTickMinimumDependsOnHeight();
+    TestDerivedRsiPaneAndIncrementalUpdates();
+    TestRsiEdgeValuesAndWarmup();
+    TestRsiFlatAndCascadeRemoval();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
     TestViewportInDataGapReportsEmptyRange();

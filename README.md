@@ -46,8 +46,8 @@ frequently updated market data without introducing a browser or a third-party
   are cached, and content geometry is reused for crosshair-only updates.
 - **Multiple display types.** Candlestick, hollow candlestick, OHLC bar, line,
   area, and histogram series are supported.
-- **Multiple panes and series.** Add independently scaled panes, derived volume,
-  comparison series, and custom histogram data.
+- **Multiple panes and series.** Add independently scaled panes, derived volume
+  and RSI, comparison series, and custom histogram data.
 - **Detailed presentation control.** Configure themes, role-specific styles,
   native number/date formatting, axes, badges, and tooltips.
 - **Streaming-ready data APIs.** Send completed candles, raw trades, batches,
@@ -532,6 +532,65 @@ const panes = [
 Derived volume follows its OHLC source automatically when history, candle, or
 trade updates arrive. Standalone series use `setSeriesData`,
 `prependSeriesData`, and `updateSeriesData`.
+
+### Relative Strength Index (RSI)
+
+RSI is a derived line series calculated by the shared native engine. It uses
+Wilder smoothing over candle closes, follows history and live candle/trade
+updates automatically, and must target a pane separate from `main`.
+
+```tsx
+const panes = [
+  {
+    paneId: 'main',
+    heightWeight: 3,
+    priceScale: { priceScaleId: 'main' },
+  },
+  {
+    paneId: 'rsi',
+    heightWeight: 1,
+    minHeight: 96,
+    priceScale: {
+      priceScaleId: 'rsi',
+      valueFormat: {
+        type: 'price',
+        precision: 4,
+        minMove: 0.0001,
+        useGrouping: false,
+      },
+    },
+  },
+];
+
+<TradingChartsView
+  chartId="btc-1m"
+  panes={panes}
+  additionalSeries={[
+    {
+      seriesId: 'rsi',
+      type: 'line',
+      paneId: 'rsi',
+      priceScaleId: 'rsi',
+      source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
+      levels: { oversold: 30, overbought: 70 },
+      appearance: {
+        width: 1.5,
+        color: '#6C8CFF',
+        levelLineColor: '#6C8CFF80',
+        bandColor: '#6C8CFF14',
+      },
+    },
+  ]}
+/>;
+```
+
+`period` defaults to `14`; oversold/overbought default to `30/70`. The first
+value is available after `period + 1` candles. An RSI pane is fixed to the
+`0–100` domain and ignores vertical scale gestures. Its native header shows the
+RSI value under the crosshair, or the latest value when the crosshair is not
+active; warm-up and unmatched timestamps display `—`. Multiple RSI series may
+share a pane, with one header row per visible series. Derived-to-derived source
+chains are intentionally rejected.
 
 ## Time, Resolution, and Trade Aggregation
 

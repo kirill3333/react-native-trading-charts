@@ -90,6 +90,11 @@ internal data class SeriesConfig(
     val lineGapThresholdMs: Double = 0.0,
     val areaFillTopColor: Int = Color.argb(64, 56, 217, 138),
     val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
+    val rsiPeriod: Int = 14,
+    val rsiOversold: Double = 30.0,
+    val rsiOverbought: Double = 70.0,
+    val rsiLevelLineColor: Int = Color.argb(128, 151, 145, 165),
+    val rsiBandColor: Int = Color.argb(20, 151, 145, 165),
 )
 
 internal data class ResolutionConfig(

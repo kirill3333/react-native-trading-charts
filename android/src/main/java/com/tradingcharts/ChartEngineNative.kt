@@ -48,6 +48,15 @@ internal data class PaneSnapshot(
     val scaleVisible: Boolean,
     val volumeFormat: Boolean,
     val precision: Int,
+    val rsiScale: Boolean,
+)
+
+internal data class RsiLegendSnapshot(
+    val paneIndex: Int,
+    val period: Int,
+    val value: Double,
+    val hasValue: Boolean,
+    val color: Int,
 )
 
 internal data class ChartFrame(
@@ -81,6 +90,7 @@ internal data class ChartSnapshot(
     val xTicks: List<AxisTick>,
     val yTicks: List<AxisTick>,
     val panes: List<PaneSnapshot>,
+    val rsiLegends: List<RsiLegendSnapshot>,
     val activePaneIndex: Int,
     val currentPriceVisible: Boolean,
     val currentPrice: Double,
@@ -171,7 +181,8 @@ private fun DoubleArray.visibleMinimum() =
 
 @Suppress("TooManyFunctions")
 internal object ChartEngineNative {
-  private const val PANE_META_WIDTH = 13
+  private const val PANE_META_WIDTH = 14
+  private const val RSI_LEGEND_META_WIDTH = 8
 
   init {
     System.loadLibrary("tradingcharts")
@@ -314,6 +325,8 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotPanes(handle: Long): DoubleArray
 
+  @JvmStatic private external fun nativeSnapshotRsiLegends(handle: Long): DoubleArray
+
   @JvmStatic private external fun nativeSnapshotActivePane(handle: Long): Int
 
   @JvmStatic private external fun nativeSnapshotMeta(handle: Long): DoubleArray
@@ -344,7 +357,7 @@ internal object ChartEngineNative {
   }
 
   fun addSeries(handle: Long, series: SeriesConfig): Int {
-    val colors = FloatArray(28)
+    val colors = FloatArray(36)
     listOf(
             series.color,
             series.upColor,
@@ -353,6 +366,8 @@ internal object ChartEngineNative {
             series.lineGradientBottomColor,
             series.areaFillTopColor,
             series.areaFillBottomColor,
+            series.rsiLevelLineColor,
+            series.rsiBandColor,
         )
         .forEachIndexed { index, color ->
           colors[index * 4] = Color.red(color) / 255f
@@ -370,13 +385,20 @@ internal object ChartEngineNative {
         ),
         doubleArrayOf(
             series.type.nativeSeriesType(),
-            if (series.sourceType == "ohlcvVolume") 1.0 else 0.0,
+            when (series.sourceType) {
+              "ohlcvVolume" -> 1.0
+              "ohlcvRsi" -> 2.0
+              else -> 0.0
+            },
             if (series.visible) 1.0 else 0.0,
             if (series.declarative) 1.0 else 0.0,
             series.lineWidthPx.toDouble(),
             series.lineSource.nativeLineSource(),
             if (series.lineGradientEnabled) 1.0 else 0.0,
             series.lineGapThresholdMs,
+            series.rsiPeriod.toDouble(),
+            series.rsiOversold,
+            series.rsiOverbought,
         ),
         colors,
     )
@@ -467,6 +489,7 @@ internal object ChartEngineNative {
         xTicks = ticks(nativeSnapshotXTicks(snapshot)),
         yTicks = ticks(nativeSnapshotYTicks(snapshot)),
         panes = panes,
+        rsiLegends = snapshotRsiLegends(snapshot),
         activePaneIndex = nativeSnapshotActivePane(snapshot),
         currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
         currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
@@ -533,6 +556,26 @@ internal object ChartEngineNative {
           scaleVisible = paneMeta[offset + 10] != 0.0,
           volumeFormat = paneMeta[offset + 11] != 0.0,
           precision = paneMeta[offset + 12].toInt(),
+          rsiScale = paneMeta[offset + 13] != 0.0,
+      )
+    }
+  }
+
+  private fun snapshotRsiLegends(snapshot: Long): List<RsiLegendSnapshot> {
+    val values = nativeSnapshotRsiLegends(snapshot)
+    check(values.size % RSI_LEGEND_META_WIDTH == 0) {
+      "Invalid native RSI legend metadata size: ${values.size}"
+    }
+    return List(values.size / RSI_LEGEND_META_WIDTH) { index ->
+      val offset = index * RSI_LEGEND_META_WIDTH
+      fun channel(channelOffset: Int) =
+          (values[offset + channelOffset].coerceIn(0.0, 1.0) * 255.0).toInt()
+      RsiLegendSnapshot(
+          paneIndex = values[offset].toInt(),
+          period = values[offset + 1].toInt(),
+          value = values[offset + 2],
+          hasValue = values[offset + 3] != 0.0,
+          color = Color.argb(channel(7), channel(4), channel(5), channel(6)),
       )
     }
   }

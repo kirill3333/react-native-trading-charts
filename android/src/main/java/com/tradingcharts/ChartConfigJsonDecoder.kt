@@ -545,6 +545,32 @@ private fun seriesLineWidthPx(
   return if (type == "area") fallback.areaLineWidthPx else fallback.lineWidthPx
 }
 
+private data class RsiConfigValues(
+    val period: Int,
+    val oversold: Double,
+    val overbought: Double,
+    val levelLineColor: Int,
+    val bandColor: Int,
+)
+
+private fun rsiConfigValues(
+    source: JSONObject?,
+    levels: JSONObject?,
+    appearance: JSONObject?,
+    color: Int,
+) =
+    RsiConfigValues(
+        period = source?.optInt("period", 14) ?: 14,
+        oversold = levels?.optDouble("oversold", 30.0) ?: 30.0,
+        overbought = levels?.optDouble("overbought", 70.0) ?: 70.0,
+        levelLineColor =
+            appearance.optionalColor("levelLineColor")
+                ?: Color.argb(128, Color.red(color), Color.green(color), Color.blue(color)),
+        bandColor =
+            appearance.optionalColor("bandColor")
+                ?: Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)),
+    )
+
 private fun seriesConfig(
     json: JSONObject,
     fallback: ChartConfig,
@@ -557,9 +583,11 @@ private fun seriesConfig(
   val lineAppearance = appearance.takeIf { lineLike }
   val lineGradient = lineAppearance?.optJSONObject("gradient")
   val areaFill = lineAppearance?.optJSONObject("fill")
+  val levels = json.optJSONObject("levels")
   val fallbackColor = if (type == "area") fallback.areaLineColor else fallback.lineColor
   val resolvedColor =
       appearance.optionalColor("color") ?: if (lineLike) fallbackColor else fallback.axisTextColor
+  val rsi = rsiConfigValues(source, levels, appearance, resolvedColor)
   return SeriesConfig(
       seriesId = json.getString("seriesId"),
       type = type,
@@ -580,6 +608,11 @@ private fun seriesConfig(
       lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
       areaFillTopColor = areaFill.optionalColor("topColor") ?: fallback.areaFillTopColor,
       areaFillBottomColor = areaFill.optionalColor("bottomColor") ?: fallback.areaFillBottomColor,
+      rsiPeriod = rsi.period,
+      rsiOversold = rsi.oversold,
+      rsiOverbought = rsi.overbought,
+      rsiLevelLineColor = rsi.levelLineColor,
+      rsiBandColor = rsi.bandColor,
   )
 }
 

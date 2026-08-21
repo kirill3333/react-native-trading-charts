@@ -40,6 +40,9 @@ export type AppTheme = {
   chartAppearance: ChartAppearance;
   volumeUpColor: string;
   volumeDownColor: string;
+  rsiColor: string;
+  rsiLevelLineColor: string;
+  rsiBandColor: string;
   navigationTheme: NavigationTheme;
   statusBarStyle: StatusBarStyle;
 };
@@ -242,6 +245,9 @@ export const APP_THEMES: Readonly<Record<AppThemeMode, AppTheme>> = {
     chartAppearance: DARK_CHART_APPEARANCE,
     volumeUpColor: '#38D98A80',
     volumeDownColor: '#FF3B6480',
+    rsiColor: '#8C7CFF',
+    rsiLevelLineColor: '#8C7CFF80',
+    rsiBandColor: '#8C7CFF14',
     navigationTheme: navigationTheme(true, DARK_COLORS),
     statusBarStyle: 'light-content',
   }),
@@ -252,6 +258,9 @@ export const APP_THEMES: Readonly<Record<AppThemeMode, AppTheme>> = {
     chartAppearance: LIGHT_CHART_APPEARANCE,
     volumeUpColor: '#08998166',
     volumeDownColor: '#F2364566',
+    rsiColor: '#2962FF',
+    rsiLevelLineColor: '#2962FF80',
+    rsiBandColor: '#2962FF14',
     navigationTheme: navigationTheme(false, LIGHT_COLORS),
     statusBarStyle: 'dark-content',
   }),

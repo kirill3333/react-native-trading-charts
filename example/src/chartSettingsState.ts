@@ -10,10 +10,14 @@ export type CrosshairLineStyleSetting = 'solid' | 'dashed';
 export type ChartLocale = 'en-GB' | 'en-US';
 export type ChartTimeZone = 'utc' | 'device';
 export type SeriesLineWidth = 1 | 1.5 | 2.5;
+export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
 
 export type ChartSettings = {
   seriesType: ChartSeriesType;
   seriesLineWidth: SeriesLineWidth;
+  mainPaneHeightWeight: PaneHeightWeight;
+  volumePaneHeightWeight: PaneHeightWeight;
+  rsiPaneHeightWeight: PaneHeightWeight;
   themeMode: AppThemeMode;
   xAxisVisible: boolean;
   xAxisShowSeconds: boolean;
@@ -41,6 +45,9 @@ export type ChartSettings = {
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   seriesType: 'candlestick',
   seriesLineWidth: 1.5,
+  mainPaneHeightWeight: 3,
+  volumePaneHeightWeight: 1,
+  rsiPaneHeightWeight: 1,
   themeMode: 'dark',
   xAxisVisible: true,
   xAxisShowSeconds: false,

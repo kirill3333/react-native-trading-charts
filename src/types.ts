@@ -203,8 +203,30 @@ export type HistogramSeriesOptions = AdditionalSeriesBase & {
   };
 };
 
+export type RsiLevels = {
+  oversold?: number;
+  overbought?: number;
+};
+
+export type RsiSeriesAppearance = ChartLineAppearance & {
+  levelLineColor?: string;
+  bandColor?: string;
+};
+
+export type RsiSeriesOptions = AdditionalSeriesBase & {
+  type: 'line';
+  source: {
+    type: 'ohlcvRsi';
+    seriesId: string;
+    period?: number;
+  };
+  levels?: RsiLevels;
+  gapThresholdMs?: number;
+  appearance?: RsiSeriesAppearance;
+};
+
 export type AdditionalChartSeriesOptions =
-  AdditionalOhlcSeriesOptions | HistogramSeriesOptions;
+  AdditionalOhlcSeriesOptions | HistogramSeriesOptions | RsiSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -214,6 +236,15 @@ export type AdditionalChartSeriesOptions =
  */
 export type NormalizedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
+  | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvRsi';
+        seriesId: string;
+        period: number;
+      };
+      levels: Required<RsiLevels>;
+    })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
       source: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };
@@ -531,6 +562,22 @@ export type ResolvedChartPaneOptions = {
 
 export type ResolvedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
+  | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels' | 'appearance'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvRsi';
+        seriesId: string;
+        period: number;
+      };
+      levels: Required<RsiLevels>;
+      appearance: Required<
+        Pick<
+          RsiSeriesAppearance,
+          'width' | 'color' | 'levelLineColor' | 'bandColor'
+        >
+      > &
+        Pick<RsiSeriesAppearance, 'gradient'>;
+    })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {
       visible: boolean;
       source: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };

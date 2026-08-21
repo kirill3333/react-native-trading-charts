@@ -33,6 +33,12 @@ const SERIES_LINE_WIDTH_OPTIONS = [
   { label: 'Medium', value: 1.5 },
   { label: 'Thick', value: 2.5 },
 ] as const;
+const PANE_HEIGHT_WEIGHT_OPTIONS = [
+  { label: '½×', value: 0.5 },
+  { label: '1×', value: 1 },
+  { label: '2×', value: 2 },
+  { label: '3×', value: 3 },
+] as const;
 const POSITION_OPTIONS = [
   { label: 'Left', value: 'left' },
   { label: 'Right', value: 'right' },
@@ -131,6 +137,34 @@ export function SettingsScreen() {
               })
             }
             value={settings.themeMode === 'light'}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Pane heights">
+          <SettingSegments
+            description="Relative share of the available chart height"
+            label="Main chart"
+            onValueChange={(mainPaneHeightWeight) =>
+              updateSettings({ mainPaneHeightWeight })
+            }
+            options={PANE_HEIGHT_WEIGHT_OPTIONS}
+            value={settings.mainPaneHeightWeight}
+          />
+          <SettingSegments
+            label="Volume"
+            onValueChange={(volumePaneHeightWeight) =>
+              updateSettings({ volumePaneHeightWeight })
+            }
+            options={PANE_HEIGHT_WEIGHT_OPTIONS}
+            value={settings.volumePaneHeightWeight}
+          />
+          <SettingSegments
+            label="RSI"
+            onValueChange={(rsiPaneHeightWeight) =>
+              updateSettings({ rsiPaneHeightWeight })
+            }
+            options={PANE_HEIGHT_WEIGHT_OPTIONS}
+            value={settings.rsiPaneHeightWeight}
           />
         </SettingsSection>
 

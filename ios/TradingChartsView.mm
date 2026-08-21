@@ -38,9 +38,11 @@ using trading_charts::ChartEngine;
 using trading_charts::OhlcValueSource;
 using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
+using trading_charts::PaneSnapshot;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
 using trading_charts::ResolutionUnit;
+using trading_charts::RsiLegend;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
@@ -561,6 +563,7 @@ struct TCTextPresentation {
   NSMutableArray<CALayer *> *_extremaBackgroundLayers;
   NSMutableArray<TCTextLayerItem *> *_tooltipLineLayers;
   NSMutableArray<TCTextLayerItem *> *_tooltipValueLayers;
+  NSMutableArray<TCTextLayerItem *> *_rsiLegendLayers;
   std::vector<TCTextPresentation> _xAxisPresentations;
   std::vector<TCTextPresentation> _extremaPresentations;
   std::vector<CGRect> _extremaConnectorFrames;
@@ -653,6 +656,7 @@ struct TCTextPresentation {
   Candle _appliedSelectedCandle;
   NSUInteger _visibleStaticLabels;
   NSUInteger _visibleSelectionLabels;
+  NSUInteger _visibleRsiLabels;
   bool _hasAppliedRevision;
   bool _hasAppliedContentRevision;
   bool _hasAppliedSelection;
@@ -683,6 +687,7 @@ struct TCTextPresentation {
     _extremaBackgroundLayers = [NSMutableArray array];
     _tooltipLineLayers = [NSMutableArray array];
     _tooltipValueLayers = [NSMutableArray array];
+    _rsiLegendLayers = [NSMutableArray array];
     _currentPriceBadge = [[TCBadgeLayerGroup alloc] initWithParentLayer:_badgeContainer cornerRadius:4];
     _crosshairPriceBadge = [[TCBadgeLayerGroup alloc] initWithParentLayer:_badgeContainer cornerRadius:4];
     _crosshairTimeBadge = [[TCBadgeLayerGroup alloc] initWithParentLayer:_badgeContainer cornerRadius:4];
@@ -1415,6 +1420,7 @@ struct TCTextPresentation {
     _hasAppliedSelection = false;
     _visibleStaticLabels = 0;
     _visibleSelectionLabels = 0;
+    _visibleRsiLabels = 0;
     return;
   }
 
@@ -1588,6 +1594,52 @@ struct TCTextPresentation {
     _visibleStaticLabels = visibleStaticLabels;
     _appliedContentRevision = current.content_revision;
     _hasAppliedContentRevision = true;
+  }
+
+  if (staticUpdated || selectionUpdated) {
+    std::vector<NSUInteger> paneRows(current.panes.size(), 0);
+    NSUInteger legendIndex = 0;
+    for (const RsiLegend &legend : current.rsi_legends) {
+      if (legend.pane_index >= current.panes.size()) continue;
+      const PaneSnapshot &pane = current.panes[legend.pane_index];
+      NSString *scaleId =
+          [NSString stringWithUTF8String:pane.price_scale_id.c_str()] ?: @"main";
+      NSString *title = [NSString stringWithFormat:@"RSI %u", legend.period];
+      NSString *value = legend.has_value
+          ? [self formatValue:legend.value
+                         role:[@"scale:" stringByAppendingString:scaleId]
+                     snapshot:current]
+          : @"—";
+      NSString *cacheKey = [NSString stringWithFormat:
+          @"rsi\x1f%zu\x1f%u\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f",
+          legend.pane_index, legend.period, value, legend.color.r,
+          legend.color.g, legend.color.b, legend.color.a];
+      TCTextLayout *layout = [_axisLayoutCache objectForKey:cacheKey];
+      if (layout) {
+        ++metrics.layoutCacheHits;
+      } else {
+        ++metrics.layoutCacheMisses;
+        NSMutableAttributedString *text = [[NSMutableAttributedString alloc]
+            initWithString:[title stringByAppendingString:@" "]
+                attributes:_yAxisAttributes];
+        NSMutableDictionary *valueAttributes = [_yAxisAttributes mutableCopy];
+        valueAttributes[NSForegroundColorAttributeName] = TCUIColor(legend.color);
+        [text appendAttributedString:[[NSAttributedString alloc]
+            initWithString:value attributes:valueAttributes]];
+        layout = [[TCTextLayout alloc] initWithAttributedString:text];
+        [_axisLayoutCache setObject:layout forKey:cacheKey];
+      }
+      const NSUInteger row = paneRows[legend.pane_index]++;
+      CGRect frame = CGRectMake(pane.plot.left + 8,
+                                pane.plot.top + 5 + row * 15,
+                                layout.size.width, layout.size.height);
+      TCTextLayerItem *item = [self itemAtIndex:legendIndex++
+                                        inPool:_rsiLegendLayers
+                                   parentLayer:_axisContainer];
+      [self applyLayout:layout toItem:item frame:frame metrics:&metrics];
+    }
+    [self hideItemsInPool:_rsiLegendLayers fromIndex:legendIndex];
+    _visibleRsiLabels = legendIndex;
   }
 
   const NSUInteger crosshairTextUpdatesBefore = metrics.textUpdates;
@@ -1845,7 +1897,8 @@ struct TCTextPresentation {
   _appliedRevision = current.revision;
   _hasAppliedRevision = true;
   const NSUInteger visibleLabels =
-      _visibleStaticLabels + _visibleSelectionLabels + (current.crosshair_visible ? 1 : 0);
+      _visibleStaticLabels + _visibleSelectionLabels + _visibleRsiLabels +
+      (current.crosshair_visible ? 1 : 0);
   os_signpost_interval_end(performanceLog, updateSignpostID, "Overlay Update Layers",
                            "cached=0 visible=%{public}lu textUpdates=%{public}lu "
                            "xTextUpdates=%{public}lu yTextUpdates=%{public}lu "
@@ -2520,11 +2573,30 @@ struct TCTextPresentation {
       [source[@"type"] isEqualToString:@"ohlcvVolume"]) {
     config.source = SeriesSource::kOhlcvVolume;
     config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
+  } else if ([source isKindOfClass:NSDictionary.class] &&
+             [source[@"type"] isEqualToString:@"ohlcvRsi"]) {
+    config.source = SeriesSource::kOhlcvRsi;
+    config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
+    config.rsi_period = source[@"period"]
+        ? static_cast<std::uint32_t>([source[@"period"] unsignedIntegerValue])
+        : 14;
+    NSDictionary *levels = item[@"levels"];
+    config.rsi_oversold = levels[@"oversold"]
+        ? [levels[@"oversold"] doubleValue] : 30.0;
+    config.rsi_overbought = levels[@"overbought"]
+        ? [levels[@"overbought"] doubleValue] : 70.0;
   }
   NSDictionary *appearance = item[@"appearance"];
   config.color = TCColorFromHex(appearance[@"color"], _config.axis_text);
   config.up = TCColorFromHex(appearance[@"upColor"], _config.up);
   config.down = TCColorFromHex(appearance[@"downColor"], _config.down);
+  trading_charts::Color defaultLevel = config.color;
+  defaultLevel.a *= 0.5f;
+  trading_charts::Color defaultBand = config.color;
+  defaultBand.a *= 20.0f / 255.0f;
+  config.rsi_level_line =
+      TCColorFromHex(appearance[@"levelLineColor"], defaultLevel);
+  config.rsi_band = TCColorFromHex(appearance[@"bandColor"], defaultBand);
   if (trading_charts::IsLineLikeSeries(config.type)) {
     const bool area = config.type == SeriesType::kArea;
     NSString *valueSource =

@@ -44,6 +44,15 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private data class TooltipRow(val label: String, val value: String, val valueColor: Int)
 
+  private data class RsiLegendKey(
+      val paneIndex: Int,
+      val period: Int,
+      val valueBits: Long,
+      val hasValue: Boolean,
+  )
+
+  private data class RsiLegendLabel(val title: String, val value: String, val titleWidth: Float)
+
   private data class TooltipLayout(
       val header: String,
       val showHeader: Boolean,
@@ -97,6 +106,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private val tooltipHeaderPaint = textPaint(11f, false)
   private val tooltipLabelPaint = textPaint(11f, false)
   private val tooltipValuePaint = textPaint(11f, false)
+  private val rsiTitlePaint = textPaint(10.5f, false)
+  private val rsiValuePaint = textPaint(10.5f, false)
   private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
   private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
   private val extremumLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = density }
@@ -128,6 +139,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
   // invalidated in prepare() on any config change.
   private val xLabelCache = BoundedCache<Long, AxisLabel>(MAX_X_LABEL_CACHE_SIZE)
   private val yLabelCache = HashMap<String, BoundedCache<Long, AxisLabel>>()
+  private val rsiLegendCache = BoundedCache<RsiLegendKey, RsiLegendLabel>(64)
   private var timeBadgeLabel: AxisLabel? = null
   private var timeBadgeBits = 0L
   private var currentPriceLabel: AxisLabel? = null
@@ -158,6 +170,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
     applyTextStyle(tooltipHeaderPaint, config.tooltipHeaderTextStyle, 11f, false)
     applyTextStyle(tooltipLabelPaint, config.tooltipLabelTextStyle, 11f, false)
     applyTextStyle(tooltipValuePaint, config.tooltipValueTextStyle, 11f, false)
+    applyTextStyle(rsiTitlePaint, config.yAxisTextStyle, 10.5f, false)
+    applyTextStyle(rsiValuePaint, config.yAxisTextStyle, 10.5f, false)
 
     yAxisValueFormat = prepareValueFormat(config.valueFormat)
     extremaValueFormat = prepareValueFormat(config.extremaValueFormat)
@@ -208,6 +222,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
     minimumLabelCache.hasValue = false
     xLabelCache.clear()
     yLabelCache.clear()
+    rsiLegendCache.clear()
     timeBadgeLabel = null
     currentPriceLabel = null
   }
@@ -372,6 +387,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
     if (config.showXAxis) drawXAxis(canvas, frame)
     if (config.showYAxis) drawYAxes(canvas, frame)
+    drawRsiLegends(canvas, frame)
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
       drawBadge(
@@ -479,6 +495,40 @@ internal class ChartOverlayView(context: Context) : View(context) {
             else max(2f, pane.plotLeft - label.width - 6f * density)
         canvas.drawText(label.text, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
       }
+    }
+  }
+
+  private fun drawRsiLegends(canvas: Canvas, frame: ChartSnapshot) {
+    frame.rsiLegends.forEachIndexed { index, legend ->
+      val pane = frame.panes.getOrNull(legend.paneIndex) ?: return@forEachIndexed
+      var row = 0
+      for (previous in 0 until index) {
+        if (frame.rsiLegends[previous].paneIndex == legend.paneIndex) row += 1
+      }
+      val key =
+          RsiLegendKey(
+              legend.paneIndex,
+              legend.period,
+              legend.value.toBits(),
+              legend.hasValue,
+          )
+      val label =
+          rsiLegendCache.getOrPut(key) {
+            val title = "RSI ${legend.period}"
+            val formatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
+            val value = if (legend.hasValue) formatValue(legend.value, formatter) else "—"
+            RsiLegendLabel(title, value, rsiTitlePaint.measureText(title))
+          }
+      val baseline = pane.plotTop + (16f + row * 15f) * density
+      val left = pane.plotLeft + 8f * density
+      canvas.drawText(label.title, left, baseline, rsiTitlePaint)
+      rsiValuePaint.color = legend.color
+      canvas.drawText(
+          label.value,
+          left + label.titleWidth + 6f * density,
+          baseline,
+          rsiValuePaint,
+      )
     }
   }
 

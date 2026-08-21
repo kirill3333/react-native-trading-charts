@@ -229,6 +229,57 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('normalizes an imperative derived RSI series', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'rsi',
+      type: 'line',
+      paneId: 'rsi',
+      priceScaleId: 'rsi',
+      source: { type: 'ohlcvRsi', seriesId: 'main' },
+    });
+
+    const call = mockNativeModule.addSeries.mock.calls[0]!;
+    expect(JSON.parse(call[1] as string)).toEqual({
+      seriesId: 'rsi',
+      type: 'line',
+      paneId: 'rsi',
+      priceScaleId: 'rsi',
+      source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
+      levels: { oversold: 30, overbought: 70 },
+      visible: true,
+    });
+  });
+
+  it('rejects invalid RSI periods, levels and the main pane', () => {
+    const base = {
+      seriesId: 'rsi',
+      type: 'line' as const,
+      paneId: 'rsi',
+      priceScaleId: 'rsi',
+    };
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: { type: 'ohlcvRsi', seriesId: 'main', period: 0 },
+      })
+    ).toThrow('positive integer');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: { type: 'ohlcvRsi', seriesId: 'main' },
+        levels: { oversold: 70, overbought: 30 },
+      })
+    ).toThrow('0 <= oversold < overbought <= 100');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        paneId: 'main',
+        priceScaleId: 'main',
+        source: { type: 'ohlcvRsi', seriesId: 'main' },
+      })
+    ).toThrow('separate RSI pane');
+  });
+
   it('resolves imperative area series options before sending them', () => {
     TradingCharts.addSeries('chart', {
       seriesId: 'area-comparison',
@@ -466,6 +517,93 @@ describe('chart config', () => {
       visible: true,
       source: { type: 'ohlcvVolume', seriesId: 'main' },
     });
+  });
+
+  it('resolves a derived RSI pane with defaults and theme fallbacks', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'price-rsi',
+      panes: [
+        {
+          paneId: 'main',
+          heightWeight: 3,
+          priceScale: { priceScaleId: 'main' },
+        },
+        {
+          paneId: 'rsi',
+          heightWeight: 1,
+          priceScale: {
+            priceScaleId: 'rsi',
+            valueFormat: {
+              type: 'price',
+              precision: 4,
+              minMove: 0.0001,
+              useGrouping: false,
+            },
+          },
+        },
+      ],
+      additionalSeries: [
+        {
+          seriesId: 'rsi',
+          type: 'line',
+          paneId: 'rsi',
+          priceScaleId: 'rsi',
+          source: { type: 'ohlcvRsi', seriesId: 'main' },
+        },
+      ],
+    });
+
+    expect(resolved.additionalSeries[0]).toMatchObject({
+      source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
+      levels: { oversold: 30, overbought: 70 },
+      appearance: {
+        width: 1.5,
+        color: '#38D98A',
+        levelLineColor: '#38D98A80',
+        bandColor: '#38D98A14',
+      },
+    });
+  });
+
+  it('rejects RSI sources that reference another derived series', () => {
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'derived-rsi-chain',
+        panes: [
+          {
+            paneId: 'main',
+            heightWeight: 3,
+            priceScale: { priceScaleId: 'main' },
+          },
+          {
+            paneId: 'first',
+            heightWeight: 1,
+            priceScale: { priceScaleId: 'first' },
+          },
+          {
+            paneId: 'second',
+            heightWeight: 1,
+            priceScale: { priceScaleId: 'second' },
+          },
+        ],
+        additionalSeries: [
+          {
+            seriesId: 'first-rsi',
+            type: 'line',
+            paneId: 'first',
+            priceScaleId: 'first',
+            source: { type: 'ohlcvRsi', seriesId: 'main' },
+          },
+          {
+            seriesId: 'second-rsi',
+            type: 'line',
+            paneId: 'second',
+            priceScaleId: 'second',
+            source: { type: 'ohlcvRsi', seriesId: 'first-rsi' },
+          },
+        ],
+      })
+    ).toThrow('data-backed OHLC data');
   });
 
   it('rejects duplicate IDs and invalid pane/scale references', () => {

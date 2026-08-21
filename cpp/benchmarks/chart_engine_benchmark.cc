@@ -14,7 +14,11 @@ namespace {
 
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::PaneConfig;
 using trading_charts::RenderSnapshot;
+using trading_charts::SeriesConfig;
+using trading_charts::SeriesSource;
+using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
 
 constexpr float kChartWidth = 1200.0f;
@@ -56,6 +60,25 @@ std::unique_ptr<ChartEngine> MakeEngine(size_t visible_count) {
   engine->SetConfig(config);
   engine->SetSize(kChartWidth, kChartHeight);
   return engine;
+}
+
+bool AddRsi(benchmark::State& state, ChartEngine& engine) {
+  PaneConfig main;
+  main.height_weight = 3.0;
+  PaneConfig pane;
+  pane.pane_id = "rsi";
+  pane.price_scale_id = "rsi";
+  engine.SetPanes({main, pane}, false);
+  SeriesConfig rsi;
+  rsi.series_id = "rsi";
+  rsi.pane_id = "rsi";
+  rsi.price_scale_id = "rsi";
+  rsi.type = SeriesType::kLine;
+  rsi.source = SeriesSource::kOhlcvRsi;
+  rsi.source_series_id = "main";
+  if (engine.AddSeries(rsi) == UpdateStatus::kApplied) return true;
+  state.SkipWithError("Unable to configure RSI benchmark series");
+  return false;
 }
 
 bool LoadHistory(benchmark::State& state, ChartEngine& engine,
@@ -149,6 +172,34 @@ void BM_UpdateTrades(benchmark::State& state) {
                           static_cast<int64_t>(trades.size()) *
                           static_cast<int64_t>(sizeof(double)));
   state.counters["trades"] = static_cast<double>(trade_count);
+}
+
+void BM_RsiLiveUpdateAndSnapshot(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  auto engine = MakeEngine(50);
+  if (!AddRsi(state, *engine) || !LoadHistory(state, *engine, history)) return;
+  benchmark::DoNotOptimize(engine->Snapshot().get());
+  const double timestamp =
+      history[history.size() - trading_charts::kCandleValueCount];
+  bool higher = true;
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    const double close = higher ? 110.0 : 109.5;
+    higher = !higher;
+    const double candle[] = {timestamp, 109.0, 111.0, 108.0, close, 20.0};
+    const UpdateStatus status =
+        engine->UpdateCandle(candle, trading_charts::kCandleValueCount);
+    if (status != UpdateStatus::kApplied) {
+      state.SkipWithError("RSI live update was not applied");
+      break;
+    }
+    const auto snapshot = engine->Snapshot();
+    benchmark::DoNotOptimize(snapshot.get());
+    benchmark::ClobberMemory();
+  }
+  state.SetItemsProcessed(state.iterations());
+  state.counters["candles"] = static_cast<double>(candle_count);
 }
 
 void BM_SnapshotCold(benchmark::State& state) {
@@ -328,6 +379,7 @@ void InteractionArguments(benchmark::Benchmark* benchmark_case) {
 
 BENCHMARK(BM_SetHistory)->Arg(1000)->Arg(10000)->Arg(100000);
 BENCHMARK(BM_UpdateTrades)->Arg(1)->Arg(10)->Arg(100)->Arg(1000);
+BENCHMARK(BM_RsiLiveUpdateAndSnapshot)->Arg(1000)->Arg(10000)->Arg(100000);
 BENCHMARK(BM_SnapshotCold)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCached)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCrosshairOnly)->Apply(InteractionArguments);

@@ -178,7 +178,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   const styles = THEMED_STYLES[theme.mode];
   const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
-  const [volumeHeightWeight, setVolumeHeightWeight] = useState(1);
+  const [showRsi, setShowRsi] = useState(true);
   const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
@@ -349,13 +349,29 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               onVisibleRangeChange={handleVisibleRangeChange}
               precision={ticker.precision}
               showVolume={showVolume}
+              showRsi={showRsi}
               resolution={resolution}
-              volumeHeightWeight={volumeHeightWeight}
             />
             <ConnectionBadge status={status} />
           </View>
         </View>
         <View style={styles.chartControls}>
+          <Pressable
+            accessibilityLabel={showRsi ? 'Hide RSI' : 'Show RSI'}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showRsi }}
+            onPress={() => setShowRsi((visible) => !visible)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              color={showRsi ? theme.colors.accent : theme.colors.iconMuted}
+              name="show-chart"
+              size={24}
+            />
+          </Pressable>
           <Pressable
             accessibilityLabel={showVolume ? 'Hide volume' : 'Show volume'}
             accessibilityRole="switch"
@@ -372,28 +388,6 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               }
               name="bar-chart"
               size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Change volume pane height"
-            accessibilityRole="button"
-            disabled={!showVolume}
-            onPress={() =>
-              setVolumeHeightWeight((weight) =>
-                weight >= 1.5 ? 0.6 : weight + 0.3
-              )
-            }
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              !showVolume && styles.chartSizeButtonDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.chartSizeButtonText}>V</Text>
-            <MaterialIcons
-              color={theme.colors.accentText}
-              name="height"
-              size={18}
             />
           </Pressable>
           <Pressable
@@ -425,18 +419,33 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
             />
           </Pressable>
           <Pressable
-            accessibilityLabel="Fit entire chart"
-            accessibilityRole="button"
-            hitSlop={4}
-            onPress={() => TradingCharts.fitContent(chartId)}
+            accessibilityLabel={
+              isChartHalfHeight
+                ? 'Restore full chart height'
+                : 'Reduce chart to half height'
+            }
+            accessibilityRole="switch"
+            accessibilityState={{
+              checked: isChartHalfHeight,
+              disabled: fullChartHeight == null,
+            }}
+            disabled={fullChartHeight == null}
+            onPress={() =>
+              setIsChartHalfHeight((isHalfHeight) => !isHalfHeight)
+            }
             style={({ pressed }) => [
               styles.chartControlButton,
+              fullChartHeight == null && styles.chartControlButtonDisabled,
               pressed && styles.pressed,
             ]}
           >
             <MaterialIcons
-              color={theme.colors.accentText}
-              name="zoom-out-map"
+              color={
+                isChartHalfHeight
+                  ? theme.colors.positive
+                  : theme.colors.accentText
+              }
+              name="height"
               size={24}
             />
           </Pressable>
@@ -456,50 +465,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               size={24}
             />
           </Pressable>
-          <Pressable
-            accessibilityLabel="Reduce chart to half height"
-            accessibilityRole="button"
-            accessibilityState={{
-              disabled: isChartHalfHeight || fullChartHeight == null,
-            }}
-            disabled={isChartHalfHeight || fullChartHeight == null}
-            onPress={() => setIsChartHalfHeight(true)}
-            style={({ pressed }) => [
-              styles.chartSizeButton,
-              (isChartHalfHeight || fullChartHeight == null) &&
-                styles.chartSizeButtonDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.chartSizeButtonText}>½</Text>
-            <MaterialIcons
-              color={theme.colors.accentText}
-              name="height"
-              size={20}
-              style={styles.chartSizeButtonIcon}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Restore full chart height"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !isChartHalfHeight }}
-            disabled={!isChartHalfHeight}
-            onPress={() => setIsChartHalfHeight(false)}
-            style={({ pressed }) => [
-              styles.chartSizeButton,
-              !isChartHalfHeight && styles.chartSizeButtonDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={theme.colors.accentText}
-              name="height"
-              size={20}
-              style={styles.chartSizeButtonIcon}
-            />
-          </Pressable>
         </View>
-        <View style={styles.chartSizeControls}></View>
       </View>
     </SafeAreaView>
   );
@@ -662,32 +628,7 @@ function createStyles(colors: AppThemeColors) {
       minWidth: 48,
       width: 48,
     },
-    chartSizeControls: {
-      borderTopColor: colors.borderSubtle,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    chartSizeButton: {
-      alignItems: 'center',
-      backgroundColor: colors.control,
-      borderColor: colors.border,
-      borderRadius: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      flex: 1,
-      flexDirection: 'row',
-      height: 40,
-      justifyContent: 'center',
-      marginHorizontal: 4,
-    },
-    chartSizeButtonDisabled: { opacity: 0.4 },
-    chartSizeButtonIcon: { marginRight: 6 },
-    chartSizeButtonText: {
-      color: colors.accentText,
-      fontSize: 13,
-      fontWeight: '800',
-    },
+    chartControlButtonDisabled: { opacity: 0.4 },
     liveBadge: {
       alignItems: 'center',
       backgroundColor: colors.liveSurface,

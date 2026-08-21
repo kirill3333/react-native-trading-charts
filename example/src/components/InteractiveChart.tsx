@@ -22,7 +22,7 @@ type InteractiveChartProps = {
   precision: number;
   minMove: number;
   showVolume: boolean;
-  volumeHeightWeight: number;
+  showRsi: boolean;
   onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
 };
 
@@ -33,7 +33,7 @@ export const InteractiveChart = memo(function InteractiveChart({
   precision,
   minMove,
   showVolume,
-  volumeHeightWeight,
+  showRsi,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
@@ -48,49 +48,85 @@ export const InteractiveChart = memo(function InteractiveChart({
       }),
     [minMove, precision, settings, useSignificantPriceFormat]
   );
-  const panes = useMemo<ReadonlyArray<ChartPaneOptions> | undefined>(
-    () =>
-      showVolume
-        ? [
-            {
-              paneId: 'main',
-              heightWeight: 3,
-              priceScale: { priceScaleId: 'main' },
-            },
-            {
-              paneId: 'volume',
-              heightWeight: volumeHeightWeight,
-              minHeight: 56,
-              priceScale: {
-                priceScaleId: 'volume',
-                valueFormat: { type: 'volume', precision: 1 },
-              },
-            },
-          ]
-        : undefined,
-    [showVolume, volumeHeightWeight]
-  );
+  const panes = useMemo<ReadonlyArray<ChartPaneOptions> | undefined>(() => {
+    if (!showVolume && !showRsi) return undefined;
+    const result: ChartPaneOptions[] = [
+      {
+        paneId: 'main',
+        heightWeight: settings.mainPaneHeightWeight,
+        priceScale: { priceScaleId: 'main' },
+      },
+    ];
+    if (showVolume) {
+      result.push({
+        paneId: 'volume',
+        heightWeight: settings.volumePaneHeightWeight,
+        minHeight: 56,
+        priceScale: {
+          priceScaleId: 'volume',
+          valueFormat: { type: 'volume', precision: 1 },
+        },
+      });
+    }
+    if (showRsi) {
+      result.push({
+        paneId: 'rsi',
+        heightWeight: settings.rsiPaneHeightWeight,
+        minHeight: 96,
+        priceScale: {
+          priceScaleId: 'rsi',
+          valueFormat: {
+            type: 'price',
+            precision: 4,
+            minMove: 0.0001,
+            useGrouping: false,
+          },
+        },
+      });
+    }
+    return result;
+  }, [
+    settings.mainPaneHeightWeight,
+    settings.rsiPaneHeightWeight,
+    settings.volumePaneHeightWeight,
+    showRsi,
+    showVolume,
+  ]);
   const additionalSeries = useMemo<
     ReadonlyArray<AdditionalChartSeriesOptions> | undefined
-  >(
-    () =>
-      showVolume
-        ? [
-            {
-              seriesId: 'volume',
-              type: 'histogram',
-              paneId: 'volume',
-              priceScaleId: 'volume',
-              source: { type: 'ohlcvVolume', seriesId: 'main' },
-              appearance: {
-                upColor: theme.volumeUpColor,
-                downColor: theme.volumeDownColor,
-              },
-            },
-          ]
-        : undefined,
-    [showVolume, theme.volumeDownColor, theme.volumeUpColor]
-  );
+  >(() => {
+    const result: AdditionalChartSeriesOptions[] = [];
+    if (showVolume) {
+      result.push({
+        seriesId: 'volume',
+        type: 'histogram',
+        paneId: 'volume',
+        priceScaleId: 'volume',
+        source: { type: 'ohlcvVolume', seriesId: 'main' },
+        appearance: {
+          upColor: theme.volumeUpColor,
+          downColor: theme.volumeDownColor,
+        },
+      });
+    }
+    if (showRsi) {
+      result.push({
+        seriesId: 'rsi',
+        type: 'line',
+        paneId: 'rsi',
+        priceScaleId: 'rsi',
+        source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
+        levels: { oversold: 30, overbought: 70 },
+        appearance: {
+          width: 1.5,
+          color: theme.rsiColor,
+          levelLineColor: theme.rsiLevelLineColor,
+          bandColor: theme.rsiBandColor,
+        },
+      });
+    }
+    return result.length > 0 ? result : undefined;
+  }, [showRsi, showVolume, theme]);
 
   return (
     <TradingChartsView
