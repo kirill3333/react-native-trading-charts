@@ -576,6 +576,7 @@ const panes = [
       appearance: {
         width: 1.5,
         color: '#6C8CFF',
+        textColor: '#6C8CFF',
         levelLineColor: '#6C8CFF80',
         bandColor: '#6C8CFF14',
       },
@@ -591,6 +592,12 @@ RSI value under the crosshair, or the latest value when the crosshair is not
 active; warm-up and unmatched timestamps display `—`. Multiple RSI series may
 share a pane, with one header row per visible series. Derived-to-derived source
 chains are intentionally rejected.
+
+RSI appearance accepts `width` and `color` for the curve, `textColor` for the
+entire native `RSI <period> <value>` legend, `levelLineColor` for the dashed
+oversold/overbought levels, and `bandColor` for the area between those levels.
+When `textColor` is omitted, the legend keeps the backwards-compatible style:
+the title uses the Y-axis text color and the value uses the RSI curve color.
 
 ## Time, Resolution, and Trade Aggregation
 

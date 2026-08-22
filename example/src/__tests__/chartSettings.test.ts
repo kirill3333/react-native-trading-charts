@@ -6,10 +6,12 @@ import {
   type ChartSettings,
 } from '../chartSettingsState';
 import {
+  buildRsiAppearance,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
 import { APP_THEMES } from '../theme';
+import { isHexColor, normalizeHexColor } from '../hexColor';
 
 function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
   return { ...DEFAULT_CHART_SETTINGS, ...patch };
@@ -23,6 +25,11 @@ describe('chart settings', () => {
       mainPaneHeightWeight: 3,
       volumePaneHeightWeight: 1,
       rsiPaneHeightWeight: 1,
+      rsiLineWidth: 1.5,
+      rsiLineColorOverride: null,
+      rsiTextColorOverride: null,
+      rsiBandColorOverride: null,
+      rsiLevelLineColorOverride: null,
       themeMode: 'dark',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',
@@ -33,6 +40,46 @@ describe('chart settings', () => {
       timeZone: 'utc',
       yAxisFormat: 'auto',
     });
+  });
+
+  it('uses themed RSI colors until a user override is set', () => {
+    expect(buildRsiAppearance(DEFAULT_CHART_SETTINGS)).toEqual({
+      width: 1.5,
+      color: APP_THEMES.dark.rsiColor,
+      textColor: APP_THEMES.dark.rsiTextColor,
+      levelLineColor: APP_THEMES.dark.rsiLevelLineColor,
+      bandColor: APP_THEMES.dark.rsiBandColor,
+    });
+
+    const light = settingsWith({ themeMode: 'light' });
+    expect(buildRsiAppearance(light)).toMatchObject({
+      color: APP_THEMES.light.rsiColor,
+      textColor: APP_THEMES.light.rsiTextColor,
+    });
+
+    const customized = settingsWith({
+      themeMode: 'light',
+      rsiLineWidth: 2.5,
+      rsiLineColorOverride: '#112233',
+      rsiTextColorOverride: '#445566',
+      rsiBandColorOverride: '#77889922',
+      rsiLevelLineColorOverride: '#AABBCC80',
+    });
+    expect(buildRsiAppearance(customized)).toEqual({
+      width: 2.5,
+      color: '#112233',
+      textColor: '#445566',
+      bandColor: '#77889922',
+      levelLineColor: '#AABBCC80',
+    });
+  });
+
+  it('accepts only supported HEX colors without changing the last valid value', () => {
+    expect(isHexColor('#12abEF')).toBe(true);
+    expect(isHexColor('#12abEF80')).toBe(true);
+    expect(isHexColor('#123')).toBe(false);
+    expect(isHexColor('purple')).toBe(false);
+    expect(normalizeHexColor(' #12abef80 ')).toBe('#12ABEF80');
   });
 
   it('updates a partial group and restores every default', () => {

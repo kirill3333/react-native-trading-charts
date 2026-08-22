@@ -23,6 +23,7 @@ namespace {
 
 constexpr int kMaxTickCount = 256;
 constexpr float kYAxisTickSpacing = 44.0f;
+constexpr float kPaneSeparatorOpacityBoost = 0.2f;
 constexpr int kMinimumVolumeTickCount = 3;
 
 size_t SegmentCount(float start, float end, float step) {
@@ -878,18 +879,9 @@ class RenderSnapshotBuilder {
         snapshot_->pane_y_ticks.push_back(AxisTick{value, position});
       }
       if (pane.rsi_scale) {
-        // Pane boundaries already carry the neighboring pane separator (and
-        // the X axis at the bottom). Avoid stacking 100/0 labels directly on
-        // those edges; the configured RSI levels are added below and the
-        // fixed projection remains 0...100.
-        auto pane_ticks_begin = snapshot_->pane_y_ticks.begin() +
-                                static_cast<std::ptrdiff_t>(pane.y_tick_offset);
-        snapshot_->pane_y_ticks.erase(
-            std::remove_if(pane_ticks_begin, snapshot_->pane_y_ticks.end(),
-                           [](const AxisTick& tick) {
-                             return tick.value <= 0.0 || tick.value >= 100.0;
-                           }),
-            snapshot_->pane_y_ticks.end());
+        // Keep the generated 0...100 ticks, including boundary labels that
+        // extend into neighboring panes, and add each RSI series' configured
+        // levels without duplicating their dashed grid geometry.
         for (const SeriesData& series : input_.additional_series) {
           if (series.pane_index != pane_index ||
               series.config.source != SeriesSource::kOhlcvRsi) {
@@ -1189,8 +1181,9 @@ class RenderSnapshotBuilder {
     if (snapshot_->panes.size() < 2) {
       return;
     }
-    const Color color =
-        WithAlpha(input_.config.grid, input_.config.grid_opacity);
+    const Color color = WithAlpha(
+        input_.config.grid, std::min(1.0f, input_.config.grid_opacity +
+                                               kPaneSeparatorOpacityBoost));
     for (size_t index = 0; index + 1 < snapshot_->panes.size(); ++index) {
       const float y = snapshot_->panes[index].plot.bottom +
                       input_.config.display_scale * 0.5f;
@@ -1257,7 +1250,9 @@ class RenderSnapshotBuilder {
       legend.pane_id = series.config.pane_id;
       legend.pane_index = series.pane_index;
       legend.period = series.config.rsi_period;
-      legend.color = series.config.color;
+      legend.text_color = series.config.rsi_text_color;
+      legend.value_color = series.config.color;
+      legend.text_color_set = series.config.rsi_text_color_set;
       if (!series.candles.empty()) {
         legend.latest_value = series.candles.back().close;
         legend.value = legend.latest_value;

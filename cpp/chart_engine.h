@@ -123,6 +123,8 @@ struct SeriesConfig {
   std::uint32_t rsi_period = 14;
   double rsi_oversold = 30.0;
   double rsi_overbought = 70.0;
+  Color rsi_text_color{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
+  bool rsi_text_color_set = false;
   Color rsi_level_line{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 0.5f};
   Color rsi_band{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
                  20.0f / 255.0f};
@@ -347,7 +349,9 @@ struct RsiLegend {
   std::uint32_t period = 14;
   double value = 0.0;
   double latest_value = 0.0;
-  Color color;
+  Color text_color;
+  Color value_color;
+  bool text_color_set = false;
   bool has_value = false;
   bool has_latest_value = false;
 };

@@ -521,8 +521,10 @@ internal class ChartOverlayView(context: Context) : View(context) {
           }
       val baseline = pane.plotTop + (16f + row * 15f) * density
       val left = pane.plotLeft + 8f * density
+      rsiTitlePaint.color =
+          if (legend.textColorSet) legend.textColor else frame.config.yAxisTextStyle.color
       canvas.drawText(label.title, left, baseline, rsiTitlePaint)
-      rsiValuePaint.color = legend.color
+      rsiValuePaint.color = if (legend.textColorSet) legend.textColor else legend.valueColor
       canvas.drawText(
           label.value,
           left + label.titleWidth + 6f * density,

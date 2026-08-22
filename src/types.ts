@@ -209,6 +209,7 @@ export type RsiLevels = {
 };
 
 export type RsiSeriesAppearance = ChartLineAppearance & {
+  textColor?: string;
   levelLineColor?: string;
   bandColor?: string;
 };
@@ -576,7 +577,7 @@ export type ResolvedAdditionalChartSeriesOptions =
           'width' | 'color' | 'levelLineColor' | 'bandColor'
         >
       > &
-        Pick<RsiSeriesAppearance, 'gradient'>;
+        Pick<RsiSeriesAppearance, 'gradient' | 'textColor'>;
     })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {
       visible: boolean;

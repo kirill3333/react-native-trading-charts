@@ -1611,19 +1611,32 @@ struct TCTextPresentation {
                      snapshot:current]
           : @"—";
       NSString *cacheKey = [NSString stringWithFormat:
-          @"rsi\x1f%zu\x1f%u\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f",
-          legend.pane_index, legend.period, value, legend.color.r,
-          legend.color.g, legend.color.b, legend.color.a];
+          @"rsi\x1f%zu\x1f%u\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f"
+           @"\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f\x1f%d",
+          legend.pane_index, legend.period, value, legend.text_color.r,
+          legend.text_color.g, legend.text_color.b, legend.text_color.a,
+          legend.value_color.r, legend.value_color.g, legend.value_color.b,
+          legend.value_color.a, legend.text_color_set];
       TCTextLayout *layout = [_axisLayoutCache objectForKey:cacheKey];
       if (layout) {
         ++metrics.layoutCacheHits;
       } else {
         ++metrics.layoutCacheMisses;
+        NSDictionary *titleAttributes = _yAxisAttributes;
+        if (legend.text_color_set) {
+          NSMutableDictionary *customTitleAttributes =
+              [_yAxisAttributes mutableCopy];
+          customTitleAttributes[NSForegroundColorAttributeName] =
+              TCUIColor(legend.text_color);
+          titleAttributes = customTitleAttributes;
+        }
         NSMutableAttributedString *text = [[NSMutableAttributedString alloc]
             initWithString:[title stringByAppendingString:@" "]
-                attributes:_yAxisAttributes];
+                attributes:titleAttributes];
         NSMutableDictionary *valueAttributes = [_yAxisAttributes mutableCopy];
-        valueAttributes[NSForegroundColorAttributeName] = TCUIColor(legend.color);
+        valueAttributes[NSForegroundColorAttributeName] =
+            TCUIColor(legend.text_color_set ? legend.text_color
+                                           : legend.value_color);
         [text appendAttributedString:[[NSAttributedString alloc]
             initWithString:value attributes:valueAttributes]];
         layout = [[TCTextLayout alloc] initWithAttributedString:text];
@@ -2594,6 +2607,10 @@ struct TCTextPresentation {
   defaultLevel.a *= 0.5f;
   trading_charts::Color defaultBand = config.color;
   defaultBand.a *= 20.0f / 255.0f;
+  config.rsi_text_color_set =
+      [appearance[@"textColor"] isKindOfClass:NSString.class];
+  config.rsi_text_color =
+      TCColorFromHex(appearance[@"textColor"], config.color);
   config.rsi_level_line =
       TCColorFromHex(appearance[@"levelLineColor"], defaultLevel);
   config.rsi_band = TCColorFromHex(appearance[@"bandColor"], defaultBand);

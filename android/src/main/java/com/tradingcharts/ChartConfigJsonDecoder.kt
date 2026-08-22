@@ -549,6 +549,7 @@ private data class RsiConfigValues(
     val period: Int,
     val oversold: Double,
     val overbought: Double,
+    val textColor: Int?,
     val levelLineColor: Int,
     val bandColor: Int,
 )
@@ -563,6 +564,7 @@ private fun rsiConfigValues(
         period = source?.optInt("period", 14) ?: 14,
         oversold = levels?.optDouble("oversold", 30.0) ?: 30.0,
         overbought = levels?.optDouble("overbought", 70.0) ?: 70.0,
+        textColor = appearance.optionalColor("textColor"),
         levelLineColor =
             appearance.optionalColor("levelLineColor")
                 ?: Color.argb(128, Color.red(color), Color.green(color), Color.blue(color)),
@@ -611,6 +613,7 @@ private fun seriesConfig(
       rsiPeriod = rsi.period,
       rsiOversold = rsi.oversold,
       rsiOverbought = rsi.overbought,
+      rsiTextColor = rsi.textColor,
       rsiLevelLineColor = rsi.levelLineColor,
       rsiBandColor = rsi.bandColor,
   )

@@ -93,6 +93,7 @@ internal data class SeriesConfig(
     val rsiPeriod: Int = 14,
     val rsiOversold: Double = 30.0,
     val rsiOverbought: Double = 70.0,
+    val rsiTextColor: Int? = null,
     val rsiLevelLineColor: Int = Color.argb(128, 151, 145, 165),
     val rsiBandColor: Int = Color.argb(20, 151, 145, 165),
 )

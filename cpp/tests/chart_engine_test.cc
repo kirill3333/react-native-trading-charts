@@ -2004,6 +2004,36 @@ void TestMultiPaneSeriesAndDerivedVolume() {
   assert(!engine.RemoveSeries("volume"));
 }
 
+void TestPaneSeparatorUsesStrongerGridAlpha() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.grid = {0.2f, 0.3f, 0.4f, 0.8f};
+  config.grid_opacity = 0.5f;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(400.0f, 240.0f);
+
+  PaneConfig main;
+  PaneConfig volume;
+  volume.pane_id = "volume";
+  volume.price_scale_id = "volume";
+  engine.SetPanes({main, volume}, false);
+
+  const double candle[] = {0.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  assert(engine.SetHistory(candle, 6) == UpdateStatus::kApplied);
+  const auto snapshot = engine.Snapshot();
+  const auto& vertices = ContentOf(*snapshot);
+  constexpr size_t kFloatsPerQuad = 36;
+  assert(vertices.size() >= kFloatsPerQuad);
+  const size_t separator_offset = vertices.size() - kFloatsPerQuad;
+
+  ExpectNear(vertices[separator_offset + 2], config.grid.r);
+  ExpectNear(vertices[separator_offset + 3], config.grid.g);
+  ExpectNear(vertices[separator_offset + 4], config.grid.b);
+  ExpectNear(vertices[separator_offset + 5], 0.56, 1e-6);
+  assert(vertices[separator_offset + 5] > config.grid.a * config.grid_opacity);
+}
+
 void TestVolumePaneTickMinimumDependsOnHeight() {
   auto snapshot_at_height = [](float height) {
     ChartEngine engine;
@@ -2087,6 +2117,8 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   rsi.rsi_period = 3;
   rsi.rsi_oversold = 30.0;
   rsi.rsi_overbought = 70.0;
+  rsi.color = {0.5f, 0.6f, 0.7f, 0.8f};
+  rsi.declarative = true;
   assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
   const double direct_rsi[] = {0.0, 50.0, 50.0, 50.0, 50.0, 0.0};
   assert(engine.SetSeriesData("rsi", direct_rsi,
@@ -2111,14 +2143,30 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   assert(snapshot->rsi_legends.size() == 1);
   assert(snapshot->rsi_legends[0].has_value);
   ExpectNear(snapshot->rsi_legends[0].value, 86.6666666667, 1e-6);
+  assert(!snapshot->rsi_legends[0].text_color_set);
+  ExpectNear(snapshot->rsi_legends[0].value_color.r, rsi.color.r);
+  ExpectNear(snapshot->rsi_legends[0].value_color.a, rsi.color.a);
+
+  rsi.rsi_text_color = {0.9f, 0.8f, 0.2f, 0.7f};
+  rsi.rsi_text_color_set = true;
+  assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
+  const auto styled = engine.Snapshot();
+  assert(styled->rsi_legends[0].text_color_set);
+  ExpectNear(styled->rsi_legends[0].text_color.r, rsi.rsi_text_color.r);
+  ExpectNear(styled->rsi_legends[0].text_color.a, rsi.rsi_text_color.a);
   bool has_oversold = false;
   bool has_overbought = false;
   bool has_boundary_tick = false;
   size_t oversold_count = 0;
   size_t overbought_count = 0;
   const PaneSnapshot& pane = snapshot->panes[1];
+  assert(pane.y_tick_count == 5);
+  const std::array<double, 5> expected_ticks{0.0, 30.0, 50.0, 70.0, 100.0};
   for (size_t index = 0; index < pane.y_tick_count; ++index) {
     const AxisTick& tick = snapshot->pane_y_ticks[pane.y_tick_offset + index];
+    ExpectNear(tick.value, expected_ticks[index]);
+    assert(tick.grid_visible ==
+           (tick.value == 0.0 || tick.value == 50.0 || tick.value == 100.0));
     has_oversold = has_oversold || std::abs(tick.value - 30.0) < 1e-9;
     has_overbought = has_overbought || std::abs(tick.value - 70.0) < 1e-9;
     has_boundary_tick =
@@ -2127,7 +2175,7 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
     overbought_count += std::abs(tick.value - 70.0) < 1e-9 ? 1 : 0;
   }
   assert(has_oversold && has_overbought);
-  assert(!has_boundary_tick);
+  assert(has_boundary_tick);
   assert(oversold_count == 1 && overbought_count == 1);
   assert(!engine.ScaleYAt(20.0f, (pane.plot.top + pane.plot.bottom) * 0.5f));
 
@@ -2846,6 +2894,7 @@ int main() noexcept {
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestMultiPaneSeriesAndDerivedVolume();
+    TestPaneSeparatorUsesStrongerGridAlpha();
     TestVolumePaneTickMinimumDependsOnHeight();
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();

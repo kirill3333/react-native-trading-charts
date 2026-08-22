@@ -10,6 +10,7 @@ import {
 
 import { useChartSettings } from '../chartSettings';
 import {
+  buildRsiAppearance,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
@@ -118,15 +119,12 @@ export const InteractiveChart = memo(function InteractiveChart({
         source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
         levels: { oversold: 30, overbought: 70 },
         appearance: {
-          width: 1.5,
-          color: theme.rsiColor,
-          levelLineColor: theme.rsiLevelLineColor,
-          bandColor: theme.rsiBandColor,
+          ...buildRsiAppearance(settings),
         },
       });
     }
     return result.length > 0 ? result : undefined;
-  }, [showRsi, showVolume, theme]);
+  }, [settings, showRsi, showVolume, theme]);
 
   return (
     <TradingChartsView

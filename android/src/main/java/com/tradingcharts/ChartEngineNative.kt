@@ -56,7 +56,9 @@ internal data class RsiLegendSnapshot(
     val period: Int,
     val value: Double,
     val hasValue: Boolean,
-    val color: Int,
+    val textColor: Int,
+    val valueColor: Int,
+    val textColorSet: Boolean,
 )
 
 internal data class ChartFrame(
@@ -182,7 +184,7 @@ private fun DoubleArray.visibleMinimum() =
 @Suppress("TooManyFunctions")
 internal object ChartEngineNative {
   private const val PANE_META_WIDTH = 14
-  private const val RSI_LEGEND_META_WIDTH = 8
+  private const val RSI_LEGEND_META_WIDTH = 13
 
   init {
     System.loadLibrary("tradingcharts")
@@ -357,7 +359,7 @@ internal object ChartEngineNative {
   }
 
   fun addSeries(handle: Long, series: SeriesConfig): Int {
-    val colors = FloatArray(36)
+    val colors = FloatArray(40)
     listOf(
             series.color,
             series.upColor,
@@ -368,6 +370,7 @@ internal object ChartEngineNative {
             series.areaFillBottomColor,
             series.rsiLevelLineColor,
             series.rsiBandColor,
+            series.rsiTextColor ?: series.color,
         )
         .forEachIndexed { index, color ->
           colors[index * 4] = Color.red(color) / 255f
@@ -399,6 +402,7 @@ internal object ChartEngineNative {
             series.rsiPeriod.toDouble(),
             series.rsiOversold,
             series.rsiOverbought,
+            if (series.rsiTextColor != null) 1.0 else 0.0,
         ),
         colors,
     )
@@ -570,12 +574,21 @@ internal object ChartEngineNative {
       val offset = index * RSI_LEGEND_META_WIDTH
       fun channel(channelOffset: Int) =
           (values[offset + channelOffset].coerceIn(0.0, 1.0) * 255.0).toInt()
+      fun colorAt(channelOffset: Int) =
+          Color.argb(
+              channel(channelOffset + 3),
+              channel(channelOffset),
+              channel(channelOffset + 1),
+              channel(channelOffset + 2),
+          )
       RsiLegendSnapshot(
           paneIndex = values[offset].toInt(),
           period = values[offset + 1].toInt(),
           value = values[offset + 2],
           hasValue = values[offset + 3] != 0.0,
-          color = Color.argb(channel(7), channel(4), channel(5), channel(6)),
+          textColor = colorAt(4),
+          valueColor = colorAt(8),
+          textColorSet = values[offset + 12] != 0.0,
       )
     }
   }

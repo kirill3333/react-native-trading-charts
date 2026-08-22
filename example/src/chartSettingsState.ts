@@ -18,6 +18,11 @@ export type ChartSettings = {
   mainPaneHeightWeight: PaneHeightWeight;
   volumePaneHeightWeight: PaneHeightWeight;
   rsiPaneHeightWeight: PaneHeightWeight;
+  rsiLineWidth: SeriesLineWidth;
+  rsiLineColorOverride: string | null;
+  rsiTextColorOverride: string | null;
+  rsiBandColorOverride: string | null;
+  rsiLevelLineColorOverride: string | null;
   themeMode: AppThemeMode;
   xAxisVisible: boolean;
   xAxisShowSeconds: boolean;
@@ -48,6 +53,11 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   mainPaneHeightWeight: 3,
   volumePaneHeightWeight: 1,
   rsiPaneHeightWeight: 1,
+  rsiLineWidth: 1.5,
+  rsiLineColorOverride: null,
+  rsiTextColorOverride: null,
+  rsiBandColorOverride: null,
+  rsiLevelLineColorOverride: null,
   themeMode: 'dark',
   xAxisVisible: true,
   xAxisShowSeconds: false,

@@ -619,9 +619,9 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   const auto values = CopyDoubles(env, numbers);
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
-  std::array<jfloat, 36> color_values{};
+  std::array<jfloat, 40> color_values{};
   env->GetFloatArrayRegion(colors, 0,
-                           std::min(color_count, static_cast<jsize>(36)),
+                           std::min(color_count, static_cast<jsize>(40)),
                            color_values.data());
   const auto color_at = [&](size_t offset) {
     return Color{color_values[offset], color_values[offset + 1],
@@ -681,6 +681,10 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   if (color_count >= 36) {
     series.rsi_level_line = color_at(28);
     series.rsi_band = color_at(32);
+  }
+  if (number_count >= 12 && color_count >= 40) {
+    series.rsi_text_color_set = values[11] != 0.0;
+    series.rsi_text_color = color_at(36);
   }
   return StatusValue(instance->AddSeries(series));
 }
@@ -1122,7 +1126,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
 JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRsiLegends(
     JNIEnv* env, jclass, jlong handle) {
-  constexpr size_t kWidth = 8;
+  constexpr size_t kWidth = 13;
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
   std::vector<double> packed;
@@ -1133,10 +1137,15 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRsiLegends(
       packed.push_back(static_cast<double>(legend.period));
       packed.push_back(legend.value);
       packed.push_back(legend.has_value ? 1.0 : 0.0);
-      packed.push_back(legend.color.r);
-      packed.push_back(legend.color.g);
-      packed.push_back(legend.color.b);
-      packed.push_back(legend.color.a);
+      packed.push_back(legend.text_color.r);
+      packed.push_back(legend.text_color.g);
+      packed.push_back(legend.text_color.b);
+      packed.push_back(legend.text_color.a);
+      packed.push_back(legend.value_color.r);
+      packed.push_back(legend.value_color.g);
+      packed.push_back(legend.value_color.b);
+      packed.push_back(legend.value_color.a);
+      packed.push_back(legend.text_color_set ? 1.0 : 0.0);
     }
   }
   jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));

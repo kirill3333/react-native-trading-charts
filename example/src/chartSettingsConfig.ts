@@ -7,6 +7,7 @@ import {
   type GestureOptions,
   type PriceDisplayFormat,
   type PriceExtremesOptions,
+  type RsiSeriesAppearance,
   type YAxisValueFormat,
   type XAxisOptions,
   type YAxisOptions,
@@ -50,6 +51,25 @@ export type ChartViewConfig = {
   xAxis: XAxisOptions;
   yAxis: YAxisOptions;
 };
+
+export function buildRsiAppearance(
+  settings: ChartSettings
+): Required<
+  Pick<
+    RsiSeriesAppearance,
+    'width' | 'color' | 'textColor' | 'levelLineColor' | 'bandColor'
+  >
+> {
+  const theme = APP_THEMES[settings.themeMode];
+  return {
+    width: settings.rsiLineWidth,
+    color: settings.rsiLineColorOverride ?? theme.rsiColor,
+    textColor: settings.rsiTextColorOverride ?? theme.rsiTextColor,
+    levelLineColor:
+      settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor,
+    bandColor: settings.rsiBandColorOverride ?? theme.rsiBandColor,
+  };
+}
 
 export function buildChartViewConfig(
   settings: ChartSettings,

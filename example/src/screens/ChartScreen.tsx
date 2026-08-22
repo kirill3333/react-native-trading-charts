@@ -97,7 +97,6 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
     return (
       <View pointerEvents="none" style={styles.liveBadge}>
         <View style={styles.liveDot} />
-        <Text style={styles.liveText}>LIVE</Text>
       </View>
     );
   }

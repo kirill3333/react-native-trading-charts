@@ -1023,6 +1023,7 @@ export function resolveAdditionalSeriesOptions(
     }
     for (const [key, value] of [
       ['color', options.appearance?.color],
+      ['textColor', options.appearance?.textColor],
       ['levelLineColor', options.appearance?.levelLineColor],
       ['bandColor', options.appearance?.bandColor],
     ] as const) {
@@ -1386,6 +1387,14 @@ export function resolveChartConfig(
                     colorWithAlpha(rsiColor, '14'),
                   `${name}.appearance.bandColor`
                 ),
+                ...(resolved.appearance?.textColor == null
+                  ? null
+                  : {
+                      textColor: color(
+                        resolved.appearance.textColor,
+                        `${name}.appearance.textColor`
+                      ),
+                    }),
                 ...(resolved.appearance?.gradient == null
                   ? null
                   : { gradient: resolved.appearance.gradient }),

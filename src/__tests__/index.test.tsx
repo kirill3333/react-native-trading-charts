@@ -250,6 +250,33 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('normalizes and validates an imperative RSI text color', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'rsi',
+      type: 'line',
+      paneId: 'rsi',
+      priceScaleId: 'rsi',
+      source: { type: 'ohlcvRsi', seriesId: 'main' },
+      appearance: { textColor: '#AABBCCDD' },
+    });
+
+    const call = mockNativeModule.addSeries.mock.calls[0]!;
+    expect(JSON.parse(call[1] as string)).toMatchObject({
+      appearance: { textColor: '#AABBCCDD' },
+    });
+
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        seriesId: 'invalid-rsi',
+        type: 'line',
+        paneId: 'rsi',
+        priceScaleId: 'rsi',
+        source: { type: 'ohlcvRsi', seriesId: 'main' },
+        appearance: { textColor: 'purple' },
+      })
+    ).toThrow('appearance.textColor must be #RRGGBB or #RRGGBBAA');
+  });
+
   it('rejects invalid RSI periods, levels and the main pane', () => {
     const base = {
       seriesId: 'rsi',
@@ -562,6 +589,41 @@ describe('chart config', () => {
         levelLineColor: '#38D98A80',
         bandColor: '#38D98A14',
       },
+    });
+    expect(resolved.additionalSeries[0]).not.toHaveProperty(
+      'appearance.textColor'
+    );
+  });
+
+  it('resolves an explicit RSI legend text color', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'styled-rsi',
+      panes: [
+        {
+          paneId: 'main',
+          heightWeight: 3,
+          priceScale: { priceScaleId: 'main' },
+        },
+        {
+          paneId: 'rsi',
+          heightWeight: 1,
+          priceScale: { priceScaleId: 'rsi' },
+        },
+      ],
+      additionalSeries: [
+        {
+          seriesId: 'rsi',
+          type: 'line',
+          paneId: 'rsi',
+          priceScaleId: 'rsi',
+          source: { type: 'ohlcvRsi', seriesId: 'main' },
+          appearance: { textColor: '#ABCDEF80' },
+        },
+      ],
+    });
+
+    expect(resolved.additionalSeries[0]).toMatchObject({
+      appearance: { textColor: '#ABCDEF80' },
     });
   });
 
