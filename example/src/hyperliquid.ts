@@ -223,7 +223,7 @@ function parseTicker(
       `contexts[${index}].prevDayPx`,
       { minimum: 0 }
     );
-    if (!(lastPrice > 0) || !(previousPrice > 0)) {
+    if (lastPrice <= 0 || previousPrice <= 0) {
       return null;
     }
     const precision = pricePrecision(lastPriceText);

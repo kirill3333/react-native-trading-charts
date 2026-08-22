@@ -380,14 +380,18 @@ class ChartDataSession<TInterval extends string, TMessage> {
     this.options.charts.setHistory(this.chartId, candles);
   }
 
+  private canLoadOlderHistory(): boolean {
+    if (!this.active || this.disposed) {
+      return false;
+    }
+    if (!this.hasHistory || !this.hasMoreHistory) {
+      return false;
+    }
+    return this.olderHistoryController == null;
+  }
+
   private async loadOlderHistory(): Promise<void> {
-    if (
-      !this.active ||
-      this.disposed ||
-      !this.hasHistory ||
-      !this.hasMoreHistory ||
-      this.olderHistoryController != null
-    ) {
+    if (!this.canLoadOlderHistory()) {
       return;
     }
     const oldestTimestamp = Math.min(...this.candlesByTimestamp.keys());
@@ -446,13 +450,69 @@ class ChartDataSession<TInterval extends string, TMessage> {
     }
   }
 
-  private async loadInitialHistory(): Promise<void> {
+  private canLoadInitialHistory(): boolean {
+    if (this.disposed || this.hasHistory) {
+      return false;
+    }
+    if (this.initialHistoryFailed) {
+      return false;
+    }
+    return this.initialController == null;
+  }
+
+  private isInitialHistoryResultStale(controller: AbortController): boolean {
+    if (this.disposed || controller.signal.aborted) {
+      return true;
+    }
+    if (this.initialController !== controller) {
+      return true;
+    }
+    return this.synchronizedGeneration != null;
+  }
+
+  private shouldIgnoreInitialHistoryError(
+    controller: AbortController,
+    error: unknown
+  ): boolean {
+    if (this.disposed || controller.signal.aborted) {
+      return true;
+    }
+    if (this.initialController !== controller) {
+      return true;
+    }
+    return isAbortError(error);
+  }
+
+  private synchronizePendingReadyGeneration(): boolean {
+    const generation = this.pendingReadyGeneration;
+    this.pendingReadyGeneration = null;
+    if (!this.active || generation == null) {
+      return false;
+    }
+    this.synchronize(generation).catch(() => undefined);
+    return true;
+  }
+
+  private handleInitialHistoryError(error: unknown): void {
+    this.initialController = null;
+    this.initialHistoryFailed = true;
+    if (this.synchronizePendingReadyGeneration()) {
+      return;
+    }
     if (
-      this.disposed ||
-      this.hasHistory ||
-      this.initialHistoryFailed ||
-      this.initialController != null
+      this.transportStatus === 'offline' ||
+      this.transportStatus === 'paused'
     ) {
+      return;
+    }
+    this.setSnapshot({
+      status: this.options.isNoDataError(error) ? 'no-data' : 'error',
+      error: messageFromError(error),
+    });
+  }
+
+  private async loadInitialHistory(): Promise<void> {
+    if (!this.canLoadInitialHistory()) {
       return;
     }
     const controller = new AbortController();
@@ -465,49 +525,19 @@ class ChartDataSession<TInterval extends string, TMessage> {
         this.interval,
         { signal: controller.signal }
       );
-      if (
-        this.disposed ||
-        controller.signal.aborted ||
-        this.initialController !== controller ||
-        this.synchronizedGeneration != null
-      ) {
+      if (this.isInitialHistoryResultStale(controller)) {
         return;
       }
       this.replaceCandles(snapshot);
       this.initialController = null;
       this.hasHistory = true;
       this.setSnapshot({ status: 'historical', error: null });
-      const generation = this.pendingReadyGeneration;
-      this.pendingReadyGeneration = null;
-      if (this.active && generation != null) {
-        this.synchronize(generation).catch(() => undefined);
-      }
+      this.synchronizePendingReadyGeneration();
     } catch (error) {
-      if (
-        this.disposed ||
-        controller.signal.aborted ||
-        this.initialController !== controller ||
-        isAbortError(error)
-      ) {
+      if (this.shouldIgnoreInitialHistoryError(controller, error)) {
         return;
       }
-      this.initialController = null;
-      this.initialHistoryFailed = true;
-      const generation = this.pendingReadyGeneration;
-      this.pendingReadyGeneration = null;
-      if (this.active && generation != null) {
-        this.synchronize(generation).catch(() => undefined);
-        return;
-      }
-      if (
-        this.transportStatus !== 'offline' &&
-        this.transportStatus !== 'paused'
-      ) {
-        this.setSnapshot({
-          status: this.options.isNoDataError(error) ? 'no-data' : 'error',
-          error: messageFromError(error),
-        });
-      }
+      this.handleInitialHistoryError(error);
     }
   }
 
@@ -533,6 +563,30 @@ class ChartDataSession<TInterval extends string, TMessage> {
     }
   }
 
+  private isSynchronizationStale(
+    controller: AbortController,
+    generation: number
+  ): boolean {
+    if (!this.active || this.disposed) {
+      return true;
+    }
+    if (controller.signal.aborted) {
+      return true;
+    }
+    return this.activeGeneration !== generation;
+  }
+
+  private shouldIgnoreSynchronizationError(
+    controller: AbortController,
+    generation: number,
+    error: unknown
+  ): boolean {
+    if (this.isSynchronizationStale(controller, generation)) {
+      return true;
+    }
+    return isAbortError(error);
+  }
+
   private async synchronize(generation: number): Promise<void> {
     if (!this.active || this.disposed) {
       return;
@@ -555,12 +609,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
         this.interval,
         { signal: controller.signal }
       );
-      if (
-        !this.active ||
-        this.disposed ||
-        controller.signal.aborted ||
-        this.activeGeneration !== generation
-      ) {
+      if (this.isSynchronizationStale(controller, generation)) {
         return;
       }
       this.replaceCandles(snapshot, generation);
@@ -574,11 +623,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
       this.setSnapshot({ status: 'live', error: null });
     } catch (error) {
       if (
-        !this.active ||
-        this.disposed ||
-        controller.signal.aborted ||
-        this.activeGeneration !== generation ||
-        isAbortError(error)
+        this.shouldIgnoreSynchronizationError(controller, generation, error)
       ) {
         return;
       }
@@ -594,6 +639,55 @@ class ChartDataSession<TInterval extends string, TMessage> {
     }
   }
 
+  private handleReadyEvent(
+    event: Extract<ChartWebSocketEvent<TMessage>, { type: 'ready' }>
+  ): void {
+    if (event.topic !== this.topic) {
+      return;
+    }
+    if (this.initialController != null && !this.hasHistory) {
+      this.pendingReadyGeneration = event.generation;
+      return;
+    }
+    this.synchronize(event.generation).catch(() => undefined);
+  }
+
+  private handleConnectingState(): void {
+    this.transportStatus = this.hadLiveData ? 'reconnecting' : 'connecting';
+    if (!this.hasHistory && !this.initialHistoryFailed) {
+      this.loadInitialHistory().catch(() => undefined);
+    }
+    let nextStatus: ChartConnectionStatus = 'loading';
+    if (this.hadLiveData) {
+      nextStatus = this.transportStatus;
+    } else if (this.hasHistory) {
+      nextStatus = 'historical';
+    }
+    this.setSnapshot({ status: nextStatus, error: null });
+  }
+
+  private handleTransportStateEvent(
+    event: Extract<ChartWebSocketEvent<TMessage>, { type: 'state' }>
+  ): void {
+    if (event.state === 'paused' || event.state === 'offline') {
+      this.transportStatus = event.state;
+      this.pendingReadyGeneration = null;
+      this.abortSynchronization();
+      this.setSnapshot({ status: event.state, error: null });
+      return;
+    }
+    if (event.state === 'reconnecting') {
+      this.transportStatus = 'reconnecting';
+      this.pendingReadyGeneration = null;
+      this.abortSynchronization();
+      this.setSnapshot({ status: 'reconnecting', error: event.error });
+      return;
+    }
+    if (event.state === 'connecting') {
+      this.handleConnectingState();
+    }
+  }
+
   private handleSocketEvent = (event: ChartWebSocketEvent<TMessage>): void => {
     if (!this.active || this.disposed || this.terminal) {
       return;
@@ -603,39 +697,10 @@ class ChartDataSession<TInterval extends string, TMessage> {
       return;
     }
     if (event.type === 'ready') {
-      if (event.topic === this.topic) {
-        if (this.initialController != null && !this.hasHistory) {
-          this.pendingReadyGeneration = event.generation;
-        } else {
-          this.synchronize(event.generation).catch(() => undefined);
-        }
-      }
+      this.handleReadyEvent(event);
       return;
     }
-
-    if (event.state === 'paused' || event.state === 'offline') {
-      this.transportStatus = event.state;
-      this.pendingReadyGeneration = null;
-      this.abortSynchronization();
-      this.setSnapshot({ status: event.state, error: null });
-    } else if (event.state === 'reconnecting') {
-      this.transportStatus = 'reconnecting';
-      this.pendingReadyGeneration = null;
-      this.abortSynchronization();
-      this.setSnapshot({ status: 'reconnecting', error: event.error });
-    } else if (event.state === 'connecting') {
-      this.transportStatus = this.hadLiveData ? 'reconnecting' : 'connecting';
-      if (!this.hasHistory && !this.initialHistoryFailed) {
-        this.loadInitialHistory().catch(() => undefined);
-      }
-      let nextStatus: ChartConnectionStatus = 'loading';
-      if (this.hadLiveData) {
-        nextStatus = this.transportStatus;
-      } else if (this.hasHistory) {
-        nextStatus = 'historical';
-      }
-      this.setSnapshot({ status: nextStatus, error: null });
-    }
+    this.handleTransportStateEvent(event);
   };
 
   private subscribeToLiveData(): void {

@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "react", "import", "jest"],
+  "jsPlugins": ["eslint-plugin-sonarjs"],
   "categories": {
     "correctness": "off"
   },
@@ -126,6 +127,18 @@
     "react/react-in-jsx-scope": "off",
     "react/rules-of-hooks": "error",
     "require-yield": "error",
+    "sonarjs/cognitive-complexity": "error",
+    "sonarjs/expression-complexity": "error",
+    "sonarjs/no-duplicated-branches": "error",
+    "sonarjs/no-gratuitous-expressions": "error",
+    "sonarjs/no-identical-conditions": "error",
+    "sonarjs/no-identical-functions": "error",
+    "sonarjs/no-inverted-boolean-check": "error",
+    "sonarjs/no-nested-conditional": "error",
+    "sonarjs/no-nested-functions": "error",
+    "sonarjs/no-nested-switch": "error",
+    "sonarjs/no-nested-template-literals": "error",
+    "sonarjs/no-redundant-boolean": "error",
     "typescript/await-thenable": "error",
     "typescript/ban-ts-comment": "error",
     "typescript/consistent-type-imports": [

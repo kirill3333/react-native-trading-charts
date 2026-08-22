@@ -253,7 +253,7 @@ function parseInstrument(
       tickSizeText,
       `instrument[${index}].PRICE_FILTER.tickSize`
     );
-    if (!(minMove > 0)) {
+    if (minMove <= 0) {
       throw new TypeError('tickSize must be positive');
     }
     return {

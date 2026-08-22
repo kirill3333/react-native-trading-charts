@@ -1,4 +1,5 @@
 import {
+  type AdditionalOhlcSeriesOptions,
   type AdditionalChartSeriesOptions,
   type ChartAppearance,
   type ChartBorderStyle,
@@ -9,6 +10,7 @@ import {
   type ChartTextStyle,
   type CompactValueFormat,
   type CrosshairTooltipField,
+  type HistogramSeriesOptions,
   type NormalizedAdditionalChartSeriesOptions,
   type OhlcValueSource,
   type PriceDisplayFormat,
@@ -16,12 +18,15 @@ import {
   type ResolvedChartResolution,
   type ResolvedChartAppearance,
   type ResolvedChartConfig,
+  type ResolvedChartPaneOptions,
   type ResolvedAdditionalChartSeriesOptions,
   type ResolvedChartFormatters,
   type ResolvedChartTextStyle,
   type ResolvedPriceDisplayFormat,
   type ResolvedTradeAggregationOptions,
   type ResolvedTradingSessionSegment,
+  type ResolutionUnit,
+  type RsiSeriesOptions,
   type SignificantValueFormat,
   type TradingChartsViewProps,
   type TradingSessionSegment,
@@ -29,6 +34,28 @@ import {
   type VolumeValueFormat,
   type YAxisValueFormat,
 } from './types';
+
+const RESOLUTION_UNITS = new Set<string>([
+  'second',
+  'minute',
+  'hour',
+  'day',
+  'week',
+  'month',
+]);
+
+const CHART_SERIES_TYPES = new Set<string>([
+  'candlestick',
+  'hollowCandlestick',
+  'bar',
+  'line',
+  'area',
+]);
+
+const ADDITIONAL_SERIES_TYPES = new Set<string>([
+  ...CHART_SERIES_TYPES,
+  'histogram',
+]);
 
 const DEFAULT_THEME = {
   backgroundColor: '#100C18',
@@ -160,6 +187,38 @@ function optionalGapThreshold(value: number | undefined, name: string) {
   return value == null ? undefined : finitePositive(value, name);
 }
 
+function isResolutionUnit(value: unknown): value is ResolutionUnit {
+  return typeof value === 'string' && RESOLUTION_UNITS.has(value);
+}
+
+function isChartSeriesType(value: unknown): value is ChartSeriesType {
+  return typeof value === 'string' && CHART_SERIES_TYPES.has(value);
+}
+
+function isAdditionalSeriesType(value: unknown): boolean {
+  return typeof value === 'string' && ADDITIONAL_SERIES_TYPES.has(value);
+}
+
+function hasValidScaleMargins(value: { top: number; bottom: number }): boolean {
+  if (!Number.isFinite(value.top) || value.top < 0) {
+    return false;
+  }
+  if (!Number.isFinite(value.bottom) || value.bottom < 0) {
+    return false;
+  }
+  return value.top + value.bottom < 1;
+}
+
+function hasValidRsiLevels(oversold: number, overbought: number): boolean {
+  if (!Number.isFinite(oversold) || oversold < 0) {
+    return false;
+  }
+  if (!Number.isFinite(overbought) || overbought > 100) {
+    return false;
+  }
+  return oversold < overbought;
+}
+
 const WEEKDAY_NUMBER: Record<TradingWeekday, number> = {
   monday: 1,
   tuesday: 2,
@@ -197,14 +256,7 @@ function resolveResolution(
       ),
     };
   }
-  if (
-    resolution.unit !== 'second' &&
-    resolution.unit !== 'minute' &&
-    resolution.unit !== 'hour' &&
-    resolution.unit !== 'day' &&
-    resolution.unit !== 'week' &&
-    resolution.unit !== 'month'
-  ) {
+  if (!isResolutionUnit(resolution.unit)) {
     throw new TypeError(
       "resolution.unit must be 'fixed', 'second', 'minute', 'hour', 'day', 'week' or 'month'"
     );
@@ -411,13 +463,7 @@ function resolveScaleMargins(
   name: string
 ) {
   const result = value ?? fallback;
-  if (
-    !Number.isFinite(result.top) ||
-    result.top < 0 ||
-    !Number.isFinite(result.bottom) ||
-    result.bottom < 0 ||
-    result.top + result.bottom >= 1
-  ) {
+  if (!hasValidScaleMargins(result)) {
     throw new TypeError(
       `${name} must be finite, non-negative and sum to less than 1`
     );
@@ -973,162 +1019,180 @@ function resolveFormatters(
   };
 }
 
-/**
- * Validates and normalizes an imperative addSeries() call the same way the
- * declarative additionalSeries config path does, minus the pane/theme
- * context that only the view-level config has. Appearance colors stay
- * optional so the native side can fall back to the live chart configuration.
- */
-export function resolveAdditionalSeriesOptions(
+type NormalizedSeriesIdentifiers = {
+  seriesId: string;
+  paneId: string;
+  priceScaleId: string;
+};
+
+type AdditionalPriceSeriesOptions =
+  | Extract<AdditionalOhlcSeriesOptions, { type: 'line' }>
+  | Extract<AdditionalOhlcSeriesOptions, { type: 'area' }>;
+
+type NormalizedRsiSeriesOptions = Extract<
+  NormalizedAdditionalChartSeriesOptions,
+  { source: { type: 'ohlcvRsi' } }
+>;
+
+function isRsiSeriesOptions(
+  options: NormalizedAdditionalChartSeriesOptions
+): options is NormalizedRsiSeriesOptions;
+function isRsiSeriesOptions(
+  options: AdditionalChartSeriesOptions
+): options is RsiSeriesOptions;
+function isRsiSeriesOptions(
+  options: AdditionalChartSeriesOptions | NormalizedAdditionalChartSeriesOptions
+): boolean {
+  if (options.type !== 'line' || typeof options.source !== 'object') {
+    return false;
+  }
+  return options.source.type === 'ohlcvRsi';
+}
+
+function resolveSeriesIdentifiers(
   options: AdditionalChartSeriesOptions,
-  name = 'options'
-): NormalizedAdditionalChartSeriesOptions {
+  name: string
+): NormalizedSeriesIdentifiers {
   const seriesId = identifier(options.seriesId, `${name}.seriesId`);
   if (seriesId === 'main') {
     throw new TypeError(`${name}.seriesId 'main' is reserved`);
   }
-  const paneId = identifier(options.paneId, `${name}.paneId`);
-  const priceScaleId = identifier(options.priceScaleId, `${name}.priceScaleId`);
-  if (
-    options.type === 'line' &&
-    typeof options.source === 'object' &&
-    options.source.type === 'ohlcvRsi'
-  ) {
-    if (paneId === 'main') {
-      throw new TypeError(`${name}.paneId must reference a separate RSI pane`);
-    }
-    const sourceSeriesId = identifier(
-      options.source.seriesId,
-      `${name}.source.seriesId`
+  return {
+    seriesId,
+    paneId: identifier(options.paneId, `${name}.paneId`),
+    priceScaleId: identifier(options.priceScaleId, `${name}.priceScaleId`),
+  };
+}
+
+function resolveGapThreshold(
+  value: number | undefined,
+  name: string
+): { gapThresholdMs?: number } {
+  if (value == null) {
+    return {};
+  }
+  return { gapThresholdMs: optionalGapThreshold(value, name) };
+}
+
+function validateLineAppearance(
+  options: AdditionalPriceSeriesOptions,
+  name: string
+): void {
+  const appearance = options.appearance;
+  if (appearance?.width != null) {
+    finitePositive(appearance.width, `${name}.appearance.width`);
+  }
+  if (appearance?.color != null) {
+    color(appearance.color, `${name}.appearance.color`);
+  }
+  if (appearance?.gradient != null) {
+    color(appearance.gradient.topColor, `${name}.appearance.gradient.topColor`);
+    color(
+      appearance.gradient.bottomColor,
+      `${name}.appearance.gradient.bottomColor`
     );
-    const period = options.source.period ?? 14;
-    if (!Number.isInteger(period) || period <= 0) {
-      throw new TypeError(`${name}.source.period must be a positive integer`);
-    }
-    const oversold = options.levels?.oversold ?? 30;
-    const overbought = options.levels?.overbought ?? 70;
-    if (
-      !Number.isFinite(oversold) ||
-      !Number.isFinite(overbought) ||
-      oversold < 0 ||
-      overbought > 100 ||
-      oversold >= overbought
-    ) {
-      throw new TypeError(
-        `${name}.levels must satisfy 0 <= oversold < overbought <= 100`
-      );
-    }
-    if (options.appearance?.width != null) {
-      finitePositive(options.appearance.width, `${name}.appearance.width`);
-    }
-    for (const [key, value] of [
-      ['color', options.appearance?.color],
-      ['textColor', options.appearance?.textColor],
-      ['levelLineColor', options.appearance?.levelLineColor],
-      ['bandColor', options.appearance?.bandColor],
-    ] as const) {
-      if (value != null) color(value, `${name}.appearance.${key}`);
-    }
-    if (options.appearance?.gradient != null) {
-      color(
-        options.appearance.gradient.topColor,
-        `${name}.appearance.gradient.topColor`
-      );
-      color(
-        options.appearance.gradient.bottomColor,
-        `${name}.appearance.gradient.bottomColor`
-      );
-    }
-    return {
-      ...options,
-      seriesId,
-      paneId,
-      priceScaleId,
-      visible: options.visible ?? true,
-      source: {
-        type: 'ohlcvRsi' as const,
-        seriesId: sourceSeriesId,
-        period,
-      },
-      levels: { oversold, overbought },
-      ...(options.gapThresholdMs == null
-        ? null
-        : {
-            gapThresholdMs: optionalGapThreshold(
-              options.gapThresholdMs,
-              `${name}.gapThresholdMs`
-            ),
-          }),
-    };
   }
-  if (options.type !== 'histogram') {
-    if (
-      options.type !== 'candlestick' &&
-      options.type !== 'hollowCandlestick' &&
-      options.type !== 'bar' &&
-      options.type !== 'line' &&
-      options.type !== 'area'
-    ) {
-      throw new TypeError(
-        `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'histogram'`
-      );
-    }
-    if (options.type === 'line' || options.type === 'area') {
-      const appearance = options.appearance;
-      if (appearance?.width != null) {
-        finitePositive(appearance.width, `${name}.appearance.width`);
-      }
-      if (appearance?.color != null) {
-        color(appearance.color, `${name}.appearance.color`);
-      }
-      if (appearance?.gradient != null) {
-        color(
-          appearance.gradient.topColor,
-          `${name}.appearance.gradient.topColor`
-        );
-        color(
-          appearance.gradient.bottomColor,
-          `${name}.appearance.gradient.bottomColor`
-        );
-      }
-      const areaFill =
-        options.type === 'area' ? options.appearance?.fill : undefined;
-      if (areaFill != null) {
-        if (areaFill.topColor != null) {
-          color(areaFill.topColor, `${name}.appearance.fill.topColor`);
-        }
-        if (areaFill.bottomColor != null) {
-          color(areaFill.bottomColor, `${name}.appearance.fill.bottomColor`);
-        }
-      }
-      return {
-        ...options,
-        seriesId,
-        paneId,
-        priceScaleId,
-        visible: options.visible ?? true,
-        source: ohlcValueSource(
-          typeof options.source === 'string' ? options.source : undefined,
-          `${name}.source`
-        ),
-        ...(options.gapThresholdMs == null
-          ? null
-          : {
-              gapThresholdMs: optionalGapThreshold(
-                options.gapThresholdMs,
-                `${name}.gapThresholdMs`
-              ),
-            }),
-      };
-    }
-    return {
-      ...options,
-      seriesId,
-      paneId,
-      priceScaleId,
-      visible: options.visible ?? true,
-    };
+  if (options.type !== 'area') {
+    return;
   }
+  const fill = options.appearance?.fill;
+  if (fill == null) {
+    return;
+  }
+  if (fill.topColor != null) {
+    color(fill.topColor, `${name}.appearance.fill.topColor`);
+  }
+  if (fill.bottomColor != null) {
+    color(fill.bottomColor, `${name}.appearance.fill.bottomColor`);
+  }
+}
+
+function resolvePriceSeriesOptions(
+  options: AdditionalPriceSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedAdditionalChartSeriesOptions {
+  validateLineAppearance(options, name);
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    source: ohlcValueSource(
+      typeof options.source === 'string' ? options.source : undefined,
+      `${name}.source`
+    ),
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
+}
+
+function validateRsiAppearance(options: RsiSeriesOptions, name: string): void {
+  const appearance = options.appearance;
+  if (appearance?.width != null) {
+    finitePositive(appearance.width, `${name}.appearance.width`);
+  }
+  for (const [key, value] of [
+    ['color', appearance?.color],
+    ['textColor', appearance?.textColor],
+    ['levelLineColor', appearance?.levelLineColor],
+    ['bandColor', appearance?.bandColor],
+  ] as const) {
+    if (value != null) {
+      color(value, `${name}.appearance.${key}`);
+    }
+  }
+  if (appearance?.gradient == null) {
+    return;
+  }
+  color(appearance.gradient.topColor, `${name}.appearance.gradient.topColor`);
+  color(
+    appearance.gradient.bottomColor,
+    `${name}.appearance.gradient.bottomColor`
+  );
+}
+
+function resolveRsiSeriesOptions(
+  options: RsiSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedAdditionalChartSeriesOptions {
+  if (ids.paneId === 'main') {
+    throw new TypeError(`${name}.paneId must reference a separate RSI pane`);
+  }
+  const sourceSeriesId = identifier(
+    options.source.seriesId,
+    `${name}.source.seriesId`
+  );
+  const period = options.source.period ?? 14;
+  if (!Number.isInteger(period) || period <= 0) {
+    throw new TypeError(`${name}.source.period must be a positive integer`);
+  }
+  const oversold = options.levels?.oversold ?? 30;
+  const overbought = options.levels?.overbought ?? 70;
+  if (!hasValidRsiLevels(oversold, overbought)) {
+    throw new TypeError(
+      `${name}.levels must satisfy 0 <= oversold < overbought <= 100`
+    );
+  }
+  validateRsiAppearance(options, name);
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    source: {
+      type: 'ohlcvRsi',
+      seriesId: sourceSeriesId,
+      period,
+    },
+    levels: { oversold, overbought },
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
+}
+
+function resolveHistogramSeriesOptions(
+  options: HistogramSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedAdditionalChartSeriesOptions {
   const source = options.source ?? { type: 'data' as const };
   if (source.type === 'ohlcvVolume') {
     identifier(source.seriesId, `${name}.source.seriesId`);
@@ -1145,11 +1209,199 @@ export function resolveAdditionalSeriesOptions(
   }
   return {
     ...options,
-    seriesId,
-    paneId,
-    priceScaleId,
+    ...ids,
     visible: options.visible ?? true,
     source,
+  };
+}
+
+/**
+ * Validates and normalizes an imperative addSeries() call the same way the
+ * declarative additionalSeries config path does, minus the pane/theme
+ * context that only the view-level config has. Appearance colors stay
+ * optional so the native side can fall back to the live chart configuration.
+ */
+export function resolveAdditionalSeriesOptions(
+  options: AdditionalChartSeriesOptions,
+  name = 'options'
+): NormalizedAdditionalChartSeriesOptions {
+  const ids = resolveSeriesIdentifiers(options, name);
+  if (isRsiSeriesOptions(options)) {
+    return resolveRsiSeriesOptions(options, name, ids);
+  }
+  if (!isAdditionalSeriesType(options.type)) {
+    throw new TypeError(
+      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'histogram'`
+    );
+  }
+  if (options.type === 'histogram') {
+    return resolveHistogramSeriesOptions(options, name, ids);
+  }
+  if (options.type === 'line' || options.type === 'area') {
+    return resolvePriceSeriesOptions(options, name, ids);
+  }
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+  };
+}
+
+type AdditionalSeriesResolutionContext = {
+  panes: ReadonlyArray<ResolvedChartPaneOptions>;
+  seenSeriesIds: Set<string>;
+  knownOhlcSeriesIds: ReadonlySet<string>;
+  appearance: ResolvedChartAppearance;
+  theme: Required<ChartTheme>;
+};
+
+function collectKnownOhlcSeriesIds(
+  items: ReadonlyArray<AdditionalChartSeriesOptions>
+): Set<string> {
+  const result = new Set<string>(['main']);
+  items.forEach((item) => {
+    if (item.type !== 'histogram' && !isRsiSeriesOptions(item)) {
+      result.add(item.seriesId);
+    }
+  });
+  return result;
+}
+
+function resolveConfiguredSeriesIdentifiers(
+  item: AdditionalChartSeriesOptions,
+  name: string,
+  context: AdditionalSeriesResolutionContext
+): NormalizedSeriesIdentifiers {
+  const seriesId = identifier(item.seriesId, `${name}.seriesId`);
+  if (seriesId === 'main') {
+    throw new TypeError("additionalSeries cannot use reserved seriesId 'main'");
+  }
+  if (context.seenSeriesIds.has(seriesId)) {
+    throw new TypeError(`duplicate seriesId '${seriesId}'`);
+  }
+  context.seenSeriesIds.add(seriesId);
+  const paneId = identifier(item.paneId, `${name}.paneId`);
+  const priceScaleId = identifier(item.priceScaleId, `${name}.priceScaleId`);
+  const pane = context.panes.find((candidate) => candidate.paneId === paneId);
+  if (pane == null) {
+    throw new TypeError(`${name}.paneId references an unknown pane`);
+  }
+  if (pane.priceScale.priceScaleId !== priceScaleId) {
+    throw new TypeError(
+      `${name}.priceScaleId must match the pane's price scale`
+    );
+  }
+  return { seriesId, paneId, priceScaleId };
+}
+
+function resolveConfiguredRsiSeries(
+  resolved: NormalizedRsiSeriesOptions,
+  name: string,
+  context: AdditionalSeriesResolutionContext
+): ResolvedAdditionalChartSeriesOptions {
+  if (!context.knownOhlcSeriesIds.has(resolved.source.seriesId)) {
+    throw new TypeError(
+      `${name}.source.seriesId must reference data-backed OHLC data`
+    );
+  }
+  const rsiColor = color(
+    resolved.appearance?.color ?? context.appearance.line.color,
+    `${name}.appearance.color`
+  );
+  const textColor =
+    resolved.appearance?.textColor == null
+      ? {}
+      : {
+          textColor: color(
+            resolved.appearance.textColor,
+            `${name}.appearance.textColor`
+          ),
+        };
+  const gradient =
+    resolved.appearance?.gradient == null
+      ? {}
+      : { gradient: resolved.appearance.gradient };
+  return {
+    ...resolved,
+    appearance: {
+      width: finitePositive(
+        resolved.appearance?.width ?? context.appearance.line.width,
+        `${name}.appearance.width`
+      ),
+      color: rsiColor,
+      levelLineColor: color(
+        resolved.appearance?.levelLineColor ?? colorWithAlpha(rsiColor, '80'),
+        `${name}.appearance.levelLineColor`
+      ),
+      bandColor: color(
+        resolved.appearance?.bandColor ?? colorWithAlpha(rsiColor, '14'),
+        `${name}.appearance.bandColor`
+      ),
+      ...textColor,
+      ...gradient,
+    },
+  };
+}
+
+function resolveConfiguredHistogramSeries(
+  item: HistogramSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers,
+  context: AdditionalSeriesResolutionContext
+): ResolvedAdditionalChartSeriesOptions {
+  const source = item.source ?? { type: 'data' as const };
+  if (
+    source.type === 'ohlcvVolume' &&
+    !context.knownOhlcSeriesIds.has(source.seriesId)
+  ) {
+    throw new TypeError(`${name}.source.seriesId must reference OHLC data`);
+  }
+  return {
+    ...item,
+    ...ids,
+    visible: item.visible ?? true,
+    source,
+    appearance: {
+      color: color(
+        item.appearance?.color ?? context.theme.axisTextColor,
+        `${name}.appearance.color`
+      ),
+      upColor: color(
+        item.appearance?.upColor ?? context.theme.upColor,
+        `${name}.appearance.upColor`
+      ),
+      downColor: color(
+        item.appearance?.downColor ?? context.theme.downColor,
+        `${name}.appearance.downColor`
+      ),
+    },
+  };
+}
+
+function resolveConfiguredAdditionalSeries(
+  item: AdditionalChartSeriesOptions,
+  index: number,
+  context: AdditionalSeriesResolutionContext
+): ResolvedAdditionalChartSeriesOptions {
+  const name = `additionalSeries[${index}]`;
+  const ids = resolveConfiguredSeriesIdentifiers(item, name, context);
+  if (item.type === 'histogram') {
+    return resolveConfiguredHistogramSeries(item, name, ids, context);
+  }
+  if (item.type === 'line' || item.type === 'area') {
+    const resolved = resolveAdditionalSeriesOptions(item, name);
+    if (resolved.type !== item.type) {
+      throw new TypeError(`${name}.type must remain '${item.type}'`);
+    }
+    if (isRsiSeriesOptions(resolved)) {
+      return resolveConfiguredRsiSeries(resolved, name, context);
+    }
+    return resolved;
+  }
+  return {
+    ...item,
+    ...ids,
+    visible: item.visible ?? true,
   };
 }
 
@@ -1167,13 +1419,7 @@ export function resolveChartConfig(
   }
   const defaultScale = finitePositive(props.defaultScale ?? 1, 'defaultScale');
   const seriesType = props.series?.type ?? 'candlestick';
-  if (
-    seriesType !== 'candlestick' &&
-    seriesType !== 'hollowCandlestick' &&
-    seriesType !== 'bar' &&
-    seriesType !== 'line' &&
-    seriesType !== 'area'
-  ) {
+  if (!isChartSeriesType(seriesType)) {
     throw new TypeError(
       "series.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line' or 'area'"
     );
@@ -1219,13 +1465,7 @@ export function resolveChartConfig(
     top: 0.2,
     bottom: 0.1,
   };
-  if (
-    !Number.isFinite(scaleMargins.top) ||
-    scaleMargins.top < 0 ||
-    !Number.isFinite(scaleMargins.bottom) ||
-    scaleMargins.bottom < 0 ||
-    scaleMargins.top + scaleMargins.bottom >= 1
-  ) {
+  if (!hasValidScaleMargins(scaleMargins)) {
     throw new TypeError(
       'yAxis.scaleMargins must be finite, non-negative and sum to less than 1'
     );
@@ -1306,141 +1546,17 @@ export function resolveChartConfig(
   ];
 
   const additionalSeriesInputs = props.additionalSeries ?? [];
-  const seenSeriesIds = new Set<string>(['main']);
-  const knownOhlcSeriesIds = new Set<string>(['main']);
-  additionalSeriesInputs.forEach((item) => {
-    if (
-      item.type !== 'histogram' &&
-      !(
-        item.type === 'line' &&
-        typeof item.source === 'object' &&
-        item.source.type === 'ohlcvRsi'
-      )
-    ) {
-      knownOhlcSeriesIds.add(item.seriesId);
-    }
-  });
+  const additionalSeriesContext: AdditionalSeriesResolutionContext = {
+    panes: orderedPanes,
+    seenSeriesIds: new Set<string>(['main']),
+    knownOhlcSeriesIds: collectKnownOhlcSeriesIds(additionalSeriesInputs),
+    appearance,
+    theme,
+  };
   const additionalSeries: ResolvedAdditionalChartSeriesOptions[] =
-    additionalSeriesInputs.map((item, index) => {
-      const name = `additionalSeries[${index}]`;
-      const seriesId = identifier(item.seriesId, `${name}.seriesId`);
-      if (seriesId === 'main') {
-        throw new TypeError(
-          "additionalSeries cannot use reserved seriesId 'main'"
-        );
-      }
-      if (seenSeriesIds.has(seriesId)) {
-        throw new TypeError(`duplicate seriesId '${seriesId}'`);
-      }
-      seenSeriesIds.add(seriesId);
-      const paneId = identifier(item.paneId, `${name}.paneId`);
-      const priceScaleId = identifier(
-        item.priceScaleId,
-        `${name}.priceScaleId`
-      );
-      const pane = orderedPanes.find(
-        (candidate) => candidate.paneId === paneId
-      );
-      if (pane == null) {
-        throw new TypeError(`${name}.paneId references an unknown pane`);
-      }
-      if (pane.priceScale.priceScaleId !== priceScaleId) {
-        throw new TypeError(
-          `${name}.priceScaleId must match the pane's price scale`
-        );
-      }
-      if (item.type !== 'histogram') {
-        if (item.type === 'line' || item.type === 'area') {
-          const resolved = resolveAdditionalSeriesOptions(item, name);
-          if (resolved.type !== item.type) {
-            throw new TypeError(`${name}.type must remain '${item.type}'`);
-          }
-          if (
-            resolved.type === 'line' &&
-            typeof resolved.source === 'object' &&
-            resolved.source.type === 'ohlcvRsi'
-          ) {
-            if (!knownOhlcSeriesIds.has(resolved.source.seriesId)) {
-              throw new TypeError(
-                `${name}.source.seriesId must reference data-backed OHLC data`
-              );
-            }
-            const rsiColor = color(
-              resolved.appearance?.color ?? appearance.line.color,
-              `${name}.appearance.color`
-            );
-            return {
-              ...resolved,
-              appearance: {
-                width: finitePositive(
-                  resolved.appearance?.width ?? appearance.line.width,
-                  `${name}.appearance.width`
-                ),
-                color: rsiColor,
-                levelLineColor: color(
-                  resolved.appearance?.levelLineColor ??
-                    colorWithAlpha(rsiColor, '80'),
-                  `${name}.appearance.levelLineColor`
-                ),
-                bandColor: color(
-                  resolved.appearance?.bandColor ??
-                    colorWithAlpha(rsiColor, '14'),
-                  `${name}.appearance.bandColor`
-                ),
-                ...(resolved.appearance?.textColor == null
-                  ? null
-                  : {
-                      textColor: color(
-                        resolved.appearance.textColor,
-                        `${name}.appearance.textColor`
-                      ),
-                    }),
-                ...(resolved.appearance?.gradient == null
-                  ? null
-                  : { gradient: resolved.appearance.gradient }),
-              },
-            };
-          }
-          return resolved as ResolvedAdditionalChartSeriesOptions;
-        }
-        return {
-          ...item,
-          seriesId,
-          paneId,
-          priceScaleId,
-          visible: item.visible ?? true,
-        };
-      }
-      const source = item.source ?? { type: 'data' as const };
-      if (
-        source.type === 'ohlcvVolume' &&
-        !knownOhlcSeriesIds.has(source.seriesId)
-      ) {
-        throw new TypeError(`${name}.source.seriesId must reference OHLC data`);
-      }
-      return {
-        ...item,
-        seriesId,
-        paneId,
-        priceScaleId,
-        visible: item.visible ?? true,
-        source,
-        appearance: {
-          color: color(
-            item.appearance?.color ?? theme.axisTextColor,
-            `${name}.appearance.color`
-          ),
-          upColor: color(
-            item.appearance?.upColor ?? theme.upColor,
-            `${name}.appearance.upColor`
-          ),
-          downColor: color(
-            item.appearance?.downColor ?? theme.downColor,
-            `${name}.appearance.downColor`
-          ),
-        },
-      };
-    });
+    additionalSeriesInputs.map((item, index) =>
+      resolveConfiguredAdditionalSeries(item, index, additionalSeriesContext)
+    );
 
   return {
     resolution,

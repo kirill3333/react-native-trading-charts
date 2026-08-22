@@ -262,14 +262,18 @@ export class HyperliquidWebSocketClient {
     }
   }
 
+  private canConnect(): boolean {
+    if (this.topics.size === 0 || !this.appIsActive) {
+      return false;
+    }
+    if (!this.networkIsReachable || this.socket != null) {
+      return false;
+    }
+    return this.reconnectTimer == null;
+  }
+
   private ensureConnection(): void {
-    if (
-      this.topics.size === 0 ||
-      !this.appIsActive ||
-      !this.networkIsReachable ||
-      this.socket != null ||
-      this.reconnectTimer != null
-    ) {
+    if (!this.canConnect()) {
       return;
     }
 
