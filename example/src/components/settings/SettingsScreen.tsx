@@ -10,6 +10,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useChartSettings } from '../../chartSettings';
+import {
+  buildMainSeriesColors,
+  buildVolumeAppearance,
+} from '../../chartSettingsConfig';
 import { APP_THEMES, type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { SettingSegments } from './SettingSegments';
@@ -83,6 +87,8 @@ export function SettingsScreen() {
   const crosshairDetailsDisabled = !settings.crosshairEnabled;
   const tooltipDetailsDisabled =
     crosshairDetailsDisabled || !settings.crosshairShowTooltip;
+  const mainColors = buildMainSeriesColors(settings);
+  const volumeAppearance = buildVolumeAppearance(settings);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -108,26 +114,6 @@ export function SettingsScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <SettingsSection title="Series">
-          <SettingSegments
-            label="Style"
-            onValueChange={(seriesType) => updateSettings({ seriesType })}
-            options={SERIES_OPTIONS}
-            value={settings.seriesType}
-          />
-          {(settings.seriesType === 'line' ||
-            settings.seriesType === 'area') && (
-            <SettingSegments
-              label="Line width"
-              onValueChange={(seriesLineWidth) =>
-                updateSettings({ seriesLineWidth })
-              }
-              options={SERIES_LINE_WIDTH_OPTIONS}
-              value={settings.seriesLineWidth}
-            />
-          )}
-        </SettingsSection>
-
         <SettingsSection title="Theme">
           <SettingSwitch
             description="Use light colors across the app and chart"
@@ -138,6 +124,96 @@ export function SettingsScreen() {
               })
             }
             value={settings.themeMode === 'light'}
+          />
+        </SettingsSection>
+        <SettingsSection title="Main chart">
+          <SettingSegments
+            label="Style"
+            onValueChange={(seriesType) => updateSettings({ seriesType })}
+            options={SERIES_OPTIONS}
+            value={settings.seriesType}
+          />
+          {(settings.seriesType === 'line' ||
+            settings.seriesType === 'area') && (
+            <>
+              <SettingSegments
+                label="Line width"
+                onValueChange={(seriesLineWidth) =>
+                  updateSettings({ seriesLineWidth })
+                }
+                options={SERIES_LINE_WIDTH_OPTIONS}
+                value={settings.seriesLineWidth}
+              />
+              <HexColorSetting
+                description="Color of the close-price line"
+                label="Line color"
+                onValueChange={(mainLineColorOverride) =>
+                  updateSettings({ mainLineColorOverride })
+                }
+                value={mainColors.lineColor}
+              />
+            </>
+          )}
+          {(settings.seriesType === 'candlestick' ||
+            settings.seriesType === 'hollowCandlestick' ||
+            settings.seriesType === 'bar') && (
+            <>
+              <HexColorSetting
+                description="Rising candles and bars"
+                label="Up color"
+                onValueChange={(mainUpColorOverride) =>
+                  updateSettings({ mainUpColorOverride })
+                }
+                value={mainColors.upColor}
+              />
+              <HexColorSetting
+                description="Falling candles and bars"
+                label="Down color"
+                onValueChange={(mainDownColorOverride) =>
+                  updateSettings({ mainDownColorOverride })
+                }
+                value={mainColors.downColor}
+              />
+            </>
+          )}
+          {settings.seriesType === 'area' && (
+            <>
+              <HexColorSetting
+                description="Color at the top of the area fill"
+                label="Fill top"
+                onValueChange={(mainAreaFillTopColorOverride) =>
+                  updateSettings({ mainAreaFillTopColorOverride })
+                }
+                value={mainColors.areaFillTopColor}
+              />
+              <HexColorSetting
+                description="Color at the bottom of the area fill"
+                label="Fill bottom"
+                onValueChange={(mainAreaFillBottomColorOverride) =>
+                  updateSettings({ mainAreaFillBottomColorOverride })
+                }
+                value={mainColors.areaFillBottomColor}
+              />
+            </>
+          )}
+        </SettingsSection>
+
+        <SettingsSection title="Volume">
+          <HexColorSetting
+            description="Volume bars for rising candles"
+            label="Up color"
+            onValueChange={(volumeUpColorOverride) =>
+              updateSettings({ volumeUpColorOverride })
+            }
+            value={volumeAppearance.upColor}
+          />
+          <HexColorSetting
+            description="Volume bars for falling candles"
+            label="Down color"
+            onValueChange={(volumeDownColorOverride) =>
+              updateSettings({ volumeDownColorOverride })
+            }
+            value={volumeAppearance.downColor}
           />
         </SettingsSection>
 

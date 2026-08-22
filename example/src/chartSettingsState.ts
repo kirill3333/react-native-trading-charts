@@ -15,6 +15,13 @@ export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
 export type ChartSettings = {
   seriesType: ChartSeriesType;
   seriesLineWidth: SeriesLineWidth;
+  mainUpColorOverride: string | null;
+  mainDownColorOverride: string | null;
+  mainLineColorOverride: string | null;
+  mainAreaFillTopColorOverride: string | null;
+  mainAreaFillBottomColorOverride: string | null;
+  volumeUpColorOverride: string | null;
+  volumeDownColorOverride: string | null;
   mainPaneHeightWeight: PaneHeightWeight;
   volumePaneHeightWeight: PaneHeightWeight;
   rsiPaneHeightWeight: PaneHeightWeight;
@@ -50,6 +57,13 @@ export type ChartSettings = {
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   seriesType: 'candlestick',
   seriesLineWidth: 1.5,
+  mainUpColorOverride: null,
+  mainDownColorOverride: null,
+  mainLineColorOverride: null,
+  mainAreaFillTopColorOverride: null,
+  mainAreaFillBottomColorOverride: null,
+  volumeUpColorOverride: null,
+  volumeDownColorOverride: null,
   mainPaneHeightWeight: 3,
   volumePaneHeightWeight: 1,
   rsiPaneHeightWeight: 1,

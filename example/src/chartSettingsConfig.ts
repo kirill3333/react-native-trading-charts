@@ -52,6 +52,57 @@ export type ChartViewConfig = {
   yAxis: YAxisOptions;
 };
 
+export type MainSeriesColors = {
+  upColor: string;
+  downColor: string;
+  lineColor: string;
+  areaFillTopColor: string;
+  areaFillBottomColor: string;
+};
+
+export function buildMainSeriesColors(
+  settings: ChartSettings
+): MainSeriesColors {
+  const theme = APP_THEMES[settings.themeMode];
+  const appearance = theme.chartAppearance;
+  const themedLineColor =
+    settings.seriesType === 'area'
+      ? appearance.area?.color
+      : appearance.line?.color;
+
+  return {
+    upColor:
+      settings.mainUpColorOverride ??
+      appearance.candles?.upColor ??
+      theme.colors.positive,
+    downColor:
+      settings.mainDownColorOverride ??
+      appearance.candles?.downColor ??
+      theme.colors.negative,
+    lineColor:
+      settings.mainLineColorOverride ?? themedLineColor ?? theme.colors.accent,
+    areaFillTopColor:
+      settings.mainAreaFillTopColorOverride ??
+      appearance.area?.fill?.topColor ??
+      '#00000000',
+    areaFillBottomColor:
+      settings.mainAreaFillBottomColorOverride ??
+      appearance.area?.fill?.bottomColor ??
+      '#00000000',
+  };
+}
+
+export function buildVolumeAppearance(settings: ChartSettings): {
+  upColor: string;
+  downColor: string;
+} {
+  const theme = APP_THEMES[settings.themeMode];
+  return {
+    upColor: settings.volumeUpColorOverride ?? theme.volumeUpColor,
+    downColor: settings.volumeDownColorOverride ?? theme.volumeDownColor,
+  };
+}
+
 export function buildRsiAppearance(
   settings: ChartSettings
 ): Required<
@@ -134,6 +185,27 @@ export function buildChartViewConfig(
   }
 
   const appearancePreset = APP_THEMES[settings.themeMode].chartAppearance;
+  const mainColors = buildMainSeriesColors(settings);
+  const lineAppearance =
+    settings.mainLineColorOverride == null
+      ? {
+          ...appearancePreset.line,
+          width: settings.seriesLineWidth,
+        }
+      : {
+          width: settings.seriesLineWidth,
+          color: mainColors.lineColor,
+        };
+  const areaAppearance = {
+    ...(settings.mainLineColorOverride == null
+      ? appearancePreset.area
+      : { color: mainColors.lineColor }),
+    width: settings.seriesLineWidth,
+    fill: {
+      topColor: mainColors.areaFillTopColor,
+      bottomColor: mainColors.areaFillBottomColor,
+    },
+  };
 
   return {
     series:
@@ -142,14 +214,18 @@ export function buildChartViewConfig(
         : { type: settings.seriesType },
     appearance: {
       ...appearancePreset,
-      line: {
-        ...appearancePreset.line,
-        width: settings.seriesLineWidth,
+      candles: {
+        ...appearancePreset.candles,
+        upColor: mainColors.upColor,
+        downColor: mainColors.downColor,
       },
-      area: {
-        ...appearancePreset.area,
-        width: settings.seriesLineWidth,
+      bars: {
+        ...appearancePreset.bars,
+        upColor: mainColors.upColor,
+        downColor: mainColors.downColor,
       },
+      line: lineAppearance,
+      area: areaAppearance,
       tooltip: {
         ...appearancePreset.tooltip,
         backgroundOpacity: settings.crosshairTooltipOpacity,

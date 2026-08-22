@@ -6,7 +6,9 @@ import {
   type ChartSettings,
 } from '../chartSettingsState';
 import {
+  buildMainSeriesColors,
   buildRsiAppearance,
+  buildVolumeAppearance,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
@@ -22,6 +24,13 @@ describe('chart settings', () => {
     expect(DEFAULT_CHART_SETTINGS).toMatchObject({
       seriesType: 'candlestick',
       seriesLineWidth: 1.5,
+      mainUpColorOverride: null,
+      mainDownColorOverride: null,
+      mainLineColorOverride: null,
+      mainAreaFillTopColorOverride: null,
+      mainAreaFillBottomColorOverride: null,
+      volumeUpColorOverride: null,
+      volumeDownColorOverride: null,
       mainPaneHeightWeight: 3,
       volumePaneHeightWeight: 1,
       rsiPaneHeightWeight: 1,
@@ -74,6 +83,79 @@ describe('chart settings', () => {
     });
   });
 
+  it('uses themed main and volume colors until user overrides are set', () => {
+    expect(buildMainSeriesColors(DEFAULT_CHART_SETTINGS)).toEqual({
+      upColor: '#38D98A',
+      downColor: '#FF3B64',
+      lineColor: '#2E90F5',
+      areaFillTopColor: '#2E90F566',
+      areaFillBottomColor: '#2E90F500',
+    });
+    expect(buildVolumeAppearance(DEFAULT_CHART_SETTINGS)).toEqual({
+      upColor: APP_THEMES.dark.volumeUpColor,
+      downColor: APP_THEMES.dark.volumeDownColor,
+    });
+
+    const light = settingsWith({ themeMode: 'light', seriesType: 'area' });
+    expect(buildMainSeriesColors(light)).toEqual({
+      upColor: '#089981',
+      downColor: '#F23645',
+      lineColor: '#2962FF',
+      areaFillTopColor: '#2962FF33',
+      areaFillBottomColor: '#2962FF00',
+    });
+    expect(buildVolumeAppearance(light)).toEqual({
+      upColor: APP_THEMES.light.volumeUpColor,
+      downColor: APP_THEMES.light.volumeDownColor,
+    });
+
+    const customized = settingsWith({
+      themeMode: 'light',
+      seriesType: 'area',
+      mainUpColorOverride: '#112233',
+      mainDownColorOverride: '#445566',
+      mainLineColorOverride: '#778899',
+      mainAreaFillTopColorOverride: '#AABBCC66',
+      mainAreaFillBottomColorOverride: '#AABBCC00',
+      volumeUpColorOverride: '#12345680',
+      volumeDownColorOverride: '#65432180',
+    });
+    expect(buildMainSeriesColors(customized)).toEqual({
+      upColor: '#112233',
+      downColor: '#445566',
+      lineColor: '#778899',
+      areaFillTopColor: '#AABBCC66',
+      areaFillBottomColor: '#AABBCC00',
+    });
+    expect(buildVolumeAppearance(customized)).toEqual({
+      upColor: '#12345680',
+      downColor: '#65432180',
+    });
+  });
+
+  it('preserves color overrides while untouched colors follow theme changes', () => {
+    const customized = chartSettingsReducer(DEFAULT_CHART_SETTINGS, {
+      type: 'update',
+      patch: {
+        mainUpColorOverride: '#112233',
+        volumeDownColorOverride: '#44556680',
+      },
+    });
+    const light = chartSettingsReducer(customized, {
+      type: 'update',
+      patch: { themeMode: 'light' },
+    });
+
+    expect(buildMainSeriesColors(light)).toMatchObject({
+      upColor: '#112233',
+      downColor: '#F23645',
+    });
+    expect(buildVolumeAppearance(light)).toEqual({
+      upColor: APP_THEMES.light.volumeUpColor,
+      downColor: '#44556680',
+    });
+  });
+
   it('accepts only supported HEX colors without changing the last valid value', () => {
     expect(isHexColor('#12abEF')).toBe(true);
     expect(isHexColor('#12abEF80')).toBe(true);
@@ -88,6 +170,8 @@ describe('chart settings', () => {
       patch: {
         seriesType: 'bar',
         themeMode: 'light',
+        mainUpColorOverride: '#123456',
+        volumeDownColorOverride: '#65432180',
         panEnabled: false,
         yAxisPosition: 'left',
       },
@@ -96,6 +180,8 @@ describe('chart settings', () => {
     expect(updated).toMatchObject({
       seriesType: 'bar',
       themeMode: 'light',
+      mainUpColorOverride: '#123456',
+      volumeDownColorOverride: '#65432180',
       panEnabled: false,
       yAxisPosition: 'left',
       zoomEnabled: true,
@@ -207,6 +293,49 @@ describe('chart settings', () => {
       width: 2.5,
       color: '#2962FF',
       fill: { topColor: '#2962FF33', bottomColor: '#2962FF00' },
+    });
+  });
+
+  it('applies main color overrides and replaces the line gradient', () => {
+    const lineConfig = buildChartViewConfig(
+      settingsWith({
+        seriesType: 'line',
+        mainUpColorOverride: '#112233',
+        mainDownColorOverride: '#445566',
+        mainLineColorOverride: '#778899',
+      }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 }
+    );
+    const areaConfig = buildChartViewConfig(
+      settingsWith({
+        seriesType: 'area',
+        mainLineColorOverride: '#AABBCC',
+        mainAreaFillTopColorOverride: '#AABBCC66',
+        mainAreaFillBottomColorOverride: '#AABBCC00',
+      }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 }
+    );
+
+    expect(lineConfig.appearance.candles).toMatchObject({
+      upColor: '#112233',
+      downColor: '#445566',
+    });
+    expect(lineConfig.appearance.bars).toMatchObject({
+      upColor: '#112233',
+      downColor: '#445566',
+    });
+    expect(lineConfig.appearance.line).toEqual({
+      width: 1.5,
+      color: '#778899',
+    });
+    expect(lineConfig.appearance.line?.gradient).toBeUndefined();
+    expect(areaConfig.appearance.area).toEqual({
+      width: 1.5,
+      color: '#AABBCC',
+      fill: {
+        topColor: '#AABBCC66',
+        bottomColor: '#AABBCC00',
+      },
     });
   });
 

@@ -11,10 +11,10 @@ import {
 import { useChartSettings } from '../chartSettings';
 import {
   buildRsiAppearance,
+  buildVolumeAppearance,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
-import { useAppTheme } from '../themeContext';
 
 type InteractiveChartProps = {
   chartId: string;
@@ -38,7 +38,6 @@ export const InteractiveChart = memo(function InteractiveChart({
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
-  const theme = useAppTheme();
   const useSignificantPriceFormat = shouldUseSignificantPriceFormat(lastPrice);
   const chartConfig = useMemo(
     () =>
@@ -104,10 +103,7 @@ export const InteractiveChart = memo(function InteractiveChart({
         paneId: 'volume',
         priceScaleId: 'volume',
         source: { type: 'ohlcvVolume', seriesId: 'main' },
-        appearance: {
-          upColor: theme.volumeUpColor,
-          downColor: theme.volumeDownColor,
-        },
+        appearance: buildVolumeAppearance(settings),
       });
     }
     if (showRsi) {
@@ -124,7 +120,7 @@ export const InteractiveChart = memo(function InteractiveChart({
       });
     }
     return result.length > 0 ? result : undefined;
-  }, [settings, showRsi, showVolume, theme]);
+  }, [settings, showRsi, showVolume]);
 
   return (
     <TradingChartsView
