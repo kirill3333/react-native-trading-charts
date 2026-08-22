@@ -113,10 +113,76 @@ export type HyperliquidTicker = {
   maxLeverage: number;
 };
 
+export type HyperliquidAssetPayload = {
+  name: string;
+  maxLeverage: number;
+  isDelisted?: boolean;
+};
+
+export type HyperliquidAssetContextPayload = {
+  midPx: string | null;
+  markPx?: string;
+  prevDayPx: string;
+  dayNtlVlm: string;
+};
+
+export type HyperliquidTickersPayload = readonly [
+  meta: { universe: HyperliquidAssetPayload[] },
+  contexts: HyperliquidAssetContextPayload[],
+];
+
+export type HyperliquidCandlePayload = {
+  t: number;
+  T?: number;
+  s?: string;
+  i?: HyperliquidInterval;
+  o: string;
+  h: string;
+  l: string;
+  c: string;
+  v: string;
+  n?: number;
+};
+
+export type HyperliquidCandleSubscriptionPayload = {
+  type: 'candle';
+  coin: string;
+  interval: HyperliquidInterval;
+};
+
+type HyperliquidCandleMessagePayload = {
+  channel: 'candle';
+  data: HyperliquidCandlePayload | HyperliquidCandlePayload[];
+};
+
+type HyperliquidSubscriptionMessagePayload = {
+  channel: 'subscriptionResponse';
+  data: {
+    method: 'subscribe' | 'unsubscribe';
+    subscription: HyperliquidCandleSubscriptionPayload;
+  };
+};
+
+type HyperliquidErrorMessagePayload = {
+  channel: 'error';
+  data: string;
+};
+
+type HyperliquidControlMessagePayload = {
+  channel: 'pong';
+  data?: null;
+};
+
+export type HyperliquidWebSocketPayload =
+  | HyperliquidCandleMessagePayload
+  | HyperliquidSubscriptionMessagePayload
+  | HyperliquidErrorMessagePayload
+  | HyperliquidControlMessagePayload;
+
 export type HyperliquidMarketMessage = {
   kind: 'market';
   topic: string;
-  data: unknown;
+  data: HyperliquidCandlePayload[];
 };
 
 export type HyperliquidWebSocketEnvelope =
@@ -140,56 +206,17 @@ type FetchCandlesRetryOptions = {
   allowEmpty?: boolean;
 };
 
-type JsonRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireRecord(value: unknown, name: string): JsonRecord {
-  if (!isRecord(value)) {
-    throw new TypeError(`${name} must be an object`);
-  }
-  return value;
-}
-
-function requireArray(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new TypeError(`${name} must be an array`);
-  }
-  return value;
-}
-
-function requireString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-function requireNumber(
-  value: unknown,
-  name: string,
-  options: { integer?: boolean; minimum?: number } = {}
-): number {
-  if (
-    typeof value !== 'number' &&
-    (typeof value !== 'string' || value.trim().length === 0)
-  ) {
-    throw new TypeError(`${name} must be a finite number`);
-  }
-  const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(number)) {
-    throw new TypeError(`${name} must be a finite number`);
-  }
-  if (options.integer && !Number.isSafeInteger(number)) {
-    throw new TypeError(`${name} must be a safe integer`);
-  }
-  if (options.minimum != null && number < options.minimum) {
-    throw new TypeError(`${name} must be at least ${options.minimum}`);
-  }
-  return number;
-}
+type HyperliquidRequestPayload =
+  | { type: 'metaAndAssetCtxs' }
+  | {
+      type: 'candleSnapshot';
+      req: {
+        coin: string;
+        interval: HyperliquidInterval;
+        startTime: number;
+        endTime: number;
+      };
+    };
 
 function pricePrecision(price: string): number {
   const decimal = price.includes('.')
@@ -199,121 +226,61 @@ function pricePrecision(price: string): number {
 }
 
 function parseTicker(
-  universeValue: unknown,
-  contextValue: unknown,
-  index: number
-): HyperliquidTicker | null {
-  try {
-    const universe = requireRecord(universeValue, `meta.universe[${index}]`);
-    const context = requireRecord(contextValue, `contexts[${index}]`);
-    if (universe.isDelisted === true) {
-      return null;
-    }
+  universe: HyperliquidAssetPayload,
+  context: HyperliquidAssetContextPayload
+): HyperliquidTicker {
+  const symbol = universe.name;
+  const lastPriceText = context.midPx ?? context.markPx!;
+  const lastPrice = Number(lastPriceText);
+  const previousPrice = Number(context.prevDayPx);
+  const precision = pricePrecision(lastPriceText);
 
-    const symbol = requireString(universe.name, `meta.universe[${index}].name`);
-    const lastPriceText = requireString(
-      context.midPx ?? context.markPx,
-      `contexts[${index}].midPx`
-    );
-    const lastPrice = requireNumber(lastPriceText, `contexts[${index}].midPx`, {
-      minimum: 0,
-    });
-    const previousPrice = requireNumber(
-      context.prevDayPx,
-      `contexts[${index}].prevDayPx`,
-      { minimum: 0 }
-    );
-    if (lastPrice <= 0 || previousPrice <= 0) {
-      return null;
-    }
-    const precision = pricePrecision(lastPriceText);
-
-    return {
-      provider: 'hyperliquid',
-      marketType: 'perpetual',
-      symbol,
-      baseAsset: symbol.includes(':')
-        ? (symbol.split(':').at(-1) ?? symbol)
-        : symbol,
-      quoteAsset: 'USD',
-      lastPrice,
-      lastPriceText,
-      change24hPercent: ((lastPrice - previousPrice) / previousPrice) * 100,
-      turnover24h: requireNumber(
-        context.dayNtlVlm,
-        `contexts[${index}].dayNtlVlm`,
-        { minimum: 0 }
-      ),
-      precision,
-      minMove: 10 ** -precision,
-      maxLeverage: requireNumber(
-        universe.maxLeverage,
-        `meta.universe[${index}].maxLeverage`,
-        { minimum: 0 }
-      ),
-    };
-  } catch {
-    return null;
-  }
+  return {
+    provider: 'hyperliquid',
+    marketType: 'perpetual',
+    symbol,
+    baseAsset: symbol.includes(':')
+      ? (symbol.split(':').at(-1) ?? symbol)
+      : symbol,
+    quoteAsset: 'USD',
+    lastPrice,
+    lastPriceText,
+    change24hPercent: ((lastPrice - previousPrice) / previousPrice) * 100,
+    turnover24h: Number(context.dayNtlVlm),
+    precision,
+    minMove: 10 ** -precision,
+    maxLeverage: universe.maxLeverage,
+  };
 }
 
 export function parseHyperliquidTickersResponse(
-  payload: unknown
+  payload: HyperliquidTickersPayload
 ): HyperliquidTicker[] {
-  const response = requireArray(payload, 'response');
-  if (response.length < 2) {
-    throw new TypeError('response must contain metadata and asset contexts');
-  }
-  const meta = requireRecord(response[0], 'response[0]');
-  const universe = requireArray(meta.universe, 'response[0].universe');
-  const contexts = requireArray(response[1], 'response[1]');
-
-  return universe
-    .map((asset, index) => parseTicker(asset, contexts[index], index))
-    .filter((ticker): ticker is HyperliquidTicker => ticker !== null)
+  const [meta, contexts] = payload;
+  return meta.universe
+    .flatMap((asset, index) =>
+      asset.isDelisted === true ? [] : [parseTicker(asset, contexts[index]!)]
+    )
     .sort((left, right) => right.turnover24h - left.turnover24h);
 }
 
-function parseCandle(value: unknown, name: string): OhlcCandle {
-  const row = requireRecord(value, name);
-  const candle: OhlcCandle = {
-    timestamp: requireNumber(row.t, `${name}.t`, {
-      integer: true,
-      minimum: 0,
-    }),
-    open: requireNumber(row.o, `${name}.o`, { minimum: 0 }),
-    high: requireNumber(row.h, `${name}.h`, { minimum: 0 }),
-    low: requireNumber(row.l, `${name}.l`, { minimum: 0 }),
-    close: requireNumber(row.c, `${name}.c`, { minimum: 0 }),
-    volume: requireNumber(row.v, `${name}.v`, { minimum: 0 }),
+function parseCandle(value: HyperliquidCandlePayload): OhlcCandle {
+  return {
+    timestamp: value.t,
+    open: Number(value.o),
+    high: Number(value.h),
+    low: Number(value.l),
+    close: Number(value.c),
+    volume: Number(value.v),
   };
-  if (
-    candle.high < Math.max(candle.open, candle.close) ||
-    candle.low > Math.min(candle.open, candle.close)
-  ) {
-    throw new TypeError(`${name} has invalid OHLC bounds`);
-  }
-  return candle;
 }
 
 export function parseHyperliquidCandlesResponse(
-  payload: unknown
+  payload: ReadonlyArray<HyperliquidCandlePayload>
 ): OhlcCandle[] {
-  const candles = requireArray(payload, 'response')
-    .map((value, index) => parseCandle(value, `response[${index}]`))
+  return payload
+    .map(parseCandle)
     .sort((left, right) => left.timestamp - right.timestamp);
-  for (let index = 1; index < candles.length; index += 1) {
-    const previous = candles[index - 1];
-    const current = candles[index];
-    if (
-      previous != null &&
-      current != null &&
-      current.timestamp <= previous.timestamp
-    ) {
-      throw new TypeError('candles must have strictly increasing timestamps');
-    }
-  }
-  return candles;
 }
 
 export function hyperliquidCandleTopic(
@@ -323,63 +290,36 @@ export function hyperliquidCandleTopic(
   return `candle:${symbol}:${interval}`;
 }
 
-function subscriptionTopic(value: unknown): string | null {
-  if (!isRecord(value) || value.type !== 'candle') {
-    return null;
-  }
-  const symbol = requireString(value.coin, 'subscription.coin');
-  const interval = requireString(value.interval, 'subscription.interval');
-  if (!HYPERLIQUID_INTERVALS.some((item) => item.value === interval)) {
-    throw new TypeError(`Unsupported Hyperliquid candle interval: ${interval}`);
-  }
-  return hyperliquidCandleTopic(symbol, interval as HyperliquidInterval);
+function subscriptionTopic(
+  value: HyperliquidCandleSubscriptionPayload
+): string {
+  return hyperliquidCandleTopic(value.coin, value.interval);
 }
 
 export function parseHyperliquidWebSocketEnvelope(
-  rawMessage: unknown
+  rawMessage: string
 ): HyperliquidWebSocketEnvelope {
-  let payload: unknown = rawMessage;
-  if (typeof rawMessage === 'string') {
-    try {
-      payload = JSON.parse(rawMessage) as unknown;
-    } catch {
-      throw new TypeError('WebSocket message must contain valid JSON');
-    }
-  }
-  const message = requireRecord(payload, 'message');
-  const channel = requireString(message.channel, 'message.channel');
-
-  if (channel === 'candle') {
+  const message: HyperliquidWebSocketPayload = JSON.parse(rawMessage);
+  if (message.channel === 'candle') {
     const values = Array.isArray(message.data) ? message.data : [message.data];
-    const first = requireRecord(values[0], 'message.data[0]');
-    const symbol = requireString(first.s, 'message.data[0].s');
-    const interval = requireString(first.i, 'message.data[0].i');
-    if (!HYPERLIQUID_INTERVALS.some((item) => item.value === interval)) {
-      throw new TypeError(
-        `Unsupported Hyperliquid candle interval: ${interval}`
-      );
-    }
+    const first = values[0]!;
     return {
       kind: 'market',
-      topic: hyperliquidCandleTopic(symbol, interval as HyperliquidInterval),
+      topic: hyperliquidCandleTopic(first.s!, first.i!),
       data: values,
     };
   }
 
-  if (channel === 'subscriptionResponse') {
-    const data = requireRecord(message.data, 'message.data');
+  if (message.channel === 'subscriptionResponse') {
     return {
       kind: 'subscribed',
-      topic: subscriptionTopic(data.subscription ?? data),
+      topic: subscriptionTopic(message.data.subscription),
     };
   }
-  if (channel === 'error') {
+  if (message.channel === 'error') {
     return {
       kind: 'error',
-      message:
-        typeof message.data === 'string'
-          ? message.data
-          : 'Unknown Hyperliquid WebSocket error',
+      message: message.data,
     };
   }
   return { kind: 'control' };
@@ -388,9 +328,7 @@ export function parseHyperliquidWebSocketEnvelope(
 export function parseHyperliquidCandleMarketMessage(
   message: HyperliquidMarketMessage
 ): OhlcCandle[] {
-  return requireArray(message.data, 'message.data').map((value, index) =>
-    parseCandle(value, `message.data[${index}]`)
-  );
+  return message.data.map(parseCandle);
 }
 
 function abortError(): Error {
@@ -399,8 +337,8 @@ function abortError(): Error {
   return error;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === 'AbortError';
 }
 
 async function waitForRetry(delayMs: number, signal?: AbortSignal) {
@@ -421,10 +359,10 @@ async function waitForRetry(delayMs: number, signal?: AbortSignal) {
   });
 }
 
-async function request(
-  body: JsonRecord,
+async function request<TPayload>(
+  body: HyperliquidRequestPayload,
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<TPayload> {
   if (signal?.aborted) {
     throw abortError();
   }
@@ -449,7 +387,8 @@ async function request(
         `Hyperliquid request failed with HTTP ${response.status}`
       );
     }
-    return (await response.json()) as unknown;
+    const payload: TPayload = await response.json();
+    return payload;
   } catch (error) {
     if (signal?.aborted) {
       throw abortError();
@@ -470,7 +409,10 @@ export async function fetchHyperliquidTickers(
   signal?: AbortSignal
 ): Promise<HyperliquidTicker[]> {
   return parseHyperliquidTickersResponse(
-    await request({ type: 'metaAndAssetCtxs' }, signal)
+    await request<HyperliquidTickersPayload>(
+      { type: 'metaAndAssetCtxs' },
+      signal
+    )
   );
 }
 
@@ -482,10 +424,7 @@ export async function fetchHyperliquidCandles(
 ): Promise<OhlcCandle[]> {
   const intervalConfig = HYPERLIQUID_INTERVALS.find(
     (item) => item.value === interval
-  );
-  if (intervalConfig == null) {
-    throw new TypeError(`Unsupported Hyperliquid interval: ${interval}`);
-  }
+  )!;
   const endTime =
     beforeTimestamp == null
       ? Date.now()
@@ -493,7 +432,7 @@ export async function fetchHyperliquidCandles(
   const startTime =
     endTime - intervalConfig.requestDurationMs * (HISTORY_CANDLE_COUNT + 2);
   return parseHyperliquidCandlesResponse(
-    await request(
+    await request<HyperliquidCandlePayload[]>(
       {
         type: 'candleSnapshot',
         req: { coin: symbol, interval, startTime, endTime },
@@ -516,7 +455,7 @@ export async function fetchHyperliquidCandlesWithRetry(
     0,
     options.baseDelayMs ?? CANDLE_RETRY_BASE_DELAY_MS
   );
-  let lastError: unknown = new Error('Could not load candle history');
+  let lastError = new Error('Could not load candle history');
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -536,7 +475,12 @@ export async function fetchHyperliquidCandlesWithRetry(
       if (isAbortError(error)) {
         throw error;
       }
-      lastError = error;
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('Hyperliquid candle history request failed', {
+              cause: error,
+            });
     }
     if (attempt < attempts - 1) {
       await waitForRetry(baseDelayMs * 2 ** attempt, options.signal);

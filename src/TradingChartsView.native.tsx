@@ -39,7 +39,7 @@ export const TradingChartsView = memo(function TradingChartsView({
   onSelectedCandleChange,
   ...viewProps
 }: TradingChartsViewProps) {
-  if (typeof chartId !== 'string' || chartId.trim().length === 0) {
+  if (chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
   }
 

@@ -51,12 +51,12 @@ function isHyperliquidTicker(
   return 'provider' in ticker && ticker.provider === 'hyperliquid';
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === 'AbortError';
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown network error';
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : 'Unknown network error';
 }
 
 function formatPrice(ticker: MarketTicker): string {
@@ -79,10 +79,12 @@ function formatTurnover(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-function tickerPair(ticker: MarketTicker): {
+type TickerPair = {
   base: string;
   quote: string;
-} {
+};
+
+function tickerPair(ticker: MarketTicker): TickerPair {
   if (isHyperliquidTicker(ticker)) {
     return { base: ticker.baseAsset, quote: ticker.quoteAsset };
   }

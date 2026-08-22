@@ -88,21 +88,23 @@ describe('Hyperliquid market data', () => {
   });
 
   it('routes live candles and maps them to the chart format', () => {
-    const envelope = parseHyperliquidWebSocketEnvelope({
-      channel: 'candle',
-      data: {
-        t: 1_000,
-        T: 1_999,
-        s: 'SOL',
-        i: '1m',
-        o: '10',
-        h: '12',
-        l: '9',
-        c: '11',
-        v: '2',
-        n: 4,
-      },
-    });
+    const envelope = parseHyperliquidWebSocketEnvelope(
+      JSON.stringify({
+        channel: 'candle',
+        data: {
+          t: 1_000,
+          T: 1_999,
+          s: 'SOL',
+          i: '1m',
+          o: '10',
+          h: '12',
+          l: '9',
+          c: '11',
+          v: '2',
+          n: 4,
+        },
+      })
+    );
 
     expect(envelope).toEqual(
       expect.objectContaining({

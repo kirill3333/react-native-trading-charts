@@ -215,7 +215,9 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
         return;
       }
       controller.prepare(ticker, nextInterval);
-      const setIntervalParam = navigation.setParams as unknown as (params: {
+      // SAFETY: this screen's route contract owns the generic interval value
+      // and setParams accepts that same route-local parameter.
+      const setIntervalParam = navigation.setParams as (params: {
         interval: TInterval;
       }) => void;
       setIntervalParam({ interval: nextInterval });

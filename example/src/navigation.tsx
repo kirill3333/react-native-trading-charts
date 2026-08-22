@@ -10,10 +10,7 @@ import {
   hyperliquidChartDataController,
 } from './chartDataController';
 import { SettingsScreen } from './components/settings/SettingsScreen';
-import {
-  ChartScreen,
-  type ChartRouteParams,
-} from './screens/ChartScreen';
+import { ChartScreen, type ChartRouteParams } from './screens/ChartScreen';
 import { MarketsScreen } from './screens/MarketsScreen';
 import { useAppTheme } from './themeContext';
 
@@ -54,6 +51,8 @@ const Navigation = createStaticNavigation(RootStack);
 const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function synchronizeChartSession() {
+  // SAFETY: RootRoute mirrors the route names and params declared by
+  // RootStackParamList, which is the navigationRef's generic contract.
   const route = navigationRef.getCurrentRoute() as RootRoute | undefined;
   const routeName = route?.name;
   if (routeName === 'ChartSettings') {

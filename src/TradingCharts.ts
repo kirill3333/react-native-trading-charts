@@ -1,4 +1,6 @@
-import NativeTradingCharts from './NativeTradingCharts';
+import NativeTradingCharts, {
+  type Spec as NativeTradingChartsSpec,
+} from './NativeTradingCharts';
 import { resolveAdditionalSeriesOptions } from './config';
 import {
   type AdditionalChartSeriesOptions,
@@ -9,17 +11,13 @@ import {
 } from './types';
 
 export function assertChartId(chartId: string) {
-  if (typeof chartId !== 'string' || chartId.trim().length === 0) {
+  if (chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
   }
 }
 
 function assertIdentifier(value: string, name: string) {
-  if (
-    typeof value !== 'string' ||
-    value.trim().length === 0 ||
-    !/^[A-Za-z0-9._-]+$/.test(value)
-  ) {
+  if (value.trim().length === 0 || !/^[A-Za-z0-9._-]+$/.test(value)) {
     throw new TypeError(
       `${name} must contain only letters, numbers, '.', '_' or '-'`
     );
@@ -111,7 +109,8 @@ function packSeriesData(
     throw new TypeError('updateSeriesData requires exactly one point');
   }
   if (points.length === 0) {
-    return { dataType: 'histogram', packed: [] as number[] };
+    const packed: number[] = [];
+    return { dataType: 'histogram', packed };
   }
   const ohlc = isOhlcPoint(points[0]!);
   const packed: number[] = [];
@@ -122,12 +121,12 @@ function packSeriesData(
         'series data must contain one homogeneous point type'
       );
     }
-    if (ohlc) {
-      validateCandle(point as OhlcCandle, index);
-      packCandle(point as OhlcCandle, packed);
+    if (isOhlcPoint(point)) {
+      validateCandle(point, index);
+      packCandle(point, packed);
     } else {
-      validateHistogramPoint(point as HistogramPoint, index);
-      packed.push(point.timestamp, (point as HistogramPoint).value);
+      validateHistogramPoint(point, index);
+      packed.push(point.timestamp, point.value);
     }
     if (point.timestamp <= previousTimestamp) {
       throw new TypeError(
@@ -178,141 +177,156 @@ export function packTrades(trades: ReadonlyArray<TradeEvent>): number[] {
   return packed;
 }
 
-export const TradingCharts = {
-  addSeries(chartId: string, options: AdditionalChartSeriesOptions) {
-    assertChartId(chartId);
-    NativeTradingCharts.addSeries(
-      chartId,
-      JSON.stringify(resolveAdditionalSeriesOptions(options))
-    );
-  },
+export function createTradingCharts(
+  nativeTradingCharts: NativeTradingChartsSpec
+) {
+  return {
+    addSeries(chartId: string, options: AdditionalChartSeriesOptions) {
+      assertChartId(chartId);
+      nativeTradingCharts.addSeries(
+        chartId,
+        JSON.stringify(resolveAdditionalSeriesOptions(options))
+      );
+    },
 
-  setSeriesData(
-    chartId: string,
-    seriesId: string,
-    points: ReadonlyArray<ChartSeriesDataPoint>
-  ) {
-    assertChartId(chartId);
-    assertIdentifier(seriesId, 'seriesId');
-    const { dataType, packed } = packSeriesData(points);
-    NativeTradingCharts.setSeriesData(chartId, seriesId, dataType, packed);
-  },
+    setSeriesData(
+      chartId: string,
+      seriesId: string,
+      points: ReadonlyArray<ChartSeriesDataPoint>
+    ) {
+      assertChartId(chartId);
+      assertIdentifier(seriesId, 'seriesId');
+      const { dataType, packed } = packSeriesData(points);
+      nativeTradingCharts.setSeriesData(chartId, seriesId, dataType, packed);
+    },
 
-  prependSeriesData(
-    chartId: string,
-    seriesId: string,
-    points: ReadonlyArray<ChartSeriesDataPoint>
-  ) {
-    assertChartId(chartId);
-    assertIdentifier(seriesId, 'seriesId');
-    const { dataType, packed } = packSeriesData(points);
-    NativeTradingCharts.prependSeriesData(chartId, seriesId, dataType, packed);
-  },
+    prependSeriesData(
+      chartId: string,
+      seriesId: string,
+      points: ReadonlyArray<ChartSeriesDataPoint>
+    ) {
+      assertChartId(chartId);
+      assertIdentifier(seriesId, 'seriesId');
+      const { dataType, packed } = packSeriesData(points);
+      nativeTradingCharts.prependSeriesData(
+        chartId,
+        seriesId,
+        dataType,
+        packed
+      );
+    },
 
-  updateSeriesData(
-    chartId: string,
-    seriesId: string,
-    point: ChartSeriesDataPoint
-  ) {
-    assertChartId(chartId);
-    assertIdentifier(seriesId, 'seriesId');
-    const { dataType, packed } = packSeriesData([point], true);
-    NativeTradingCharts.updateSeriesData(chartId, seriesId, dataType, packed);
-  },
+    updateSeriesData(
+      chartId: string,
+      seriesId: string,
+      point: ChartSeriesDataPoint
+    ) {
+      assertChartId(chartId);
+      assertIdentifier(seriesId, 'seriesId');
+      const { dataType, packed } = packSeriesData([point], true);
+      nativeTradingCharts.updateSeriesData(chartId, seriesId, dataType, packed);
+    },
 
-  removeSeries(chartId: string, seriesId: string) {
-    assertChartId(chartId);
-    assertIdentifier(seriesId, 'seriesId');
-    if (seriesId === 'main') {
-      throw new TypeError("seriesId 'main' is reserved");
-    }
-    NativeTradingCharts.removeSeries(chartId, seriesId);
-  },
-
-  setPaneHeight(chartId: string, paneId: string, heightWeight: number) {
-    assertChartId(chartId);
-    assertIdentifier(paneId, 'paneId');
-    assertFinite(heightWeight, 'heightWeight');
-    if (heightWeight <= 0) {
-      throw new TypeError('heightWeight must be greater than 0');
-    }
-    NativeTradingCharts.setPaneHeight(chartId, paneId, heightWeight);
-  },
-
-  setHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
-    assertChartId(chartId);
-    const packed: number[] = [];
-    let previousTimestamp = -Infinity;
-    candles.forEach((candle, index) => {
-      validateCandle(candle, index);
-      if (candle.timestamp <= previousTimestamp) {
-        throw new TypeError('candles must have strictly increasing timestamps');
+    removeSeries(chartId: string, seriesId: string) {
+      assertChartId(chartId);
+      assertIdentifier(seriesId, 'seriesId');
+      if (seriesId === 'main') {
+        throw new TypeError("seriesId 'main' is reserved");
       }
-      previousTimestamp = candle.timestamp;
-      packCandle(candle, packed);
-    });
-    NativeTradingCharts.setHistory(chartId, packed);
-  },
+      nativeTradingCharts.removeSeries(chartId, seriesId);
+    },
 
-  prependHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
-    assertChartId(chartId);
-    const packed: number[] = [];
-    let previousTimestamp = -Infinity;
-    candles.forEach((candle, index) => {
-      validateCandle(candle, index);
-      if (candle.timestamp <= previousTimestamp) {
-        throw new TypeError('candles must have strictly increasing timestamps');
+    setPaneHeight(chartId: string, paneId: string, heightWeight: number) {
+      assertChartId(chartId);
+      assertIdentifier(paneId, 'paneId');
+      assertFinite(heightWeight, 'heightWeight');
+      if (heightWeight <= 0) {
+        throw new TypeError('heightWeight must be greater than 0');
       }
-      previousTimestamp = candle.timestamp;
+      nativeTradingCharts.setPaneHeight(chartId, paneId, heightWeight);
+    },
+
+    setHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
+      assertChartId(chartId);
+      const packed: number[] = [];
+      let previousTimestamp = -Infinity;
+      candles.forEach((candle, index) => {
+        validateCandle(candle, index);
+        if (candle.timestamp <= previousTimestamp) {
+          throw new TypeError(
+            'candles must have strictly increasing timestamps'
+          );
+        }
+        previousTimestamp = candle.timestamp;
+        packCandle(candle, packed);
+      });
+      nativeTradingCharts.setHistory(chartId, packed);
+    },
+
+    prependHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
+      assertChartId(chartId);
+      const packed: number[] = [];
+      let previousTimestamp = -Infinity;
+      candles.forEach((candle, index) => {
+        validateCandle(candle, index);
+        if (candle.timestamp <= previousTimestamp) {
+          throw new TypeError(
+            'candles must have strictly increasing timestamps'
+          );
+        }
+        previousTimestamp = candle.timestamp;
+        packCandle(candle, packed);
+      });
+      nativeTradingCharts.prependHistory(chartId, packed);
+    },
+
+    updateCandle(chartId: string, candle: OhlcCandle) {
+      assertChartId(chartId);
+      validateCandle(candle);
+      const packed: number[] = [];
       packCandle(candle, packed);
-    });
-    NativeTradingCharts.prependHistory(chartId, packed);
-  },
+      nativeTradingCharts.updateCandle(chartId, packed);
+    },
 
-  updateCandle(chartId: string, candle: OhlcCandle) {
-    assertChartId(chartId);
-    validateCandle(candle);
-    const packed: number[] = [];
-    packCandle(candle, packed);
-    NativeTradingCharts.updateCandle(chartId, packed);
-  },
+    updateTrade(chartId: string, trade: TradeEvent) {
+      assertChartId(chartId);
+      validateTrade(trade);
+      nativeTradingCharts.updateTrade(chartId, [
+        trade.timestamp,
+        trade.price,
+        trade.size ?? 0,
+      ]);
+    },
 
-  updateTrade(chartId: string, trade: TradeEvent) {
-    assertChartId(chartId);
-    validateTrade(trade);
-    NativeTradingCharts.updateTrade(chartId, [
-      trade.timestamp,
-      trade.price,
-      trade.size ?? 0,
-    ]);
-  },
+    updateTrades(chartId: string, trades: ReadonlyArray<TradeEvent>) {
+      assertChartId(chartId);
+      nativeTradingCharts.updateTrades(chartId, packTrades(trades));
+    },
 
-  updateTrades(chartId: string, trades: ReadonlyArray<TradeEvent>) {
-    assertChartId(chartId);
-    NativeTradingCharts.updateTrades(chartId, packTrades(trades));
-  },
+    async getCandles(chartId: string): Promise<OhlcCandle[]> {
+      assertChartId(chartId);
+      return unpackCandles(await nativeTradingCharts.getCandles(chartId));
+    },
 
-  async getCandles(chartId: string): Promise<OhlcCandle[]> {
-    assertChartId(chartId);
-    return unpackCandles(await NativeTradingCharts.getCandles(chartId));
-  },
+    zoom(chartId: string, scale: number) {
+      assertChartId(chartId);
+      assertFinite(scale, 'scale');
+      if (scale <= 0) {
+        throw new TypeError('scale must be greater than 0');
+      }
+      nativeTradingCharts.zoom(chartId, scale);
+    },
 
-  zoom(chartId: string, scale: number) {
-    assertChartId(chartId);
-    assertFinite(scale, 'scale');
-    if (scale <= 0) {
-      throw new TypeError('scale must be greater than 0');
-    }
-    NativeTradingCharts.zoom(chartId, scale);
-  },
+    fitContent(chartId: string) {
+      assertChartId(chartId);
+      nativeTradingCharts.fitContent(chartId);
+    },
 
-  fitContent(chartId: string) {
-    assertChartId(chartId);
-    NativeTradingCharts.fitContent(chartId);
-  },
+    clear(chartId: string) {
+      assertChartId(chartId);
+      nativeTradingCharts.clear(chartId);
+    },
+  };
+}
 
-  clear(chartId: string) {
-    assertChartId(chartId);
-    NativeTradingCharts.clear(chartId);
-  },
-};
+export const TradingCharts = createTradingCharts(NativeTradingCharts);

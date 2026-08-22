@@ -1,46 +1,46 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { type TradingCharts as TradingChartsExport } from '../TradingCharts';
-import {
-  type resolveAdditionalSeriesOptions as resolveAdditionalSeriesOptionsExport,
-  type resolveChartConfig as resolveChartConfigExport,
-} from '../config';
+import { createTradingCharts } from '../TradingCharts';
+import { resolveAdditionalSeriesOptions, resolveChartConfig } from '../config';
 import { selectedCandleFromNativeEvent } from '../events';
-import { type createTradeBatcher as createTradeBatcherExport } from '../tradeBatcher';
+import { type Spec as NativeTradingChartsSpec } from '../NativeTradingCharts';
+import { createTradeBatcherWithNativeModule } from '../tradeBatcher';
 
 const mockNativeModule = {
-  setHistory: jest.fn(),
-  prependHistory: jest.fn(),
-  updateCandle: jest.fn(),
-  updateTrade: jest.fn(),
-  updateTrades: jest.fn(),
-  addSeries: jest.fn(),
-  setSeriesData: jest.fn(),
-  prependSeriesData: jest.fn(),
-  updateSeriesData: jest.fn(),
-  removeSeries: jest.fn(),
-  setPaneHeight: jest.fn(),
-  getCandles: jest.fn<(chartId: string) => Promise<ReadonlyArray<number>>>(),
-  zoom: jest.fn(),
-  fitContent: jest.fn(),
-  clear: jest.fn(),
-};
+  setHistory: jest.fn<NativeTradingChartsSpec['setHistory']>(),
+  prependHistory: jest.fn<NativeTradingChartsSpec['prependHistory']>(),
+  updateCandle: jest.fn<NativeTradingChartsSpec['updateCandle']>(),
+  updateTrade: jest.fn<NativeTradingChartsSpec['updateTrade']>(),
+  updateTrades: jest.fn<NativeTradingChartsSpec['updateTrades']>(),
+  addSeries: jest.fn<NativeTradingChartsSpec['addSeries']>(),
+  setSeriesData: jest.fn<NativeTradingChartsSpec['setSeriesData']>(),
+  prependSeriesData: jest.fn<NativeTradingChartsSpec['prependSeriesData']>(),
+  updateSeriesData: jest.fn<NativeTradingChartsSpec['updateSeriesData']>(),
+  removeSeries: jest.fn<NativeTradingChartsSpec['removeSeries']>(),
+  setPaneHeight: jest.fn<NativeTradingChartsSpec['setPaneHeight']>(),
+  getCandles: jest.fn<NativeTradingChartsSpec['getCandles']>(),
+  zoom: jest.fn<NativeTradingChartsSpec['zoom']>(),
+  fitContent: jest.fn<NativeTradingChartsSpec['fitContent']>(),
+  clear: jest.fn<NativeTradingChartsSpec['clear']>(),
+} satisfies NativeTradingChartsSpec;
 
-jest.mock('../NativeTradingCharts', () => ({
-  __esModule: true,
-  default: mockNativeModule,
-}));
+const TradingCharts = createTradingCharts(mockNativeModule);
 
-const { TradingCharts } = require('../TradingCharts') as {
-  TradingCharts: typeof TradingChartsExport;
-};
-const { resolveAdditionalSeriesOptions, resolveChartConfig } =
-  require('../config') as {
-    resolveAdditionalSeriesOptions: typeof resolveAdditionalSeriesOptionsExport;
-    resolveChartConfig: typeof resolveChartConfigExport;
-  };
-const { createTradeBatcher } = require('../tradeBatcher') as {
-  createTradeBatcher: typeof createTradeBatcherExport;
-};
+const createTradeBatcher = (
+  chartId: string,
+  options?: Parameters<typeof createTradeBatcherWithNativeModule>[2]
+) => createTradeBatcherWithNativeModule(mockNativeModule, chartId, options);
+
+function jsonRoundTrip<T>(value: T): T {
+  // SAFETY: these inputs are resolved chart configs composed exclusively of
+  // JSON-safe fields; the round trip preserves their validated contract.
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function parseGeneratedJson<T>(value: string): T {
+  // SAFETY: callers pass JSON emitted by this library and declare only the
+  // fields whose serialization contract the test immediately verifies.
+  return JSON.parse(value) as T;
+}
 
 describe('TradingCharts data API', () => {
   beforeEach(() => {
@@ -167,7 +167,7 @@ describe('TradingCharts data API', () => {
     expect(mockNativeModule.addSeries).toHaveBeenCalledTimes(1);
     const firstCall = mockNativeModule.addSeries.mock.calls[0]!;
     expect(firstCall[0]).toBe('chart');
-    expect(JSON.parse(firstCall[1] as string)).toEqual({
+    expect(JSON.parse(firstCall[1])).toEqual({
       seriesId: 'momentum',
       type: 'histogram',
       paneId: 'indicator',
@@ -187,7 +187,7 @@ describe('TradingCharts data API', () => {
     });
     const secondCall = mockNativeModule.addSeries.mock.calls[1]!;
     expect(secondCall[0]).toBe('chart');
-    expect(JSON.parse(secondCall[1] as string)).toEqual({
+    expect(JSON.parse(secondCall[1])).toEqual({
       seriesId: 'volume',
       type: 'histogram',
       paneId: 'volume',
@@ -213,7 +213,7 @@ describe('TradingCharts data API', () => {
     });
 
     const call = mockNativeModule.addSeries.mock.calls[0]!;
-    expect(JSON.parse(call[1] as string)).toEqual({
+    expect(JSON.parse(call[1])).toEqual({
       seriesId: 'comparison',
       type: 'line',
       paneId: 'main',
@@ -239,7 +239,7 @@ describe('TradingCharts data API', () => {
     });
 
     const call = mockNativeModule.addSeries.mock.calls[0]!;
-    expect(JSON.parse(call[1] as string)).toEqual({
+    expect(JSON.parse(call[1])).toEqual({
       seriesId: 'rsi',
       type: 'line',
       paneId: 'rsi',
@@ -261,7 +261,7 @@ describe('TradingCharts data API', () => {
     });
 
     const call = mockNativeModule.addSeries.mock.calls[0]!;
-    expect(JSON.parse(call[1] as string)).toMatchObject({
+    expect(JSON.parse(call[1])).toMatchObject({
       appearance: { textColor: '#AABBCCDD' },
     });
 
@@ -323,7 +323,7 @@ describe('TradingCharts data API', () => {
     });
 
     const call = mockNativeModule.addSeries.mock.calls[0]!;
-    expect(JSON.parse(call[1] as string)).toEqual({
+    expect(JSON.parse(call[1])).toEqual({
       seriesId: 'area-comparison',
       type: 'area',
       paneId: 'main',
@@ -357,6 +357,8 @@ describe('TradingCharts data API', () => {
         appearance: { color: 'orange' },
       })
     ).toThrow('#RRGGBB');
+    // SAFETY: this negative test intentionally bypasses the public series
+    // discriminant so runtime validation receives an invalid value.
     expect(() =>
       resolveAdditionalSeriesOptions({
         seriesId: 'comparison',
@@ -844,6 +846,8 @@ describe('chart config', () => {
       resolveChartConfig({ chartId: 'logical', xAxis: { spacing: 'logical' } })
         .xAxis.spacing
     ).toBe('logical');
+    // SAFETY: this negative test intentionally bypasses the spacing union to
+    // verify the runtime boundary rejects unsupported input.
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-spacing',
@@ -944,9 +948,7 @@ describe('chart config', () => {
         volume: 'Объём',
       },
     });
-    const serialized = JSON.parse(JSON.stringify(resolved)) as {
-      crosshair: typeof resolved.crosshair;
-    };
+    const serialized = jsonRoundTrip(resolved);
     expect(serialized.crosshair).toMatchObject({
       tooltipBackgroundOpacity: 0.55,
       lineStyle: 'dashed',
@@ -966,6 +968,8 @@ describe('chart config', () => {
         crosshair: { tooltipBackgroundOpacity: 1.1 },
       })
     ).toThrow('crosshair.tooltipBackgroundOpacity');
+    // SAFETY: this negative test intentionally bypasses the line-style union
+    // so the runtime validator receives the malformed value.
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-crosshair-line-style',
@@ -978,6 +982,8 @@ describe('chart config', () => {
         crosshair: { tooltipFields: [], showTooltipHeader: false },
       }).crosshair
     ).toMatchObject({ tooltipFields: [], showTooltipHeader: false });
+    // SAFETY: this negative test intentionally bypasses the tooltip-field
+    // union so runtime validation can reject the unsupported field.
     expect(() =>
       resolveChartConfig({
         chartId: 'unknown-tooltip-field',
@@ -1034,16 +1040,14 @@ describe('chart config', () => {
       })
     ).toThrow('defaultScale must be a positive finite number');
 
-    const serialized = JSON.parse(
-      JSON.stringify(
-        resolveChartConfig({
-          chartId: 'callback-is-not-config',
-          onScaleChange: jest.fn(),
-          onYAxisScaleChange: jest.fn(),
-          onSelectedCandleChange: jest.fn(),
-        })
-      )
-    ) as Record<string, unknown>;
+    const serialized = jsonRoundTrip(
+      resolveChartConfig({
+        chartId: 'callback-is-not-config',
+        onScaleChange: jest.fn(),
+        onYAxisScaleChange: jest.fn(),
+        onSelectedCandleChange: jest.fn(),
+      })
+    );
     expect(serialized).not.toHaveProperty('onSelectedCandleChange');
     expect(serialized).not.toHaveProperty('onScaleChange');
     expect(serialized).not.toHaveProperty('onYAxisScaleChange');
@@ -1095,9 +1099,9 @@ describe('chart config', () => {
         priceExtremes: { visible: false },
       })
     );
-    const nativeConfig = JSON.parse(configJson) as {
+    const nativeConfig = parseGeneratedJson<{
       priceExtremes: { visible: boolean };
-    };
+    }>(configJson);
     expect(nativeConfig.priceExtremes).toEqual({ visible: false });
   });
 
@@ -1228,7 +1232,7 @@ describe('chart config', () => {
       negativeValueColor: '#FF334F',
     });
 
-    const serialized = JSON.parse(JSON.stringify(resolved)) as typeof resolved;
+    const serialized = jsonRoundTrip(resolved);
     expect(serialized.series).toEqual({ type: 'bar' });
     expect(serialized.appearance.bars.lineWidth).toBe(1.5);
   });
@@ -1265,7 +1269,7 @@ describe('chart config', () => {
       negativeValueColor: '#FF334F',
     });
 
-    const serialized = JSON.parse(JSON.stringify(resolved)) as typeof resolved;
+    const serialized = jsonRoundTrip(resolved);
     expect(serialized.series).toEqual({ type: 'hollowCandlestick' });
   });
 
@@ -1408,12 +1412,16 @@ describe('chart config', () => {
   });
 
   it('validates appearance and formatter values before native serialization', () => {
+    // SAFETY: this negative test intentionally bypasses the series-type union
+    // so runtime validation receives an unsupported discriminator.
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-series',
         series: { type: 'mountain' as never },
       })
     ).toThrow('series.type');
+    // SAFETY: this negative test intentionally bypasses the source union so
+    // runtime validation receives an unsupported OHLC source.
     expect(() =>
       resolveChartConfig({
         chartId: 'bad-line-source',

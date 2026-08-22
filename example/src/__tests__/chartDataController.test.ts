@@ -1,19 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-jest.mock('react-native-trading-charts', () => ({
-  TradingCharts: {
-    clear: jest.fn(),
-    prependHistory: jest.fn(),
-    setHistory: jest.fn(),
-    updateCandle: jest.fn(),
-  },
-}));
-
-jest.mock('@react-native-community/netinfo', () => ({
-  __esModule: true,
-  default: { addEventListener: jest.fn() },
-}));
-
 import { type BinanceMarketMessage, type BinanceTicker } from '../binance';
 import {
   ChartDataController,
@@ -79,7 +65,7 @@ function marketMessage(
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
     reject = rejectPromise;

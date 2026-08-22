@@ -74,7 +74,7 @@ type WebSocketClient<TMessage> = {
     topic: string,
     listener: ChartWebSocketListener<TMessage>
   ): () => void;
-  reportProtocolError(generation: number, error: unknown): void;
+  reportProtocolError(generation: number, cause: unknown): void;
 };
 
 type FetchKlines<TInterval extends string> = (
@@ -102,7 +102,7 @@ export type ChartDataControllerOptions<
   chartIdFor?: (symbol: string, interval: TInterval) => string;
   sessionKeyFor?: (symbol: string, interval: TInterval) => string;
   parseMarketMessage?: (message: TMessage) => OhlcCandle[];
-  isNoDataError?: (error: unknown) => boolean;
+  isNoDataError?: (cause: unknown) => boolean;
 };
 
 type SessionOptions<TInterval extends string, TMessage> = Required<
@@ -121,12 +121,12 @@ const EMPTY_SNAPSHOT: ChartConnectionSnapshot = Object.freeze({
   lastPrice: null,
 });
 
-function messageFromError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown network error';
+function messageFromError(cause: unknown): string {
+  return cause instanceof Error ? cause.message : 'Unknown network error';
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === 'AbortError';
 }
 
 export function chartSessionKey(
@@ -472,7 +472,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
 
   private shouldIgnoreInitialHistoryError(
     controller: AbortController,
-    error: unknown
+    cause: unknown
   ): boolean {
     if (this.disposed || controller.signal.aborted) {
       return true;
@@ -480,7 +480,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
     if (this.initialController !== controller) {
       return true;
     }
-    return isAbortError(error);
+    return isAbortError(cause);
   }
 
   private synchronizePendingReadyGeneration(): boolean {
@@ -493,7 +493,7 @@ class ChartDataSession<TInterval extends string, TMessage> {
     return true;
   }
 
-  private handleInitialHistoryError(error: unknown): void {
+  private handleInitialHistoryError(cause: unknown): void {
     this.initialController = null;
     this.initialHistoryFailed = true;
     if (this.synchronizePendingReadyGeneration()) {
@@ -506,8 +506,8 @@ class ChartDataSession<TInterval extends string, TMessage> {
       return;
     }
     this.setSnapshot({
-      status: this.options.isNoDataError(error) ? 'no-data' : 'error',
-      error: messageFromError(error),
+      status: this.options.isNoDataError(cause) ? 'no-data' : 'error',
+      error: messageFromError(cause),
     });
   }
 
@@ -579,12 +579,12 @@ class ChartDataSession<TInterval extends string, TMessage> {
   private shouldIgnoreSynchronizationError(
     controller: AbortController,
     generation: number,
-    error: unknown
+    cause: unknown
   ): boolean {
     if (this.isSynchronizationStale(controller, generation)) {
       return true;
     }
-    return isAbortError(error);
+    return isAbortError(cause);
   }
 
   private async synchronize(generation: number): Promise<void> {
@@ -738,6 +738,9 @@ export class ChartDataController<
       1,
       Math.floor(options.cacheSize ?? DEFAULT_CACHE_SIZE)
     );
+    // SAFETY: omitted adapters are used only by the constructor's Binance
+    // default type parameters; every custom generic instantiation supplies
+    // its provider-specific adapters.
     this.sessionOptions = {
       maxCachedCandles: Math.max(
         1,
@@ -752,20 +755,17 @@ export class ChartDataController<
         (fetchSpotKlinesWithRetry as FetchKlines<TInterval>),
       topicFor:
         options.topicFor ??
-        ((symbol, interval) =>
-          klineTopic(symbol, interval as unknown as BinanceInterval)),
+        ((symbol, interval) => klineTopic(symbol, interval as BinanceInterval)),
       chartIdFor:
         options.chartIdFor ??
-        ((symbol, interval) =>
-          chartIdFor(symbol, interval as unknown as BinanceInterval)),
+        ((symbol, interval) => chartIdFor(symbol, interval as BinanceInterval)),
       sessionKeyFor:
         options.sessionKeyFor ??
         ((symbol, interval) =>
-          chartSessionKey(symbol, interval as unknown as BinanceInterval)),
+          chartSessionKey(symbol, interval as BinanceInterval)),
       parseMarketMessage:
         options.parseMarketMessage ??
-        ((message) =>
-          parseKlineMarketMessage(message as unknown as BinanceMarketMessage)),
+        ((message) => parseKlineMarketMessage(message as BinanceMarketMessage)),
       isNoDataError:
         options.isNoDataError ??
         ((error) => error instanceof BinanceNoDataError),

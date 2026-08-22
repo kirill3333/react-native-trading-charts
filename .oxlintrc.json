@@ -1,7 +1,13 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "react", "import", "jest"],
-  "jsPlugins": ["eslint-plugin-sonarjs"],
+  "jsPlugins": [
+    "eslint-plugin-sonarjs",
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
   "categories": {
     "correctness": "off"
   },
@@ -26,8 +32,20 @@
     }
   },
   "ignorePatterns": [
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
     ".expo/**",
+    ".gemini/**",
+    ".idea/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
     ".turbo/**",
+    ".windsurf/**",
     ".yarn/**",
     "android/build/**",
     "android/generated/**",
@@ -38,9 +56,25 @@
     "ios/build/**",
     "ios/generated/**",
     "lib/**",
-    "node_modules/**"
+    "node_modules/**",
+    "tools/oxlint/anti-slop/**"
   ],
   "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
     "constructor-super": "error",
     "for-direction": "error",
     "getter-return": "error",

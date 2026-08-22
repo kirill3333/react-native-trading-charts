@@ -1,4 +1,4 @@
-import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
+import { type NetInfoState } from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import {
@@ -32,7 +32,7 @@ export type BinanceWebSocketListener = (event: BinanceWebSocketEvent) => void;
 type WebSocketLike = {
   readyState: number;
   onopen: (() => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
   onerror: (() => void) | null;
   onclose: ((event: { code?: number; reason?: string }) => void) | null;
   send(data: string): void;
@@ -49,6 +49,15 @@ type AppStateSource = {
 
 type NetInfoSource = {
   addEventListener(listener: (state: NetInfoState) => void): () => void;
+};
+
+const defaultNetInfoSource: NetInfoSource = {
+  addEventListener(listener) {
+    const netInfoModule: {
+      default: NetInfoSource;
+    } = require('@react-native-community/netinfo');
+    return netInfoModule.default.addEventListener(listener);
+  },
 };
 
 export type BinanceWebSocketClientOptions = {
@@ -69,8 +78,8 @@ type PendingSubscription = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export class BinanceWebSocketClient {
@@ -103,11 +112,12 @@ export class BinanceWebSocketClient {
 
   constructor(options: BinanceWebSocketClientOptions = {}) {
     this.url = options.url ?? BINANCE_WEBSOCKET_URL;
+    // SAFETY: WebSocketLike is the exact mutable subset of the standard
+    // WebSocket instance used by this client.
     this.createSocket =
-      options.createSocket ??
-      ((url) => new WebSocket(url) as unknown as WebSocketLike);
+      options.createSocket ?? ((url) => new WebSocket(url) as WebSocketLike);
     this.appState = options.appState ?? AppState;
-    this.netInfo = options.netInfo ?? NetInfo;
+    this.netInfo = options.netInfo ?? defaultNetInfoSource;
     this.random = options.random ?? Math.random;
   }
 
@@ -153,14 +163,14 @@ export class BinanceWebSocketClient {
     this.ensureConnection();
   }
 
-  reportProtocolError(generation: number, error: unknown): void {
+  reportProtocolError(generation: number, cause: unknown): void {
     if (generation !== this.generation || this.socket == null) {
       return;
     }
     this.failSocket(
       this.socket,
       generation,
-      `Invalid Binance stream data: ${errorMessage(error)}`
+      `Invalid Binance stream data: ${errorMessage(cause)}`
     );
   }
 

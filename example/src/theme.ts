@@ -238,7 +238,7 @@ const NAVIGATION_FONTS = Platform.select({
   },
 }) satisfies NavigationTheme['fonts'];
 
-export const APP_THEMES: Readonly<Record<AppThemeMode, AppTheme>> = {
+export const APP_THEMES = {
   dark: Object.freeze({
     mode: 'dark',
     dark: true,
@@ -267,4 +267,4 @@ export const APP_THEMES: Readonly<Record<AppThemeMode, AppTheme>> = {
     navigationTheme: navigationTheme(false, LIGHT_COLORS),
     statusBarStyle: 'dark-content',
   }),
-};
+} satisfies Readonly<Record<AppThemeMode, AppTheme>>;

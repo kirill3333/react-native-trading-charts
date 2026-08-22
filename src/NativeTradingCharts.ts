@@ -43,9 +43,8 @@ function getModule(): Spec {
   return module;
 }
 
-// Resolve the TurboModule lazily: getEnforcing throws synchronously when the
-// native module is missing (web, SSR, unit tests), and a module-level call
-// would crash the import of the whole package before any fallback can run.
+// SAFETY: the proxy never reads its empty target; every property access is
+// forwarded to the lazily resolved TurboModule whose contract is Spec.
 export default new Proxy({} as Spec, {
   get(_target, property: keyof Spec) {
     return getModule()[property];

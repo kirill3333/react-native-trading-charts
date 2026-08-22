@@ -1,4 +1,6 @@
-import NativeTradingCharts from './NativeTradingCharts';
+import NativeTradingCharts, {
+  type Spec as NativeTradingChartsSpec,
+} from './NativeTradingCharts';
 import { assertChartId, validateTrade } from './TradingCharts';
 import { type TradeEvent } from './types';
 
@@ -33,6 +35,18 @@ export function createTradeBatcher(
   chartId: string,
   options?: TradeBatcherOptions
 ): TradeBatcher {
+  return createTradeBatcherWithNativeModule(
+    NativeTradingCharts,
+    chartId,
+    options
+  );
+}
+
+export function createTradeBatcherWithNativeModule(
+  nativeTradingCharts: Pick<NativeTradingChartsSpec, 'updateTrades'>,
+  chartId: string,
+  options?: TradeBatcherOptions
+): TradeBatcher {
   assertChartId(chartId);
   const intervalMs = options?.intervalMs ?? 32;
   if (
@@ -58,7 +72,7 @@ export function createTradeBatcher(
     if (packed.length === 0) return;
     const batch = packed;
     packed = [];
-    NativeTradingCharts.updateTrades(chartId, batch);
+    nativeTradingCharts.updateTrades(chartId, batch);
   }
 
   return {

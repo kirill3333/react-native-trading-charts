@@ -57,10 +57,78 @@ export type BinanceInstrument = {
   minMove: number;
 };
 
+export type BinanceTickerPayload = {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  quoteVolume: string;
+};
+
+export type BinanceExchangeInfoPayload = {
+  symbols: Array<{
+    symbol: string;
+    status: string;
+    quoteAsset: string;
+    isSpotTradingAllowed?: boolean;
+    filters: Array<{
+      filterType: string;
+      tickSize?: string;
+      stepSize?: string;
+    }>;
+  }>;
+};
+
+export type BinanceKlinePayload = readonly [
+  timestamp: number,
+  open: string,
+  high: string,
+  low: string,
+  close: string,
+  volume: string,
+  ...metadata: Array<string | number>,
+];
+
+export type BinanceKlineWebSocketPayload = {
+  e: 'kline';
+  s: string;
+  k: {
+    t: number;
+    i: BinanceInterval;
+    o: string;
+    h: string;
+    l: string;
+    c: string;
+    v: string;
+  };
+};
+
+type BinanceSubscriptionPayload = {
+  result: null;
+  id: string | number | null;
+};
+
+type BinanceErrorPayload = {
+  code: number;
+  msg: string;
+  id?: string | number | null;
+};
+
+type BinanceControlPayload = {
+  e?: string;
+  result?: boolean;
+  id?: string | number | null;
+};
+
+export type BinanceWebSocketPayload =
+  | BinanceKlineWebSocketPayload
+  | BinanceSubscriptionPayload
+  | BinanceErrorPayload
+  | BinanceControlPayload;
+
 export type BinanceMarketMessage = {
   kind: 'market';
   topic: string;
-  data: unknown;
+  data: BinanceKlineWebSocketPayload;
 };
 
 export type BinanceWebSocketEnvelope =
@@ -88,194 +156,54 @@ type FetchKlinesRetryOptions = {
   allowEmpty?: boolean;
 };
 
-type JsonRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireRecord(value: unknown, name: string): JsonRecord {
-  if (!isRecord(value)) {
-    throw new TypeError(`${name} must be an object`);
-  }
-  return value;
-}
-
-function requireArray(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new TypeError(`${name} must be an array`);
-  }
-  return value;
-}
-
-function requireString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-function requireNumber(
-  value: unknown,
-  name: string,
-  options: { integer?: boolean; minimum?: number } = {}
-): number {
-  if (
-    typeof value !== 'number' &&
-    (typeof value !== 'string' || value.trim().length === 0)
-  ) {
-    throw new TypeError(`${name} must be a finite number`);
-  }
-  const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(number)) {
-    throw new TypeError(`${name} must be a finite number`);
-  }
-  if (options.integer && !Number.isSafeInteger(number)) {
-    throw new TypeError(`${name} must be a safe integer`);
-  }
-  if (options.minimum != null && number < options.minimum) {
-    throw new TypeError(`${name} must be at least ${options.minimum}`);
-  }
-  return number;
-}
-
-function optionalRequestId(payload: JsonRecord): string | null {
-  const value = payload.id;
-  if (typeof value === 'string' && value.length > 0) {
-    return value;
-  }
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
-    return String(value);
-  }
-  return null;
-}
-
-function throwIfApiError(payload: unknown): void {
-  if (!isRecord(payload) || typeof payload.code !== 'number') {
-    return;
-  }
-  const detail =
-    typeof payload.msg === 'string' ? payload.msg : 'Unknown Binance API error';
-  throw new Error(`Binance API error ${payload.code}: ${detail}`);
+function requestId(value: string | number | null | undefined): string | null {
+  return value == null ? null : String(value);
 }
 
 function tickSizePrecision(tickSize: string): number {
-  if (!/^\d+(?:\.\d+)?$/.test(tickSize)) {
-    throw new TypeError('tickSize must be a decimal string');
-  }
   const decimal = tickSize.split('.')[1]?.replace(/0+$/, '') ?? '';
-  if (decimal.length > 12) {
-    throw new TypeError('tickSize precision must not exceed 12 decimals');
-  }
-  return decimal.length;
+  return Math.min(12, decimal.length);
 }
 
-function parseTicker(
-  value: unknown,
-  index: number
-): BinanceTickerSnapshot | null {
-  try {
-    const ticker = requireRecord(value, `response[${index}]`);
-    const symbol = requireString(ticker.symbol, `ticker[${index}].symbol`);
-    if (!symbol.endsWith('USDT')) {
-      return null;
-    }
-
-    const lastPriceText = requireString(
-      ticker.lastPrice,
-      `ticker[${index}].lastPrice`
-    );
-    return {
-      symbol,
-      lastPrice: requireNumber(lastPriceText, `ticker[${index}].lastPrice`, {
-        minimum: 0,
-      }),
-      lastPriceText,
-      change24hPercent: requireNumber(
-        ticker.priceChangePercent,
-        `ticker[${index}].priceChangePercent`
-      ),
-      turnover24h: requireNumber(
-        ticker.quoteVolume,
-        `ticker[${index}].quoteVolume`,
-        { minimum: 0 }
-      ),
-    };
-  } catch {
-    return null;
-  }
+function parseTicker(value: BinanceTickerPayload): BinanceTickerSnapshot {
+  return {
+    symbol: value.symbol,
+    lastPrice: Number(value.lastPrice),
+    lastPriceText: value.lastPrice,
+    change24hPercent: Number(value.priceChangePercent),
+    turnover24h: Number(value.quoteVolume),
+  };
 }
 
 export function parseTickersResponse(
-  payload: unknown
+  payload: ReadonlyArray<BinanceTickerPayload>
 ): BinanceTickerSnapshot[] {
-  throwIfApiError(payload);
-  const list = requireArray(payload, 'response');
-  return list
+  return payload
+    .filter((ticker) => ticker.symbol.endsWith('USDT'))
     .map(parseTicker)
-    .filter((ticker): ticker is BinanceTickerSnapshot => ticker !== null)
     .sort((left, right) => right.turnover24h - left.turnover24h);
 }
 
-function parseInstrument(
-  value: unknown,
-  index: number
-): BinanceInstrument | null {
-  try {
-    const instrument = requireRecord(value, `response.symbols[${index}]`);
-    if (
-      requireString(instrument.status, `instrument[${index}].status`) !==
-        'TRADING' ||
-      requireString(
-        instrument.quoteAsset,
-        `instrument[${index}].quoteAsset`
-      ) !== 'USDT' ||
-      instrument.isSpotTradingAllowed === false
-    ) {
-      return null;
-    }
-    const filters = requireArray(
-      instrument.filters,
-      `instrument[${index}].filters`
-    );
-    const priceFilter = filters.find(
-      (filter) => isRecord(filter) && filter.filterType === 'PRICE_FILTER'
-    );
-    const priceFilterRecord = requireRecord(
-      priceFilter,
-      `instrument[${index}].PRICE_FILTER`
-    );
-    const tickSizeText = requireString(
-      priceFilterRecord.tickSize,
-      `instrument[${index}].PRICE_FILTER.tickSize`
-    );
-    const minMove = requireNumber(
-      tickSizeText,
-      `instrument[${index}].PRICE_FILTER.tickSize`
-    );
-    if (minMove <= 0) {
-      throw new TypeError('tickSize must be positive');
-    }
-    return {
-      symbol: requireString(instrument.symbol, `instrument[${index}].symbol`),
-      precision: tickSizePrecision(tickSizeText),
-      minMove,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function parseInstrumentsResponse(
-  payload: unknown
+  payload: BinanceExchangeInfoPayload
 ): BinanceInstrument[] {
-  throwIfApiError(payload);
-  const response = requireRecord(payload, 'response');
-  return requireArray(response.symbols, 'response.symbols')
-    .map(parseInstrument)
+  return payload.symbols
     .filter(
-      (instrument): instrument is BinanceInstrument => instrument !== null
-    );
+      (instrument) =>
+        instrument.status === 'TRADING' &&
+        instrument.quoteAsset === 'USDT' &&
+        instrument.isSpotTradingAllowed !== false
+    )
+    .map((instrument) => {
+      const tickSize = instrument.filters.find(
+        (filter) => filter.filterType === 'PRICE_FILTER'
+      )!.tickSize!;
+      return {
+        symbol: instrument.symbol,
+        precision: tickSizePrecision(tickSize),
+        minMove: Number(tickSize),
+      };
+    });
 }
 
 export function mergeTickersWithInstruments(
@@ -291,105 +219,48 @@ export function mergeTickersWithInstruments(
   });
 }
 
-function parseCandleRow(value: unknown, name: string): OhlcCandle {
-  const row = requireArray(value, name);
-  if (row.length < 6) {
-    throw new TypeError(`${name} must contain at least 6 values`);
-  }
-  const candle: OhlcCandle = {
-    timestamp: requireNumber(row[0], `${name}[0]`, {
-      integer: true,
-      minimum: 0,
-    }),
-    open: requireNumber(row[1], `${name}[1]`, { minimum: 0 }),
-    high: requireNumber(row[2], `${name}[2]`, { minimum: 0 }),
-    low: requireNumber(row[3], `${name}[3]`, { minimum: 0 }),
-    close: requireNumber(row[4], `${name}[4]`, { minimum: 0 }),
-    volume: requireNumber(row[5], `${name}[5]`, { minimum: 0 }),
+function parseCandleRow(row: BinanceKlinePayload): OhlcCandle {
+  return {
+    timestamp: row[0],
+    open: Number(row[1]),
+    high: Number(row[2]),
+    low: Number(row[3]),
+    close: Number(row[4]),
+    volume: Number(row[5]),
   };
-  if (
-    candle.high < Math.max(candle.open, candle.close) ||
-    candle.low > Math.min(candle.open, candle.close)
-  ) {
-    throw new TypeError(`${name} has invalid OHLC bounds`);
-  }
-  return candle;
 }
 
-function assertIncreasingTimestamps(candles: ReadonlyArray<OhlcCandle>): void {
-  for (let index = 1; index < candles.length; index += 1) {
-    const previous = candles[index - 1];
-    const current = candles[index];
-    if (
-      previous != null &&
-      current != null &&
-      current.timestamp <= previous.timestamp
-    ) {
-      throw new TypeError('candles must have strictly increasing timestamps');
-    }
-  }
-}
-
-export function parseKlineResponse(payload: unknown): OhlcCandle[] {
-  throwIfApiError(payload);
-  const candles = requireArray(payload, 'response').map((row, index) =>
-    parseCandleRow(row, `response[${index}]`)
-  );
-  assertIncreasingTimestamps(candles);
-  return candles;
+export function parseKlineResponse(
+  payload: ReadonlyArray<BinanceKlinePayload>
+): OhlcCandle[] {
+  return payload.map(parseCandleRow);
 }
 
 export function klineTopic(symbol: string, interval: BinanceInterval): string {
   return `${symbol.toLowerCase()}@kline_${interval}`;
 }
 
-function isBinanceInterval(value: string): value is BinanceInterval {
-  return BINANCE_INTERVALS.some((interval) => interval.value === value);
-}
-
 export function parseBinanceWebSocketEnvelope(
-  rawMessage: unknown
+  rawMessage: string
 ): BinanceWebSocketEnvelope {
-  let payload: unknown = rawMessage;
-  if (typeof rawMessage === 'string') {
-    try {
-      payload = JSON.parse(rawMessage) as unknown;
-    } catch {
-      throw new TypeError('WebSocket message must contain valid JSON');
-    }
-  }
-
-  const message = requireRecord(payload, 'message');
-  if (message.e === 'kline') {
-    const symbol = requireString(message.s, 'message.s');
-    const kline = requireRecord(message.k, 'message.k');
-    const interval = requireString(kline.i, 'message.k.i');
-    if (!isBinanceInterval(interval)) {
-      throw new TypeError(`Unsupported Binance kline interval: ${interval}`);
-    }
+  const message: BinanceWebSocketPayload = JSON.parse(rawMessage);
+  if ('k' in message) {
     return {
       kind: 'market',
-      topic: klineTopic(symbol, interval),
+      topic: klineTopic(message.s, message.k.i),
       data: message,
     };
   }
 
-  const requestId = optionalRequestId(message);
-  if (typeof message.code === 'number') {
+  if ('code' in message) {
     return {
       kind: 'error',
-      requestId,
-      message:
-        typeof message.msg === 'string'
-          ? message.msg
-          : `WebSocket error ${message.code}`,
+      requestId: requestId(message.id),
+      message: message.msg,
     };
   }
-  if (
-    Object.prototype.hasOwnProperty.call(message, 'result') &&
-    message.result === null
-  ) {
-    return { kind: 'subscribed', requestId };
+  if (message.result === null) {
+    return { kind: 'subscribed', requestId: requestId(message.id) };
   }
   return { kind: 'control' };
 }
@@ -397,18 +268,14 @@ export function parseBinanceWebSocketEnvelope(
 export function parseKlineMarketMessage(
   message: BinanceMarketMessage
 ): OhlcCandle[] {
-  const payload = requireRecord(message.data, 'message');
-  const kline = requireRecord(payload.k, 'message.k');
+  const kline = message.data.k;
   return [
-    parseCandleRow(
-      [kline.t, kline.o, kline.h, kline.l, kline.c, kline.v],
-      'message.k'
-    ),
+    parseCandleRow([kline.t, kline.o, kline.h, kline.l, kline.c, kline.v]),
   ];
 }
 
 export function parseKlineWebSocketMessage(
-  rawMessage: unknown,
+  rawMessage: string,
   expectedTopic: string
 ): OhlcCandle[] {
   const envelope = parseBinanceWebSocketEnvelope(rawMessage);
@@ -424,8 +291,8 @@ function abortError(): Error {
   return error;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === 'AbortError';
 }
 
 async function waitForRetry(delayMs: number, signal?: AbortSignal) {
@@ -446,7 +313,10 @@ async function waitForRetry(delayMs: number, signal?: AbortSignal) {
   });
 }
 
-async function request(path: string, signal?: AbortSignal): Promise<unknown> {
+async function request<TPayload>(
+  path: string,
+  signal?: AbortSignal
+): Promise<TPayload> {
   if (signal?.aborted) {
     throw abortError();
   }
@@ -466,7 +336,8 @@ async function request(path: string, signal?: AbortSignal): Promise<unknown> {
     if (!response.ok) {
       throw new Error(`Binance request failed with HTTP ${response.status}`);
     }
-    return (await response.json()) as unknown;
+    const payload: TPayload = await response.json();
+    return payload;
   } catch (error) {
     if (signal?.aborted) {
       throw abortError();
@@ -487,8 +358,8 @@ export async function fetchSpotTickers(
   signal?: AbortSignal
 ): Promise<BinanceTicker[]> {
   const [tickerPayload, instrumentPayload] = await Promise.all([
-    request('/api/v3/ticker/24hr', signal),
-    request('/api/v3/exchangeInfo', signal),
+    request<BinanceTickerPayload[]>('/api/v3/ticker/24hr', signal),
+    request<BinanceExchangeInfoPayload>('/api/v3/exchangeInfo', signal),
   ]);
   return mergeTickersWithInstruments(
     parseTickersResponse(tickerPayload),
@@ -508,7 +379,9 @@ export async function fetchSpotKlines(
     (beforeTimestamp == null
       ? ''
       : `&endTime=${Math.max(0, Math.floor(beforeTimestamp) - 1)}`);
-  return parseKlineResponse(await request(`/api/v3/klines${query}`, signal));
+  return parseKlineResponse(
+    await request<BinanceKlinePayload[]>(`/api/v3/klines${query}`, signal)
+  );
 }
 
 export async function fetchSpotKlinesWithRetry(
@@ -524,7 +397,7 @@ export async function fetchSpotKlinesWithRetry(
     0,
     options.baseDelayMs ?? KLINE_RETRY_BASE_DELAY_MS
   );
-  let lastError: unknown = new Error('Could not load candle history');
+  let lastError = new Error('Could not load candle history');
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -544,7 +417,12 @@ export async function fetchSpotKlinesWithRetry(
       if (isAbortError(error)) {
         throw error;
       }
-      lastError = error;
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('Binance candle history request failed', {
+              cause: error,
+            });
     }
     if (attempt < attempts - 1) {
       await waitForRetry(baseDelayMs * 2 ** attempt, options.signal);

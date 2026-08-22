@@ -3,7 +3,7 @@ pre-commit:
   commands:
     lint:
       glob: '*.{js,ts,jsx,tsx}'
-      run: yarn oxlint {staged_files}
+      run: fnm exec --using .nvmrc yarn oxlint {staged_files}
 
     types:
       glob: '*.{js,ts, jsx, tsx}'

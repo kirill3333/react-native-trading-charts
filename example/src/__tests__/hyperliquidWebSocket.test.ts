@@ -9,21 +9,25 @@ import {
 import { type NetInfoState } from '@react-native-community/netinfo';
 import { type AppStateStatus } from 'react-native';
 
-jest.mock('@react-native-community/netinfo', () => ({
-  __esModule: true,
-  default: { addEventListener: jest.fn() },
-}));
-
 import { hyperliquidCandleTopic } from '../hyperliquid';
+import {
+  type HyperliquidCandleSubscriptionPayload,
+  type HyperliquidWebSocketPayload,
+} from '../hyperliquid';
 import {
   HyperliquidWebSocketClient,
   type HyperliquidWebSocketEvent,
 } from '../hyperliquidWebSocket';
 
+type HyperliquidClientMessage = {
+  method: string;
+  subscription: HyperliquidCandleSubscriptionPayload;
+};
+
 class FakeSocket {
   readyState = 0;
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
   readonly sent: string[] = [];
@@ -42,7 +46,7 @@ class FakeSocket {
     this.onopen?.();
   }
 
-  message(payload: unknown) {
+  message(payload: HyperliquidWebSocketPayload) {
     this.onmessage?.({ data: JSON.stringify(payload) });
   }
 
@@ -70,10 +74,8 @@ class FakeNetInfo {
   }
 }
 
-function sentMessages(socket: FakeSocket) {
-  return socket.sent.map(
-    (message) => JSON.parse(message) as Record<string, unknown>
-  );
+function sentMessages(socket: FakeSocket): HyperliquidClientMessage[] {
+  return socket.sent.map((message) => JSON.parse(message));
 }
 
 describe('HyperliquidWebSocketClient', () => {

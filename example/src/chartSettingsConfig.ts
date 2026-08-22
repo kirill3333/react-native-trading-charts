@@ -92,10 +92,14 @@ export function buildMainSeriesColors(
   };
 }
 
-export function buildVolumeAppearance(settings: ChartSettings): {
+type VolumeAppearance = {
   upColor: string;
   downColor: string;
-} {
+};
+
+export function buildVolumeAppearance(
+  settings: ChartSettings
+): VolumeAppearance {
   const theme = APP_THEMES[settings.themeMode];
   return {
     upColor: settings.volumeUpColorOverride ?? theme.volumeUpColor,

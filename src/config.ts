@@ -187,16 +187,16 @@ function optionalGapThreshold(value: number | undefined, name: string) {
   return value == null ? undefined : finitePositive(value, name);
 }
 
-function isResolutionUnit(value: unknown): value is ResolutionUnit {
-  return typeof value === 'string' && RESOLUTION_UNITS.has(value);
+function isResolutionUnit(value: string): value is ResolutionUnit {
+  return RESOLUTION_UNITS.has(value);
 }
 
-function isChartSeriesType(value: unknown): value is ChartSeriesType {
-  return typeof value === 'string' && CHART_SERIES_TYPES.has(value);
+function isChartSeriesType(value: string): value is ChartSeriesType {
+  return CHART_SERIES_TYPES.has(value);
 }
 
-function isAdditionalSeriesType(value: unknown): boolean {
-  return typeof value === 'string' && ADDITIONAL_SERIES_TYPES.has(value);
+function isAdditionalSeriesType(value: string): boolean {
+  return ADDITIONAL_SERIES_TYPES.has(value);
 }
 
 function hasValidScaleMargins(value: { top: number; bottom: number }): boolean {
@@ -219,7 +219,7 @@ function hasValidRsiLevels(oversold: number, overbought: number): boolean {
   return oversold < overbought;
 }
 
-const WEEKDAY_NUMBER: Record<TradingWeekday, number> = {
+const WEEKDAY_NUMBER = {
   monday: 1,
   tuesday: 2,
   wednesday: 3,
@@ -227,7 +227,7 @@ const WEEKDAY_NUMBER: Record<TradingWeekday, number> = {
   friday: 5,
   saturday: 6,
   sunday: 7,
-};
+} satisfies Record<TradingWeekday, number>;
 
 function positiveSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -1043,10 +1043,22 @@ function isRsiSeriesOptions(
 function isRsiSeriesOptions(
   options: AdditionalChartSeriesOptions | NormalizedAdditionalChartSeriesOptions
 ): boolean {
-  if (options.type !== 'line' || typeof options.source !== 'object') {
+  if (options.type !== 'line') {
     return false;
   }
-  return options.source.type === 'ohlcvRsi';
+  const source = options.source;
+  if (source == null) {
+    return false;
+  }
+  if (
+    source === 'open' ||
+    source === 'high' ||
+    source === 'low' ||
+    source === 'close'
+  ) {
+    return false;
+  }
+  return source.type === 'ohlcvRsi';
 }
 
 function resolveSeriesIdentifiers(
@@ -1064,10 +1076,12 @@ function resolveSeriesIdentifiers(
   };
 }
 
+type ResolvedGapThreshold = { gapThresholdMs?: number };
+
 function resolveGapThreshold(
   value: number | undefined,
   name: string
-): { gapThresholdMs?: number } {
+): ResolvedGapThreshold {
   if (value == null) {
     return {};
   }
@@ -1117,10 +1131,7 @@ function resolvePriceSeriesOptions(
     ...options,
     ...ids,
     visible: options.visible ?? true,
-    source: ohlcValueSource(
-      typeof options.source === 'string' ? options.source : undefined,
-      `${name}.source`
-    ),
+    source: ohlcValueSource(options.source, `${name}.source`),
     ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
   };
 }
@@ -1408,7 +1419,7 @@ function resolveConfiguredAdditionalSeries(
 export function resolveChartConfig(
   props: TradingChartsViewProps
 ): ResolvedChartConfig {
-  if (typeof props.chartId !== 'string' || props.chartId.trim().length === 0) {
+  if (props.chartId.trim().length === 0) {
     throw new TypeError('chartId must be a non-empty string');
   }
   const resolution = resolveResolution(props);

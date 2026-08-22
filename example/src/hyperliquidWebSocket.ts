@@ -1,9 +1,10 @@
-import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
+import { type NetInfoState } from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import {
   HYPERLIQUID_WEBSOCKET_URL,
   parseHyperliquidWebSocketEnvelope,
+  type HyperliquidCandleSubscriptionPayload,
   type HyperliquidInterval,
   type HyperliquidMarketMessage,
 } from './hyperliquid';
@@ -38,7 +39,7 @@ export type HyperliquidWebSocketListener = (
 type WebSocketLike = {
   readyState: number;
   onopen: (() => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
+  onmessage: ((event: { data: string }) => void) | null;
   onerror: (() => void) | null;
   onclose: ((event: { code?: number; reason?: string }) => void) | null;
   send(data: string): void;
@@ -57,6 +58,15 @@ type NetInfoSource = {
   addEventListener(listener: (state: NetInfoState) => void): () => void;
 };
 
+const defaultNetInfoSource: NetInfoSource = {
+  addEventListener(listener) {
+    const netInfoModule: {
+      default: NetInfoSource;
+    } = require('@react-native-community/netinfo');
+    return netInfoModule.default.addEventListener(listener);
+  },
+};
+
 export type HyperliquidWebSocketClientOptions = {
   url?: string;
   createSocket?: (url: string) => WebSocketLike;
@@ -71,24 +81,26 @@ type TopicSubscription = {
   timer: ReturnType<typeof setTimeout> | null;
 };
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
-function candleSubscription(topic: string): {
-  type: 'candle';
-  coin: string;
-  interval: HyperliquidInterval;
-} {
+function candleSubscription(
+  topic: string
+): HyperliquidCandleSubscriptionPayload {
   const prefix = 'candle:';
   const intervalSeparator = topic.lastIndexOf(':');
   if (!topic.startsWith(prefix) || intervalSeparator <= prefix.length) {
     throw new TypeError(`Invalid Hyperliquid candle topic: ${topic}`);
   }
+  const interval = topic.slice(intervalSeparator + 1);
+  // SAFETY: subscriptions are created exclusively from
+  // hyperliquidCandleTopic with a HyperliquidInterval.
+  const trustedInterval = interval as HyperliquidInterval;
   return {
     type: 'candle',
     coin: topic.slice(prefix.length, intervalSeparator),
-    interval: topic.slice(intervalSeparator + 1) as HyperliquidInterval,
+    interval: trustedInterval,
   };
 }
 
@@ -116,11 +128,12 @@ export class HyperliquidWebSocketClient {
 
   constructor(options: HyperliquidWebSocketClientOptions = {}) {
     this.url = options.url ?? HYPERLIQUID_WEBSOCKET_URL;
+    // SAFETY: WebSocketLike is the exact mutable subset of the standard
+    // WebSocket instance used by this client.
     this.createSocket =
-      options.createSocket ??
-      ((url) => new WebSocket(url) as unknown as WebSocketLike);
+      options.createSocket ?? ((url) => new WebSocket(url) as WebSocketLike);
     this.appState = options.appState ?? AppState;
-    this.netInfo = options.netInfo ?? NetInfo;
+    this.netInfo = options.netInfo ?? defaultNetInfoSource;
     this.random = options.random ?? Math.random;
   }
 
@@ -165,14 +178,14 @@ export class HyperliquidWebSocketClient {
     };
   }
 
-  reportProtocolError(generation: number, error: unknown): void {
+  reportProtocolError(generation: number, cause: unknown): void {
     if (generation !== this.generation || this.socket == null) {
       return;
     }
     this.failSocket(
       this.socket,
       generation,
-      `Invalid Hyperliquid stream data: ${errorMessage(error)}`
+      `Invalid Hyperliquid stream data: ${errorMessage(cause)}`
     );
   }
 
@@ -380,10 +393,11 @@ export class HyperliquidWebSocketClient {
       subscription.timer = null;
     }
     subscription.readyGeneration = generation;
+    const readyTopic = envelope.topic;
     subscription.listeners.forEach((listener) =>
       listener({
         type: 'ready',
-        topic: envelope.topic as string,
+        topic: readyTopic,
         generation,
       })
     );

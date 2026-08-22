@@ -9,20 +9,22 @@ import {
 import { type NetInfoState } from '@react-native-community/netinfo';
 import { type AppStateStatus } from 'react-native';
 
-jest.mock('@react-native-community/netinfo', () => ({
-  __esModule: true,
-  default: { addEventListener: jest.fn() },
-}));
-
 import {
   BinanceWebSocketClient,
   type BinanceWebSocketEvent,
 } from '../binanceWebSocket';
+import { type BinanceWebSocketPayload } from '../binance';
+
+type BinanceClientMessage = {
+  method: string;
+  params: string[];
+  id: string;
+};
 
 class FakeSocket {
   readyState = 0;
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
   readonly sent: string[] = [];
@@ -41,7 +43,7 @@ class FakeSocket {
     this.onopen?.();
   }
 
-  message(payload: unknown) {
+  message(payload: BinanceWebSocketPayload) {
     this.onmessage?.({ data: JSON.stringify(payload) });
   }
 
@@ -77,14 +79,14 @@ class FakeNetInfo {
   }
 
   emit(isConnected: boolean | null, isInternetReachable: boolean | null) {
+    // SAFETY: this faithful test source supplies the two NetInfo fields read
+    // by the client; all other native state fields are intentionally unused.
     this.listener?.({ isConnected, isInternetReachable } as NetInfoState);
   }
 }
 
-function sentMessages(socket: FakeSocket) {
-  return socket.sent.map(
-    (message) => JSON.parse(message) as Record<string, unknown>
-  );
+function sentMessages(socket: FakeSocket): BinanceClientMessage[] {
+  return socket.sent.map((message) => JSON.parse(message));
 }
 
 function acknowledgeSubscriptions(socket: FakeSocket) {

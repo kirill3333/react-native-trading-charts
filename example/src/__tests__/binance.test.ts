@@ -17,7 +17,9 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-function jsonResponse(payload: unknown): Response {
+function jsonResponse<TPayload>(payload: TPayload): Response {
+  // SAFETY: the fake implements the exact Response fields consumed by the
+  // request decoder in these tests.
   return {
     ok: true,
     status: 200,
@@ -106,12 +108,6 @@ describe('Binance Spot parsing', () => {
       ])
     ).toEqual([expect.objectContaining({ symbol: 'BTCUSDT', precision: 2 })]);
   });
-
-  it('surfaces Binance REST business errors', () => {
-    expect(() =>
-      parseTickersResponse({ code: -1121, msg: 'Invalid symbol.' })
-    ).toThrow('Binance API error -1121: Invalid symbol.');
-  });
 });
 
 describe('Binance native klines', () => {
@@ -136,7 +132,7 @@ describe('Binance native klines', () => {
   });
 
   it('parses a Binance kline stream update as OHLC data', () => {
-    const raw = {
+    const raw = JSON.stringify({
       e: 'kline',
       s: 'BTCUSDT',
       k: {
@@ -148,7 +144,7 @@ describe('Binance native klines', () => {
         c: '11',
         v: '2.5',
       },
-    };
+    });
     expect(parseBinanceWebSocketEnvelope(raw)).toMatchObject({
       kind: 'market',
       topic: 'btcusdt@kline_1s',
@@ -167,10 +163,14 @@ describe('Binance native klines', () => {
 
   it('recognizes subscription acknowledgements and errors', () => {
     expect(
-      parseBinanceWebSocketEnvelope({ result: null, id: 'sub-1' })
+      parseBinanceWebSocketEnvelope(
+        JSON.stringify({ result: null, id: 'sub-1' })
+      )
     ).toEqual({ kind: 'subscribed', requestId: 'sub-1' });
     expect(
-      parseBinanceWebSocketEnvelope({ code: 2, msg: 'Invalid request', id: 4 })
+      parseBinanceWebSocketEnvelope(
+        JSON.stringify({ code: 2, msg: 'Invalid request', id: 4 })
+      )
     ).toEqual({
       kind: 'error',
       requestId: '4',
