@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="/docs/assets/logo.png" height="100" width="100">
+</p>
+
 # react-native-trading-charts
 
 `react-native-trading-charts` is a high-speed, resource-efficient React Native
