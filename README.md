@@ -952,7 +952,9 @@ mutations.
 | Property | Supported value | Notes |
 | --- | --- | --- |
 | Platforms | iOS and Android | Metal on iOS; OpenGL ES 3 on Android. |
+| React Native | 0.80 or newer | React Native is a peer dependency. |
 | React Native architecture | New Architecture / Fabric | The first release targets Fabric applications. |
+| Minimum OS | iOS 15.1; Android 7.0 (API 24) | Matches the minimum platform versions supported by React Native 0.80. |
 | Data ownership | Application-owned | Networking, WebSockets, parsing, and reconnect logic are outside the library. |
 | Time unit | Milliseconds | Candle timestamps must be safe integers. |
 | Price scales | One visible scale per pane | Each pane keeps an independent autoscale range. |

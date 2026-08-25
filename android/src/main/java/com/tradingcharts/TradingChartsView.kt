@@ -485,6 +485,10 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     postOnAnimation(frameCallback)
   }
 
+  @Suppress("DEPRECATION")
+  private fun eventDispatcher(reactContext: ReactContext) =
+      UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
+
   private fun emitVisibleRangeChange(snapshot: ChartSnapshot) {
     if (!snapshot.hasVisibleCandles || id == NO_ID) return
     val key =
@@ -496,7 +500,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     if (key == lastVisibleRangeKey) return
     lastVisibleRangeKey = key
     val reactContext = context as? ReactContext ?: return
-    UIManagerHelper.getEventDispatcher(reactContext)
+    eventDispatcher(reactContext)
         ?.dispatchEvent(VisibleRangeChangeEvent(UIManagerHelper.getSurfaceId(this), id, snapshot))
   }
 
@@ -506,7 +510,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     if (lastSelectedCandle.hasSameContentAs(selected)) return
     lastSelectedCandle = selected?.copyOf()
     val reactContext = context as? ReactContext ?: return
-    UIManagerHelper.getEventDispatcher(reactContext)
+    eventDispatcher(reactContext)
         ?.dispatchEvent(
             SelectedCandleChangeEvent(
                 UIManagerHelper.getSurfaceId(this),
@@ -524,7 +528,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     pendingYAxisScaleChange = false
     if ((!emitHorizontal && !emitYAxis) || id == NO_ID) return
     val reactContext = context as? ReactContext ?: return
-    val dispatcher = UIManagerHelper.getEventDispatcher(reactContext) ?: return
+    val dispatcher = eventDispatcher(reactContext) ?: return
     val surfaceId = UIManagerHelper.getSurfaceId(this)
     if (emitHorizontal) {
       dispatcher.dispatchEvent(
@@ -575,7 +579,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     }
     val finished = pendingPaneResizeFinished
     pendingPaneResizeFinished = false
-    UIManagerHelper.getEventDispatcher(reactContext)
+    eventDispatcher(reactContext)
         ?.dispatchEvent(
             PaneResizeEvent(
                 UIManagerHelper.getSurfaceId(this),
