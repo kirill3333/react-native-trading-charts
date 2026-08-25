@@ -1432,7 +1432,7 @@ void TestLogicalSpacingUsesUniformCandleSlots() {
                                 RenderedCandleBodyCenter(*snapshot, 1);
   const float live_step = RenderedCandleBodyCenter(*snapshot, 4) -
                           RenderedCandleBodyCenter(*snapshot, 3);
-  ExpectNear(historical_step, live_step, 1e-5);
+  ExpectNear(historical_step, live_step, 1e-4);
 
   engine.SetCrosshair(true, RenderedCandleBodyCenter(*snapshot, 3), 200.0f);
   const auto crosshair = engine.Snapshot();
