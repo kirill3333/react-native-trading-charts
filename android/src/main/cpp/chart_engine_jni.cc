@@ -113,7 +113,104 @@ enum class ConfigColorIndex : std::uint8_t {
   kAreaFillBottom = 64,
 };
 
+enum class SeriesNumberIndex : std::uint8_t {
+  kAbiVersion,
+  kNumberSize,
+  kColorSize,
+  kStringSize,
+  kType,
+  kSource,
+  kVisible,
+  kDeclarative,
+  kLineWidth,
+  kLineSource,
+  kLineGradientEnabled,
+  kLineGapThresholdMs,
+  kRsiPeriod,
+  kRsiOversold,
+  kRsiOverbought,
+  kRsiTextColorSet,
+  kCount,
+};
+
+enum class SeriesColorIndex : std::uint8_t {
+  kAbiVersion,
+  kNumberSize,
+  kColorSize,
+  kStringSize,
+  kColor,
+  kUp = 8,
+  kDown = 12,
+  kLineGradientTop = 16,
+  kLineGradientBottom = 20,
+  kAreaFillTop = 24,
+  kAreaFillBottom = 28,
+  kRsiLevelLine = 32,
+  kRsiBand = 36,
+  kRsiText = 40,
+  kCount = 44,
+};
+
+enum class SeriesStringIndex : std::uint8_t {
+  kMarker,
+  kSeriesId,
+  kPaneId,
+  kPriceScaleId,
+  kSourceSeriesId,
+  kCount,
+};
+
+enum class SnapshotRecordHeaderIndex : std::uint8_t {
+  kAbiVersion,
+  kRecordWidth,
+  kRecordCount,
+  kCount,
+};
+
+enum class TickRecordIndex : std::uint8_t {
+  kValue,
+  kPosition,
+  kCount,
+};
+
+enum class PaneSnapshotRecordIndex : std::uint8_t {
+  kPlotLeft,
+  kPlotTop,
+  kPlotRight,
+  kPlotBottom,
+  kHeightWeight,
+  kVisibleYMin,
+  kVisibleYMax,
+  kYAxisScale,
+  kYTickOffset,
+  kYTickCount,
+  kScaleVisible,
+  kVolumeFormat,
+  kPrecision,
+  kRsiScale,
+  kCount,
+};
+
+enum class RsiLegendRecordIndex : std::uint8_t {
+  kPaneIndex,
+  kPeriod,
+  kValue,
+  kHasValue,
+  kTextColorR,
+  kTextColorG,
+  kTextColorB,
+  kTextColorA,
+  kValueColorR,
+  kValueColorG,
+  kValueColorB,
+  kValueColorA,
+  kTextColorSet,
+  kCount,
+};
+
 enum class SnapshotMetaIndex : std::uint8_t {
+  kAbiVersion,
+  kPayloadSize,
   kWidth,
   kHeight,
   kPlotLeft,
@@ -174,11 +271,29 @@ inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
+inline constexpr double kChartEngineTransportAbiVersion = 1.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v1";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
+inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
+inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
+inline constexpr size_t kSeriesStringCount = ToIndex(SeriesStringIndex::kCount);
+inline constexpr size_t kSnapshotRecordHeaderCount = 3;
+inline constexpr size_t kTickRecordWidth = ToIndex(TickRecordIndex::kCount);
+inline constexpr size_t kPaneSnapshotRecordWidth = 14;
+inline constexpr size_t kRsiLegendRecordWidth = 13;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 45);
-static_assert(kSnapshotMetaCount == 51);
+static_assert(kSeriesNumberCount == 16);
+static_assert(kSeriesColorCount == 44);
+static_assert(kSeriesStringCount == 5);
+static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
+              kSnapshotRecordHeaderCount);
+static_assert(kTickRecordWidth == 2);
+static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
+              kPaneSnapshotRecordWidth);
+static_assert(ToIndex(RsiLegendRecordIndex::kCount) == kRsiLegendRecordWidth);
+static_assert(kSnapshotMetaCount == 53);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
               kExtendedConfigColorCount);
@@ -274,9 +389,154 @@ std::string CopyString(JNIEnv* env, jstring value) {
   return result;
 }
 
+struct SeriesTransportPayload {
+  std::array<double, kSeriesNumberCount> numbers{};
+  std::array<float, kSeriesColorCount> colors{};
+  std::array<std::string, kSeriesStringCount> strings{};
+};
+
+bool ThrowInvalidTransportPayload(JNIEnv* env, const char* message) {
+  jclass exception_class = env->FindClass("java/lang/IllegalArgumentException");
+  if (exception_class) {
+    env->ThrowNew(exception_class, message);
+    env->DeleteLocalRef(exception_class);
+  }
+  return false;
+}
+
+bool ReadSeriesTransportPayload(JNIEnv* env, jobjectArray strings,
+                                jdoubleArray numbers, jfloatArray colors,
+                                SeriesTransportPayload* payload) {
+  if (!strings || !numbers || !colors || !payload) {
+    return ThrowInvalidTransportPayload(env, "Series payload must not be null");
+  }
+  if (env->GetArrayLength(strings) != static_cast<jsize>(kSeriesStringCount) ||
+      env->GetArrayLength(numbers) != static_cast<jsize>(kSeriesNumberCount) ||
+      env->GetArrayLength(colors) != static_cast<jsize>(kSeriesColorCount)) {
+    return ThrowInvalidTransportPayload(env,
+                                        "Invalid exact series payload sizes");
+  }
+  env->GetDoubleArrayRegion(numbers, 0, static_cast<jsize>(kSeriesNumberCount),
+                            payload->numbers.data());
+  env->GetFloatArrayRegion(colors, 0, static_cast<jsize>(kSeriesColorCount),
+                           payload->colors.data());
+  for (size_t index = 0; index < kSeriesStringCount; ++index) {
+    payload->strings[index] =
+        StringAt(env, strings, static_cast<jsize>(index), "");
+  }
+
+  const auto number_at = [&](SeriesNumberIndex index) {
+    return payload->numbers[ToIndex(index)];
+  };
+  const auto color_at = [&](SeriesColorIndex index) {
+    return payload->colors[ToIndex(index)];
+  };
+  const bool valid_number_header =
+      number_at(SeriesNumberIndex::kAbiVersion) ==
+          kChartEngineTransportAbiVersion &&
+      number_at(SeriesNumberIndex::kNumberSize) == kSeriesNumberCount &&
+      number_at(SeriesNumberIndex::kColorSize) == kSeriesColorCount &&
+      number_at(SeriesNumberIndex::kStringSize) == kSeriesStringCount;
+  const bool valid_color_header =
+      color_at(SeriesColorIndex::kAbiVersion) ==
+          kChartEngineTransportAbiVersion &&
+      color_at(SeriesColorIndex::kNumberSize) == kSeriesNumberCount &&
+      color_at(SeriesColorIndex::kColorSize) == kSeriesColorCount &&
+      color_at(SeriesColorIndex::kStringSize) == kSeriesStringCount;
+  if (!valid_number_header || !valid_color_header ||
+      payload->strings[ToIndex(SeriesStringIndex::kMarker)] !=
+          kSeriesTransportMarker) {
+    return ThrowInvalidTransportPayload(
+        env, "Incompatible ChartEngine series payload ABI");
+  }
+  return true;
+}
+
+std::vector<double> VersionedRecordPayload(size_t record_width,
+                                           size_t record_count) {
+  std::vector<double> packed(kSnapshotRecordHeaderCount +
+                             record_width * record_count);
+  packed[ToIndex(SnapshotRecordHeaderIndex::kAbiVersion)] =
+      kChartEngineTransportAbiVersion;
+  packed[ToIndex(SnapshotRecordHeaderIndex::kRecordWidth)] =
+      static_cast<double>(record_width);
+  packed[ToIndex(SnapshotRecordHeaderIndex::kRecordCount)] =
+      static_cast<double>(record_count);
+  return packed;
+}
+
+size_t RecordOffset(size_t record_width, size_t record_index) {
+  return kSnapshotRecordHeaderCount + record_width * record_index;
+}
+
+jdoubleArray NewDoubleArray(JNIEnv* env, const std::vector<double>& values) {
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(values.size()));
+  if (!values.empty()) {
+    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(values.size()),
+                              values.data());
+  }
+  return result;
+}
+
 }  // namespace
 
 extern "C" {
+
+JNIEXPORT jintArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeTransportAbi(JNIEnv* env,
+                                                            jclass) {
+  const std::array<jint, 8> descriptor{
+      static_cast<jint>(kChartEngineTransportAbiVersion),
+      static_cast<jint>(kSeriesNumberCount),
+      static_cast<jint>(kSeriesColorCount),
+      static_cast<jint>(kSeriesStringCount),
+      static_cast<jint>(kSnapshotRecordHeaderCount),
+      static_cast<jint>(kTickRecordWidth),
+      static_cast<jint>(kPaneSnapshotRecordWidth),
+      static_cast<jint>(kRsiLegendRecordWidth),
+  };
+  jintArray result = env->NewIntArray(static_cast<jsize>(descriptor.size()));
+  env->SetIntArrayRegion(result, 0, static_cast<jsize>(descriptor.size()),
+                         descriptor.data());
+  return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeRoundTripSeriesPayload(
+    JNIEnv* env, jclass, jobjectArray strings, jdoubleArray numbers,
+    jfloatArray colors) {
+  SeriesTransportPayload payload;
+  if (!ReadSeriesTransportPayload(env, strings, numbers, colors, &payload)) {
+    return nullptr;
+  }
+  constexpr size_t kRoundTripNumberCount =
+      kSeriesNumberCount - ToIndex(SeriesNumberIndex::kType);
+  constexpr size_t kRoundTripColorCount =
+      kSeriesColorCount - ToIndex(SeriesColorIndex::kColor);
+  constexpr size_t kRoundTripStringCount =
+      kSeriesStringCount - ToIndex(SeriesStringIndex::kSeriesId);
+  constexpr size_t kRoundTripHeaderCount = 4;
+  std::vector<double> result(kRoundTripHeaderCount + kRoundTripNumberCount +
+                             kRoundTripColorCount + kRoundTripStringCount);
+  result[0] = kChartEngineTransportAbiVersion;
+  result[1] = static_cast<double>(kRoundTripNumberCount);
+  result[2] = static_cast<double>(kRoundTripColorCount);
+  result[3] = static_cast<double>(kRoundTripStringCount);
+  size_t target = kRoundTripHeaderCount;
+  for (size_t index = ToIndex(SeriesNumberIndex::kType);
+       index < kSeriesNumberCount; ++index) {
+    result[target++] = payload.numbers[index];
+  }
+  for (size_t index = ToIndex(SeriesColorIndex::kColor);
+       index < kSeriesColorCount; ++index) {
+    result[target++] = payload.colors[index];
+  }
+  for (size_t index = ToIndex(SeriesStringIndex::kSeriesId);
+       index < kSeriesStringCount; ++index) {
+    result[target++] = static_cast<double>(payload.strings[index].size());
+  }
+  return NewDoubleArray(env, result);
+}
 
 JNIEXPORT jlong JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeCreate(JNIEnv*, jclass) {
@@ -611,28 +871,29 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
     JNIEnv* env, jclass, jlong handle, jobjectArray strings,
     jdoubleArray numbers, jfloatArray colors) {
   auto* instance = EngineFromHandle(handle);
-  if (!instance || !strings || !numbers || !colors ||
-      env->GetArrayLength(strings) < 4 || env->GetArrayLength(numbers) < 5 ||
-      env->GetArrayLength(colors) < 12) {
+  if (!instance) {
     return 2;
   }
-  const auto values = CopyDoubles(env, numbers);
-  const jsize number_count = env->GetArrayLength(numbers);
-  const jsize color_count = env->GetArrayLength(colors);
-  std::array<jfloat, 40> color_values{};
-  env->GetFloatArrayRegion(colors, 0,
-                           std::min(color_count, static_cast<jsize>(40)),
-                           color_values.data());
-  const auto color_at = [&](size_t offset) {
-    return Color{color_values[offset], color_values[offset + 1],
-                 color_values[offset + 2], color_values[offset + 3]};
+  SeriesTransportPayload payload;
+  if (!ReadSeriesTransportPayload(env, strings, numbers, colors, &payload)) {
+    return 2;
+  }
+  const auto number_at = [&](SeriesNumberIndex index) {
+    return payload.numbers[ToIndex(index)];
+  };
+  const auto color_at = [&](SeriesColorIndex index) {
+    const size_t offset = ToIndex(index);
+    return Color{payload.colors[offset], payload.colors[offset + 1],
+                 payload.colors[offset + 2], payload.colors[offset + 3]};
   };
   SeriesConfig series;
-  series.series_id = StringAt(env, strings, 0, "");
-  series.pane_id = StringAt(env, strings, 1, "");
-  series.price_scale_id = StringAt(env, strings, 2, "");
-  series.source_series_id = StringAt(env, strings, 3, "");
-  const int type = static_cast<int>(values[0]);
+  series.series_id = payload.strings[ToIndex(SeriesStringIndex::kSeriesId)];
+  series.pane_id = payload.strings[ToIndex(SeriesStringIndex::kPaneId)];
+  series.price_scale_id =
+      payload.strings[ToIndex(SeriesStringIndex::kPriceScaleId)];
+  series.source_series_id =
+      payload.strings[ToIndex(SeriesStringIndex::kSourceSeriesId)];
+  const int type = static_cast<int>(number_at(SeriesNumberIndex::kType));
   if (type == 1) {
     series.type = SeriesType::kBar;
   } else if (type == 2) {
@@ -644,48 +905,40 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   } else if (type == 5) {
     series.type = SeriesType::kArea;
   }
-  series.source = values[1] == 1.0   ? SeriesSource::kOhlcvVolume
-                  : values[1] == 2.0 ? SeriesSource::kOhlcvRsi
-                                     : SeriesSource::kData;
-  series.visible = values[2] != 0.0;
-  series.declarative = values[3] != 0.0;
-  series.line_width = static_cast<float>(values[4]);
-  series.color = color_at(0);
-  series.up = color_at(4);
-  series.down = color_at(8);
-  if (number_count >= 8) {
-    const int source = static_cast<int>(values[5]);
-    series.line_source = source == 0   ? OhlcValueSource::kOpen
-                         : source == 1 ? OhlcValueSource::kHigh
-                         : source == 2 ? OhlcValueSource::kLow
-                                       : OhlcValueSource::kClose;
-    series.line_gradient_enabled = values[6] != 0.0;
-    series.line_gap_threshold_ms = values[7];
-  }
-  if (color_count >= 20) {
-    series.line_gradient_top = color_at(12);
-    series.line_gradient_bottom = color_at(16);
-  } else {
-    series.line_gradient_top = series.color;
-    series.line_gradient_bottom = series.color;
-  }
-  if (color_count >= 28) {
-    series.area_fill_top = color_at(20);
-    series.area_fill_bottom = color_at(24);
-  }
-  if (number_count >= 11) {
-    series.rsi_period = static_cast<std::uint32_t>(std::max(values[8], 0.0));
-    series.rsi_oversold = values[9];
-    series.rsi_overbought = values[10];
-  }
-  if (color_count >= 36) {
-    series.rsi_level_line = color_at(28);
-    series.rsi_band = color_at(32);
-  }
-  if (number_count >= 12 && color_count >= 40) {
-    series.rsi_text_color_set = values[11] != 0.0;
-    series.rsi_text_color = color_at(36);
-  }
+  const double source_value = number_at(SeriesNumberIndex::kSource);
+  series.source = source_value == 1.0   ? SeriesSource::kOhlcvVolume
+                  : source_value == 2.0 ? SeriesSource::kOhlcvRsi
+                                        : SeriesSource::kData;
+  series.visible = number_at(SeriesNumberIndex::kVisible) != 0.0;
+  series.declarative = number_at(SeriesNumberIndex::kDeclarative) != 0.0;
+  series.line_width =
+      static_cast<float>(number_at(SeriesNumberIndex::kLineWidth));
+  series.color = color_at(SeriesColorIndex::kColor);
+  series.up = color_at(SeriesColorIndex::kUp);
+  series.down = color_at(SeriesColorIndex::kDown);
+  const int line_source =
+      static_cast<int>(number_at(SeriesNumberIndex::kLineSource));
+  series.line_source = line_source == 0   ? OhlcValueSource::kOpen
+                       : line_source == 1 ? OhlcValueSource::kHigh
+                       : line_source == 2 ? OhlcValueSource::kLow
+                                          : OhlcValueSource::kClose;
+  series.line_gradient_enabled =
+      number_at(SeriesNumberIndex::kLineGradientEnabled) != 0.0;
+  series.line_gap_threshold_ms =
+      number_at(SeriesNumberIndex::kLineGapThresholdMs);
+  series.line_gradient_top = color_at(SeriesColorIndex::kLineGradientTop);
+  series.line_gradient_bottom = color_at(SeriesColorIndex::kLineGradientBottom);
+  series.area_fill_top = color_at(SeriesColorIndex::kAreaFillTop);
+  series.area_fill_bottom = color_at(SeriesColorIndex::kAreaFillBottom);
+  series.rsi_period = static_cast<std::uint32_t>(
+      std::max(number_at(SeriesNumberIndex::kRsiPeriod), 0.0));
+  series.rsi_oversold = number_at(SeriesNumberIndex::kRsiOversold);
+  series.rsi_overbought = number_at(SeriesNumberIndex::kRsiOverbought);
+  series.rsi_level_line = color_at(SeriesColorIndex::kRsiLevelLine);
+  series.rsi_band = color_at(SeriesColorIndex::kRsiBand);
+  series.rsi_text_color_set =
+      number_at(SeriesNumberIndex::kRsiTextColorSet) != 0.0;
+  series.rsi_text_color = color_at(SeriesColorIndex::kRsiText);
   return StatusValue(instance->AddSeries(series));
 }
 
@@ -1029,20 +1282,18 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotXTicks(JNIEnv* env,
                                                               jlong handle) {
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  std::vector<double> packed;
+  const size_t count = value ? value->x_ticks.size() : 0;
+  auto packed = VersionedRecordPayload(kTickRecordWidth, count);
   if (value) {
-    packed.reserve(value->x_ticks.size() * 2);
-    for (const auto& tick : value->x_ticks) {
-      packed.push_back(tick.value);
-      packed.push_back(tick.position);
+    for (size_t index = 0; index < count; ++index) {
+      const size_t offset = RecordOffset(kTickRecordWidth, index);
+      packed[offset + ToIndex(TickRecordIndex::kValue)] =
+          value->x_ticks[index].value;
+      packed[offset + ToIndex(TickRecordIndex::kPosition)] =
+          value->x_ticks[index].position;
     }
   }
-  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
-  if (!packed.empty()) {
-    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
-                              packed.data());
-  }
-  return result;
+  return NewDoubleArray(env, packed);
 }
 
 JNIEXPORT jdoubleArray JNICALL
@@ -1051,20 +1302,18 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotYTicks(JNIEnv* env,
                                                               jlong handle) {
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  std::vector<double> packed;
+  const size_t count = value ? value->y_ticks.size() : 0;
+  auto packed = VersionedRecordPayload(kTickRecordWidth, count);
   if (value) {
-    packed.reserve(value->y_ticks.size() * 2);
-    for (const auto& tick : value->y_ticks) {
-      packed.push_back(tick.value);
-      packed.push_back(tick.position);
+    for (size_t index = 0; index < count; ++index) {
+      const size_t offset = RecordOffset(kTickRecordWidth, index);
+      packed[offset + ToIndex(TickRecordIndex::kValue)] =
+          value->y_ticks[index].value;
+      packed[offset + ToIndex(TickRecordIndex::kPosition)] =
+          value->y_ticks[index].position;
     }
   }
-  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
-  if (!packed.empty()) {
-    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
-                              packed.data());
-  }
-  return result;
+  return NewDoubleArray(env, packed);
 }
 
 JNIEXPORT jdoubleArray JNICALL
@@ -1072,88 +1321,91 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPaneYTicks(
     JNIEnv* env, jclass, jlong handle) {
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  std::vector<double> packed;
+  const size_t count = value ? value->pane_y_ticks.size() : 0;
+  auto packed = VersionedRecordPayload(kTickRecordWidth, count);
   if (value) {
-    packed.reserve(value->pane_y_ticks.size() * 2);
-    for (const auto& tick : value->pane_y_ticks) {
-      packed.push_back(tick.value);
-      packed.push_back(tick.position);
+    for (size_t index = 0; index < count; ++index) {
+      const size_t offset = RecordOffset(kTickRecordWidth, index);
+      packed[offset + ToIndex(TickRecordIndex::kValue)] =
+          value->pane_y_ticks[index].value;
+      packed[offset + ToIndex(TickRecordIndex::kPosition)] =
+          value->pane_y_ticks[index].position;
     }
   }
-  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
-  if (!packed.empty()) {
-    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
-                              packed.data());
-  }
-  return result;
+  return NewDoubleArray(env, packed);
 }
 
 JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
                                                              jclass,
                                                              jlong handle) {
-  constexpr size_t kWidth = 14;
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  std::vector<double> packed;
+  const size_t count = value ? value->panes.size() : 0;
+  auto packed = VersionedRecordPayload(kPaneSnapshotRecordWidth, count);
   if (value) {
-    packed.reserve(value->panes.size() * kWidth);
-    for (const auto& pane : value->panes) {
-      packed.push_back(pane.plot.left);
-      packed.push_back(pane.plot.top);
-      packed.push_back(pane.plot.right);
-      packed.push_back(pane.plot.bottom);
-      packed.push_back(pane.height_weight);
-      packed.push_back(pane.visible_y_min);
-      packed.push_back(pane.visible_y_max);
-      packed.push_back(pane.y_axis_scale);
-      packed.push_back(static_cast<double>(pane.y_tick_offset));
-      packed.push_back(static_cast<double>(pane.y_tick_count));
-      packed.push_back(pane.scale_visible ? 1.0 : 0.0);
-      packed.push_back(pane.volume_format ? 1.0 : 0.0);
-      packed.push_back(static_cast<double>(pane.precision));
-      packed.push_back(pane.rsi_scale ? 1.0 : 0.0);
+    for (size_t index = 0; index < count; ++index) {
+      const auto& pane = value->panes[index];
+      const size_t offset = RecordOffset(kPaneSnapshotRecordWidth, index);
+      const auto set = [&](PaneSnapshotRecordIndex field, double field_value) {
+        packed[offset + ToIndex(field)] = field_value;
+      };
+      set(PaneSnapshotRecordIndex::kPlotLeft, pane.plot.left);
+      set(PaneSnapshotRecordIndex::kPlotTop, pane.plot.top);
+      set(PaneSnapshotRecordIndex::kPlotRight, pane.plot.right);
+      set(PaneSnapshotRecordIndex::kPlotBottom, pane.plot.bottom);
+      set(PaneSnapshotRecordIndex::kHeightWeight, pane.height_weight);
+      set(PaneSnapshotRecordIndex::kVisibleYMin, pane.visible_y_min);
+      set(PaneSnapshotRecordIndex::kVisibleYMax, pane.visible_y_max);
+      set(PaneSnapshotRecordIndex::kYAxisScale, pane.y_axis_scale);
+      set(PaneSnapshotRecordIndex::kYTickOffset,
+          static_cast<double>(pane.y_tick_offset));
+      set(PaneSnapshotRecordIndex::kYTickCount,
+          static_cast<double>(pane.y_tick_count));
+      set(PaneSnapshotRecordIndex::kScaleVisible,
+          pane.scale_visible ? 1.0 : 0.0);
+      set(PaneSnapshotRecordIndex::kVolumeFormat,
+          pane.volume_format ? 1.0 : 0.0);
+      set(PaneSnapshotRecordIndex::kPrecision,
+          static_cast<double>(pane.precision));
+      set(PaneSnapshotRecordIndex::kRsiScale, pane.rsi_scale ? 1.0 : 0.0);
     }
   }
-  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
-  if (!packed.empty()) {
-    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
-                              packed.data());
-  }
-  return result;
+  return NewDoubleArray(env, packed);
 }
 
 JNIEXPORT jdoubleArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRsiLegends(
     JNIEnv* env, jclass, jlong handle) {
-  constexpr size_t kWidth = 13;
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  std::vector<double> packed;
+  const size_t count = value ? value->rsi_legends.size() : 0;
+  auto packed = VersionedRecordPayload(kRsiLegendRecordWidth, count);
   if (value) {
-    packed.reserve(value->rsi_legends.size() * kWidth);
-    for (const auto& legend : value->rsi_legends) {
-      packed.push_back(static_cast<double>(legend.pane_index));
-      packed.push_back(static_cast<double>(legend.period));
-      packed.push_back(legend.value);
-      packed.push_back(legend.has_value ? 1.0 : 0.0);
-      packed.push_back(legend.text_color.r);
-      packed.push_back(legend.text_color.g);
-      packed.push_back(legend.text_color.b);
-      packed.push_back(legend.text_color.a);
-      packed.push_back(legend.value_color.r);
-      packed.push_back(legend.value_color.g);
-      packed.push_back(legend.value_color.b);
-      packed.push_back(legend.value_color.a);
-      packed.push_back(legend.text_color_set ? 1.0 : 0.0);
+    for (size_t index = 0; index < count; ++index) {
+      const auto& legend = value->rsi_legends[index];
+      const size_t offset = RecordOffset(kRsiLegendRecordWidth, index);
+      const auto set = [&](RsiLegendRecordIndex field, double field_value) {
+        packed[offset + ToIndex(field)] = field_value;
+      };
+      set(RsiLegendRecordIndex::kPaneIndex,
+          static_cast<double>(legend.pane_index));
+      set(RsiLegendRecordIndex::kPeriod, static_cast<double>(legend.period));
+      set(RsiLegendRecordIndex::kValue, legend.value);
+      set(RsiLegendRecordIndex::kHasValue, legend.has_value ? 1.0 : 0.0);
+      set(RsiLegendRecordIndex::kTextColorR, legend.text_color.r);
+      set(RsiLegendRecordIndex::kTextColorG, legend.text_color.g);
+      set(RsiLegendRecordIndex::kTextColorB, legend.text_color.b);
+      set(RsiLegendRecordIndex::kTextColorA, legend.text_color.a);
+      set(RsiLegendRecordIndex::kValueColorR, legend.value_color.r);
+      set(RsiLegendRecordIndex::kValueColorG, legend.value_color.g);
+      set(RsiLegendRecordIndex::kValueColorB, legend.value_color.b);
+      set(RsiLegendRecordIndex::kValueColorA, legend.value_color.a);
+      set(RsiLegendRecordIndex::kTextColorSet,
+          legend.text_color_set ? 1.0 : 0.0);
     }
   }
-  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(packed.size()));
-  if (!packed.empty()) {
-    env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(packed.size()),
-                              packed.data());
-  }
-  return result;
+  return NewDoubleArray(env, packed);
 }
 
 JNIEXPORT jint JNICALL
@@ -1173,6 +1425,9 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass,
   const auto set_meta = [&](SnapshotMetaIndex index, double value) {
     meta[ToIndex(index)] = value;
   };
+  set_meta(SnapshotMetaIndex::kAbiVersion, kChartEngineTransportAbiVersion);
+  set_meta(SnapshotMetaIndex::kPayloadSize,
+           static_cast<double>(kSnapshotMetaCount));
   if (snapshot) {
     set_meta(SnapshotMetaIndex::kWidth, snapshot->width);
     set_meta(SnapshotMetaIndex::kHeight, snapshot->height);

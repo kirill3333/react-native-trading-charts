@@ -1,27 +1,8 @@
 package com.tradingcharts
 
-import android.graphics.Color
 import java.nio.ByteBuffer
 
 private const val CONTENT_FLOATS_PER_VERTEX = 6
-
-private fun String.nativeSeriesType() =
-    when (this) {
-      "bar" -> 1.0
-      "hollowCandlestick" -> 2.0
-      "histogram" -> 3.0
-      "line" -> 4.0
-      "area" -> 5.0
-      else -> 0.0
-    }
-
-private fun String.nativeLineSource() =
-    when (this) {
-      "open" -> 0.0
-      "high" -> 1.0
-      "low" -> 2.0
-      else -> 3.0
-    }
 
 internal data class AxisTick(val value: Double, val position: Float)
 
@@ -113,54 +94,56 @@ internal data class ChartSnapshot(
 )
 
 private object SnapshotMetaIndex {
-  const val WIDTH = 0
-  const val HEIGHT = 1
-  const val PLOT_LEFT = 2
-  const val PLOT_TOP = 3
-  const val PLOT_RIGHT = 4
-  const val PLOT_BOTTOM = 5
-  const val VISIBLE_X_MIN = 6
-  const val VISIBLE_X_MAX = 7
-  const val VISIBLE_Y_MIN = 8
-  const val VISIBLE_Y_MAX = 9
-  const val CURRENT_PRICE_VISIBLE = 10
-  const val CURRENT_PRICE = 11
-  const val CURRENT_PRICE_Y = 12
-  const val CURRENT_PRICE_COLOR_R = 13
-  const val CURRENT_PRICE_COLOR_G = 14
-  const val CURRENT_PRICE_COLOR_B = 15
-  const val CURRENT_PRICE_COLOR_A = 16
-  const val CROSSHAIR_VISIBLE = 17
-  const val CROSSHAIR_X = 18
-  const val CROSSHAIR_Y = 19
-  const val CROSSHAIR_PRICE = 20
-  const val SELECTED_CANDLE_START = 21
-  const val SELECTED_CANDLE_END_EXCLUSIVE = 27
-  const val FIRST_VISIBLE_INDEX = 27
-  const val LAST_VISIBLE_INDEX = 28
-  const val TOTAL_CANDLE_COUNT = 29
-  const val HAS_VISIBLE_CANDLES = 30
-  const val VISIBLE_MAXIMUM_VISIBLE = 31
-  const val VISIBLE_MAXIMUM_VALUE = 32
-  const val VISIBLE_MAXIMUM_X = 33
-  const val VISIBLE_MAXIMUM_Y = 34
-  const val VISIBLE_MAXIMUM_LABEL_ON_RIGHT = 35
-  const val VISIBLE_MINIMUM_VISIBLE = 36
-  const val VISIBLE_MINIMUM_VALUE = 37
-  const val VISIBLE_MINIMUM_X = 38
-  const val VISIBLE_MINIMUM_Y = 39
-  const val VISIBLE_MINIMUM_LABEL_ON_RIGHT = 40
-  const val SELECTED_CHANGE = 41
-  const val SELECTED_CHANGE_PERCENT = 42
-  const val SELECTED_AMPLITUDE_PERCENT = 43
-  const val SELECTED_PERCENTAGES_VALID = 44
-  const val CURRENT_PRICE_LABEL_COLOR_R = 45
-  const val CURRENT_PRICE_LABEL_COLOR_G = 46
-  const val CURRENT_PRICE_LABEL_COLOR_B = 47
-  const val CURRENT_PRICE_LABEL_COLOR_A = 48
-  const val HORIZONTAL_SCALE = 49
-  const val Y_AXIS_SCALE = 50
-  const val SIZE = 51
+  const val VERSION = 0
+  const val PAYLOAD_SIZE = 1
+  const val WIDTH = 2
+  const val HEIGHT = 3
+  const val PLOT_LEFT = 4
+  const val PLOT_TOP = 5
+  const val PLOT_RIGHT = 6
+  const val PLOT_BOTTOM = 7
+  const val VISIBLE_X_MIN = 8
+  const val VISIBLE_X_MAX = 9
+  const val VISIBLE_Y_MIN = 10
+  const val VISIBLE_Y_MAX = 11
+  const val CURRENT_PRICE_VISIBLE = 12
+  const val CURRENT_PRICE = 13
+  const val CURRENT_PRICE_Y = 14
+  const val CURRENT_PRICE_COLOR_R = 15
+  const val CURRENT_PRICE_COLOR_G = 16
+  const val CURRENT_PRICE_COLOR_B = 17
+  const val CURRENT_PRICE_COLOR_A = 18
+  const val CROSSHAIR_VISIBLE = 19
+  const val CROSSHAIR_X = 20
+  const val CROSSHAIR_Y = 21
+  const val CROSSHAIR_PRICE = 22
+  const val SELECTED_CANDLE_START = 23
+  const val SELECTED_CANDLE_END_EXCLUSIVE = 29
+  const val FIRST_VISIBLE_INDEX = 29
+  const val LAST_VISIBLE_INDEX = 30
+  const val TOTAL_CANDLE_COUNT = 31
+  const val HAS_VISIBLE_CANDLES = 32
+  const val VISIBLE_MAXIMUM_VISIBLE = 33
+  const val VISIBLE_MAXIMUM_VALUE = 34
+  const val VISIBLE_MAXIMUM_X = 35
+  const val VISIBLE_MAXIMUM_Y = 36
+  const val VISIBLE_MAXIMUM_LABEL_ON_RIGHT = 37
+  const val VISIBLE_MINIMUM_VISIBLE = 38
+  const val VISIBLE_MINIMUM_VALUE = 39
+  const val VISIBLE_MINIMUM_X = 40
+  const val VISIBLE_MINIMUM_Y = 41
+  const val VISIBLE_MINIMUM_LABEL_ON_RIGHT = 42
+  const val SELECTED_CHANGE = 43
+  const val SELECTED_CHANGE_PERCENT = 44
+  const val SELECTED_AMPLITUDE_PERCENT = 45
+  const val SELECTED_PERCENTAGES_VALID = 46
+  const val CURRENT_PRICE_LABEL_COLOR_R = 47
+  const val CURRENT_PRICE_LABEL_COLOR_G = 48
+  const val CURRENT_PRICE_LABEL_COLOR_B = 49
+  const val CURRENT_PRICE_LABEL_COLOR_A = 50
+  const val HORIZONTAL_SCALE = 51
+  const val Y_AXIS_SCALE = 52
+  const val SIZE = 53
 }
 
 private fun DoubleArray.visibleMaximum() =
@@ -183,12 +166,23 @@ private fun DoubleArray.visibleMinimum() =
 
 @Suppress("TooManyFunctions")
 internal object ChartEngineNative {
-  private const val PANE_META_WIDTH = 14
-  private const val RSI_LEGEND_META_WIDTH = 13
-
   init {
     System.loadLibrary("tradingcharts")
+    validateTransportDescriptor(nativeTransportAbi())
+    val sentinel = seriesRoundTripSentinel()
+    validateSeriesRoundTrip(
+        nativeRoundTripSeriesPayload(sentinel.strings, sentinel.numbers, sentinel.colors)
+    )
   }
+
+  @JvmStatic private external fun nativeTransportAbi(): IntArray
+
+  @JvmStatic
+  private external fun nativeRoundTripSeriesPayload(
+      strings: Array<String>,
+      numbers: DoubleArray,
+      colors: FloatArray,
+  ): DoubleArray
 
   @JvmStatic external fun nativeCreate(): Long
 
@@ -359,52 +353,12 @@ internal object ChartEngineNative {
   }
 
   fun addSeries(handle: Long, series: SeriesConfig): Int {
-    val colors = FloatArray(40)
-    listOf(
-            series.color,
-            series.upColor,
-            series.downColor,
-            series.lineGradientTopColor,
-            series.lineGradientBottomColor,
-            series.areaFillTopColor,
-            series.areaFillBottomColor,
-            series.rsiLevelLineColor,
-            series.rsiBandColor,
-            series.rsiTextColor ?: series.color,
-        )
-        .forEachIndexed { index, color ->
-          colors[index * 4] = Color.red(color) / 255f
-          colors[index * 4 + 1] = Color.green(color) / 255f
-          colors[index * 4 + 2] = Color.blue(color) / 255f
-          colors[index * 4 + 3] = Color.alpha(color) / 255f
-        }
+    val payload = series.nativeTransportPayload()
     return nativeAddSeries(
         handle,
-        arrayOf(
-            series.seriesId,
-            series.paneId,
-            series.priceScaleId,
-            series.sourceSeriesId,
-        ),
-        doubleArrayOf(
-            series.type.nativeSeriesType(),
-            when (series.sourceType) {
-              "ohlcvVolume" -> 1.0
-              "ohlcvRsi" -> 2.0
-              else -> 0.0
-            },
-            if (series.visible) 1.0 else 0.0,
-            if (series.declarative) 1.0 else 0.0,
-            series.lineWidthPx.toDouble(),
-            series.lineSource.nativeLineSource(),
-            if (series.lineGradientEnabled) 1.0 else 0.0,
-            series.lineGapThresholdMs,
-            series.rsiPeriod.toDouble(),
-            series.rsiOversold,
-            series.rsiOverbought,
-            if (series.rsiTextColor != null) 1.0 else 0.0,
-        ),
-        colors,
+        payload.strings,
+        payload.numbers,
+        payload.colors,
     )
   }
 
@@ -464,11 +418,25 @@ internal object ChartEngineNative {
     check(meta.size == SnapshotMetaIndex.SIZE) {
       "Invalid native snapshot metadata size: ${meta.size}"
     }
-    fun ticks(values: DoubleArray) =
-        List(values.size / 2) { index ->
-          AxisTick(values[2 * index], values[2 * index + 1].toFloat())
-        }
+    check(meta[SnapshotMetaIndex.VERSION] == CHART_ENGINE_TRANSPORT_ABI_VERSION.toDouble()) {
+      "Unsupported native snapshot metadata ABI version: ${meta[SnapshotMetaIndex.VERSION]}"
+    }
+    check(meta[SnapshotMetaIndex.PAYLOAD_SIZE] == SnapshotMetaIndex.SIZE.toDouble()) {
+      "Invalid native snapshot metadata declared size: ${meta[SnapshotMetaIndex.PAYLOAD_SIZE]}"
+    }
+    fun ticks(values: DoubleArray): List<AxisTick> {
+      val payload =
+          decodeSnapshotRecordPayload(values, SnapshotTransportAbi.TICK_RECORD_WIDTH, "ticks")
+      return List(payload.recordCount) { index ->
+        val offset = payload.offset(index)
+        AxisTick(payload.values[offset], payload.values[offset + 1].toFloat())
+      }
+    }
     val panes = snapshotPanes(snapshot, config, ::ticks)
+    val overlayVertices = nativeSnapshotOverlayVertices(snapshot)
+    check(overlayVertices.size % CONTENT_FLOATS_PER_VERTEX == 0) {
+      "Invalid native overlay vertex layout: ${overlayVertices.size} floats"
+    }
     return ChartSnapshot(
         revision = nativeSnapshotRevision(snapshot),
         contentRevision = contentRevision,
@@ -489,7 +457,7 @@ internal object ChartEngineNative {
         visibleYMin = meta[SnapshotMetaIndex.VISIBLE_Y_MIN],
         visibleYMax = meta[SnapshotMetaIndex.VISIBLE_Y_MAX],
         yAxisScale = meta[SnapshotMetaIndex.Y_AXIS_SCALE],
-        overlayVertices = nativeSnapshotOverlayVertices(snapshot),
+        overlayVertices = overlayVertices,
         xTicks = ticks(nativeSnapshotXTicks(snapshot)),
         yTicks = ticks(nativeSnapshotYTicks(snapshot)),
         panes = panes,
@@ -536,59 +504,65 @@ internal object ChartEngineNative {
       ticks: (DoubleArray) -> List<AxisTick>,
   ): List<PaneSnapshot> {
     val paneTicks = ticks(nativeSnapshotPaneYTicks(snapshot))
-    val paneMeta = nativeSnapshotPanes(snapshot)
-    check(paneMeta.size % PANE_META_WIDTH == 0) {
-      "Invalid native pane metadata size: ${paneMeta.size}"
-    }
-    return List(paneMeta.size / PANE_META_WIDTH) { index ->
-      val offset = index * PANE_META_WIDTH
-      val tickOffset = paneMeta[offset + 8].toInt()
-      val tickCount = paneMeta[offset + 9].toInt()
+    val paneMeta =
+        decodeSnapshotRecordPayload(
+            nativeSnapshotPanes(snapshot),
+            SnapshotTransportAbi.PANE_RECORD_WIDTH,
+            "panes",
+        )
+    return List(paneMeta.recordCount) { index ->
+      val record = paneMeta.paneRecord(index)
+      check(
+          record.yTickOffset >= 0 &&
+              record.yTickCount >= 0 &&
+              record.yTickOffset + record.yTickCount <= paneTicks.size
+      ) {
+        "Invalid native pane tick range: offset=${record.yTickOffset}, " +
+            "count=${record.yTickCount}, " +
+            "total=${paneTicks.size}"
+      }
       val configPane = config.panes.getOrNull(index)
       PaneSnapshot(
           paneId = configPane?.paneId ?: "pane-$index",
           priceScaleId = configPane?.priceScaleId ?: "scale-$index",
-          plotLeft = paneMeta[offset].toFloat(),
-          plotTop = paneMeta[offset + 1].toFloat(),
-          plotRight = paneMeta[offset + 2].toFloat(),
-          plotBottom = paneMeta[offset + 3].toFloat(),
-          heightWeight = paneMeta[offset + 4],
-          visibleYMin = paneMeta[offset + 5],
-          visibleYMax = paneMeta[offset + 6],
-          yAxisScale = paneMeta[offset + 7],
-          yTicks = paneTicks.subList(tickOffset, tickOffset + tickCount),
-          scaleVisible = paneMeta[offset + 10] != 0.0,
-          volumeFormat = paneMeta[offset + 11] != 0.0,
-          precision = paneMeta[offset + 12].toInt(),
-          rsiScale = paneMeta[offset + 13] != 0.0,
+          plotLeft = record.plotLeft,
+          plotTop = record.plotTop,
+          plotRight = record.plotRight,
+          plotBottom = record.plotBottom,
+          heightWeight = record.heightWeight,
+          visibleYMin = record.visibleYMin,
+          visibleYMax = record.visibleYMax,
+          yAxisScale = record.yAxisScale,
+          yTicks =
+              paneTicks.subList(
+                  record.yTickOffset,
+                  record.yTickOffset + record.yTickCount,
+              ),
+          scaleVisible = record.scaleVisible,
+          volumeFormat = record.volumeFormat,
+          precision = record.precision,
+          rsiScale = record.rsiScale,
       )
     }
   }
 
   private fun snapshotRsiLegends(snapshot: Long): List<RsiLegendSnapshot> {
-    val values = nativeSnapshotRsiLegends(snapshot)
-    check(values.size % RSI_LEGEND_META_WIDTH == 0) {
-      "Invalid native RSI legend metadata size: ${values.size}"
-    }
-    return List(values.size / RSI_LEGEND_META_WIDTH) { index ->
-      val offset = index * RSI_LEGEND_META_WIDTH
-      fun channel(channelOffset: Int) =
-          (values[offset + channelOffset].coerceIn(0.0, 1.0) * 255.0).toInt()
-      fun colorAt(channelOffset: Int) =
-          Color.argb(
-              channel(channelOffset + 3),
-              channel(channelOffset),
-              channel(channelOffset + 1),
-              channel(channelOffset + 2),
-          )
+    val payload =
+        decodeSnapshotRecordPayload(
+            nativeSnapshotRsiLegends(snapshot),
+            SnapshotTransportAbi.RSI_LEGEND_RECORD_WIDTH,
+            "RSI legends",
+        )
+    return List(payload.recordCount) { index ->
+      val record = payload.rsiLegendRecord(index)
       RsiLegendSnapshot(
-          paneIndex = values[offset].toInt(),
-          period = values[offset + 1].toInt(),
-          value = values[offset + 2],
-          hasValue = values[offset + 3] != 0.0,
-          textColor = colorAt(4),
-          valueColor = colorAt(8),
-          textColorSet = values[offset + 12] != 0.0,
+          paneIndex = record.paneIndex,
+          period = record.period,
+          value = record.value,
+          hasValue = record.hasValue,
+          textColor = record.textColor,
+          valueColor = record.valueColor,
+          textColorSet = record.textColorSet,
       )
     }
   }
