@@ -850,7 +850,8 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetPanes(
   std::vector<PaneConfig> panes;
   panes.reserve(static_cast<size_t>(pane_count));
   for (jsize index = 0; index < pane_count; ++index) {
-    const size_t offset = static_cast<size_t>(index * kNumberWidth);
+    const size_t offset =
+        static_cast<size_t>(index) * static_cast<size_t>(kNumberWidth);
     PaneConfig pane;
     pane.pane_id = StringAt(env, strings, index * 2, "");
     pane.price_scale_id = StringAt(env, strings, index * 2 + 1, "");

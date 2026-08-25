@@ -10,8 +10,8 @@ namespace trading_charts::internal {
 
 const PaneConfig& PaneConfigAt(const std::vector<PaneConfig>& panes,
                                size_t index) {
-  static const PaneConfig kFallback{};
-  return index < panes.size() ? panes[index] : kFallback;
+  static const PaneConfig k_fallback{};
+  return index < panes.size() ? panes[index] : k_fallback;
 }
 
 std::vector<Rect> ComputePaneRects(const ChartConfig& config,

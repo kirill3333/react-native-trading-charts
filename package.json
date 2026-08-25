@@ -141,6 +141,9 @@
         "react-native-trading-charts-source"
       ]
     },
+    "moduleNameMapper": {
+      "^react-native-trading-charts$": "<rootDir>/src/index.tsx"
+    },
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"

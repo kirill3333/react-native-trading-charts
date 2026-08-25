@@ -54,9 +54,15 @@ bool IsValidCandle(const Candle& candle) {
 }
 
 double RsiValue(double average_gain, double average_loss) {
-  if (average_gain == 0.0 && average_loss == 0.0) return 50.0;
-  if (average_loss == 0.0) return 100.0;
-  if (average_gain == 0.0) return 0.0;
+  if (average_gain == 0.0 && average_loss == 0.0) {
+    return 50.0;
+  }
+  if (average_loss == 0.0) {
+    return 100.0;
+  }
+  if (average_gain == 0.0) {
+    return 0.0;
+  }
   return 100.0 - 100.0 / (1.0 + average_gain / average_loss);
 }
 
@@ -416,7 +422,9 @@ void ChartEngine::RebuildSeriesIndicesLocked() {
 
 const std::vector<Candle>* ChartEngine::SourceCandlesLocked(
     const SeriesData& series) const {
-  if (series.source_series_index == kMainSeriesStateIndex) return &candles_;
+  if (series.source_series_index == kMainSeriesStateIndex) {
+    return &candles_;
+  }
   return series.source_series_index < additional_series_.size()
              ? &additional_series_[series.source_series_index].candles
              : nullptr;
@@ -424,9 +432,13 @@ const std::vector<Candle>* ChartEngine::SourceCandlesLocked(
 
 void ChartEngine::RebuildRsiSeriesLocked(size_t series_index,
                                          size_t first_changed_source_index) {
-  if (series_index >= additional_series_.size()) return;
+  if (series_index >= additional_series_.size()) {
+    return;
+  }
   SeriesData& series = additional_series_[series_index];
-  if (series.config.source != SeriesSource::kOhlcvRsi) return;
+  if (series.config.source != SeriesSource::kOhlcvRsi) {
+    return;
+  }
   const std::vector<Candle>* source_pointer = SourceCandlesLocked(series);
   if (source_pointer == nullptr) {
     series.candles.clear();

@@ -62,8 +62,8 @@ ChartConfig FixedResolution(std::int64_t duration_ms) {
 
 const std::vector<float>& ContentOf(
     const trading_charts::RenderSnapshot& snapshot) {
-  static const std::vector<float> kEmpty;
-  return snapshot.content_vertices ? *snapshot.content_vertices : kEmpty;
+  static const std::vector<float> k_empty;
+  return snapshot.content_vertices ? *snapshot.content_vertices : k_empty;
 }
 
 struct QuadBounds {
@@ -203,7 +203,7 @@ void TestCustomBucketOrigin() {
       ExplicitResolution(trading_charts::ResolutionUnit::kHour);
   config.trade_aggregation.bucket_origin =
       trading_charts::BucketOrigin::kTimestamp;
-  config.trade_aggregation.origin_timestamp_ms = 30 * 60 * 1000;
+  config.trade_aggregation.origin_timestamp_ms = 30LL * 60 * 1000;
   engine.SetConfig(config);
 
   const double first[] = {60.0 * 60.0 * 1000.0, 10.0, 1.0};

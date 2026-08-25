@@ -27,7 +27,7 @@ constexpr size_t kRoundedHollowCandlestickQuadsPerSample = 22;
 constexpr float kBarTickSlotRatio = 0.45f;
 constexpr float kLineMiterLimit = 4.0f;
 constexpr float kPi = 3.14159265358979323846f;
-constexpr int kMaxCornerSegments = 4;
+constexpr size_t kMaxCornerSegments = 4;
 constexpr size_t kMaxRoundedBoundaryPoints = 4 * (kMaxCornerSegments + 1);
 
 struct SeriesSample {
@@ -53,10 +53,15 @@ struct Vector2 {
   float y = 0.0f;
 };
 
+struct ColoredQuad {
+  std::array<Vector2, 4> points;
+  std::array<bool, 4> transparent{};
+};
+
 int RoundedCornerSegments(float radius, float display_scale) {
   const float scale = display_scale > 0.0f ? display_scale : 1.0f;
   return std::clamp(static_cast<int>(std::ceil(radius / (2.0f * scale))), 1,
-                    kMaxCornerSegments);
+                    static_cast<int>(kMaxCornerSegments));
 }
 
 size_t BuildRoundedRectBoundary(
@@ -213,20 +218,15 @@ ColoredVertex LineVertex(const SeriesGeometryInput& input, Vector2 point,
 }
 
 void AppendColoredQuad(const SeriesGeometryInput& input,
-                       std::vector<float>& vertices, Vector2 first,
-                       Vector2 second, Vector2 third, Vector2 fourth,
-                       bool first_transparent = false,
-                       bool second_transparent = false,
-                       bool third_transparent = false,
-                       bool fourth_transparent = false) {
+                       std::vector<float>& vertices, const ColoredQuad& quad) {
   const ColoredVertex a =
-      LineVertex(input, first, first_transparent ? 0.0f : 1.0f);
+      LineVertex(input, quad.points[0], quad.transparent[0] ? 0.0f : 1.0f);
   const ColoredVertex b =
-      LineVertex(input, second, second_transparent ? 0.0f : 1.0f);
+      LineVertex(input, quad.points[1], quad.transparent[1] ? 0.0f : 1.0f);
   const ColoredVertex c =
-      LineVertex(input, third, third_transparent ? 0.0f : 1.0f);
+      LineVertex(input, quad.points[2], quad.transparent[2] ? 0.0f : 1.0f);
   const ColoredVertex d =
-      LineVertex(input, fourth, fourth_transparent ? 0.0f : 1.0f);
+      LineVertex(input, quad.points[3], quad.transparent[3] ? 0.0f : 1.0f);
   AppendClippedTriangle(vertices, a, b, c, input.plot);
   AppendClippedTriangle(vertices, a, c, d, input.plot);
 }
@@ -312,25 +312,33 @@ class LineStrokeBuilder {
     const Vector2 end_outer_left = Add(end_point, outer);
     const Vector2 end_outer_right = Subtract(end_point, outer);
 
-    AppendColoredQuad(input_, vertices_, start_inner_left, end_inner_left,
-                      end_inner_right, start_inner_right);
-    AppendColoredQuad(input_, vertices_, start_outer_left, end_outer_left,
-                      end_inner_left, start_inner_left, true, true);
-    AppendColoredQuad(input_, vertices_, start_inner_right, end_inner_right,
-                      end_outer_right, start_outer_right, false, false, true,
-                      true);
+    AppendColoredQuad(input_, vertices_,
+                      ColoredQuad{{start_inner_left, end_inner_left,
+                                   end_inner_right, start_inner_right}});
+    AppendColoredQuad(input_, vertices_,
+                      ColoredQuad{{start_outer_left, end_outer_left,
+                                   end_inner_left, start_inner_left},
+                                  {true, true}});
+    AppendColoredQuad(input_, vertices_,
+                      ColoredQuad{{start_inner_right, end_inner_right,
+                                   end_outer_right, start_outer_right},
+                                  {false, false, true, true}});
 
     if (start_cap) {
       const Vector2 cap = Multiply(direction, -fringe_);
-      AppendColoredQuad(input_, vertices_, Add(start_inner_right, cap),
-                        Add(start_inner_left, cap), start_inner_left,
-                        start_inner_right, true, true);
+      AppendColoredQuad(
+          input_, vertices_,
+          ColoredQuad{{Add(start_inner_right, cap), Add(start_inner_left, cap),
+                       start_inner_left, start_inner_right},
+                      {true, true}});
     }
     if (end_cap) {
       const Vector2 cap = Multiply(direction, fringe_);
-      AppendColoredQuad(input_, vertices_, end_inner_left,
-                        Add(end_inner_left, cap), Add(end_inner_right, cap),
-                        end_inner_right, false, true, true);
+      AppendColoredQuad(
+          input_, vertices_,
+          ColoredQuad{{end_inner_left, Add(end_inner_left, cap),
+                       Add(end_inner_right, cap), end_inner_right},
+                      {false, true, true}});
     }
   }
 
@@ -369,15 +377,21 @@ class LineStrokeBuilder {
       AppendColoredTriangle(input_, vertices_, center, previous_core,
                             miter_core);
       AppendColoredTriangle(input_, vertices_, center, miter_core, next_core);
-      AppendColoredQuad(input_, vertices_, previous_fringe, miter_fringe,
-                        miter_core, previous_core, true, true);
-      AppendColoredQuad(input_, vertices_, miter_fringe, next_fringe, next_core,
-                        miter_core, true, true);
+      AppendColoredQuad(input_, vertices_,
+                        ColoredQuad{{previous_fringe, miter_fringe, miter_core,
+                                     previous_core},
+                                    {true, true}});
+      AppendColoredQuad(
+          input_, vertices_,
+          ColoredQuad{{miter_fringe, next_fringe, next_core, miter_core},
+                      {true, true}});
     } else {
       AppendColoredTriangle(input_, vertices_, center, previous_core,
                             next_core);
-      AppendColoredQuad(input_, vertices_, previous_fringe, next_fringe,
-                        next_core, previous_core, true, true);
+      AppendColoredQuad(
+          input_, vertices_,
+          ColoredQuad{{previous_fringe, next_fringe, next_core, previous_core},
+                      {true, true}});
     }
 
     // The inside edges of consecutive fixed-width segment quads overlap for
@@ -397,9 +411,10 @@ class LineStrokeBuilder {
               Multiply(outgoing_normal, (half_width_ + fringe_) * inner_sign));
       AppendColoredTriangle(input_, vertices_, center, previous_inner,
                             next_inner);
-      AppendColoredQuad(input_, vertices_, previous_inner_fringe,
-                        next_inner_fringe, next_inner, previous_inner, true,
-                        true);
+      AppendColoredQuad(input_, vertices_,
+                        ColoredQuad{{previous_inner_fringe, next_inner_fringe,
+                                     next_inner, previous_inner},
+                                    {true, true}});
     }
   }
 

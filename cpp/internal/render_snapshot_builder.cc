@@ -905,8 +905,8 @@ class RenderSnapshotBuilder {
         auto begin = snapshot_->pane_y_ticks.begin() +
                      static_cast<std::ptrdiff_t>(pane.y_tick_offset);
         std::sort(begin, snapshot_->pane_y_ticks.end(),
-                  [](const AxisTick& first, const AxisTick& second) {
-                    return first.value < second.value;
+                  [](const AxisTick& left, const AxisTick& right) {
+                    return left.value < right.value;
                   });
       }
       pane.y_tick_count = snapshot_->pane_y_ticks.size() - pane.y_tick_offset;
