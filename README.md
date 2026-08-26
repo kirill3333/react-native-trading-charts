@@ -14,6 +14,13 @@ OpenGL ES 3 on Android. Frames are rendered on demand, immutable snapshots are
 reused between updates, and high-frequency trade streams can be batched before
 they cross the native boundary.
 
+<p align="center">
+  <img src="/docs/assets/panels.png" width="200">
+  <img src="/docs/assets/zoom.png" width="200">
+  <img src="/docs/assets/theme.png" width="200">
+  <img src="/docs/assets/settings.png" width="200">
+</p>
+
 ## Why Native Trading Charts?
 
 React Native trading charts are commonly built with either a WebView or a

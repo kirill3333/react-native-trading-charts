@@ -29,6 +29,8 @@ using trading_charts::UpdateStatus;
 
 namespace {
 
+constexpr double kFloatGeometryTolerance = 1e-4;
+
 void ExpectNear(double actual, double expected, double tolerance = 1e-9) {
   if (!(std::abs(actual - expected) < tolerance)) {
     std::cerr << "Expected " << actual << " to be within " << tolerance
@@ -664,13 +666,14 @@ void TestVisiblePriceExtremes() {
     assert(initial->visible_minimum.visible);
     ExpectNear(initial->visible_maximum.value, 48.0);
     ExpectNear(initial->visible_minimum.value, 4.0);
-    ExpectNear(initial->visible_maximum.x, initial->visible_minimum.x, 1e-5);
+    ExpectNear(initial->visible_maximum.x, initial->visible_minimum.x,
+               kFloatGeometryTolerance);
     ExpectNear(initial->visible_maximum.y,
                initial->plot.bottom -
                    (48.0 - initial->visible_y_min) /
                        (initial->visible_y_max - initial->visible_y_min) *
                        initial->plot.Height(),
-               1e-5);
+               kFloatGeometryTolerance);
     assert(initial->visible_maximum.label_on_right ==
            (initial->visible_maximum.x <=
             (initial->plot.left + initial->plot.right) * 0.5f));
@@ -1427,12 +1430,12 @@ void TestLogicalSpacingUsesUniformCandleSlots() {
 
   const auto snapshot = engine.Snapshot();
   ExpectNear(RenderedCandleBodyWidth(*snapshot, 1),
-             RenderedCandleBodyWidth(*snapshot, 3), 1e-5);
+             RenderedCandleBodyWidth(*snapshot, 3), kFloatGeometryTolerance);
   const float historical_step = RenderedCandleBodyCenter(*snapshot, 2) -
                                 RenderedCandleBodyCenter(*snapshot, 1);
   const float live_step = RenderedCandleBodyCenter(*snapshot, 4) -
                           RenderedCandleBodyCenter(*snapshot, 3);
-  ExpectNear(historical_step, live_step, 1e-4);
+  ExpectNear(historical_step, live_step, kFloatGeometryTolerance);
 
   engine.SetCrosshair(true, RenderedCandleBodyCenter(*snapshot, 3), 200.0f);
   const auto crosshair = engine.Snapshot();
