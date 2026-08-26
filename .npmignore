@@ -1,0 +1,72 @@
+# Dependencies and package-manager state
+node_modules/
+.yarn/
+.pnp.*
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Example app, development tools, documentation sources, and CI
+example/
+tools/
+docs/
+.github/
+.agents/
+.codex/
+AGENTS.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+
+# Tests, fixtures, and benchmarks
+**/__tests__/
+**/__fixtures__/
+**/__mocks__/
+**/*.test.*
+**/*.spec.*
+android/src/test/
+android/src/androidTest/
+cpp/tests/
+cpp/benchmarks/
+ios/Tests/
+
+# Build products, generated files, and native dependency caches
+**/build/
+**/.cxx/
+**/.gradle/
+**/DerivedData/
+**/Pods/
+ios/generated/
+android/generated/
+android/local.properties
+android/gradle/
+android/gradlew
+android/gradlew.bat
+
+# Local editor, OS, and diagnostic files
+.idea/
+.vscode/
+.expo/
+.turbo/
+.DS_Store
+*.log
+*.swp
+*.swo
+*.xcuserstate
+xcuserdata/
+
+# Repository-only configuration
+.clang-format
+.clang-tidy
+.editorconfig
+.gitattributes
+.gitignore
+.nvmrc
+.oxlintrc.json
+.watchmanconfig
+CPPLINT.cfg
+babel.config.js
+cpp/CMakeLists.txt
+lefthook.yml
+tsconfig.json
+tsconfig.build.json
+turbo.json

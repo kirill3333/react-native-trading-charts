@@ -1,7 +1,7 @@
 {
   "name": "react-native-trading-charts",
-  "version": "0.1.0",
-  "description": "Native performance trading charts",
+  "version": "1.0.0",
+  "description": "GPU accelerated trading charts for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -26,6 +26,11 @@
     "!android/gradlew",
     "!android/gradlew.bat",
     "!android/local.properties",
+    "!android/src/test",
+    "!android/src/androidTest",
+    "!cpp/CMakeLists.txt",
+    "!cpp/tests",
+    "!cpp/benchmarks",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",

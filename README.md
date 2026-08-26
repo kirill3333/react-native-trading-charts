@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/docs/assets/logo.png" height="100" width="100">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/logo.png" height="100" width="100">
 </p>
 
 # react-native-trading-charts
@@ -15,10 +15,10 @@ reused between updates, and high-frequency trade streams can be batched before
 they cross the native boundary.
 
 <p align="center">
-  <img src="/docs/assets/panels.png" width="200">
-  <img src="/docs/assets/zoom.png" width="200">
-  <img src="/docs/assets/theme.png" width="200">
-  <img src="/docs/assets/settings.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/panels.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/zoom.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/theme.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/settings.png" width="200">
 </p>
 
 ## Why Native Trading Charts?
@@ -68,7 +68,19 @@ frequently updated market data without introducing a browser or a third-party
 
 ## Installation
 
-> **TODO:** npm installation commands will be added here.
+Install the package with your preferred package manager:
+
+```sh
+npm install react-native-trading-charts
+# or
+yarn add react-native-trading-charts
+```
+
+For iOS, install the CocoaPods dependencies after adding the package:
+
+```sh
+cd ios && pod install
+```
 
 ## Table of Contents
 
