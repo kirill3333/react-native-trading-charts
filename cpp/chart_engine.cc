@@ -533,7 +533,6 @@ void ChartEngine::RebuildMovingAverageSeriesLocked(
       output_start > series.moving_average_states.size() ||
       output_start > series.candles.size()) {
     start = first_output_source_index;
-    output_start = 0;
     series.candles.clear();
     series.moving_average_states.clear();
   } else {

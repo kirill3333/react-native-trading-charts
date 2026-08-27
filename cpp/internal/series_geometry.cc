@@ -551,8 +551,8 @@ class DashedLineCapacityBuilder {
     remaining_ = dash_;
   }
 
-  size_t drawn_step_count() const { return drawn_step_count_; }
-  size_t point_count() const { return point_count_; }
+  size_t DrawnStepCount() const { return drawn_step_count_; }
+  size_t PointCount() const { return point_count_; }
 
  private:
   float dash_ = 4.0f;
@@ -1048,9 +1048,9 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
       DashedLineCapacityBuilder builder(input.config.display_scale);
       AppendLinePath(input, builder);
       const size_t stroke_quads =
-          builder.drawn_step_count() * kLineQuadsPerSample;
+          builder.DrawnStepCount() * kLineQuadsPerSample;
       const size_t fill_quads = input.config.series_type == SeriesType::kArea
-                                    ? builder.point_count()
+                                    ? builder.PointCount()
                                     : 0;
       return (stroke_quads + fill_quads) * kFloatsPerQuad;
     }

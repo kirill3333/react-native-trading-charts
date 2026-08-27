@@ -287,22 +287,43 @@ yarn typecheck
 yarn lint
 ```
 
-If any C++ header or source file changed, also run the complete C++ linters:
+If any C++ header or source file changed, including JNI code under
+`android/src/main/cpp`, run the full CI-equivalent C++ validation:
 
 ```sh
 yarn lint:cpp
+yarn tidy:cpp
+yarn test:cpp
 ```
 
-These lint and type checks are mandatory after every applicable change, not
-optional or merely proportionate. Do not report completion while they are
-failing. If a required check cannot be run, report the exact blocker.
+`yarn lint:cpp` checks clang-format and cpplint; it does not run clang-tidy.
+`yarn tidy:cpp` is therefore a separate mandatory check and must not be
+omitted. If formatting fails, use `yarn format:cpp`, review the resulting diff,
+and rerun all three C++ commands.
+
+If any Kotlin source under `android/src/main/java` changed, run the
+CI-equivalent Kotlin validation:
+
+```sh
+yarn lint:kotlin
+```
+
+This command runs both detekt and the ktfmt formatting check. If formatting
+fails, use `yarn format:kotlin`, review the resulting diff, and rerun
+`yarn lint:kotlin`.
+
+These lint, static-analysis, formatting, type, and applicable native test
+checks are mandatory after every applicable change, not optional or merely
+proportionate. Do not report completion while they are failing. If a required
+check cannot be run, report the exact command and blocker.
 
 Run tests proportionate to the change:
 
 ```sh
 yarn test
-yarn test:cpp
 ```
+
+`yarn test:cpp` is already mandatory for every C++ change as specified above.
 
 Native changes require rebuilding the example application:
 
