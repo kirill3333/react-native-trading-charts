@@ -38,6 +38,26 @@ const SERIES_LINE_WIDTH_OPTIONS = [
   { label: 'Medium', value: 1.5 },
   { label: 'Thick', value: 2.5 },
 ] as const;
+const INDICATOR_LINE_WIDTH_OPTIONS = [
+  { label: 'Hairline', value: 0.5 },
+  ...SERIES_LINE_WIDTH_OPTIONS,
+] as const;
+const SMA_PERIOD_OPTIONS = [
+  { label: '10', value: 10 },
+  { label: '20', value: 20 },
+  { label: '50', value: 50 },
+] as const;
+const EMA_PERIOD_OPTIONS = [
+  { label: '20', value: 20 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+] as const;
+const VALUE_SOURCE_OPTIONS = [
+  { label: 'Open', value: 'open' },
+  { label: 'High', value: 'high' },
+  { label: 'Low', value: 'low' },
+  { label: 'Close', value: 'close' },
+] as const;
 const PANE_HEIGHT_WEIGHT_OPTIONS = [
   { label: '½×', value: 0.5 },
   { label: '1×', value: 1 },
@@ -249,7 +269,7 @@ export function SettingsScreen() {
           <SettingSegments
             label="Line width"
             onValueChange={(rsiLineWidth) => updateSettings({ rsiLineWidth })}
-            options={SERIES_LINE_WIDTH_OPTIONS}
+            options={INDICATOR_LINE_WIDTH_OPTIONS}
             value={settings.rsiLineWidth}
           />
           <HexColorSetting
@@ -286,6 +306,158 @@ export function SettingsScreen() {
               settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor
             }
           />
+        </SettingsSection>
+
+        <SettingsSection title="SMA">
+          <SettingSwitch
+            description="Simple moving average over the main OHLC series"
+            label="Enabled"
+            onValueChange={(smaEnabled) => updateSettings({ smaEnabled })}
+            value={settings.smaEnabled}
+          />
+          {settings.smaEnabled ? (
+            <>
+              <SettingSegments
+                label="Period"
+                onValueChange={(smaPeriod) => updateSettings({ smaPeriod })}
+                options={SMA_PERIOD_OPTIONS}
+                value={settings.smaPeriod}
+              />
+              <SettingSegments
+                label="Value source"
+                onValueChange={(smaValueSource) =>
+                  updateSettings({ smaValueSource })
+                }
+                options={VALUE_SOURCE_OPTIONS}
+                value={settings.smaValueSource}
+              />
+              <SettingSegments
+                label="Line width"
+                onValueChange={(smaLineWidth) =>
+                  updateSettings({ smaLineWidth })
+                }
+                options={INDICATOR_LINE_WIDTH_OPTIONS}
+                value={settings.smaLineWidth}
+              />
+              <SettingSegments
+                label="Line style"
+                onValueChange={(smaLineStyle) =>
+                  updateSettings({ smaLineStyle })
+                }
+                options={LINE_OPTIONS}
+                value={settings.smaLineStyle}
+              />
+              <HexColorSetting
+                description="Base color used when gradient is disabled"
+                label="Line color"
+                onValueChange={(smaLineColor) =>
+                  updateSettings({ smaLineColor })
+                }
+                value={settings.smaLineColor}
+              />
+              <SettingSwitch
+                label="Vertical gradient"
+                onValueChange={(smaGradientEnabled) =>
+                  updateSettings({ smaGradientEnabled })
+                }
+                value={settings.smaGradientEnabled}
+              />
+              {settings.smaGradientEnabled ? (
+                <>
+                  <HexColorSetting
+                    label="Gradient top"
+                    onValueChange={(smaGradientTopColor) =>
+                      updateSettings({ smaGradientTopColor })
+                    }
+                    value={settings.smaGradientTopColor}
+                  />
+                  <HexColorSetting
+                    label="Gradient bottom"
+                    onValueChange={(smaGradientBottomColor) =>
+                      updateSettings({ smaGradientBottomColor })
+                    }
+                    value={settings.smaGradientBottomColor}
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </SettingsSection>
+
+        <SettingsSection title="EMA">
+          <SettingSwitch
+            description="Exponential moving average seeded with SMA"
+            label="Enabled"
+            onValueChange={(emaEnabled) => updateSettings({ emaEnabled })}
+            value={settings.emaEnabled}
+          />
+          {settings.emaEnabled ? (
+            <>
+              <SettingSegments
+                label="Period"
+                onValueChange={(emaPeriod) => updateSettings({ emaPeriod })}
+                options={EMA_PERIOD_OPTIONS}
+                value={settings.emaPeriod}
+              />
+              <SettingSegments
+                label="Value source"
+                onValueChange={(emaValueSource) =>
+                  updateSettings({ emaValueSource })
+                }
+                options={VALUE_SOURCE_OPTIONS}
+                value={settings.emaValueSource}
+              />
+              <SettingSegments
+                label="Line width"
+                onValueChange={(emaLineWidth) =>
+                  updateSettings({ emaLineWidth })
+                }
+                options={INDICATOR_LINE_WIDTH_OPTIONS}
+                value={settings.emaLineWidth}
+              />
+              <SettingSegments
+                label="Line style"
+                onValueChange={(emaLineStyle) =>
+                  updateSettings({ emaLineStyle })
+                }
+                options={LINE_OPTIONS}
+                value={settings.emaLineStyle}
+              />
+              <HexColorSetting
+                description="Base color used when gradient is disabled"
+                label="Line color"
+                onValueChange={(emaLineColor) =>
+                  updateSettings({ emaLineColor })
+                }
+                value={settings.emaLineColor}
+              />
+              <SettingSwitch
+                label="Vertical gradient"
+                onValueChange={(emaGradientEnabled) =>
+                  updateSettings({ emaGradientEnabled })
+                }
+                value={settings.emaGradientEnabled}
+              />
+              {settings.emaGradientEnabled ? (
+                <>
+                  <HexColorSetting
+                    label="Gradient top"
+                    onValueChange={(emaGradientTopColor) =>
+                      updateSettings({ emaGradientTopColor })
+                    }
+                    value={settings.emaGradientTopColor}
+                  />
+                  <HexColorSetting
+                    label="Gradient bottom"
+                    onValueChange={(emaGradientBottomColor) =>
+                      updateSettings({ emaGradientBottomColor })
+                    }
+                    value={settings.emaGradientBottomColor}
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title="X axis">

@@ -949,6 +949,9 @@ class RenderSnapshotBuilder {
       config.series_type = series.config.type;
       config.bar_line_width = series.config.line_width;
       config.line_width = series.config.line_width;
+      config.line_dashed = series.config.line_dashed;
+      config.line_source = series.config.line_source;
+      config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
       size_t first = window.first;
       size_t last = window.last;
       if (IsLineLikeSeries(series.config.type)) {
@@ -1143,6 +1146,7 @@ class RenderSnapshotBuilder {
       config.bar_line_width = series.config.line_width;
       config.line_width = series.config.line_width;
       config.line = series.config.color;
+      config.line_dashed = series.config.line_dashed;
       config.line_gradient_top = series.config.line_gradient_top;
       config.line_gradient_bottom = series.config.line_gradient_bottom;
       config.line_gradient_enabled = series.config.line_gradient_enabled;

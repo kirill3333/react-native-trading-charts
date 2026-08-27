@@ -10,6 +10,7 @@ import {
 
 import { useChartSettings } from '../chartSettings';
 import {
+  buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
   buildChartViewConfig,
@@ -95,7 +96,8 @@ export const InteractiveChart = memo(function InteractiveChart({
   const additionalSeries = useMemo<
     ReadonlyArray<AdditionalChartSeriesOptions> | undefined
   >(() => {
-    const result: AdditionalChartSeriesOptions[] = [];
+    const result: AdditionalChartSeriesOptions[] =
+      buildMovingAverageSeries(settings);
     if (showVolume) {
       result.push({
         seriesId: 'volume',

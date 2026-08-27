@@ -115,9 +115,12 @@ export type ChartSeriesType =
 
 export type OhlcValueSource = 'open' | 'high' | 'low' | 'close';
 
+export type ChartLineStyle = 'solid' | 'dashed';
+
 export type ChartLineAppearance = {
   width?: number;
   color?: string;
+  style?: ChartLineStyle;
   gradient?: {
     topColor: string;
     bottomColor: string;
@@ -226,8 +229,23 @@ export type RsiSeriesOptions = AdditionalSeriesBase & {
   appearance?: RsiSeriesAppearance;
 };
 
+export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
+  type: 'line';
+  source: {
+    type: 'ohlcvSma' | 'ohlcvEma';
+    seriesId: string;
+    period: number;
+    valueSource?: OhlcValueSource;
+  };
+  gapThresholdMs?: number;
+  appearance?: ChartLineAppearance;
+};
+
 export type AdditionalChartSeriesOptions =
-  AdditionalOhlcSeriesOptions | HistogramSeriesOptions | RsiSeriesOptions;
+  | AdditionalOhlcSeriesOptions
+  | HistogramSeriesOptions
+  | RsiSeriesOptions
+  | MovingAverageSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -245,6 +263,15 @@ export type NormalizedAdditionalChartSeriesOptions =
         period: number;
       };
       levels: Required<RsiLevels>;
+    })
+  | (Omit<MovingAverageSeriesOptions, 'visible' | 'source'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvSma' | 'ohlcvEma';
+        seriesId: string;
+        period: number;
+        valueSource: OhlcValueSource;
+      };
     })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
@@ -449,7 +476,7 @@ export type PriceExtremesOptions = {
   visible?: boolean;
 };
 
-export type CrosshairLineStyle = 'solid' | 'dashed';
+export type CrosshairLineStyle = ChartLineStyle;
 
 export type CrosshairTooltipLabels = {
   open?: string;
@@ -577,7 +604,16 @@ export type ResolvedAdditionalChartSeriesOptions =
           'width' | 'color' | 'levelLineColor' | 'bandColor'
         >
       > &
-        Pick<RsiSeriesAppearance, 'gradient' | 'textColor'>;
+        Pick<RsiSeriesAppearance, 'gradient' | 'style' | 'textColor'>;
+    })
+  | (Omit<MovingAverageSeriesOptions, 'visible' | 'source'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvSma' | 'ohlcvEma';
+        seriesId: string;
+        period: number;
+        valueSource: OhlcValueSource;
+      };
     })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {
       visible: boolean;
@@ -606,11 +642,13 @@ export type ResolvedChartAppearance = {
   line: {
     width: number;
     color: string;
+    style: ChartLineStyle;
     gradient?: { topColor: string; bottomColor: string };
   };
   area: {
     width: number;
     color: string;
+    style: ChartLineStyle;
     gradient?: { topColor: string; bottomColor: string };
     fill: { topColor: string; bottomColor: string };
   };

@@ -1,4 +1,5 @@
 import {
+  type AdditionalChartSeriesOptions,
   type ChartAppearance,
   type ChartFormatters,
   type ChartSeriesOptions,
@@ -124,6 +125,67 @@ export function buildRsiAppearance(
       settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor,
     bandColor: settings.rsiBandColorOverride ?? theme.rsiBandColor,
   };
+}
+
+export function buildMovingAverageSeries(
+  settings: ChartSettings
+): AdditionalChartSeriesOptions[] {
+  const result: AdditionalChartSeriesOptions[] = [];
+  if (settings.smaEnabled) {
+    result.push({
+      seriesId: 'sma',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvSma',
+        seriesId: 'main',
+        period: settings.smaPeriod,
+        valueSource: settings.smaValueSource,
+      },
+      appearance: {
+        width: settings.smaLineWidth,
+        color: settings.smaLineColor,
+        style: settings.smaLineStyle,
+        ...(settings.smaGradientEnabled
+          ? {
+              gradient: {
+                topColor: settings.smaGradientTopColor,
+                bottomColor: settings.smaGradientBottomColor,
+              },
+            }
+          : null),
+      },
+    });
+  }
+  if (settings.emaEnabled) {
+    result.push({
+      seriesId: 'ema',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvEma',
+        seriesId: 'main',
+        period: settings.emaPeriod,
+        valueSource: settings.emaValueSource,
+      },
+      appearance: {
+        width: settings.emaLineWidth,
+        color: settings.emaLineColor,
+        style: settings.emaLineStyle,
+        ...(settings.emaGradientEnabled
+          ? {
+              gradient: {
+                topColor: settings.emaGradientTopColor,
+                bottomColor: settings.emaGradientBottomColor,
+              },
+            }
+          : null),
+      },
+    });
+  }
+  return result;
 }
 
 export function buildChartViewConfig(

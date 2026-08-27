@@ -11,6 +11,7 @@ import {
   type CompactValueFormat,
   type CrosshairTooltipField,
   type HistogramSeriesOptions,
+  type MovingAverageSeriesOptions,
   type NormalizedAdditionalChartSeriesOptions,
   type OhlcValueSource,
   type PriceDisplayFormat,
@@ -89,6 +90,8 @@ const DEFAULT_CROSSHAIR_TOOLTIP_FIELDS: ReadonlyArray<CrosshairTooltipField> = [
   'change',
   'volume',
 ];
+
+const UINT32_MAX = 0xffff_ffff;
 
 const CROSSHAIR_TOOLTIP_FIELD_SET = new Set<string>(
   DEFAULT_CROSSHAIR_TOOLTIP_FIELDS
@@ -179,6 +182,14 @@ function ohlcValueSource(
     result !== 'close'
   ) {
     throw new TypeError(`${name} must be 'open', 'high', 'low' or 'close'`);
+  }
+  return result;
+}
+
+function lineStyle(value: string | undefined, name: string) {
+  const result = value ?? 'solid';
+  if (result !== 'solid' && result !== 'dashed') {
+    throw new TypeError(`${name} must be 'solid' or 'dashed'`);
   }
   return result;
 }
@@ -693,6 +704,10 @@ function resolveAppearance(
     input?.line?.color ?? theme.upColor,
     'appearance.line.color'
   );
+  const resolvedLineStyle = lineStyle(
+    input?.line?.style,
+    'appearance.line.style'
+  );
   const lineGradient = input?.line?.gradient;
   const resolvedLineGradient =
     lineGradient == null
@@ -714,6 +729,10 @@ function resolveAppearance(
   const areaColor = color(
     input?.area?.color ?? theme.upColor,
     'appearance.area.color'
+  );
+  const resolvedAreaStyle = lineStyle(
+    input?.area?.style,
+    'appearance.area.style'
   );
   const areaGradient = input?.area?.gradient;
   const resolvedAreaGradient =
@@ -782,6 +801,7 @@ function resolveAppearance(
     line: {
       width: lineWidth,
       color: lineColor,
+      style: resolvedLineStyle,
       ...(resolvedLineGradient == null
         ? null
         : { gradient: resolvedLineGradient }),
@@ -789,6 +809,7 @@ function resolveAppearance(
     area: {
       width: areaWidth,
       color: areaColor,
+      style: resolvedAreaStyle,
       ...(resolvedAreaGradient == null
         ? null
         : { gradient: resolvedAreaGradient }),
@@ -1029,6 +1050,11 @@ type AdditionalPriceSeriesOptions =
   | Extract<AdditionalOhlcSeriesOptions, { type: 'line' }>
   | Extract<AdditionalOhlcSeriesOptions, { type: 'area' }>;
 
+type NormalizedMovingAverageSeriesOptions = Extract<
+  NormalizedAdditionalChartSeriesOptions,
+  { source: { type: 'ohlcvSma' | 'ohlcvEma' } }
+>;
+
 type NormalizedRsiSeriesOptions = Extract<
   NormalizedAdditionalChartSeriesOptions,
   { source: { type: 'ohlcvRsi' } }
@@ -1061,6 +1087,33 @@ function isRsiSeriesOptions(
   return source.type === 'ohlcvRsi';
 }
 
+function isMovingAverageSeriesOptions(
+  options: NormalizedAdditionalChartSeriesOptions
+): options is NormalizedMovingAverageSeriesOptions;
+function isMovingAverageSeriesOptions(
+  options: AdditionalChartSeriesOptions
+): options is MovingAverageSeriesOptions;
+function isMovingAverageSeriesOptions(
+  options: AdditionalChartSeriesOptions | NormalizedAdditionalChartSeriesOptions
+): boolean {
+  if (options.type !== 'line') {
+    return false;
+  }
+  const source = options.source;
+  if (source == null) {
+    return false;
+  }
+  switch (source) {
+    case 'open':
+    case 'high':
+    case 'low':
+    case 'close':
+      return false;
+    default:
+      return source.type === 'ohlcvSma' || source.type === 'ohlcvEma';
+  }
+}
+
 function resolveSeriesIdentifiers(
   options: AdditionalChartSeriesOptions,
   name: string
@@ -1089,7 +1142,10 @@ function resolveGapThreshold(
 }
 
 function validateLineAppearance(
-  options: AdditionalPriceSeriesOptions,
+  options:
+    | AdditionalPriceSeriesOptions
+    | MovingAverageSeriesOptions
+    | RsiSeriesOptions,
   name: string
 ): void {
   const appearance = options.appearance;
@@ -1098,6 +1154,9 @@ function validateLineAppearance(
   }
   if (appearance?.color != null) {
     color(appearance.color, `${name}.appearance.color`);
+  }
+  if (appearance?.style != null) {
+    lineStyle(appearance.style, `${name}.appearance.style`);
   }
   if (appearance?.gradient != null) {
     color(appearance.gradient.topColor, `${name}.appearance.gradient.topColor`);
@@ -1137,10 +1196,8 @@ function resolvePriceSeriesOptions(
 }
 
 function validateRsiAppearance(options: RsiSeriesOptions, name: string): void {
+  validateLineAppearance(options, name);
   const appearance = options.appearance;
-  if (appearance?.width != null) {
-    finitePositive(appearance.width, `${name}.appearance.width`);
-  }
   for (const [key, value] of [
     ['color', appearance?.color],
     ['textColor', appearance?.textColor],
@@ -1151,14 +1208,39 @@ function validateRsiAppearance(options: RsiSeriesOptions, name: string): void {
       color(value, `${name}.appearance.${key}`);
     }
   }
-  if (appearance?.gradient == null) {
-    return;
-  }
-  color(appearance.gradient.topColor, `${name}.appearance.gradient.topColor`);
-  color(
-    appearance.gradient.bottomColor,
-    `${name}.appearance.gradient.bottomColor`
+}
+
+function resolveMovingAverageSeriesOptions(
+  options: MovingAverageSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedAdditionalChartSeriesOptions {
+  const sourceSeriesId = identifier(
+    options.source.seriesId,
+    `${name}.source.seriesId`
   );
+  const period = options.source.period;
+  if (!Number.isInteger(period) || period < 1 || period > UINT32_MAX) {
+    throw new TypeError(
+      `${name}.source.period must be an integer from 1 to ${UINT32_MAX}`
+    );
+  }
+  validateLineAppearance(options, name);
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    source: {
+      ...options.source,
+      seriesId: sourceSeriesId,
+      period,
+      valueSource: ohlcValueSource(
+        options.source.valueSource,
+        `${name}.source.valueSource`
+      ),
+    },
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
 }
 
 function resolveRsiSeriesOptions(
@@ -1240,6 +1322,9 @@ export function resolveAdditionalSeriesOptions(
   if (isRsiSeriesOptions(options)) {
     return resolveRsiSeriesOptions(options, name, ids);
   }
+  if (isMovingAverageSeriesOptions(options)) {
+    return resolveMovingAverageSeriesOptions(options, name, ids);
+  }
   if (!isAdditionalSeriesType(options.type)) {
     throw new TypeError(
       `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'histogram'`
@@ -1261,18 +1346,28 @@ export function resolveAdditionalSeriesOptions(
 type AdditionalSeriesResolutionContext = {
   panes: ReadonlyArray<ResolvedChartPaneOptions>;
   seenSeriesIds: Set<string>;
-  knownOhlcSeriesIds: ReadonlySet<string>;
+  knownOhlcSeries: ReadonlyMap<
+    string,
+    { paneId: string; priceScaleId: string }
+  >;
   appearance: ResolvedChartAppearance;
   theme: Required<ChartTheme>;
 };
 
-function collectKnownOhlcSeriesIds(
+function collectKnownOhlcSeries(
   items: ReadonlyArray<AdditionalChartSeriesOptions>
-): Set<string> {
-  const result = new Set<string>(['main']);
+): Map<string, { paneId: string; priceScaleId: string }> {
+  const result = new Map<string, { paneId: string; priceScaleId: string }>();
   items.forEach((item) => {
-    if (item.type !== 'histogram' && !isRsiSeriesOptions(item)) {
-      result.add(item.seriesId);
+    if (
+      item.type !== 'histogram' &&
+      !isRsiSeriesOptions(item) &&
+      !isMovingAverageSeriesOptions(item)
+    ) {
+      result.set(item.seriesId, {
+        paneId: item.paneId,
+        priceScaleId: item.priceScaleId,
+      });
     }
   });
   return result;
@@ -1310,7 +1405,7 @@ function resolveConfiguredRsiSeries(
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
-  if (!context.knownOhlcSeriesIds.has(resolved.source.seriesId)) {
+  if (!context.knownOhlcSeries.has(resolved.source.seriesId)) {
     throw new TypeError(
       `${name}.source.seriesId must reference data-backed OHLC data`
     );
@@ -1348,10 +1443,33 @@ function resolveConfiguredRsiSeries(
         resolved.appearance?.bandColor ?? colorWithAlpha(rsiColor, '14'),
         `${name}.appearance.bandColor`
       ),
+      style: resolved.appearance?.style ?? context.appearance.line.style,
       ...textColor,
       ...gradient,
     },
   };
+}
+
+function resolveConfiguredMovingAverageSeries(
+  resolved: NormalizedMovingAverageSeriesOptions,
+  name: string,
+  context: AdditionalSeriesResolutionContext
+): ResolvedAdditionalChartSeriesOptions {
+  const source = context.knownOhlcSeries.get(resolved.source.seriesId);
+  if (source == null) {
+    throw new TypeError(
+      `${name}.source.seriesId must reference data-backed OHLC data`
+    );
+  }
+  if (
+    source.paneId !== resolved.paneId ||
+    source.priceScaleId !== resolved.priceScaleId
+  ) {
+    throw new TypeError(
+      `${name} must use the same paneId and priceScaleId as its source series`
+    );
+  }
+  return resolved;
 }
 
 function resolveConfiguredHistogramSeries(
@@ -1363,7 +1481,7 @@ function resolveConfiguredHistogramSeries(
   const source = item.source ?? { type: 'data' as const };
   if (
     source.type === 'ohlcvVolume' &&
-    !context.knownOhlcSeriesIds.has(source.seriesId)
+    !context.knownOhlcSeries.has(source.seriesId)
   ) {
     throw new TypeError(`${name}.source.seriesId must reference OHLC data`);
   }
@@ -1406,6 +1524,9 @@ function resolveConfiguredAdditionalSeries(
     }
     if (isRsiSeriesOptions(resolved)) {
       return resolveConfiguredRsiSeries(resolved, name, context);
+    }
+    if (isMovingAverageSeriesOptions(resolved)) {
+      return resolveConfiguredMovingAverageSeries(resolved, name, context);
     }
     return resolved;
   }
@@ -1560,7 +1681,10 @@ export function resolveChartConfig(
   const additionalSeriesContext: AdditionalSeriesResolutionContext = {
     panes: orderedPanes,
     seenSeriesIds: new Set<string>(['main']),
-    knownOhlcSeriesIds: collectKnownOhlcSeriesIds(additionalSeriesInputs),
+    knownOhlcSeries: new Map([
+      ['main', { paneId: 'main', priceScaleId: 'main' }],
+      ...collectKnownOhlcSeries(additionalSeriesInputs),
+    ]),
     appearance,
     theme,
   };

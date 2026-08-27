@@ -84,10 +84,12 @@ internal data class SeriesConfig(
     val declarative: Boolean = false,
     val lineWidthPx: Float = 1f,
     val lineSource: String = "close",
+    val lineDashed: Boolean = false,
     val lineGradientTopColor: Int = Color.rgb(56, 217, 138),
     val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
     val lineGradientEnabled: Boolean = false,
     val lineGapThresholdMs: Double = 0.0,
+    val movingAveragePeriod: Long = 1L,
     val areaFillTopColor: Int = Color.argb(64, 56, 217, 138),
     val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
     val rsiPeriod: Int = 14,
@@ -153,6 +155,7 @@ internal data class ChartConfig(
     val barLineWidthPx: Float = 1f,
     val lineWidthPx: Float = 1.5f,
     val lineSource: String = "close",
+    val lineDashed: Boolean = false,
     val lineGradientEnabled: Boolean = false,
     val lineGapThresholdMs: Double = 0.0,
     val backgroundColor: Int = Color.rgb(16, 12, 24),
@@ -165,6 +168,7 @@ internal data class ChartConfig(
     val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
     val areaLineWidthPx: Float = 1.5f,
     val areaLineColor: Int = Color.rgb(56, 217, 138),
+    val areaLineDashed: Boolean = false,
     val areaLineGradientEnabled: Boolean = false,
     val areaLineGradientTopColor: Int = Color.rgb(56, 217, 138),
     val areaLineGradientBottomColor: Int = Color.rgb(56, 217, 138),
@@ -325,6 +329,7 @@ internal data class ChartConfig(
         tradeAggregation.outsideSession.toDouble(),
         tradeAggregation.candleTimestamp.toDouble(),
         candleRadiusPx.toDouble(),
+        (if (area) areaLineDashed else lineDashed).nativeDouble(),
     )
   }
 

@@ -250,6 +250,96 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('normalizes imperative SMA and EMA series', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'sma-20',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: { type: 'ohlcvSma', seriesId: 'main', period: 20 },
+      appearance: { color: '#2E90F5', width: 1.5 },
+    });
+    TradingCharts.addSeries('chart', {
+      seriesId: 'ema-50',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvEma',
+        seriesId: 'main',
+        period: 50,
+        valueSource: 'high',
+      },
+      appearance: { color: '#F5A623', width: 2, style: 'dashed' },
+    });
+
+    expect(JSON.parse(mockNativeModule.addSeries.mock.calls[0]![1])).toEqual({
+      seriesId: 'sma-20',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvSma',
+        seriesId: 'main',
+        period: 20,
+        valueSource: 'close',
+      },
+      appearance: { color: '#2E90F5', width: 1.5 },
+      visible: true,
+    });
+    expect(JSON.parse(mockNativeModule.addSeries.mock.calls[1]![1])).toEqual({
+      seriesId: 'ema-50',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvEma',
+        seriesId: 'main',
+        period: 50,
+        valueSource: 'high',
+      },
+      appearance: { color: '#F5A623', width: 2, style: 'dashed' },
+      visible: true,
+    });
+  });
+
+  it('validates moving-average periods, value sources and line styles', () => {
+    const base = {
+      seriesId: 'average',
+      type: 'line' as const,
+      paneId: 'main',
+      priceScaleId: 'main',
+    };
+    for (const period of [0, 0.5, 0x1_0000_0000]) {
+      expect(() =>
+        resolveAdditionalSeriesOptions({
+          ...base,
+          source: { type: 'ohlcvSma', seriesId: 'main', period },
+        })
+      ).toThrow('integer from 1');
+    }
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: {
+          type: 'ohlcvEma',
+          seriesId: 'main',
+          period: 20,
+          // SAFETY: Invalid runtime input intentionally bypasses the public union.
+          valueSource: 'median' as never,
+        },
+      })
+    ).toThrow("must be 'open', 'high', 'low' or 'close'");
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: { type: 'ohlcvSma', seriesId: 'main', period: 20 },
+        // SAFETY: Invalid runtime input intentionally bypasses the public union.
+        appearance: { style: 'dotted' as never },
+      })
+    ).toThrow("must be 'solid' or 'dashed'");
+  });
+
   it('normalizes and validates an imperative RSI text color', () => {
     TradingCharts.addSeries('chart', {
       seriesId: 'rsi',
@@ -627,6 +717,121 @@ describe('chart config', () => {
     expect(resolved.additionalSeries[0]).toMatchObject({
       appearance: { textColor: '#ABCDEF80' },
     });
+  });
+
+  it('resolves moving averages only on their source pane and scale', () => {
+    const resolved = resolveChartConfig({
+      chartId: 'moving-averages',
+      appearance: {
+        line: { style: 'dashed' },
+        area: { style: 'dashed' },
+      },
+      additionalSeries: [
+        {
+          seriesId: 'sma-20',
+          type: 'line',
+          paneId: 'main',
+          priceScaleId: 'main',
+          source: { type: 'ohlcvSma', seriesId: 'main', period: 20 },
+        },
+        {
+          seriesId: 'ema-50',
+          type: 'line',
+          paneId: 'main',
+          priceScaleId: 'main',
+          source: { type: 'ohlcvEma', seriesId: 'main', period: 50 },
+          appearance: { style: 'solid', color: '#F5A623' },
+        },
+      ],
+    });
+
+    expect(resolved.appearance.line.style).toBe('dashed');
+    expect(resolved.appearance.area.style).toBe('dashed');
+    expect(resolved.additionalSeries).toMatchObject([
+      {
+        source: {
+          type: 'ohlcvSma',
+          seriesId: 'main',
+          period: 20,
+          valueSource: 'close',
+        },
+      },
+      {
+        source: {
+          type: 'ohlcvEma',
+          seriesId: 'main',
+          period: 50,
+          valueSource: 'close',
+        },
+        appearance: { style: 'solid', color: '#F5A623' },
+      },
+    ]);
+
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'wrong-ma-pane',
+        panes: [
+          {
+            paneId: 'main',
+            heightWeight: 3,
+            priceScale: { priceScaleId: 'main' },
+          },
+          {
+            paneId: 'other',
+            heightWeight: 1,
+            priceScale: { priceScaleId: 'other' },
+          },
+        ],
+        additionalSeries: [
+          {
+            seriesId: 'sma',
+            type: 'line',
+            paneId: 'other',
+            priceScaleId: 'other',
+            source: { type: 'ohlcvSma', seriesId: 'main', period: 20 },
+          },
+        ],
+      })
+    ).toThrow('same paneId and priceScaleId');
+  });
+
+  it('rejects moving-average sources that are missing or derived', () => {
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'derived-ma-chain',
+        additionalSeries: [
+          {
+            seriesId: 'first',
+            type: 'line',
+            paneId: 'main',
+            priceScaleId: 'main',
+            source: { type: 'ohlcvSma', seriesId: 'main', period: 10 },
+          },
+          {
+            seriesId: 'second',
+            type: 'line',
+            paneId: 'main',
+            priceScaleId: 'main',
+            source: { type: 'ohlcvEma', seriesId: 'first', period: 10 },
+          },
+        ],
+      })
+    ).toThrow('data-backed OHLC data');
+
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'missing-ma-source',
+        additionalSeries: [
+          {
+            seriesId: 'average',
+            type: 'line',
+            paneId: 'main',
+            priceScaleId: 'main',
+            source: { type: 'ohlcvSma', seriesId: 'missing', period: 10 },
+          },
+        ],
+      })
+    ).toThrow('data-backed OHLC data');
   });
 
   it('rejects RSI sources that reference another derived series', () => {
@@ -1294,6 +1499,7 @@ describe('chart config', () => {
     expect(resolved.appearance.line).toEqual({
       width: 2.5,
       color: '#2E90F5',
+      style: 'solid',
       gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
     });
     expect(resolved.appearance.currentPrice).toMatchObject({
@@ -1319,6 +1525,7 @@ describe('chart config', () => {
     expect(defaults.appearance.area).toEqual({
       width: 1.5,
       color: '#2E90F5',
+      style: 'solid',
       fill: { topColor: '#2E90F540', bottomColor: '#2E90F500' },
     });
 
@@ -1342,6 +1549,7 @@ describe('chart config', () => {
     expect(custom.appearance.area).toEqual({
       width: 2.5,
       color: '#3366FF',
+      style: 'solid',
       gradient: { topColor: '#66AAFF', bottomColor: '#2244AA' },
       fill: { topColor: '#3366FF80', bottomColor: '#11224400' },
     });

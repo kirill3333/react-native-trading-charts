@@ -361,7 +361,7 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
           }),
       additional_series_.end());
   RebuildSeriesIndicesLocked();
-  RebuildAllRsiLocked();
+  RebuildAllDerivedSeriesLocked();
   MarkDirtyLocked();
 }
 
@@ -396,8 +396,7 @@ void ChartEngine::RebuildSeriesIndicesLocked() {
             ? kInvalidStateIndex
             : static_cast<size_t>(std::distance(panes_.begin(), pane));
     series.source_series_index = kInvalidStateIndex;
-    if (series.config.source != SeriesSource::kOhlcvVolume &&
-        series.config.source != SeriesSource::kOhlcvRsi) {
+    if (!IsDerivedOhlcvSource(series.config.source)) {
       continue;
     }
     if (series.config.source_series_id.empty() ||
@@ -410,7 +409,7 @@ void ChartEngine::RebuildSeriesIndicesLocked() {
         [&](const SeriesData& candidate) {
           return candidate.config.series_id == series.config.source_series_id &&
                  candidate.config.type != SeriesType::kHistogram &&
-                 (series.config.source != SeriesSource::kOhlcvRsi ||
+                 (series.config.source == SeriesSource::kOhlcvVolume ||
                   candidate.config.source == SeriesSource::kData);
         });
     if (source != additional_series_.end()) {
@@ -502,22 +501,104 @@ void ChartEngine::RebuildRsiSeriesLocked(size_t series_index,
   }
 }
 
-void ChartEngine::RefreshRsiDependentsLocked(
+void ChartEngine::RebuildMovingAverageSeriesLocked(
+    size_t series_index, size_t first_changed_source_index) {
+  if (series_index >= additional_series_.size()) {
+    return;
+  }
+  SeriesData& series = additional_series_[series_index];
+  if (!IsMovingAverageSource(series.config.source)) {
+    return;
+  }
+  const std::vector<Candle>* source_pointer = SourceCandlesLocked(series);
+  if (source_pointer == nullptr) {
+    series.candles.clear();
+    series.moving_average_states.clear();
+    return;
+  }
+  const std::vector<Candle>& source = *source_pointer;
+  const size_t period =
+      static_cast<size_t>(series.config.moving_average_period);
+  if (period == 0 || source.size() < period) {
+    series.candles.clear();
+    series.moving_average_states.clear();
+    return;
+  }
+
+  const size_t first_output_source_index = period - 1;
+  size_t start =
+      std::max(first_output_source_index, first_changed_source_index);
+  size_t output_start = start - first_output_source_index;
+  if (start == first_output_source_index ||
+      output_start > series.moving_average_states.size() ||
+      output_start > series.candles.size()) {
+    start = first_output_source_index;
+    output_start = 0;
+    series.candles.clear();
+    series.moving_average_states.clear();
+  } else {
+    series.candles.resize(output_start);
+    series.moving_average_states.resize(output_start);
+  }
+
+  double state = 0.0;
+  if (start == first_output_source_index) {
+    for (size_t index = 0; index < period; ++index) {
+      state += CandleValue(source[index], series.config.line_source);
+    }
+    if (series.config.source == SeriesSource::kOhlcvEma) {
+      state /= static_cast<double>(period);
+    }
+  } else {
+    state = series.moving_average_states.back();
+  }
+
+  const size_t output_size = source.size() - first_output_source_index;
+  series.candles.reserve(output_size);
+  series.moving_average_states.reserve(output_size);
+  const double alpha = 2.0 / (static_cast<double>(period) + 1.0);
+  for (size_t index = start; index < source.size(); ++index) {
+    if (index > first_output_source_index) {
+      const double current =
+          CandleValue(source[index], series.config.line_source);
+      if (series.config.source == SeriesSource::kOhlcvSma) {
+        state += current -
+                 CandleValue(source[index - period], series.config.line_source);
+      } else {
+        state += alpha * (current - state);
+      }
+    }
+    const double value = series.config.source == SeriesSource::kOhlcvSma
+                             ? state / static_cast<double>(period)
+                             : state;
+    series.candles.push_back(
+        Candle{source[index].timestamp, value, value, value, value, 0.0});
+    series.moving_average_states.push_back(state);
+  }
+}
+
+void ChartEngine::RefreshDerivedDependentsLocked(
     const std::string& source_series_id, size_t first_changed_source_index) {
   for (size_t index = 0; index < additional_series_.size(); ++index) {
-    if (additional_series_[index].config.source == SeriesSource::kOhlcvRsi &&
+    const SeriesSource source = additional_series_[index].config.source;
+    if ((source == SeriesSource::kOhlcvRsi || IsMovingAverageSource(source)) &&
         (additional_series_[index].config.source_series_id.empty()
              ? source_series_id == "main"
              : additional_series_[index].config.source_series_id ==
                    source_series_id)) {
-      RebuildRsiSeriesLocked(index, first_changed_source_index);
+      if (source == SeriesSource::kOhlcvRsi) {
+        RebuildRsiSeriesLocked(index, first_changed_source_index);
+      } else {
+        RebuildMovingAverageSeriesLocked(index, first_changed_source_index);
+      }
     }
   }
 }
 
-void ChartEngine::RebuildAllRsiLocked() {
+void ChartEngine::RebuildAllDerivedSeriesLocked() {
   for (size_t index = 0; index < additional_series_.size(); ++index) {
     RebuildRsiSeriesLocked(index, 0);
+    RebuildMovingAverageSeriesLocked(index, 0);
   }
 }
 
@@ -546,6 +627,11 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
        config.rsi_oversold >= config.rsi_overbought)) {
     return UpdateStatus::kInvalidInput;
   }
+  if (IsMovingAverageSource(config.source) &&
+      (config.type != SeriesType::kLine || config.moving_average_period == 0 ||
+       config.source_series_id.empty())) {
+    return UpdateStatus::kInvalidInput;
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   SeriesConfig normalized = config;
   normalized.line_source = NormalizeLineSource(normalized.line_source);
@@ -567,6 +653,25 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   if (normalized.source == SeriesSource::kOhlcvRsi && pane == panes_.begin()) {
     return UpdateStatus::kInvalidInput;
   }
+  if (IsMovingAverageSource(normalized.source)) {
+    if (normalized.source_series_id == "main") {
+      if (pane != panes_.begin()) {
+        return UpdateStatus::kInvalidInput;
+      }
+    } else {
+      const SeriesData* source = FindSeriesLocked(normalized.source_series_id);
+      if (source == nullptr) {
+        if (!normalized.declarative) {
+          return UpdateStatus::kInvalidInput;
+        }
+      } else if (source->config.source != SeriesSource::kData ||
+                 source->config.type == SeriesType::kHistogram ||
+                 source->config.pane_id != normalized.pane_id ||
+                 source->config.price_scale_id != normalized.price_scale_id) {
+        return UpdateStatus::kInvalidInput;
+      }
+    }
+  }
   SeriesData* existing = FindSeriesLocked(normalized.series_id);
   if (existing != nullptr) {
     if (!existing->config.declarative || !normalized.declarative) {
@@ -579,7 +684,7 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
     additional_series_.push_back(std::move(series));
   }
   RebuildSeriesIndicesLocked();
-  RebuildAllRsiLocked();
+  RebuildAllDerivedSeriesLocked();
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
@@ -591,20 +696,18 @@ bool ChartEngine::RemoveSeries(const std::string& series_id) {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto old_size = additional_series_.size();
   additional_series_.erase(
-      std::remove_if(
-          additional_series_.begin(), additional_series_.end(),
-          [&](const SeriesData& series) {
-            return series.config.series_id == series_id ||
-                   ((series.config.source == SeriesSource::kOhlcvVolume ||
-                     series.config.source == SeriesSource::kOhlcvRsi) &&
-                    series.config.source_series_id == series_id);
-          }),
+      std::remove_if(additional_series_.begin(), additional_series_.end(),
+                     [&](const SeriesData& series) {
+                       return series.config.series_id == series_id ||
+                              (IsDerivedOhlcvSource(series.config.source) &&
+                               series.config.source_series_id == series_id);
+                     }),
       additional_series_.end());
   if (additional_series_.size() == old_size) {
     return false;
   }
   RebuildSeriesIndicesLocked();
-  RebuildAllRsiLocked();
+  RebuildAllDerivedSeriesLocked();
   MarkDirtyLocked();
   return true;
 }
@@ -640,8 +743,9 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
     }
     series->candles.clear();
     series->histogram.clear();
+    series->moving_average_states.clear();
     series->rsi_states.clear();
-    RefreshRsiDependentsLocked(series_id, 0);
+    RefreshDerivedDependentsLocked(series_id, 0);
     MarkDirtyLocked();
     return UpdateStatus::kApplied;
   }
@@ -653,7 +757,7 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
   } else {
     series->candles = std::move(candles.candles);
   }
-  RefreshRsiDependentsLocked(series_id, 0);
+  RefreshDerivedDependentsLocked(series_id, 0);
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
@@ -700,7 +804,7 @@ UpdateStatus ChartEngine::PrependSeriesData(const std::string& series_id,
     series->candles.insert(series->candles.begin(), candles.candles.begin(),
                            candles.candles.end());
   }
-  RefreshRsiDependentsLocked(series_id, 0);
+  RefreshDerivedDependentsLocked(series_id, 0);
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
@@ -749,7 +853,7 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
     } else {
       return UpdateStatus::kIgnoredOldTimestamp;
     }
-    RefreshRsiDependentsLocked(series_id, first_changed);
+    RefreshDerivedDependentsLocked(series_id, first_changed);
   }
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
@@ -816,7 +920,7 @@ UpdateStatus ChartEngine::SetHistory(const double* values, size_t value_count) {
 
   std::lock_guard<std::mutex> lock(mutex_);
   candles_ = std::move(parsed.candles);
-  RefreshRsiDependentsLocked("main", 0);
+  RefreshDerivedDependentsLocked("main", 0);
   last_trade_timestamp_ = candles_.back().timestamp;
   crosshair_active_ = false;
   ResetViewportLocked();
@@ -851,7 +955,7 @@ UpdateStatus ChartEngine::PrependHistory(const double* values,
     ClampViewportLocked();
   }
   crosshair_active_ = false;
-  RefreshRsiDependentsLocked("main", 0);
+  RefreshDerivedDependentsLocked("main", 0);
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
@@ -892,7 +996,7 @@ UpdateStatus ChartEngine::UpdateCandle(const double* values,
   } else {
     return UpdateStatus::kIgnoredOldTimestamp;
   }
-  RefreshRsiDependentsLocked("main", first_changed);
+  RefreshDerivedDependentsLocked("main", first_changed);
   MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
@@ -962,8 +1066,8 @@ UpdateStatus ChartEngine::UpdateTrade(const double* values,
   const UpdateStatus status =
       UpdateTradeLocked(values[0], values[1], values[2]);
   if (status == UpdateStatus::kApplied) {
-    RefreshRsiDependentsLocked("main",
-                               previous_size == 0 ? 0 : previous_size - 1);
+    RefreshDerivedDependentsLocked("main",
+                                   previous_size == 0 ? 0 : previous_size - 1);
     MarkDirtyLocked();
   }
   return status;
@@ -1002,8 +1106,8 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
     }
   }
   if (changed) {
-    RefreshRsiDependentsLocked("main",
-                               previous_size == 0 ? 0 : previous_size - 1);
+    RefreshDerivedDependentsLocked("main",
+                                   previous_size == 0 ? 0 : previous_size - 1);
     MarkDirtyLocked();
     // A mixed batch may contain ignored old trades followed by newer trades
     // that were applied. Native views use kApplied to decide whether a frame
@@ -1019,6 +1123,7 @@ void ChartEngine::Clear() {
   for (SeriesData& series : additional_series_) {
     series.candles.clear();
     series.histogram.clear();
+    series.moving_average_states.clear();
     series.rsi_states.clear();
   }
   last_trade_timestamp_.reset();

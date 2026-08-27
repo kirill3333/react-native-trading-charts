@@ -3,9 +3,11 @@
 
 #include <benchmark/benchmark.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "cpp/chart_engine.h"
@@ -79,6 +81,25 @@ bool AddRsi(benchmark::State& state, ChartEngine& engine) {
   if (engine.AddSeries(rsi) == UpdateStatus::kApplied) return true;
   state.SkipWithError("Unable to configure RSI benchmark series");
   return false;
+}
+
+bool AddMovingAverages(benchmark::State& state, ChartEngine& engine) {
+  constexpr std::array<std::uint32_t, 4> kPeriods{9, 20, 50, 200};
+  for (size_t index = 0; index < kPeriods.size(); ++index) {
+    SeriesConfig average;
+    average.series_id = "ma-" + std::to_string(kPeriods[index]);
+    average.type = SeriesType::kLine;
+    average.source =
+        index % 2 == 0 ? SeriesSource::kOhlcvEma : SeriesSource::kOhlcvSma;
+    average.source_series_id = "main";
+    average.moving_average_period = kPeriods[index];
+    average.line_dashed = index == 3;
+    if (engine.AddSeries(average) != UpdateStatus::kApplied) {
+      state.SkipWithError("Unable to configure moving-average benchmarks");
+      return false;
+    }
+  }
+  return true;
 }
 
 bool LoadHistory(benchmark::State& state, ChartEngine& engine,
@@ -200,6 +221,96 @@ void BM_RsiLiveUpdateAndSnapshot(benchmark::State& state) {
   }
   state.SetItemsProcessed(state.iterations());
   state.counters["candles"] = static_cast<double>(candle_count);
+}
+
+void BM_MovingAverageSetHistory(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  auto preflight = MakeEngine(50);
+  if (!AddMovingAverages(state, *preflight) ||
+      !LoadHistory(state, *preflight, history)) {
+    return;
+  }
+
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    state.PauseTiming();
+    auto engine = MakeEngine(50);
+    if (!AddMovingAverages(state, *engine)) return;
+    state.ResumeTiming();
+    const UpdateStatus status =
+        engine->SetHistory(history.data(), history.size());
+    benchmark::DoNotOptimize(status);
+    benchmark::ClobberMemory();
+  }
+  state.SetItemsProcessed(state.iterations() *
+                          static_cast<int64_t>(candle_count));
+  state.counters["candles"] = static_cast<double>(candle_count);
+  state.counters["indicators"] = 4.0;
+}
+
+void BM_MovingAverageLiveUpdateAndSnapshot(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  auto engine = MakeEngine(50);
+  if (!AddMovingAverages(state, *engine) ||
+      !LoadHistory(state, *engine, history)) {
+    return;
+  }
+  const auto baseline = engine->Snapshot();
+  const double timestamp =
+      history[history.size() - trading_charts::kCandleValueCount];
+  bool higher = true;
+  std::shared_ptr<const RenderSnapshot> snapshot;
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    const double close = higher ? 110.0 : 109.5;
+    higher = !higher;
+    const double candle[] = {timestamp, 109.0, 111.0, 108.0, close, 20.0};
+    const UpdateStatus status =
+        engine->UpdateCandle(candle, trading_charts::kCandleValueCount);
+    if (status != UpdateStatus::kApplied) {
+      state.SkipWithError("Moving-average live update was not applied");
+      break;
+    }
+    snapshot = engine->Snapshot();
+    benchmark::DoNotOptimize(snapshot.get());
+    benchmark::ClobberMemory();
+  }
+  if (snapshot != nullptr) SetSnapshotCounters(state, *snapshot);
+  benchmark::DoNotOptimize(baseline.get());
+  state.counters["candles"] = static_cast<double>(candle_count);
+  state.counters["indicators"] = 4.0;
+}
+
+void BM_MovingAverageCrosshairOnly(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  auto engine = MakeEngine(500);
+  if (!AddMovingAverages(state, *engine) ||
+      !LoadHistory(state, *engine, history)) {
+    return;
+  }
+  const auto baseline = engine->Snapshot();
+  const auto baseline_content = baseline->content_vertices;
+  const uint64_t baseline_content_revision = baseline->content_revision;
+  std::shared_ptr<const RenderSnapshot> snapshot;
+  bool alternate = false;
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    alternate = !alternate;
+    engine->SetCrosshair(true, alternate ? 300.0f : 900.0f, 240.0f);
+    snapshot = engine->Snapshot();
+    benchmark::DoNotOptimize(snapshot.get());
+  }
+  if (snapshot->content_vertices != baseline_content ||
+      snapshot->content_revision != baseline_content_revision) {
+    state.SkipWithError("Crosshair rebuilt moving-average content");
+    return;
+  }
+  SetSnapshotCounters(state, *snapshot);
+  state.counters["candles"] = static_cast<double>(candle_count);
+  state.counters["indicators"] = 4.0;
 }
 
 void BM_SnapshotCold(benchmark::State& state) {
@@ -377,9 +488,18 @@ void InteractionArguments(benchmark::Benchmark* benchmark_case) {
   benchmark_case->Args({100000, 5000});
 }
 
+void MovingAverageArguments(benchmark::Benchmark* benchmark_case) {
+  benchmark_case->Arg(1000);
+  benchmark_case->Arg(10000);
+  benchmark_case->Arg(100000);
+}
+
 BENCHMARK(BM_SetHistory)->Arg(1000)->Arg(10000)->Arg(100000);
 BENCHMARK(BM_UpdateTrades)->Arg(1)->Arg(10)->Arg(100)->Arg(1000);
 BENCHMARK(BM_RsiLiveUpdateAndSnapshot)->Arg(1000)->Arg(10000)->Arg(100000);
+BENCHMARK(BM_MovingAverageSetHistory)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MovingAverageLiveUpdateAndSnapshot)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MovingAverageCrosshairOnly)->Apply(MovingAverageArguments);
 BENCHMARK(BM_SnapshotCold)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCached)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCrosshairOnly)->Apply(InteractionArguments);

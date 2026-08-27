@@ -429,6 +429,142 @@ class LineStrokeBuilder {
   bool first_segment_ = true;
 };
 
+LinePoint InterpolateLinePoint(const LinePoint& first, const LinePoint& second,
+                               float amount) {
+  const double precise_amount = static_cast<double>(amount);
+  return LinePoint{
+      first.timestamp + (second.timestamp - first.timestamp) * precise_amount,
+      first.value + (second.value - first.value) * precise_amount,
+      amount < 1.0f ? first.index : second.index,
+      first.x + (second.x - first.x) * amount,
+      first.y + (second.y - first.y) * amount,
+  };
+}
+
+class DashedLineStrokeBuilder {
+ public:
+  DashedLineStrokeBuilder(const SeriesGeometryInput& input,
+                          std::vector<float>& vertices)
+      : stroke_(input, vertices),
+        dash_(4.0f * std::max(input.config.display_scale, 1.0f)),
+        gap_(3.0f * std::max(input.config.display_scale, 1.0f)),
+        remaining_(dash_) {}
+
+  void AddPoint(const LinePoint& point) {
+    if (!has_previous_) {
+      previous_ = point;
+      has_previous_ = true;
+      return;
+    }
+    const float dx = point.x - previous_.x;
+    const float dy = point.y - previous_.y;
+    const float length = std::hypot(dx, dy);
+    if (!(length > 1e-5f)) {
+      previous_ = point;
+      return;
+    }
+
+    float consumed = 0.0f;
+    while (consumed < length - 1e-5f) {
+      const float step = std::min(remaining_, length - consumed);
+      const LinePoint start =
+          InterpolateLinePoint(previous_, point, consumed / length);
+      const LinePoint end =
+          InterpolateLinePoint(previous_, point, (consumed + step) / length);
+      if (drawing_) {
+        if (!dash_open_) {
+          stroke_.AddPoint(start);
+          dash_open_ = true;
+        }
+        stroke_.AddPoint(end);
+      }
+      consumed += step;
+      remaining_ -= step;
+      if (remaining_ <= 1e-5f) {
+        if (drawing_ && dash_open_) {
+          stroke_.Finish();
+          dash_open_ = false;
+        }
+        drawing_ = !drawing_;
+        remaining_ = drawing_ ? dash_ : gap_;
+      }
+    }
+    previous_ = point;
+  }
+
+  void Finish() {
+    if (dash_open_) {
+      stroke_.Finish();
+    }
+    has_previous_ = false;
+    dash_open_ = false;
+    drawing_ = true;
+    remaining_ = dash_;
+  }
+
+ private:
+  LineStrokeBuilder stroke_;
+  float dash_ = 4.0f;
+  float gap_ = 3.0f;
+  float remaining_ = 4.0f;
+  LinePoint previous_;
+  bool has_previous_ = false;
+  bool dash_open_ = false;
+  bool drawing_ = true;
+};
+
+class DashedLineCapacityBuilder {
+ public:
+  explicit DashedLineCapacityBuilder(float display_scale)
+      : dash_(4.0f * std::max(display_scale, 1.0f)),
+        gap_(3.0f * std::max(display_scale, 1.0f)),
+        remaining_(dash_) {}
+
+  void AddPoint(const LinePoint& point) {
+    ++point_count_;
+    if (!has_previous_) {
+      previous_ = point;
+      has_previous_ = true;
+      return;
+    }
+    const float length =
+        std::hypot(point.x - previous_.x, point.y - previous_.y);
+    float consumed = 0.0f;
+    while (consumed < length - 1e-5f) {
+      const float step = std::min(remaining_, length - consumed);
+      if (drawing_) {
+        ++drawn_step_count_;
+      }
+      consumed += step;
+      remaining_ -= step;
+      if (remaining_ <= 1e-5f) {
+        drawing_ = !drawing_;
+        remaining_ = drawing_ ? dash_ : gap_;
+      }
+    }
+    previous_ = point;
+  }
+
+  void Finish() {
+    has_previous_ = false;
+    drawing_ = true;
+    remaining_ = dash_;
+  }
+
+  size_t drawn_step_count() const { return drawn_step_count_; }
+  size_t point_count() const { return point_count_; }
+
+ private:
+  float dash_ = 4.0f;
+  float gap_ = 3.0f;
+  float remaining_ = 4.0f;
+  LinePoint previous_;
+  size_t drawn_step_count_ = 0;
+  size_t point_count_ = 0;
+  bool has_previous_ = false;
+  bool drawing_ = true;
+};
+
 size_t SampleStride(const SeriesGeometryInput& input) {
   const size_t visible_count = input.end_index - input.first_index;
   return std::max<size_t>(
@@ -861,6 +997,11 @@ void AppendLinePath(const SeriesGeometryInput& input, Builder& builder) {
 
 void AppendLineGeometry(const SeriesGeometryInput& input,
                         std::vector<float>& vertices) {
+  if (input.config.line_dashed) {
+    DashedLineStrokeBuilder stroke(input, vertices);
+    AppendLinePath(input, stroke);
+    return;
+  }
   LineStrokeBuilder stroke(input, vertices);
   AppendLinePath(input, stroke);
 }
@@ -869,6 +1010,11 @@ void AppendAreaGeometry(const SeriesGeometryInput& input,
                         std::vector<float>& vertices) {
   AreaFillBuilder fill(input, vertices);
   AppendLinePath(input, fill);
+  if (input.config.line_dashed) {
+    DashedLineStrokeBuilder stroke(input, vertices);
+    AppendLinePath(input, stroke);
+    return;
+  }
   LineStrokeBuilder stroke(input, vertices);
   AppendLinePath(input, stroke);
 }
@@ -898,6 +1044,16 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
     return 0;
   }
   if (IsLineLikeSeries(input.config.series_type)) {
+    if (input.config.line_dashed) {
+      DashedLineCapacityBuilder builder(input.config.display_scale);
+      AppendLinePath(input, builder);
+      const size_t stroke_quads =
+          builder.drawn_step_count() * kLineQuadsPerSample;
+      const size_t fill_quads = input.config.series_type == SeriesType::kArea
+                                    ? builder.point_count()
+                                    : 0;
+      return (stroke_quads + fill_quads) * kFloatsPerQuad;
+    }
     const size_t visible_count = input.end_index - input.first_index;
     const size_t columns =
         static_cast<size_t>(std::max(1.0f, std::ceil(input.plot.Width()))) + 2;

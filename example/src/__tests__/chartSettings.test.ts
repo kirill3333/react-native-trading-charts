@@ -7,6 +7,7 @@ import {
 } from '../chartSettingsState';
 import {
   buildMainSeriesColors,
+  buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
   buildChartViewConfig,
@@ -34,11 +35,25 @@ describe('chart settings', () => {
       mainPaneHeightWeight: 3,
       volumePaneHeightWeight: 1,
       rsiPaneHeightWeight: 1,
-      rsiLineWidth: 1.5,
+      rsiLineWidth: 0.5,
       rsiLineColorOverride: null,
       rsiTextColorOverride: null,
       rsiBandColorOverride: null,
       rsiLevelLineColorOverride: null,
+      smaEnabled: false,
+      smaPeriod: 20,
+      smaValueSource: 'close',
+      smaLineWidth: 0.5,
+      smaLineStyle: 'solid',
+      smaLineColor: '#2E90F5',
+      smaGradientEnabled: false,
+      emaEnabled: false,
+      emaPeriod: 50,
+      emaValueSource: 'close',
+      emaLineWidth: 0.5,
+      emaLineStyle: 'dashed',
+      emaLineColor: '#F5A623',
+      emaGradientEnabled: false,
       themeMode: 'dark',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',
@@ -51,9 +66,71 @@ describe('chart settings', () => {
     });
   });
 
+  it('builds enabled SMA and EMA overlays with independent styles', () => {
+    expect(buildMovingAverageSeries(DEFAULT_CHART_SETTINGS)).toEqual([]);
+
+    const series = buildMovingAverageSeries(
+      settingsWith({
+        smaEnabled: true,
+        smaPeriod: 10,
+        smaValueSource: 'high',
+        smaLineWidth: 1,
+        smaLineStyle: 'dashed',
+        smaLineColor: '#112233',
+        smaGradientEnabled: true,
+        smaGradientTopColor: '#445566',
+        smaGradientBottomColor: '#778899',
+        emaEnabled: true,
+        emaPeriod: 100,
+        emaValueSource: 'low',
+        emaLineWidth: 2.5,
+        emaLineStyle: 'solid',
+        emaLineColor: '#AABBCC',
+      })
+    );
+
+    expect(series).toEqual([
+      {
+        seriesId: 'sma',
+        type: 'line',
+        paneId: 'main',
+        priceScaleId: 'main',
+        source: {
+          type: 'ohlcvSma',
+          seriesId: 'main',
+          period: 10,
+          valueSource: 'high',
+        },
+        appearance: {
+          width: 1,
+          color: '#112233',
+          style: 'dashed',
+          gradient: { topColor: '#445566', bottomColor: '#778899' },
+        },
+      },
+      {
+        seriesId: 'ema',
+        type: 'line',
+        paneId: 'main',
+        priceScaleId: 'main',
+        source: {
+          type: 'ohlcvEma',
+          seriesId: 'main',
+          period: 100,
+          valueSource: 'low',
+        },
+        appearance: {
+          width: 2.5,
+          color: '#AABBCC',
+          style: 'solid',
+        },
+      },
+    ]);
+  });
+
   it('uses themed RSI colors until a user override is set', () => {
     expect(buildRsiAppearance(DEFAULT_CHART_SETTINGS)).toEqual({
-      width: 1.5,
+      width: 0.5,
       color: APP_THEMES.dark.rsiColor,
       textColor: APP_THEMES.dark.rsiTextColor,
       levelLineColor: APP_THEMES.dark.rsiLevelLineColor,

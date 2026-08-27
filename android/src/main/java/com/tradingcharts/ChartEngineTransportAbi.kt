@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 1
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 2
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v1"
+  const val STRING_MARKER = "TradingCharts.Series.v2"
 
   object NumberIndex {
     const val VERSION = 0
@@ -22,7 +22,9 @@ internal object SeriesTransportAbi {
     const val RSI_OVERSOLD = 13
     const val RSI_OVERBOUGHT = 14
     const val RSI_TEXT_COLOR_SET = 15
-    const val SIZE = 16
+    const val LINE_DASHED = 16
+    const val MOVING_AVERAGE_PERIOD = 17
+    const val SIZE = 18
   }
 
   object ColorIndex {
@@ -52,7 +54,7 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 12
+  const val ROUND_TRIP_NUMBER_COUNT = 14
   const val ROUND_TRIP_COLOR_COUNT = 40
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
@@ -106,6 +108,8 @@ internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
       when (sourceType) {
         "ohlcvVolume" -> 1.0
         "ohlcvRsi" -> 2.0
+        "ohlcvSma" -> 3.0
+        "ohlcvEma" -> 4.0
         else -> 0.0
       }
   numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = if (visible) 1.0 else 0.0
@@ -120,6 +124,8 @@ internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
   numbers[SeriesTransportAbi.NumberIndex.RSI_OVERBOUGHT] = rsiOverbought
   numbers[SeriesTransportAbi.NumberIndex.RSI_TEXT_COLOR_SET] =
       if (rsiTextColor != null) 1.0 else 0.0
+  numbers[SeriesTransportAbi.NumberIndex.LINE_DASHED] = if (lineDashed) 1.0 else 0.0
+  numbers[SeriesTransportAbi.NumberIndex.MOVING_AVERAGE_PERIOD] = movingAveragePeriod.toDouble()
 
   val colors = FloatArray(SeriesTransportAbi.ColorIndex.SIZE)
   colors[SeriesTransportAbi.ColorIndex.VERSION] = CHART_ENGINE_TRANSPORT_ABI_VERSION.toFloat()

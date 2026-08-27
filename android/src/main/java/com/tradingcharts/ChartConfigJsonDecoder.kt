@@ -77,8 +77,10 @@ internal class ChartConfigJsonDecoder(
           barLineWidthPx = barsAppearance.optDouble("lineWidth", 1.0).toFloat() * density,
           lineWidthPx = lineAppearance.optDouble("width", 1.5).toFloat() * density,
           lineSource = root.optJSONObject("series")?.optString("source", "close") ?: "close",
+          lineDashed = lineAppearance.optString("style", "solid") == "dashed",
           lineGradientEnabled = lineGradient != null,
           areaLineWidthPx = areaAppearance.optDouble("width", 1.5).toFloat() * density,
+          areaLineDashed = areaAppearance.optString("style", "solid") == "dashed",
           areaLineGradientEnabled = areaGradient != null,
           lineGapThresholdMs =
               root.optJSONObject("series")?.optDouble("gapThresholdMs", 0.0) ?: 0.0,
@@ -545,6 +547,38 @@ private fun seriesLineWidthPx(
   return if (type == "area") fallback.areaLineWidthPx else fallback.lineWidthPx
 }
 
+private fun seriesLineDashed(
+    type: String,
+    appearance: JSONObject?,
+    fallback: ChartConfig,
+): Boolean {
+  if (!type.isLineLikeSeries()) return false
+  val fallbackDashed = if (type == "area") fallback.areaLineDashed else fallback.lineDashed
+  return appearance?.optString("style")?.takeIf { it.isNotEmpty() }?.let { it == "dashed" }
+      ?: fallbackDashed
+}
+
+private fun seriesLineSource(
+    type: String,
+    json: JSONObject,
+    source: JSONObject?,
+): String {
+  val sourceType = source?.optString("type")
+  if (sourceType == "ohlcvSma" || sourceType == "ohlcvEma") {
+    return source.optString("valueSource", "close")
+  }
+  return if (type.isLineLikeSeries()) json.optString("source", "close") else "close"
+}
+
+private fun movingAveragePeriod(source: JSONObject?): Long {
+  val type = source?.optString("type")
+  return if (type == "ohlcvSma" || type == "ohlcvEma") {
+    source.optLong("period", 0L)
+  } else {
+    1L
+  }
+}
+
 private data class RsiConfigValues(
     val period: Int,
     val oversold: Double,
@@ -603,11 +637,13 @@ private fun seriesConfig(
       downColor = appearance.optionalColor("downColor") ?: fallback.downColor,
       declarative = declarative,
       lineWidthPx = seriesLineWidthPx(type, lineAppearance, fallback),
-      lineSource = if (lineLike) json.optString("source", "close") else "close",
+      lineSource = seriesLineSource(type, json, source),
+      lineDashed = seriesLineDashed(type, lineAppearance, fallback),
       lineGradientTopColor = lineGradient.optionalColor("topColor") ?: resolvedColor,
       lineGradientBottomColor = lineGradient.optionalColor("bottomColor") ?: resolvedColor,
       lineGradientEnabled = lineGradient != null,
       lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
+      movingAveragePeriod = movingAveragePeriod(source),
       areaFillTopColor = areaFill.optionalColor("topColor") ?: fallback.areaFillTopColor,
       areaFillBottomColor = areaFill.optionalColor("bottomColor") ?: fallback.areaFillBottomColor,
       rsiPeriod = rsi.period,

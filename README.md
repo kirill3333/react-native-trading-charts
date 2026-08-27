@@ -57,8 +57,8 @@ frequently updated market data without introducing a browser or a third-party
   are cached, and content geometry is reused for crosshair-only updates.
 - **Multiple display types.** Candlestick, hollow candlestick, OHLC bar, line,
   area, and histogram series are supported.
-- **Multiple panes and series.** Add independently scaled panes, derived volume
-  and RSI, comparison series, and custom histogram data.
+- **Multiple panes and series.** Add independently scaled panes, derived volume,
+  SMA, EMA and RSI, comparison series, and custom histogram data.
 - **Detailed presentation control.** Configure themes, role-specific styles,
   native number/date formatting, axes, badges, and tooltips.
 - **Streaming-ready data APIs.** Send completed candles, raw trades, batches,
@@ -351,6 +351,7 @@ The hollow outline uses the same native thickness as the wick.
 | `series.gapThresholdMs` | Positive milliseconds | `undefined` | Splits the line when a timestamp gap exceeds this value. |
 | `appearance.line.width` | Positive number | `1.5` | Native stroke width. |
 | `appearance.line.color` | Color | `theme.upColor` | Solid line color and fallback active-series color. |
+| `appearance.line.style` | `'solid'` or `'dashed'` | `'solid'` | Shared C++ stroke tessellation style. |
 | `appearance.line.gradient.topColor` | Color | `undefined` | Top color of an optional vertical stroke gradient. |
 | `appearance.line.gradient.bottomColor` | Color | `undefined` | Bottom color of an optional vertical stroke gradient. |
 
@@ -378,6 +379,7 @@ The hollow outline uses the same native thickness as the wick.
 | `appearance.area.width` | Positive number | `1.5` | Outline width. |
 | `appearance.area.color` | Color | `theme.upColor` | Outline color and base color for default fill. |
 | `appearance.area.gradient` | `{ topColor, bottomColor }` | `undefined` | Optional vertical gradient for the outline. |
+| `appearance.area.style` | `'solid'` or `'dashed'` | `'solid'` | Outline style; the area fill remains continuous. |
 | `appearance.area.fill.topColor` | Color | Area color with `0x40` alpha | Fill color at the pane top. |
 | `appearance.area.fill.bottomColor` | Color | Area color with `0x00` alpha | Fill color at the pane bottom. |
 
@@ -548,13 +550,65 @@ const panes = [
 | `priceScaleId` | Target pane's scale ID | Required | Must match the pane price scale. |
 | `visible` | `boolean` | `true` | Controls rendering without removing the series. |
 | `type` | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'` | Required | Series geometry. |
-| `source` | OHLC field or histogram source | Type-specific | Line/area value field or histogram data source. |
+| `source` | OHLC field, derived indicator, or histogram source | Type-specific | Line/area value field or native-derived/data source. |
 | `gapThresholdMs` | Positive milliseconds | `undefined` | Optional line/area gap splitting. |
 | `appearance` | Type-specific style | Theme fallback | Optional line, area, or histogram style. |
 
 Derived volume follows its OHLC source automatically when history, candle, or
 trade updates arrive. Standalone series use `setSeriesData`,
 `prependSeriesData`, and `updateSeriesData`.
+
+### Simple and Exponential Moving Averages (SMA/EMA)
+
+SMA and EMA are derived line series calculated by the shared C++ engine. They
+follow history, candle and trade updates automatically and render through the
+same content vertex buffer and GPU draw call as the other price series.
+
+```tsx
+<TradingChartsView
+  chartId="btc-1m"
+  additionalSeries={[
+    {
+      seriesId: 'sma-20',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: { type: 'ohlcvSma', seriesId: 'main', period: 20 },
+      appearance: { color: '#2E90F5', width: 1.5 },
+    },
+    {
+      seriesId: 'ema-50',
+      type: 'line',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvEma',
+        seriesId: 'main',
+        period: 50,
+        valueSource: 'close',
+      },
+      appearance: {
+        color: '#F5A623',
+        width: 2,
+        style: 'dashed',
+      },
+    },
+  ]}
+/>
+```
+
+`period` is required and must be an integer from `1` through `4294967295`.
+`valueSource` accepts `open`, `high`, `low`, or `close` and defaults to
+`close`. The first value is published on candle `period - 1`: SMA is the mean
+of that window, while EMA uses the same SMA as its seed and then applies
+`alpha = 2 / (period + 1)`. Before warm-up the derived series is empty.
+
+Moving averages must target the same `paneId` and `priceScaleId` as their
+source. The source may be `main` or a data-backed OHLC series; derived chains
+are rejected. `gapThresholdMs` only splits the rendered path across large time
+gaps—it does not reset the calculation. Each line accepts `width`, `color`, an
+optional vertical `gradient`, and `style: 'solid' | 'dashed'`. Dashed strokes
+use a fixed density-aware 4/3 dash-gap pattern on both platforms.
 
 ### Relative Strength Index (RSI)
 

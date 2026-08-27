@@ -9,7 +9,10 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <iterator>
 #include <limits>
+#include <mutex>
+#include <string>
 #include <vector>
 
 #include "cpp/internal/series_geometry.h"
@@ -26,6 +29,27 @@ using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
 using trading_charts::UpdateStatus;
+
+namespace trading_charts {
+
+class ChartEngineTestAccess {
+ public:
+  static std::vector<Candle> SeriesCandles(ChartEngine& engine,
+                                           const std::string& series_id) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    const SeriesData* series = engine.FindSeriesLocked(series_id);
+    return series == nullptr ? std::vector<Candle>{} : series->candles;
+  }
+
+  static size_t MovingAverageStateCount(ChartEngine& engine,
+                                        const std::string& series_id) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    const SeriesData* series = engine.FindSeriesLocked(series_id);
+    return series == nullptr ? 0 : series->moving_average_states.size();
+  }
+};
+
+}  // namespace trading_charts
 
 namespace {
 
@@ -2285,6 +2309,268 @@ void TestRsiFlatAndCascadeRemoval() {
   assert(!engine.RemoveSeries("flat-rsi"));
 }
 
+void TestMovingAverageValuesWarmupAndIncrementalUpdates() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 20;
+  config.logical_spacing = true;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(700.0f, 360.0f);
+
+  SeriesConfig sma;
+  sma.series_id = "sma";
+  sma.type = SeriesType::kLine;
+  sma.source = SeriesSource::kOhlcvSma;
+  sma.source_series_id = "main";
+  sma.moving_average_period = 3;
+  assert(engine.AddSeries(sma) == UpdateStatus::kApplied);
+  SeriesConfig ema = sma;
+  ema.series_id = "ema";
+  ema.source = SeriesSource::kOhlcvEma;
+  assert(engine.AddSeries(ema) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData("sma", nullptr, 0, false) ==
+         UpdateStatus::kInvalidInput);
+
+  const double short_history[] = {
+      60'000.0, 1.0, 1.0, 1.0, 1.0, 1.0, 120'000.0, 2.0, 2.0, 2.0, 2.0, 1.0,
+  };
+  assert(engine.SetHistory(short_history, std::size(short_history)) ==
+         UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sma")
+             .empty());
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ema")
+             .empty());
+
+  const double history[] = {
+      60'000.0,  1.0, 1.0, 1.0, 1.0, 1.0, 120'000.0, 2.0, 2.0, 2.0, 2.0, 1.0,
+      180'000.0, 3.0, 3.0, 3.0, 3.0, 1.0, 240'000.0, 4.0, 4.0, 4.0, 4.0, 1.0,
+      300'000.0, 5.0, 5.0, 5.0, 5.0, 1.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  auto sma_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sma");
+  auto ema_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ema");
+  assert(sma_values.size() == 3 && ema_values.size() == 3);
+  for (size_t index = 0; index < 3; ++index) {
+    ExpectNear(sma_values[index].close, 2.0 + static_cast<double>(index));
+    ExpectNear(ema_values[index].close, 2.0 + static_cast<double>(index));
+    ExpectNear(sma_values[index].timestamp,
+               history[(index + 2) * trading_charts::kCandleValueCount]);
+  }
+
+  const auto content_snapshot = engine.Snapshot();
+  engine.SetCrosshair(true, content_snapshot->plot.left + 20.0f,
+                      content_snapshot->plot.top + 20.0f);
+  const auto crosshair_snapshot = engine.Snapshot();
+  assert(crosshair_snapshot->content_revision ==
+         content_snapshot->content_revision);
+  assert(crosshair_snapshot->content_vertices ==
+         content_snapshot->content_vertices);
+
+  const double replacement[] = {
+      300'000.0, 7.0, 7.0, 7.0, 7.0, 1.0,
+  };
+  assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+         UpdateStatus::kApplied);
+  sma_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sma");
+  ema_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ema");
+  ExpectNear(sma_values.back().close, 14.0 / 3.0);
+  ExpectNear(ema_values.back().close, 5.0);
+
+  const double appended[] = {
+      360'000.0, 8.0, 8.0, 8.0, 8.0, 1.0,
+  };
+  assert(engine.UpdateCandle(appended, std::size(appended)) ==
+         UpdateStatus::kApplied);
+  sma_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sma");
+  ema_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ema");
+  ExpectNear(sma_values.back().close, 19.0 / 3.0);
+  ExpectNear(ema_values.back().close, 6.5);
+  assert(trading_charts::ChartEngineTestAccess::MovingAverageStateCount(
+             engine, "sma") == sma_values.size());
+
+  const double prepended[] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+  assert(engine.PrependHistory(prepended, std::size(prepended)) ==
+         UpdateStatus::kApplied);
+  sma_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sma");
+  ExpectNear(sma_values.front().close, 1.0);
+  assert(sma_values.size() == 5);
+}
+
+void TestMovingAverageSourcesValidationAndCascadeRemoval() {
+  ChartEngine engine;
+  engine.SetSize(600.0f, 320.0f);
+  PaneConfig main;
+  PaneConfig other;
+  other.pane_id = "other";
+  other.price_scale_id = "other";
+  engine.SetPanes({main, other}, false);
+
+  SeriesConfig invalid;
+  invalid.series_id = "invalid";
+  invalid.type = SeriesType::kLine;
+  invalid.source = SeriesSource::kOhlcvSma;
+  invalid.source_series_id = "main";
+  invalid.moving_average_period = 0;
+  assert(engine.AddSeries(invalid) == UpdateStatus::kInvalidInput);
+  invalid.moving_average_period = 2;
+  invalid.pane_id = "other";
+  invalid.price_scale_id = "other";
+  assert(engine.AddSeries(invalid) == UpdateStatus::kInvalidInput);
+
+  SeriesConfig source;
+  source.series_id = "source";
+  source.type = SeriesType::kLine;
+  source.pane_id = "other";
+  source.price_scale_id = "other";
+  assert(engine.AddSeries(source) == UpdateStatus::kApplied);
+
+  SeriesConfig average;
+  average.series_id = "source-ema";
+  average.type = SeriesType::kLine;
+  average.source = SeriesSource::kOhlcvEma;
+  average.source_series_id = "source";
+  average.moving_average_period = 1;
+  average.pane_id = "other";
+  average.price_scale_id = "other";
+  average.line_source = OhlcValueSource::kHigh;
+  assert(engine.AddSeries(average) == UpdateStatus::kApplied);
+
+  const double source_values[] = {
+      0.0, 10.0, 14.0, 8.0, 11.0, 1.0, 60'000.0, 20.0, 25.0, 18.0, 22.0, 1.0,
+  };
+  assert(engine.SetSeriesData("source", source_values, std::size(source_values),
+                              false) == UpdateStatus::kApplied);
+  const auto values = trading_charts::ChartEngineTestAccess::SeriesCandles(
+      engine, "source-ema");
+  assert(values.size() == 2);
+  ExpectNear(values[0].close, 14.0);
+  ExpectNear(values[1].close, 25.0);
+
+  SeriesConfig derived_source = average;
+  derived_source.series_id = "derived-source";
+  derived_source.source_series_id = "source-ema";
+  assert(engine.AddSeries(derived_source) == UpdateStatus::kInvalidInput);
+
+  SeriesConfig wrong_pane = average;
+  wrong_pane.series_id = "wrong-pane";
+  wrong_pane.pane_id = "main";
+  wrong_pane.price_scale_id = "main";
+  assert(engine.AddSeries(wrong_pane) == UpdateStatus::kInvalidInput);
+
+  assert(engine.RemoveSeries("source"));
+  assert(!engine.RemoveSeries("source-ema"));
+}
+
+void TestMovingAverageAllValueSourcesAndTradeBatch() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.resolution.unit = trading_charts::ResolutionUnit::kFixed;
+  config.resolution.fixed_duration_ms = 60'000;
+  engine.SetConfig(config);
+  engine.SetSize(500.0f, 300.0f);
+
+  const std::array<OhlcValueSource, 4> sources{
+      OhlcValueSource::kOpen,
+      OhlcValueSource::kHigh,
+      OhlcValueSource::kLow,
+      OhlcValueSource::kClose,
+  };
+  for (size_t index = 0; index < sources.size(); ++index) {
+    SeriesConfig average;
+    average.series_id = "ma-" + std::to_string(index);
+    average.type = SeriesType::kLine;
+    average.source = SeriesSource::kOhlcvSma;
+    average.source_series_id = "main";
+    average.moving_average_period = 1;
+    average.line_source = sources[index];
+    assert(engine.AddSeries(average) == UpdateStatus::kApplied);
+  }
+  const double candle[] = {0.0, 10.0, 14.0, 8.0, 11.0, 1.0};
+  assert(engine.SetHistory(candle, std::size(candle)) ==
+         UpdateStatus::kApplied);
+  const std::array<double, 4> expected{10.0, 14.0, 8.0, 11.0};
+  for (size_t index = 0; index < expected.size(); ++index) {
+    const auto values = trading_charts::ChartEngineTestAccess::SeriesCandles(
+        engine, "ma-" + std::to_string(index));
+    assert(values.size() == 1);
+    ExpectNear(values[0].close, expected[index]);
+  }
+
+  const double single_trade[] = {60'000.0, 20.0, 1.0};
+  assert(engine.UpdateTrade(single_trade, std::size(single_trade)) ==
+         UpdateStatus::kApplied);
+  auto closes =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ma-3");
+  assert(closes.size() == 2);
+  ExpectNear(closes.back().close, 20.0);
+
+  const double trades[] = {
+      60'100.0, 24.0, 1.0, 120'000.0, 30.0, 1.0,
+  };
+  assert(engine.UpdateTrades(trades, std::size(trades)) ==
+         UpdateStatus::kApplied);
+  closes = trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ma-3");
+  assert(closes.size() == 3);
+  ExpectNear(closes[1].close, 24.0);
+  ExpectNear(closes[2].close, 30.0);
+}
+
+void TestDashedLineGeometryUsesSharedTriangleContract() {
+  ChartConfig config;
+  config.series_type = SeriesType::kLine;
+  config.line_width = 2.0f;
+  config.line_dashed = true;
+  config.line = {0.2f, 0.4f, 0.6f, 0.8f};
+  const std::vector<Candle> candles{
+      Candle{0.0, 1.0, 1.0, 1.0, 1.0, 0.0},
+      Candle{1.0, 1.0, 1.0, 1.0, 1.0, 0.0},
+  };
+  const trading_charts::internal::SeriesGeometryInput input{
+      config, candles, 0,   candles.size(), {0.0f, 0.0f, 140.0f, 40.0f}, 0.0,
+      1.0,    0.0,     2.0, nullptr,
+  };
+  std::vector<float> dashed;
+  dashed.reserve(trading_charts::internal::SeriesGeometryFloatCapacity(input));
+  trading_charts::internal::AppendSeriesGeometry(input, dashed);
+  assert(!dashed.empty());
+  assert(dashed.size() % 6 == 0);
+  assert(dashed.size() <= dashed.capacity());
+  for (size_t offset = 0; offset < dashed.size(); offset += 6) {
+    ExpectNear(dashed[offset + 2], config.line.r, 1e-6);
+    ExpectNear(dashed[offset + 3], config.line.g, 1e-6);
+    ExpectNear(dashed[offset + 4], config.line.b, 1e-6);
+    assert(dashed[offset] >= input.plot.left &&
+           dashed[offset] <= input.plot.right);
+  }
+
+  config.line_dashed = false;
+  std::vector<float> solid;
+  trading_charts::internal::AppendSeriesGeometry(
+      trading_charts::internal::SeriesGeometryInput{
+          config,
+          candles,
+          0,
+          candles.size(),
+          input.plot,
+          0.0,
+          1.0,
+          0.0,
+          2.0,
+          nullptr,
+      },
+      solid);
+  assert(dashed.size() > solid.size());
+}
+
 void TestCustomHistogramAndRuntimePaneWeights() {
   ChartEngine engine;
   ChartConfig config;
@@ -2903,6 +3189,9 @@ int main() noexcept {
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();
     TestRsiFlatAndCascadeRemoval();
+    TestMovingAverageValuesWarmupAndIncrementalUpdates();
+    TestMovingAverageSourcesValidationAndCascadeRemoval();
+    TestMovingAverageAllValueSourcesAndTradeBatch();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
     TestViewportInDataGapReportsEmptyRange();
@@ -2915,6 +3204,7 @@ int main() noexcept {
     TestAreaFillAndLineLikeSemantics();
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
+    TestDashedLineGeometryUsesSharedTriangleContract();
     std::cout << "ChartEngineTests passed\n";
     return 0;
   } catch (...) {

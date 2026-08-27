@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -90,6 +91,7 @@ enum class ConfigNumberIndex : std::uint8_t {
   kOutsideSession,
   kCandleTimestamp,
   kCandleRadius,
+  kLineDashed,
   kCount,
 };
 
@@ -130,6 +132,8 @@ enum class SeriesNumberIndex : std::uint8_t {
   kRsiOversold,
   kRsiOverbought,
   kRsiTextColorSet,
+  kLineDashed,
+  kMovingAveragePeriod,
   kCount,
 };
 
@@ -271,8 +275,8 @@ inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 1.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v1";
+inline constexpr double kChartEngineTransportAbiVersion = 2.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v2";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -283,8 +287,8 @@ inline constexpr size_t kPaneSnapshotRecordWidth = 14;
 inline constexpr size_t kRsiLegendRecordWidth = 13;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 45);
-static_assert(kSeriesNumberCount == 16);
+static_assert(kConfigNumberCount == 46);
+static_assert(kSeriesNumberCount == 18);
 static_assert(kSeriesColorCount == 44);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
@@ -698,6 +702,10 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
             ? CandleTimestampPolicy::kTradingDateUtc
             : CandleTimestampPolicy::kBucketStart;
   }
+  if (number_count >
+      static_cast<jsize>(ToIndex(ConfigNumberIndex::kLineDashed))) {
+    config.line_dashed = number_at(ConfigNumberIndex::kLineDashed) != 0.0;
+  }
   config.candle_radius =
       number_count >
               static_cast<jsize>(ToIndex(ConfigNumberIndex::kCandleRadius))
@@ -909,6 +917,8 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   const double source_value = number_at(SeriesNumberIndex::kSource);
   series.source = source_value == 1.0   ? SeriesSource::kOhlcvVolume
                   : source_value == 2.0 ? SeriesSource::kOhlcvRsi
+                  : source_value == 3.0 ? SeriesSource::kOhlcvSma
+                  : source_value == 4.0 ? SeriesSource::kOhlcvEma
                                         : SeriesSource::kData;
   series.visible = number_at(SeriesNumberIndex::kVisible) != 0.0;
   series.declarative = number_at(SeriesNumberIndex::kDeclarative) != 0.0;
@@ -940,6 +950,17 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   series.rsi_text_color_set =
       number_at(SeriesNumberIndex::kRsiTextColorSet) != 0.0;
   series.rsi_text_color = color_at(SeriesColorIndex::kRsiText);
+  series.line_dashed = number_at(SeriesNumberIndex::kLineDashed) != 0.0;
+  const double moving_average_period =
+      number_at(SeriesNumberIndex::kMovingAveragePeriod);
+  series.moving_average_period =
+      std::isfinite(moving_average_period) && moving_average_period >= 1.0 &&
+              moving_average_period <=
+                  static_cast<double>(
+                      std::numeric_limits<std::uint32_t>::max()) &&
+              std::floor(moving_average_period) == moving_average_period
+          ? static_cast<std::uint32_t>(moving_average_period)
+          : 0;
   return StatusValue(instance->AddSeries(series));
 }
 

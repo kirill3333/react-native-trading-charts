@@ -79,7 +79,18 @@ enum class SeriesSource : std::uint8_t {
   kData = 0,
   kOhlcvVolume = 1,
   kOhlcvRsi = 2,
+  kOhlcvSma = 3,
+  kOhlcvEma = 4,
 };
+
+inline bool IsMovingAverageSource(SeriesSource source) {
+  return source == SeriesSource::kOhlcvSma || source == SeriesSource::kOhlcvEma;
+}
+
+inline bool IsDerivedOhlcvSource(SeriesSource source) {
+  return source == SeriesSource::kOhlcvVolume ||
+         source == SeriesSource::kOhlcvRsi || IsMovingAverageSource(source);
+}
 
 struct PaneConfig {
   std::string pane_id = "main";
@@ -118,8 +129,10 @@ struct SeriesConfig {
   double line_gap_threshold_ms = 0.0;
   OhlcValueSource line_source = OhlcValueSource::kClose;
   bool line_gradient_enabled = false;
+  bool line_dashed = false;
   bool visible = true;
   bool declarative = false;
+  std::uint32_t moving_average_period = 1;
   std::uint32_t rsi_period = 14;
   double rsi_oversold = 30.0;
   double rsi_overbought = 70.0;
@@ -139,6 +152,8 @@ struct SeriesData {
   SeriesConfig config;
   std::vector<Candle> candles;
   std::vector<HistogramPoint> histogram;
+  // SMA stores the rolling window sum; EMA stores the published EMA value.
+  std::vector<double> moving_average_states;
   std::vector<RsiSmoothingState> rsi_states;
   size_t pane_index = kInvalidStateIndex;
   size_t source_series_index = kInvalidStateIndex;
@@ -235,6 +250,7 @@ struct ChartConfig {
   double line_gap_threshold_ms = 0.0;
   OhlcValueSource line_source = OhlcValueSource::kClose;
   bool line_gradient_enabled = false;
+  bool line_dashed = false;
 
   Color background{16.0f / 255.0f, 12.0f / 255.0f, 24.0f / 255.0f, 1.0f};
   Color grid{41.0f / 255.0f, 36.0f / 255.0f, 49.0f / 255.0f, 1.0f};
@@ -484,6 +500,8 @@ class ChartEngine {
   std::shared_ptr<const RenderSnapshot> Snapshot();
 
  private:
+  friend class ChartEngineTestAccess;
+
   mutable std::mutex mutex_;
   ChartConfig config_;
   std::vector<Candle> candles_;
@@ -525,9 +543,11 @@ class ChartEngine {
       const SeriesData& series) const;
   void RebuildRsiSeriesLocked(size_t series_index,
                               size_t first_changed_source_index);
-  void RefreshRsiDependentsLocked(const std::string& source_series_id,
-                                  size_t first_changed_source_index);
-  void RebuildAllRsiLocked();
+  void RebuildMovingAverageSeriesLocked(size_t series_index,
+                                        size_t first_changed_source_index);
+  void RefreshDerivedDependentsLocked(const std::string& source_series_id,
+                                      size_t first_changed_source_index);
+  void RebuildAllDerivedSeriesLocked();
   bool PaneHasRsiLocked(size_t pane_index) const;
   void ClampViewportLocked();
   bool IsAtLiveEdgeLocked() const;

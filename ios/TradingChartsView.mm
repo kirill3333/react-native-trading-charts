@@ -20,6 +20,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -2006,11 +2007,13 @@ struct TCTextPresentation {
   TCColor _lineAppearanceGradientTop;
   TCColor _lineAppearanceGradientBottom;
   BOOL _lineAppearanceGradientEnabled;
+  BOOL _lineAppearanceDashed;
   float _areaAppearanceWidth;
   TCColor _areaAppearanceColor;
   TCColor _areaAppearanceGradientTop;
   TCColor _areaAppearanceGradientBottom;
   BOOL _areaAppearanceGradientEnabled;
+  BOOL _areaAppearanceDashed;
   TCColor _areaFillTop;
   TCColor _areaFillBottom;
   NSInteger _lastFirstVisibleIndex;
@@ -2037,10 +2040,12 @@ struct TCTextPresentation {
     _lineAppearanceColor = _config.line;
     _lineAppearanceGradientTop = _config.line_gradient_top;
     _lineAppearanceGradientBottom = _config.line_gradient_bottom;
+    _lineAppearanceDashed = _config.line_dashed;
     _areaAppearanceWidth = _config.line_width;
     _areaAppearanceColor = _config.line;
     _areaAppearanceGradientTop = _config.line_gradient_top;
     _areaAppearanceGradientBottom = _config.line_gradient_bottom;
+    _areaAppearanceDashed = _config.line_dashed;
     _areaFillTop = _config.area_fill_top;
     _areaFillBottom = _config.area_fill_bottom;
     _declarativeSeriesIds = [NSMutableSet new];
@@ -2393,6 +2398,8 @@ struct TCTextPresentation {
   NSDictionary *lineGradient = lineAppearance[@"gradient"];
   _lineAppearanceGradientEnabled =
       [lineGradient isKindOfClass:NSDictionary.class];
+  _lineAppearanceDashed =
+      [lineAppearance[@"style"] isEqualToString:@"dashed"];
   _lineAppearanceGradientTop = TCColorFromHex(
       lineGradient[@"topColor"], _lineAppearanceColor);
   _lineAppearanceGradientBottom = TCColorFromHex(
@@ -2404,6 +2411,8 @@ struct TCTextPresentation {
   NSDictionary *areaGradient = areaAppearance[@"gradient"];
   _areaAppearanceGradientEnabled =
       [areaGradient isKindOfClass:NSDictionary.class];
+  _areaAppearanceDashed =
+      [areaAppearance[@"style"] isEqualToString:@"dashed"];
   _areaAppearanceGradientTop = TCColorFromHex(
       areaGradient[@"topColor"], _areaAppearanceColor);
   _areaAppearanceGradientBottom = TCColorFromHex(
@@ -2417,6 +2426,8 @@ struct TCTextPresentation {
   _config.line_gradient_enabled = usesArea
       ? _areaAppearanceGradientEnabled
       : _lineAppearanceGradientEnabled;
+  _config.line_dashed = usesArea ? _areaAppearanceDashed
+                                 : _lineAppearanceDashed;
   _config.line_gradient_top = usesArea
       ? _areaAppearanceGradientTop
       : _lineAppearanceGradientTop;
@@ -2598,6 +2609,20 @@ struct TCTextPresentation {
         ? [levels[@"oversold"] doubleValue] : 30.0;
     config.rsi_overbought = levels[@"overbought"]
         ? [levels[@"overbought"] doubleValue] : 70.0;
+  } else if ([source isKindOfClass:NSDictionary.class] &&
+             ([source[@"type"] isEqualToString:@"ohlcvSma"] ||
+              [source[@"type"] isEqualToString:@"ohlcvEma"])) {
+    config.source = [source[@"type"] isEqualToString:@"ohlcvSma"]
+        ? SeriesSource::kOhlcvSma
+        : SeriesSource::kOhlcvEma;
+    config.source_series_id = [source[@"seriesId"] UTF8String] ?: "";
+    const unsigned long long period =
+        [source[@"period"] unsignedLongLongValue];
+    config.moving_average_period =
+        period >= 1 &&
+            period <= std::numeric_limits<std::uint32_t>::max()
+        ? static_cast<std::uint32_t>(period)
+        : 0;
   }
   NSDictionary *appearance = item[@"appearance"];
   config.color = TCColorFromHex(appearance[@"color"], _config.axis_text);
@@ -2617,7 +2642,12 @@ struct TCTextPresentation {
   if (trading_charts::IsLineLikeSeries(config.type)) {
     const bool area = config.type == SeriesType::kArea;
     NSString *valueSource =
-        [source isKindOfClass:NSString.class] ? source : @"close";
+        [source isKindOfClass:NSString.class]
+            ? source
+            : ([source isKindOfClass:NSDictionary.class]
+                   ? source[@"valueSource"]
+                   : @"close");
+    if (![valueSource isKindOfClass:NSString.class]) valueSource = @"close";
     config.line_source =
         [valueSource isEqualToString:@"open"]
             ? OhlcValueSource::kOpen
@@ -2635,6 +2665,11 @@ struct TCTextPresentation {
     NSDictionary *gradient = appearance[@"gradient"];
     config.line_gradient_enabled =
         [gradient isKindOfClass:NSDictionary.class];
+    const BOOL fallbackDashed = area ? _areaAppearanceDashed
+                                     : _lineAppearanceDashed;
+    config.line_dashed = appearance[@"style"]
+        ? [appearance[@"style"] isEqualToString:@"dashed"]
+        : fallbackDashed;
     config.line_gradient_top = TCColorFromHex(
         gradient[@"topColor"], config.color);
     config.line_gradient_bottom = TCColorFromHex(
