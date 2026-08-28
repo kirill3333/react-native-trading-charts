@@ -28,6 +28,17 @@ fi
 cmake "${cmake_args[@]}"
 cmake --build "$build_dir" --parallel
 
+ios_interop_args=(
+  -std=c++17
+  -I.
+  -Iios/cxx
+)
+if [[ -n "$sdk_path" ]]; then
+  ios_interop_args+=(-isysroot "$sdk_path")
+fi
+"$clang_tidy" ios/cxx/TradingChartsCxx.cc -- \
+  "${ios_interop_args[@]}"
+
 if [[ -n "${JAVA_HOME:-}" ]]; then
   case "$(uname -s)" in
     Darwin) readonly jni_platform=darwin ;;

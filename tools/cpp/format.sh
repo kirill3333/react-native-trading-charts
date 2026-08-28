@@ -21,6 +21,8 @@ readonly cpp_files=(
   cpp/tests/chart_engine_header_test.cc
   cpp/tests/chart_engine_test.cc
   android/src/main/cpp/chart_engine_jni.cc
+  ios/cxx/TradingChartsCxx.h
+  ios/cxx/TradingChartsCxx.cc
 )
 
 "$tool_dir/clang-format" "$@" "${cpp_files[@]}"

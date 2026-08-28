@@ -13,13 +13,17 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = "15.1"
   s.source       = { :git => "https://github.com/kirill3333/react-native-trading-charts.git", :tag => "v#{s.version}" }
 
-  s.source_files = "ios/**/*.{h,m,mm,swift,cpp,metal}", "cpp/**/*.{h,cc}"
+  s.source_files = "ios/**/*.{h,m,mm,swift,cc,cpp,metal}", "cpp/**/*.{h,cc}"
   s.exclude_files = "cpp/tests/**/*", "cpp/benchmarks/**/*"
   s.private_header_files = "ios/**/*.h", "cpp/**/*.h"
+  s.preserve_paths = "ios/cxx/module.modulemap"
+  s.swift_version = "5.9"
   s.frameworks = "Metal", "MetalKit"
   s.pod_target_xcconfig = {
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++17",
     "HEADER_SEARCH_PATHS" => "$(inherited) $(PODS_TARGET_SRCROOT)",
+    "SWIFT_INCLUDE_PATHS" => "$(inherited) $(PODS_TARGET_SRCROOT)/ios/cxx",
+    "SWIFT_OBJC_INTEROP_MODE" => "objcxx",
     "DEFINES_MODULE" => "YES"
   }
 

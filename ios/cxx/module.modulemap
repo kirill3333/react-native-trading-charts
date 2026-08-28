@@ -1,0 +1,5 @@
+module TradingChartsCxx {
+  header "TradingChartsCxx.h"
+  requires cplusplus
+  export *
+}

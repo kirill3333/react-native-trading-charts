@@ -3,7 +3,11 @@
 
 #import <TradingChartsViewSpec/TradingChartsViewSpec.h>
 
-#import "TradingChartsRegistry.h"
+#if __has_include(<TradingCharts/TradingCharts-Swift.h>)
+#import <TradingCharts/TradingCharts-Swift.h>
+#else
+#import "TradingCharts-Swift.h"
+#endif
 
 using namespace facebook::react;
 

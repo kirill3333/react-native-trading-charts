@@ -82,6 +82,10 @@ For iOS, install the CocoaPods dependencies after adding the package:
 cd ios && pod install
 ```
 
+The iOS implementation requires Xcode 15 or newer and Swift 5.9 or newer. The
+pod enables Swift/C++ interop only for its own target; consuming application
+targets do not need C++ interop build settings or a C++ module import.
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -1086,6 +1090,9 @@ React configuration and market data
 Fabric view / TurboModule command registry
                 |
                 v
+Swift lifecycle, gestures, formatting, and rendering
+                |
+                v
 Shared C++ state, aggregation, viewport, and geometry
                 |
         immutable render snapshot
@@ -1107,6 +1114,12 @@ of being recreated during steady-state interaction. For high-frequency feeds,
 `updateTrades` and `createTradeBatcher` reduce bridge calls and engine
 mutations.
 
+On iOS, Swift talks to the shared engine through the private
+`TradingChartsCxx` Clang module. Snapshot handles retain the underlying C++
+`shared_ptr`, while vertex storage is exposed only through scoped Swift buffer
+closures. The renderer copies from those buffers before the closure returns;
+neither raw pointers nor C++ types cross the public Objective-C/Fabric API.
+
 ## Platform Support and Limitations
 
 | Property | Supported value | Notes |
@@ -1115,6 +1128,7 @@ mutations.
 | React Native | 0.80 or newer | React Native is a peer dependency. |
 | React Native architecture | New Architecture / Fabric | The first release targets Fabric applications. |
 | Minimum OS | iOS 15.1; Android 7.0 (API 24) | Matches the minimum platform versions supported by React Native 0.80. |
+| iOS toolchain | Xcode 15 or newer; Swift 5.9 or newer | Direct Swift/C++ interop is private to the pod target. |
 | Data ownership | Application-owned | Networking, WebSockets, parsing, and reconnect logic are outside the library. |
 | Time unit | Milliseconds | Candle timestamps must be safe integers. |
 | Price scales | One visible scale per pane | Each pane keeps an independent autoscale range. |

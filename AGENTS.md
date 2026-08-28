@@ -38,10 +38,23 @@ formatting, and React Native integration in the iOS and Android layers.
   tessellation (split into content and overlay vertex buffers).
 - `cpp/internal/series_geometry.{h,cc}`: shared, allocation-free geometry
   strategies for candlestick, bar, and future price-series render types.
-- `ios/TradingChartsView.mm`: Fabric view, gestures, on-demand frame scheduling,
-  Metal renderer, and Core Animation text overlay.
-- `ios/TradingChartsRegistry.mm`: main-thread command routing and bounded
-  pending-command replay for views identified by `chartId`.
+- `ios/TradingChartsView.mm`: thin Objective-C++ Fabric adapter. It owns no
+  engine or renderer state and forwards only primitive event/command payloads.
+- `ios/TradingChartsModule.mm`: thin Objective-C++ generated TurboModule
+  adapter to the Swift registry.
+- `ios/cxx/TradingChartsCxx.{h,cc}`: private C++17 adapter imported by Swift.
+  Snapshot handles retain immutable C++ snapshots and expose geometry through
+  pointer/count accessors consumed only by scoped Swift closures.
+- `ios/Engine/ChartEngineClient.swift`: the only Swift file importing the
+  private C++ module; owns command packing and scoped snapshot access.
+- `ios/Host/`: Swift composition root, one-shot frame scheduler, gestures,
+  momentum, lifecycle, and event deduplication.
+- `ios/Rendering/ChartMetalRenderer.swift`: revision-based Metal renderer with
+  two grow-only buffers.
+- `ios/Overlay/`: Core Animation overlay, format/layout caches, and two-pass
+  identity-based text-layer pools.
+- `ios/Registry/TradingChartsRegistry.swift`: typed main-thread command routing
+  and bounded pending replay for views identified by `chartId`.
 - `android/src/main/cpp/chart_engine_jni.cc`: JNI bridge to the shared engine and
   snapshot serialization.
 - `android/src/main/java/com/tradingcharts/TradingChartsView.kt`: native view,
@@ -124,7 +137,7 @@ formatting, and React Native integration in the iOS and Android layers.
 
 ### Frame scheduling and Metal
 
-- `TCChartHostView` owns one engine, a paused `MTKView`, an overlay, and a
+- `ChartHostView` owns one engine client, a paused `MTKView`, an overlay, and a
   `CADisplayLink`.
 - Rendering is on demand. `requestFrame` coalesces requests; each display-link
   callback immediately pauses the link again. Momentum explicitly schedules the
@@ -135,10 +148,14 @@ formatting, and React Native integration in the iOS and Android layers.
   to Metal and the overlay, and calls `MTKView.draw` only when the snapshot
   revision differs from the last drawn one (forced after window re-attach and
   `applicationDidBecomeActive`).
-- `TCMetalRenderer` keeps two grow-only shared vertex buffers. Content is
+- `ChartMetalRenderer` keeps two grow-only shared vertex buffers. Content is
   copied only when `content_revision` changes; the small crosshair overlay
   buffer follows every revision. Preserve revision-based uploads and capacity
   reuse.
+- `ChartRenderFrame.withContentVertices` and `withOverlayVertices` are the only
+  allowed raw-pointer boundary. Keep access scoped, retain the snapshot handle
+  with `withExtendedLifetime`, and never store those pointers in a renderer,
+  overlay, or GPU command buffer.
 - `currentDrawable` / `currentRenderPassDescriptor` acquisition may represent
   GPU or presentation pacing. Time spent in `Metal Acquire Drawable` is not by
   itself evidence of CPU computation; use Metal System Trace before changing
