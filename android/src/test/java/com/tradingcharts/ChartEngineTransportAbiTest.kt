@@ -26,6 +26,14 @@ class ChartEngineTransportAbiTest {
                 areaFillBottomColor = 0,
                 rsiLevelLineColor = 0,
                 rsiBandColor = 0,
+                macdSignalColor = 0,
+                macdSignalGradientTopColor = 0,
+                macdSignalGradientBottomColor = 0,
+                macdPositiveIncreasingColor = 0,
+                macdPositiveDecreasingColor = 0,
+                macdNegativeIncreasingColor = 0,
+                macdNegativeDecreasingColor = 0,
+                macdZeroLineColor = 0,
             )
             .nativeTransportPayload()
 
@@ -68,6 +76,19 @@ class ChartEngineTransportAbiTest {
                 rsiTextColor = 0x60718213,
                 rsiLevelLineColor = 0x70819223,
                 rsiBandColor = 0x10293847,
+                macdFastPeriod = 8,
+                macdSlowPeriod = 21,
+                macdSignalPeriod = 5,
+                macdSignalColor = 0x11223344,
+                macdSignalGradientTopColor = 0x22334455,
+                macdSignalGradientBottomColor = 0x33445566,
+                macdSignalLineWidthPx = 3f,
+                macdPositiveIncreasingColor = 0x55667788,
+                macdPositiveDecreasingColor = 0x11224466,
+                macdNegativeIncreasingColor = 0x778899aa.toInt(),
+                macdNegativeDecreasingColor = 0x22334455,
+                macdZeroLineColor = 0x33445566,
+                macdTextColor = 0x44556677,
             )
             .nativeTransportPayload()
 
@@ -89,6 +110,10 @@ class ChartEngineTransportAbiTest {
         payload.numbers[SeriesTransportAbi.NumberIndex.MOVING_AVERAGE_PERIOD],
         0.0,
     )
+    assertEquals(8.0, payload.numbers[SeriesTransportAbi.NumberIndex.MACD_FAST_PERIOD], 0.0)
+    assertEquals(21.0, payload.numbers[SeriesTransportAbi.NumberIndex.MACD_SLOW_PERIOD], 0.0)
+    assertEquals(5.0, payload.numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_PERIOD], 0.0)
+    assertEquals(1.0, payload.numbers[SeriesTransportAbi.NumberIndex.MACD_TEXT_COLOR_SET], 0.0)
     assertArrayEquals(
         arrayOf(SeriesTransportAbi.STRING_MARKER, "series", "pane", "scale", "source"),
         payload.strings,
@@ -96,6 +121,8 @@ class ChartEngineTransportAbiTest {
     assertEquals(0x20 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.COLOR], 0f)
     assertEquals(0x10 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.COLOR + 3], 0f)
     assertEquals(0x71 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.RSI_TEXT], 0f)
+    assertEquals(0x22 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.MACD_SIGNAL], 0f)
+    assertEquals(0x55 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.MACD_TEXT], 0f)
   }
 
   @Test
@@ -151,39 +178,56 @@ class ChartEngineTransportAbiTest {
   }
 
   @Test
-  fun rsiSnapshotRecordUnpacksEveryFieldByNamedOffset() {
+  fun indicatorSnapshotRecordUnpacksMacdValuesByNamedOffset() {
+    val values = DoubleArray(3 + SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH)
+    values[0] = CHART_ENGINE_TRANSPORT_ABI_VERSION.toDouble()
+    values[1] = SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH.toDouble()
+    values[2] = 1.0
+    val offset = 3
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.PANE_INDEX] = 2.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.KIND] = 1.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.FAST_PERIOD] = 12.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.SLOW_PERIOD] = 26.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.SIGNAL_PERIOD] = 9.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.VALUE_SOURCE] = 3.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.VALUE_COUNT] = 3.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR_SET] = 1.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR] = 0.1
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR + 1] = 0.2
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR + 2] = 0.3
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR + 3] = 0.4
+    repeat(3) { valueIndex ->
+      val valueOffset =
+          offset +
+              SnapshotTransportAbi.IndicatorLegendIndex.VALUES +
+              valueIndex * SnapshotTransportAbi.IndicatorLegendIndex.VALUE_RECORD_WIDTH
+      values[valueOffset] = 10.0 + valueIndex
+      values[valueOffset + 1] = if (valueIndex == 1) 0.0 else 1.0
+      values[valueOffset + 2] = 0.5
+      values[valueOffset + 3] = 0.6
+      values[valueOffset + 4] = 0.7
+      values[valueOffset + 5] = 0.8
+    }
     val payload =
         decodeSnapshotRecordPayload(
-            doubleArrayOf(
-                CHART_ENGINE_TRANSPORT_ABI_VERSION.toDouble(),
-                13.0,
-                1.0,
-                2.0,
-                17.0,
-                63.5,
-                1.0,
-                0.1,
-                0.2,
-                0.3,
-                0.4,
-                0.5,
-                0.6,
-                0.7,
-                0.8,
-                1.0,
-            ),
-            SnapshotTransportAbi.RSI_LEGEND_RECORD_WIDTH,
-            "RSI legends",
+            values,
+            SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH,
+            "indicator legends",
         )
 
-    val legend = payload.rsiLegendRecord(0)
+    val legend = payload.indicatorLegendRecord(0)
     assertEquals(2, legend.paneIndex)
-    assertEquals(17, legend.period)
-    assertEquals(63.5, legend.value, 0.0)
-    assertEquals(true, legend.hasValue)
+    assertEquals(1, legend.kind)
+    assertEquals(12, legend.fastPeriod)
+    assertEquals(26, legend.slowPeriod)
+    assertEquals(9, legend.signalPeriod)
+    assertEquals(3, legend.valueSource)
     assertEquals(0x6619334c, legend.textColor)
-    assertEquals(0xcc7f99b2.toInt(), legend.valueColor)
     assertEquals(true, legend.textColorSet)
+    assertEquals(3, legend.values.size)
+    assertEquals(10.0, legend.values[0].value, 0.0)
+    assertEquals(false, legend.values[1].hasValue)
+    assertEquals(0xcc7f99b2.toInt(), legend.values[2].color)
   }
 
   @Test
@@ -191,32 +235,34 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            18,
-            44,
+            25,
+            80,
             5,
             3,
             2,
             14,
-            13,
+            31,
         )
     )
     val expectedRoundTrip =
         DoubleArray(SeriesTransportAbi.ROUND_TRIP_SIZE).also { values ->
           values[0] = CHART_ENGINE_TRANSPORT_ABI_VERSION.toDouble()
           values[1] = SeriesTransportAbi.ROUND_TRIP_NUMBER_COUNT.toDouble()
-          values[2] = 40.0
+          values[2] = SeriesTransportAbi.ROUND_TRIP_COLOR_COUNT.toDouble()
           values[3] = 4.0
           var target = 4
           repeat(SeriesTransportAbi.ROUND_TRIP_NUMBER_COUNT) {
             values[target++] = 101.0 + it
           }
-          repeat(40) { values[target++] = 201.0 + it }
+          repeat(SeriesTransportAbi.ROUND_TRIP_COLOR_COUNT) {
+            values[target++] = 201.0 + it
+          }
           intArrayOf(1, 3, 5, 7).forEach { values[target++] = it.toDouble() }
         }
     validateSeriesRoundTrip(expectedRoundTrip)
 
     assertThrows(IllegalStateException::class.java) {
-      validateTransportDescriptor(intArrayOf(1, 18, 40, 5, 3, 2, 14, 13))
+      validateTransportDescriptor(intArrayOf(1, 25, 80, 5, 3, 2, 14, 31))
     }
     assertThrows(IllegalStateException::class.java) {
       validateSeriesRoundTrip(expectedRoundTrip.copyOf().also { it[27] = -1.0 })

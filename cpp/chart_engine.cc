@@ -576,17 +576,132 @@ void ChartEngine::RebuildMovingAverageSeriesLocked(
   }
 }
 
+void ChartEngine::RebuildMacdSeriesLocked(size_t series_index,
+                                          size_t first_changed_source_index) {
+  if (series_index >= additional_series_.size()) {
+    return;
+  }
+  SeriesData& series = additional_series_[series_index];
+  if (series.config.source != SeriesSource::kOhlcvMacd) {
+    return;
+  }
+  const std::vector<Candle>* source_pointer = SourceCandlesLocked(series);
+  if (source_pointer == nullptr) {
+    series.candles.clear();
+    series.signal_candles.clear();
+    series.histogram.clear();
+    series.macd_states.clear();
+    return;
+  }
+  const std::vector<Candle>& source = *source_pointer;
+  const size_t fast_period = series.config.macd_fast_period;
+  const size_t slow_period = series.config.macd_slow_period;
+  const size_t signal_period = series.config.macd_signal_period;
+  if (fast_period == 0 || slow_period == 0 || signal_period == 0 ||
+      fast_period >= slow_period || source.empty()) {
+    series.candles.clear();
+    series.signal_candles.clear();
+    series.histogram.clear();
+    series.macd_states.clear();
+    return;
+  }
+
+  size_t start = std::min(first_changed_source_index, source.size());
+  if (start > series.macd_states.size()) {
+    start = 0;
+  }
+  MacdSmoothingState state;
+  if (start > 0) {
+    state = series.macd_states[start - 1];
+  }
+  series.macd_states.resize(start);
+  const double changed_timestamp =
+      start < source.size() ? source[start].timestamp
+                            : std::numeric_limits<double>::infinity();
+  const auto truncate_candles = [&](std::vector<Candle>& values) {
+    values.erase(
+        std::lower_bound(values.begin(), values.end(), changed_timestamp,
+                         [](const Candle& candle, double timestamp) {
+                           return candle.timestamp < timestamp;
+                         }),
+        values.end());
+  };
+  truncate_candles(series.candles);
+  truncate_candles(series.signal_candles);
+  series.histogram.erase(
+      std::lower_bound(series.histogram.begin(), series.histogram.end(),
+                       changed_timestamp,
+                       [](const HistogramPoint& point, double timestamp) {
+                         return point.timestamp < timestamp;
+                       }),
+      series.histogram.end());
+
+  const double fast_alpha = 2.0 / (static_cast<double>(fast_period) + 1.0);
+  const double slow_alpha = 2.0 / (static_cast<double>(slow_period) + 1.0);
+  const double signal_alpha = 2.0 / (static_cast<double>(signal_period) + 1.0);
+  series.macd_states.reserve(source.size());
+  series.candles.reserve(source.size() -
+                         std::min(source.size(), slow_period - 1));
+  for (size_t index = start; index < source.size(); ++index) {
+    const double value = CandleValue(source[index], series.config.line_source);
+    if (!state.fast_ready) {
+      state.fast_sum += value;
+      if (index + 1 == fast_period) {
+        state.fast = state.fast_sum / static_cast<double>(fast_period);
+        state.fast_ready = true;
+      }
+    } else {
+      state.fast += fast_alpha * (value - state.fast);
+    }
+    if (!state.slow_ready) {
+      state.slow_sum += value;
+      if (index + 1 == slow_period) {
+        state.slow = state.slow_sum / static_cast<double>(slow_period);
+        state.slow_ready = true;
+      }
+    } else {
+      state.slow += slow_alpha * (value - state.slow);
+    }
+    if (state.fast_ready && state.slow_ready) {
+      const double macd = state.fast - state.slow;
+      series.candles.push_back(
+          Candle{source[index].timestamp, macd, macd, macd, macd, 0.0});
+      if (!state.signal_ready) {
+        state.signal_sum += macd;
+        ++state.signal_count;
+        if (state.signal_count == signal_period) {
+          state.signal = state.signal_sum / static_cast<double>(signal_period);
+          state.signal_ready = true;
+        }
+      } else {
+        state.signal += signal_alpha * (macd - state.signal);
+      }
+      if (state.signal_ready) {
+        series.signal_candles.push_back(
+            Candle{source[index].timestamp, state.signal, state.signal,
+                   state.signal, state.signal, 0.0});
+        series.histogram.push_back(
+            HistogramPoint{source[index].timestamp, macd - state.signal});
+      }
+    }
+    series.macd_states.push_back(state);
+  }
+}
+
 void ChartEngine::RefreshDerivedDependentsLocked(
     const std::string& source_series_id, size_t first_changed_source_index) {
   for (size_t index = 0; index < additional_series_.size(); ++index) {
     const SeriesSource source = additional_series_[index].config.source;
-    if ((source == SeriesSource::kOhlcvRsi || IsMovingAverageSource(source)) &&
+    if ((source == SeriesSource::kOhlcvRsi ||
+         source == SeriesSource::kOhlcvMacd || IsMovingAverageSource(source)) &&
         (additional_series_[index].config.source_series_id.empty()
              ? source_series_id == "main"
              : additional_series_[index].config.source_series_id ==
                    source_series_id)) {
       if (source == SeriesSource::kOhlcvRsi) {
         RebuildRsiSeriesLocked(index, first_changed_source_index);
+      } else if (source == SeriesSource::kOhlcvMacd) {
+        RebuildMacdSeriesLocked(index, first_changed_source_index);
       } else {
         RebuildMovingAverageSeriesLocked(index, first_changed_source_index);
       }
@@ -598,6 +713,7 @@ void ChartEngine::RebuildAllDerivedSeriesLocked() {
   for (size_t index = 0; index < additional_series_.size(); ++index) {
     RebuildRsiSeriesLocked(index, 0);
     RebuildMovingAverageSeriesLocked(index, 0);
+    RebuildMacdSeriesLocked(index, 0);
   }
 }
 
@@ -606,6 +722,14 @@ bool ChartEngine::PaneHasRsiLocked(size_t pane_index) const {
                      [&](const SeriesData& series) {
                        return series.pane_index == pane_index &&
                               series.config.source == SeriesSource::kOhlcvRsi;
+                     });
+}
+
+bool ChartEngine::PaneHasMacdLocked(size_t pane_index) const {
+  return std::any_of(additional_series_.begin(), additional_series_.end(),
+                     [&](const SeriesData& series) {
+                       return series.pane_index == pane_index &&
+                              series.config.source == SeriesSource::kOhlcvMacd;
                      });
 }
 
@@ -631,6 +755,13 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
        config.source_series_id.empty())) {
     return UpdateStatus::kInvalidInput;
   }
+  if (config.source == SeriesSource::kOhlcvMacd &&
+      (config.type != SeriesType::kLine || config.macd_fast_period == 0 ||
+       config.macd_slow_period == 0 || config.macd_signal_period == 0 ||
+       config.macd_fast_period >= config.macd_slow_period ||
+       config.source_series_id.empty())) {
+    return UpdateStatus::kInvalidInput;
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   SeriesConfig normalized = config;
   normalized.line_source = NormalizeLineSource(normalized.line_source);
@@ -652,6 +783,16 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   if (normalized.source == SeriesSource::kOhlcvRsi && pane == panes_.begin()) {
     return UpdateStatus::kInvalidInput;
   }
+  const size_t pane_index =
+      static_cast<size_t>(std::distance(panes_.begin(), pane));
+  if (normalized.source == SeriesSource::kOhlcvMacd &&
+      (pane == panes_.begin() || PaneHasRsiLocked(pane_index))) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (normalized.source == SeriesSource::kOhlcvRsi &&
+      PaneHasMacdLocked(pane_index)) {
+    return UpdateStatus::kInvalidInput;
+  }
   if (IsMovingAverageSource(normalized.source)) {
     if (normalized.source_series_id == "main") {
       if (pane != panes_.begin()) {
@@ -669,6 +810,18 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
                  source->config.price_scale_id != normalized.price_scale_id) {
         return UpdateStatus::kInvalidInput;
       }
+    }
+  }
+  if (normalized.source == SeriesSource::kOhlcvMacd &&
+      normalized.source_series_id != "main") {
+    const SeriesData* source = FindSeriesLocked(normalized.source_series_id);
+    if (source == nullptr) {
+      if (!normalized.declarative) {
+        return UpdateStatus::kInvalidInput;
+      }
+    } else if (source->config.source != SeriesSource::kData ||
+               source->config.type == SeriesType::kHistogram) {
+      return UpdateStatus::kInvalidInput;
     }
   }
   SeriesData* existing = FindSeriesLocked(normalized.series_id);
@@ -744,6 +897,8 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
     series->histogram.clear();
     series->moving_average_states.clear();
     series->rsi_states.clear();
+    series->signal_candles.clear();
+    series->macd_states.clear();
     RefreshDerivedDependentsLocked(series_id, 0);
     MarkDirtyLocked();
     return UpdateStatus::kApplied;
@@ -1124,6 +1279,8 @@ void ChartEngine::Clear() {
     series.histogram.clear();
     series.moving_average_states.clear();
     series.rsi_states.clear();
+    series.signal_candles.clear();
+    series.macd_states.clear();
   }
   last_trade_timestamp_.reset();
   crosshair_active_ = false;

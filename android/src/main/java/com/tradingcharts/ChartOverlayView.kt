@@ -44,14 +44,28 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private data class TooltipRow(val label: String, val value: String, val valueColor: Int)
 
-  private data class RsiLegendKey(
+  private data class IndicatorLegendKey(
       val paneIndex: Int,
+      val kind: Int,
       val period: Int,
-      val valueBits: Long,
-      val hasValue: Boolean,
+      val fastPeriod: Int,
+      val slowPeriod: Int,
+      val signalPeriod: Int,
+      val valueSource: Int,
+      val value0Bits: Long,
+      val hasValue0: Boolean,
+      val value1Bits: Long,
+      val hasValue1: Boolean,
+      val value2Bits: Long,
+      val hasValue2: Boolean,
   )
 
-  private data class RsiLegendLabel(val title: String, val value: String, val titleWidth: Float)
+  private data class IndicatorLegendLabel(
+      val title: String,
+      val values: List<String>,
+      val titleWidth: Float,
+      val valueWidths: List<Float>,
+  )
 
   private data class TooltipLayout(
       val header: String,
@@ -139,7 +153,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
   // invalidated in prepare() on any config change.
   private val xLabelCache = BoundedCache<Long, AxisLabel>(MAX_X_LABEL_CACHE_SIZE)
   private val yLabelCache = HashMap<String, BoundedCache<Long, AxisLabel>>()
-  private val rsiLegendCache = BoundedCache<RsiLegendKey, RsiLegendLabel>(64)
+  private val indicatorLegendCache = BoundedCache<IndicatorLegendKey, IndicatorLegendLabel>(64)
   private var timeBadgeLabel: AxisLabel? = null
   private var timeBadgeBits = 0L
   private var currentPriceLabel: AxisLabel? = null
@@ -222,7 +236,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
     minimumLabelCache.hasValue = false
     xLabelCache.clear()
     yLabelCache.clear()
-    rsiLegendCache.clear()
+    indicatorLegendCache.clear()
     timeBadgeLabel = null
     currentPriceLabel = null
   }
@@ -387,7 +401,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
     if (config.showXAxis) drawXAxis(canvas, frame)
     if (config.showYAxis) drawYAxes(canvas, frame)
-    drawRsiLegends(canvas, frame)
+    drawIndicatorLegends(canvas, frame)
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
       drawBadge(
@@ -498,40 +512,76 @@ internal class ChartOverlayView(context: Context) : View(context) {
     }
   }
 
-  private fun drawRsiLegends(canvas: Canvas, frame: ChartSnapshot) {
-    frame.rsiLegends.forEachIndexed { index, legend ->
+  private fun drawIndicatorLegends(canvas: Canvas, frame: ChartSnapshot) {
+    frame.indicatorLegends.forEachIndexed { index, legend ->
       val pane = frame.panes.getOrNull(legend.paneIndex) ?: return@forEachIndexed
       var row = 0
       for (previous in 0 until index) {
-        if (frame.rsiLegends[previous].paneIndex == legend.paneIndex) row += 1
+        if (frame.indicatorLegends[previous].paneIndex == legend.paneIndex) row += 1
       }
+      val value0 = legend.values.getOrNull(0)
+      val value1 = legend.values.getOrNull(1)
+      val value2 = legend.values.getOrNull(2)
       val key =
-          RsiLegendKey(
+          IndicatorLegendKey(
               legend.paneIndex,
+              legend.kind,
               legend.period,
-              legend.value.toBits(),
-              legend.hasValue,
+              legend.fastPeriod,
+              legend.slowPeriod,
+              legend.signalPeriod,
+              legend.valueSource,
+              value0?.value?.toBits() ?: 0L,
+              value0?.hasValue == true,
+              value1?.value?.toBits() ?: 0L,
+              value1?.hasValue == true,
+              value2?.value?.toBits() ?: 0L,
+              value2?.hasValue == true,
           )
       val label =
-          rsiLegendCache.getOrPut(key) {
-            val title = "RSI ${legend.period}"
+          indicatorLegendCache.getOrPut(key) {
+            val title = indicatorLegendTitle(legend)
             val formatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
-            val value = if (legend.hasValue) formatValue(legend.value, formatter) else "—"
-            RsiLegendLabel(title, value, rsiTitlePaint.measureText(title))
+            val values =
+                legend.values.map { value ->
+                  if (value.hasValue) formatValue(value.value, formatter) else "—"
+                }
+            IndicatorLegendLabel(
+                title,
+                values,
+                rsiTitlePaint.measureText(title),
+                values.map(rsiValuePaint::measureText),
+            )
           }
       val baseline = pane.plotTop + (16f + row * 15f) * density
       val left = pane.plotLeft + 8f * density
       rsiTitlePaint.color =
           if (legend.textColorSet) legend.textColor else frame.config.yAxisTextStyle.color
       canvas.drawText(label.title, left, baseline, rsiTitlePaint)
-      rsiValuePaint.color = if (legend.textColorSet) legend.textColor else legend.valueColor
-      canvas.drawText(
-          label.value,
-          left + label.titleWidth + 6f * density,
-          baseline,
-          rsiValuePaint,
-      )
+      var valueLeft = left + label.titleWidth + 6f * density
+      legend.values.forEachIndexed { valueIndex, value ->
+        rsiValuePaint.color =
+            if (legend.kind == INDICATOR_KIND_RSI && legend.textColorSet) {
+              legend.textColor
+            } else {
+              value.color
+            }
+        canvas.drawText(label.values[valueIndex], valueLeft, baseline, rsiValuePaint)
+        valueLeft += label.valueWidths[valueIndex] + 6f * density
+      }
     }
+  }
+
+  private fun indicatorLegendTitle(legend: IndicatorLegendSnapshot): String {
+    if (legend.kind == INDICATOR_KIND_RSI) return "RSI ${legend.period}"
+    val source =
+        when (legend.valueSource) {
+          0 -> "OPEN"
+          1 -> "HIGH"
+          2 -> "LOW"
+          else -> "CLOSE"
+        }
+    return "MACD ${legend.fastPeriod} ${legend.slowPeriod} $source ${legend.signalPeriod}"
   }
 
   private fun centeredBaseline(y: Float, paint: Paint) = y - (paint.ascent() + paint.descent()) / 2f
@@ -862,6 +912,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   companion object {
     private const val TAG = "TradingCharts"
+    private const val INDICATOR_KIND_RSI = 0
     private const val MIN_CRYPTO_ZERO_COUNT = 1
     private const val MAX_X_LABEL_CACHE_SIZE = 1024
     private const val MAX_Y_LABEL_CACHE_SIZE = 256

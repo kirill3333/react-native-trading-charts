@@ -58,7 +58,7 @@ frequently updated market data without introducing a browser or a third-party
 - **Multiple display types.** Candlestick, hollow candlestick, OHLC bar, line,
   area, and histogram series are supported.
 - **Multiple panes and series.** Add independently scaled panes, derived volume,
-  SMA, EMA and RSI, comparison series, and custom histogram data.
+  SMA, EMA, RSI and MACD, comparison series, and custom histogram data.
 - **Detailed presentation control.** Configure themes, role-specific styles,
   native number/date formatting, axes, badges, and tooltips.
 - **Streaming-ready data APIs.** Send completed candles, raw trades, batches,
@@ -549,7 +549,7 @@ const panes = [
 | `paneId` | Existing pane ID | Required | Target pane. |
 | `priceScaleId` | Target pane's scale ID | Required | Must match the pane price scale. |
 | `visible` | `boolean` | `true` | Controls rendering without removing the series. |
-| `type` | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'` | Required | Series geometry. |
+| `type` | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'`, `'macd'` | Required | Series geometry or composite MACD indicator. |
 | `source` | OHLC field, derived indicator, or histogram source | Type-specific | Line/area value field or native-derived/data source. |
 | `gapThresholdMs` | Positive milliseconds | `undefined` | Optional line/area gap splitting. |
 | `appearance` | Type-specific style | Theme fallback | Optional line, area, or histogram style. |
@@ -675,6 +675,93 @@ entire native `RSI <period> <value>` legend, `levelLineColor` for the dashed
 oversold/overbought levels, and `bandColor` for the area between those levels.
 When `textColor` is omitted, the legend keeps the backwards-compatible style:
 the title uses the Y-axis text color and the value uses the RSI curve color.
+
+### Moving Average Convergence Divergence (MACD)
+
+MACD is one composite additional series calculated by the shared C++ engine.
+It owns the MACD line, signal line, four-state histogram, zero line, autoscale,
+and native legend without exposing synthetic child series IDs.
+
+```tsx
+const panes = [
+  {
+    paneId: 'main',
+    heightWeight: 3,
+    priceScale: { priceScaleId: 'main' },
+  },
+  {
+    paneId: 'macd',
+    heightWeight: 1,
+    minHeight: 96,
+    priceScale: {
+      priceScaleId: 'macd',
+      valueFormat: {
+        type: 'price',
+        precision: 4,
+        minMove: 0.0001,
+        useGrouping: false,
+      },
+    },
+  },
+];
+
+<TradingChartsView
+  chartId="btc-1m"
+  panes={panes}
+  panesResizable
+  additionalSeries={[
+    {
+      seriesId: 'macd',
+      type: 'macd',
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      source: {
+        type: 'ohlcvMacd',
+        seriesId: 'main',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        valueSource: 'close',
+      },
+      appearance: {
+        macdLine: { width: 1.5, color: '#2E90F5' },
+        signalLine: { width: 1.5, color: '#E5B84B' },
+        histogram: {
+          positiveIncreasingColor: '#38D98A',
+          positiveDecreasingColor: '#38D98A80',
+          negativeIncreasingColor: '#FF3B6480',
+          negativeDecreasingColor: '#FF3B64',
+        },
+        textColor: '#9791A5',
+        zeroLineColor: '#9791A566',
+      },
+    },
+  ]}
+/>;
+```
+
+The formulas are `MACD = EMA(fast) - EMA(slow)`, `signal = EMA(MACD,
+signalPeriod)`, and `histogram = MACD - signal`. EMAs use the library's
+SMA-seeded semantics. Defaults are `12/26/9` and `close`; periods must be
+unsigned integers and `fastPeriod < slowPeriod`. The MACD line begins at
+`slowPeriod - 1`, while signal and histogram begin at
+`slowPeriod + signalPeriod - 2`. `gapThresholdMs` splits both rendered lines
+across time gaps without resetting EMA state.
+
+The histogram uses `positiveIncreasingColor` when a non-negative value is
+greater than its predecessor and `positiveDecreasingColor` otherwise. A
+negative value uses `negativeIncreasingColor` when it is greater than its
+predecessor and `negativeDecreasingColor` otherwise. The first bar uses the
+strong color for its sign.
+
+The native legend reads `MACD 12 26 CLOSE 9`, followed by histogram, MACD and
+signal values in their component colors. It shows exact values at the selected
+crosshair timestamp, latest values without a crosshair, and `—` for unavailable
+warm-up components. MACD must use a non-main pane and cannot share that pane
+with RSI. Its source must be `main` or another data-backed OHLC series;
+derived-to-derived sources are rejected. Data mutation commands are rejected
+for MACD because it follows its OHLC source automatically. Removing the MACD
+series removes the entire composite indicator.
 
 ## Time, Resolution, and Trade Aggregation
 

@@ -10,6 +10,7 @@ import {
 
 import { useChartSettings } from '../chartSettings';
 import {
+  buildMacdSeries,
   buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
@@ -25,6 +26,7 @@ type InteractiveChartProps = {
   minMove: number;
   showVolume: boolean;
   showRsi: boolean;
+  showMacd: boolean;
   onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
 };
 
@@ -36,6 +38,7 @@ export const InteractiveChart = memo(function InteractiveChart({
   minMove,
   showVolume,
   showRsi,
+  showMacd,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
@@ -50,7 +53,7 @@ export const InteractiveChart = memo(function InteractiveChart({
     [minMove, precision, settings, useSignificantPriceFormat]
   );
   const panes = useMemo<ReadonlyArray<ChartPaneOptions> | undefined>(() => {
-    if (!showVolume && !showRsi) return undefined;
+    if (!showVolume && !showRsi && !showMacd) return undefined;
     const result: ChartPaneOptions[] = [
       {
         paneId: 'main',
@@ -85,12 +88,30 @@ export const InteractiveChart = memo(function InteractiveChart({
         },
       });
     }
+    if (showMacd) {
+      result.push({
+        paneId: 'macd',
+        heightWeight: settings.macdPaneHeightWeight,
+        minHeight: 96,
+        priceScale: {
+          priceScaleId: 'macd',
+          valueFormat: {
+            type: 'price',
+            precision: 4,
+            minMove: 0.0001,
+            useGrouping: false,
+          },
+        },
+      });
+    }
     return result;
   }, [
     settings.mainPaneHeightWeight,
+    settings.macdPaneHeightWeight,
     settings.rsiPaneHeightWeight,
     settings.volumePaneHeightWeight,
     showRsi,
+    showMacd,
     showVolume,
   ]);
   const additionalSeries = useMemo<
@@ -121,8 +142,11 @@ export const InteractiveChart = memo(function InteractiveChart({
         },
       });
     }
+    if (showMacd) {
+      result.push(buildMacdSeries(settings));
+    }
     return result.length > 0 ? result : undefined;
-  }, [settings, showRsi, showVolume]);
+  }, [settings, showMacd, showRsi, showVolume]);
 
   return (
     <TradingChartsView

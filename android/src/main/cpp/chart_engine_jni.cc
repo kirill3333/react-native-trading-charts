@@ -134,6 +134,13 @@ enum class SeriesNumberIndex : std::uint8_t {
   kRsiTextColorSet,
   kLineDashed,
   kMovingAveragePeriod,
+  kMacdFastPeriod,
+  kMacdSlowPeriod,
+  kMacdSignalPeriod,
+  kMacdTextColorSet,
+  kMacdSignalLineWidth,
+  kMacdSignalGradientEnabled,
+  kMacdSignalLineDashed,
   kCount,
 };
 
@@ -152,7 +159,16 @@ enum class SeriesColorIndex : std::uint8_t {
   kRsiLevelLine = 32,
   kRsiBand = 36,
   kRsiText = 40,
-  kCount = 44,
+  kMacdSignal = 44,
+  kMacdSignalGradientTop = 48,
+  kMacdSignalGradientBottom = 52,
+  kMacdPositiveIncreasing = 56,
+  kMacdPositiveDecreasing = 60,
+  kMacdNegativeIncreasing = 64,
+  kMacdNegativeDecreasing = 68,
+  kMacdZeroLine = 72,
+  kMacdText = 76,
+  kCount = 80,
 };
 
 enum class SeriesStringIndex : std::uint8_t {
@@ -195,21 +211,21 @@ enum class PaneSnapshotRecordIndex : std::uint8_t {
   kCount,
 };
 
-enum class RsiLegendRecordIndex : std::uint8_t {
+enum class IndicatorLegendRecordIndex : std::uint8_t {
   kPaneIndex,
+  kKind,
   kPeriod,
-  kValue,
-  kHasValue,
+  kFastPeriod,
+  kSlowPeriod,
+  kSignalPeriod,
+  kValueSource,
+  kValueCount,
+  kTextColorSet,
   kTextColorR,
   kTextColorG,
   kTextColorB,
   kTextColorA,
-  kValueColorR,
-  kValueColorG,
-  kValueColorB,
-  kValueColorA,
-  kTextColorSet,
-  kCount,
+  kValues,
 };
 
 enum class SnapshotMetaIndex : std::uint8_t {
@@ -275,8 +291,8 @@ inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 2.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v2";
+inline constexpr double kChartEngineTransportAbiVersion = 3.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v3";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -284,19 +300,25 @@ inline constexpr size_t kSeriesStringCount = ToIndex(SeriesStringIndex::kCount);
 inline constexpr size_t kSnapshotRecordHeaderCount = 3;
 inline constexpr size_t kTickRecordWidth = ToIndex(TickRecordIndex::kCount);
 inline constexpr size_t kPaneSnapshotRecordWidth = 14;
-inline constexpr size_t kRsiLegendRecordWidth = 13;
+inline constexpr size_t kIndicatorLegendValueRecordWidth = 6;
+inline constexpr size_t kIndicatorLegendValueCapacity = 3;
+inline constexpr size_t kIndicatorLegendRecordWidth = 31;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 46);
-static_assert(kSeriesNumberCount == 18);
-static_assert(kSeriesColorCount == 44);
+static_assert(kSeriesNumberCount == 25);
+static_assert(kSeriesColorCount == 80);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
               kSnapshotRecordHeaderCount);
 static_assert(kTickRecordWidth == 2);
 static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
               kPaneSnapshotRecordWidth);
-static_assert(ToIndex(RsiLegendRecordIndex::kCount) == kRsiLegendRecordWidth);
+static_assert(kIndicatorLegendRecordWidth == 31);
+static_assert(kIndicatorLegendRecordWidth ==
+              ToIndex(IndicatorLegendRecordIndex::kValues) +
+                  kIndicatorLegendValueRecordWidth *
+                      kIndicatorLegendValueCapacity);
 static_assert(kSnapshotMetaCount == 53);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
@@ -497,7 +519,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeTransportAbi(JNIEnv* env,
       static_cast<jint>(kSnapshotRecordHeaderCount),
       static_cast<jint>(kTickRecordWidth),
       static_cast<jint>(kPaneSnapshotRecordWidth),
-      static_cast<jint>(kRsiLegendRecordWidth),
+      static_cast<jint>(kIndicatorLegendRecordWidth),
   };
   jintArray result = env->NewIntArray(static_cast<jsize>(descriptor.size()));
   env->SetIntArrayRegion(result, 0, static_cast<jsize>(descriptor.size()),
@@ -919,6 +941,7 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
                   : source_value == 2.0 ? SeriesSource::kOhlcvRsi
                   : source_value == 3.0 ? SeriesSource::kOhlcvSma
                   : source_value == 4.0 ? SeriesSource::kOhlcvEma
+                  : source_value == 5.0 ? SeriesSource::kOhlcvMacd
                                         : SeriesSource::kData;
   series.visible = number_at(SeriesNumberIndex::kVisible) != 0.0;
   series.declarative = number_at(SeriesNumberIndex::kDeclarative) != 0.0;
@@ -961,6 +984,35 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
               std::floor(moving_average_period) == moving_average_period
           ? static_cast<std::uint32_t>(moving_average_period)
           : 0;
+  series.macd_fast_period = static_cast<std::uint32_t>(
+      std::max(number_at(SeriesNumberIndex::kMacdFastPeriod), 0.0));
+  series.macd_slow_period = static_cast<std::uint32_t>(
+      std::max(number_at(SeriesNumberIndex::kMacdSlowPeriod), 0.0));
+  series.macd_signal_period = static_cast<std::uint32_t>(
+      std::max(number_at(SeriesNumberIndex::kMacdSignalPeriod), 0.0));
+  series.macd_text_color_set =
+      number_at(SeriesNumberIndex::kMacdTextColorSet) != 0.0;
+  series.macd_signal_line_width =
+      static_cast<float>(number_at(SeriesNumberIndex::kMacdSignalLineWidth));
+  series.macd_signal_gradient_enabled =
+      number_at(SeriesNumberIndex::kMacdSignalGradientEnabled) != 0.0;
+  series.macd_signal_line_dashed =
+      number_at(SeriesNumberIndex::kMacdSignalLineDashed) != 0.0;
+  series.macd_signal_color = color_at(SeriesColorIndex::kMacdSignal);
+  series.macd_signal_gradient_top =
+      color_at(SeriesColorIndex::kMacdSignalGradientTop);
+  series.macd_signal_gradient_bottom =
+      color_at(SeriesColorIndex::kMacdSignalGradientBottom);
+  series.macd_positive_increasing =
+      color_at(SeriesColorIndex::kMacdPositiveIncreasing);
+  series.macd_positive_decreasing =
+      color_at(SeriesColorIndex::kMacdPositiveDecreasing);
+  series.macd_negative_increasing =
+      color_at(SeriesColorIndex::kMacdNegativeIncreasing);
+  series.macd_negative_decreasing =
+      color_at(SeriesColorIndex::kMacdNegativeDecreasing);
+  series.macd_zero_line = color_at(SeriesColorIndex::kMacdZeroLine);
+  series.macd_text_color = color_at(SeriesColorIndex::kMacdText);
   return StatusValue(instance->AddSeries(series));
 }
 
@@ -1397,34 +1449,55 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
 }
 
 JNIEXPORT jdoubleArray JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeSnapshotRsiLegends(
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotIndicatorLegends(
     JNIEnv* env, jclass, jlong handle) {
   auto* holder = SnapshotFromHandle(handle);
   const auto* value = holder && *holder ? holder->get() : nullptr;
-  const size_t count = value ? value->rsi_legends.size() : 0;
-  auto packed = VersionedRecordPayload(kRsiLegendRecordWidth, count);
+  const size_t count = value ? value->indicator_legends.size() : 0;
+  auto packed = VersionedRecordPayload(kIndicatorLegendRecordWidth, count);
   if (value) {
     for (size_t index = 0; index < count; ++index) {
-      const auto& legend = value->rsi_legends[index];
-      const size_t offset = RecordOffset(kRsiLegendRecordWidth, index);
-      const auto set = [&](RsiLegendRecordIndex field, double field_value) {
+      const auto& legend = value->indicator_legends[index];
+      const size_t offset = RecordOffset(kIndicatorLegendRecordWidth, index);
+      const auto set = [&](IndicatorLegendRecordIndex field,
+                           double field_value) {
         packed[offset + ToIndex(field)] = field_value;
       };
-      set(RsiLegendRecordIndex::kPaneIndex,
+      set(IndicatorLegendRecordIndex::kPaneIndex,
           static_cast<double>(legend.pane_index));
-      set(RsiLegendRecordIndex::kPeriod, static_cast<double>(legend.period));
-      set(RsiLegendRecordIndex::kValue, legend.value);
-      set(RsiLegendRecordIndex::kHasValue, legend.has_value ? 1.0 : 0.0);
-      set(RsiLegendRecordIndex::kTextColorR, legend.text_color.r);
-      set(RsiLegendRecordIndex::kTextColorG, legend.text_color.g);
-      set(RsiLegendRecordIndex::kTextColorB, legend.text_color.b);
-      set(RsiLegendRecordIndex::kTextColorA, legend.text_color.a);
-      set(RsiLegendRecordIndex::kValueColorR, legend.value_color.r);
-      set(RsiLegendRecordIndex::kValueColorG, legend.value_color.g);
-      set(RsiLegendRecordIndex::kValueColorB, legend.value_color.b);
-      set(RsiLegendRecordIndex::kValueColorA, legend.value_color.a);
-      set(RsiLegendRecordIndex::kTextColorSet,
+      set(IndicatorLegendRecordIndex::kKind, static_cast<double>(legend.kind));
+      set(IndicatorLegendRecordIndex::kPeriod,
+          static_cast<double>(legend.period));
+      set(IndicatorLegendRecordIndex::kFastPeriod,
+          static_cast<double>(legend.fast_period));
+      set(IndicatorLegendRecordIndex::kSlowPeriod,
+          static_cast<double>(legend.slow_period));
+      set(IndicatorLegendRecordIndex::kSignalPeriod,
+          static_cast<double>(legend.signal_period));
+      set(IndicatorLegendRecordIndex::kValueSource,
+          static_cast<double>(legend.value_source));
+      set(IndicatorLegendRecordIndex::kValueCount,
+          static_cast<double>(legend.value_count));
+      set(IndicatorLegendRecordIndex::kTextColorSet,
           legend.text_color_set ? 1.0 : 0.0);
+      set(IndicatorLegendRecordIndex::kTextColorR, legend.text_color.r);
+      set(IndicatorLegendRecordIndex::kTextColorG, legend.text_color.g);
+      set(IndicatorLegendRecordIndex::kTextColorB, legend.text_color.b);
+      set(IndicatorLegendRecordIndex::kTextColorA, legend.text_color.a);
+      const size_t value_count =
+          std::min(legend.value_count, kIndicatorLegendValueCapacity);
+      for (size_t value_index = 0; value_index < value_count; ++value_index) {
+        const auto& legend_value = legend.values[value_index];
+        const size_t value_offset =
+            offset + ToIndex(IndicatorLegendRecordIndex::kValues) +
+            value_index * kIndicatorLegendValueRecordWidth;
+        packed[value_offset] = legend_value.value;
+        packed[value_offset + 1] = legend_value.has_value ? 1.0 : 0.0;
+        packed[value_offset + 2] = legend_value.color.r;
+        packed[value_offset + 3] = legend_value.color.g;
+        packed[value_offset + 4] = legend_value.color.b;
+        packed[value_offset + 5] = legend_value.color.a;
+      }
     }
   }
   return NewDoubleArray(env, packed);

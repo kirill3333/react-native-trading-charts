@@ -44,6 +44,20 @@ export type AppTheme = {
   rsiTextColor: string;
   rsiLevelLineColor: string;
   rsiBandColor: string;
+  macd: {
+    lineColor: string;
+    gradientTopColor: string;
+    gradientBottomColor: string;
+    signalLineColor: string;
+    signalGradientTopColor: string;
+    signalGradientBottomColor: string;
+    positiveIncreasingColor: string;
+    positiveDecreasingColor: string;
+    negativeIncreasingColor: string;
+    negativeDecreasingColor: string;
+    textColor: string;
+    zeroLineColor: string;
+  };
   navigationTheme: NavigationTheme;
   statusBarStyle: StatusBarStyle;
 };
@@ -250,6 +264,20 @@ export const APP_THEMES = {
     rsiTextColor: '#8C7CFF',
     rsiLevelLineColor: '#8C7CFF80',
     rsiBandColor: '#8C7CFF14',
+    macd: {
+      lineColor: '#2E90F5',
+      gradientTopColor: '#7DBBFF',
+      gradientBottomColor: '#2E90F5',
+      signalLineColor: '#E5B84B',
+      signalGradientTopColor: '#FFE08A',
+      signalGradientBottomColor: '#E5B84B',
+      positiveIncreasingColor: '#38D98A',
+      positiveDecreasingColor: '#38D98A80',
+      negativeIncreasingColor: '#FF3B6480',
+      negativeDecreasingColor: '#FF3B64',
+      textColor: '#9791A5',
+      zeroLineColor: '#9791A566',
+    },
     navigationTheme: navigationTheme(true, DARK_COLORS),
     statusBarStyle: 'light-content',
   }),
@@ -264,6 +292,20 @@ export const APP_THEMES = {
     rsiTextColor: '#2962FF',
     rsiLevelLineColor: '#2962FF80',
     rsiBandColor: '#2962FF14',
+    macd: {
+      lineColor: '#2962FF',
+      gradientTopColor: '#7FA1FF',
+      gradientBottomColor: '#2962FF',
+      signalLineColor: '#D6A21F',
+      signalGradientTopColor: '#F4D27A',
+      signalGradientBottomColor: '#D6A21F',
+      positiveIncreasingColor: '#089981',
+      positiveDecreasingColor: '#08998166',
+      negativeIncreasingColor: '#F2364566',
+      negativeDecreasingColor: '#F23645',
+      textColor: '#2A2E39',
+      zeroLineColor: '#787B8666',
+    },
     navigationTheme: navigationTheme(false, LIGHT_COLORS),
     statusBarStyle: 'dark-content',
   }),

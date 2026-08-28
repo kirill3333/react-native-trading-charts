@@ -98,6 +98,21 @@ internal data class SeriesConfig(
     val rsiTextColor: Int? = null,
     val rsiLevelLineColor: Int = Color.argb(128, 151, 145, 165),
     val rsiBandColor: Int = Color.argb(20, 151, 145, 165),
+    val macdFastPeriod: Int = 12,
+    val macdSlowPeriod: Int = 26,
+    val macdSignalPeriod: Int = 9,
+    val macdSignalLineWidthPx: Float = 1f,
+    val macdSignalColor: Int = Color.rgb(151, 145, 165),
+    val macdSignalGradientTopColor: Int = Color.rgb(151, 145, 165),
+    val macdSignalGradientBottomColor: Int = Color.rgb(151, 145, 165),
+    val macdSignalGradientEnabled: Boolean = false,
+    val macdSignalLineDashed: Boolean = false,
+    val macdPositiveIncreasingColor: Int = Color.rgb(56, 217, 138),
+    val macdPositiveDecreasingColor: Int = Color.argb(128, 56, 217, 138),
+    val macdNegativeIncreasingColor: Int = Color.argb(128, 255, 59, 100),
+    val macdNegativeDecreasingColor: Int = Color.rgb(255, 59, 100),
+    val macdZeroLineColor: Int = Color.rgb(151, 145, 165),
+    val macdTextColor: Int? = null,
 )
 
 internal data class ResolutionConfig(

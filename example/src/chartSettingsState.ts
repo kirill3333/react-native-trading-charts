@@ -17,6 +17,9 @@ export type SeriesLineWidth = 1 | 1.5 | 2.5;
 export type IndicatorLineWidth = 0.5 | SeriesLineWidth;
 export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
 export type MovingAveragePeriod = 10 | 20 | 50 | 100 | 200;
+export type MacdFastPeriod = 8 | 12 | 16;
+export type MacdSlowPeriod = 21 | 26 | 32;
+export type MacdSignalPeriod = 5 | 9 | 12;
 
 export type ChartSettings = {
   seriesType: ChartSeriesType;
@@ -31,6 +34,7 @@ export type ChartSettings = {
   mainPaneHeightWeight: PaneHeightWeight;
   volumePaneHeightWeight: PaneHeightWeight;
   rsiPaneHeightWeight: PaneHeightWeight;
+  macdPaneHeightWeight: PaneHeightWeight;
   rsiLineWidth: IndicatorLineWidth;
   rsiLineColorOverride: string | null;
   rsiTextColorOverride: string | null;
@@ -54,6 +58,28 @@ export type ChartSettings = {
   emaGradientEnabled: boolean;
   emaGradientTopColor: string;
   emaGradientBottomColor: string;
+  macdFastPeriod: MacdFastPeriod;
+  macdSlowPeriod: MacdSlowPeriod;
+  macdSignalPeriod: MacdSignalPeriod;
+  macdValueSource: OhlcValueSource;
+  macdLineWidth: IndicatorLineWidth;
+  macdLineStyle: ChartLineStyle;
+  macdLineColor: string | null;
+  macdGradientEnabled: boolean;
+  macdGradientTopColor: string | null;
+  macdGradientBottomColor: string | null;
+  macdSignalLineWidth: IndicatorLineWidth;
+  macdSignalLineStyle: ChartLineStyle;
+  macdSignalLineColor: string | null;
+  macdSignalGradientEnabled: boolean;
+  macdSignalGradientTopColor: string | null;
+  macdSignalGradientBottomColor: string | null;
+  macdPositiveIncreasingColor: string | null;
+  macdPositiveDecreasingColor: string | null;
+  macdNegativeIncreasingColor: string | null;
+  macdNegativeDecreasingColor: string | null;
+  macdTextColor: string | null;
+  macdZeroLineColor: string | null;
   themeMode: AppThemeMode;
   xAxisVisible: boolean;
   xAxisShowSeconds: boolean;
@@ -91,6 +117,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   mainPaneHeightWeight: 3,
   volumePaneHeightWeight: 1,
   rsiPaneHeightWeight: 1,
+  macdPaneHeightWeight: 1,
   rsiLineWidth: 0.5,
   rsiLineColorOverride: null,
   rsiTextColorOverride: null,
@@ -114,6 +141,28 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   emaGradientEnabled: false,
   emaGradientTopColor: '#FFE08A',
   emaGradientBottomColor: '#F5A623',
+  macdFastPeriod: 12,
+  macdSlowPeriod: 26,
+  macdSignalPeriod: 9,
+  macdValueSource: 'close',
+  macdLineWidth: 1,
+  macdLineStyle: 'solid',
+  macdLineColor: null,
+  macdGradientEnabled: false,
+  macdGradientTopColor: null,
+  macdGradientBottomColor: null,
+  macdSignalLineWidth: 1,
+  macdSignalLineStyle: 'solid',
+  macdSignalLineColor: null,
+  macdSignalGradientEnabled: false,
+  macdSignalGradientTopColor: null,
+  macdSignalGradientBottomColor: null,
+  macdPositiveIncreasingColor: null,
+  macdPositiveDecreasingColor: null,
+  macdNegativeIncreasingColor: null,
+  macdNegativeDecreasingColor: null,
+  macdTextColor: null,
+  macdZeroLineColor: null,
   themeMode: 'dark',
   xAxisVisible: true,
   xAxisShowSeconds: false,

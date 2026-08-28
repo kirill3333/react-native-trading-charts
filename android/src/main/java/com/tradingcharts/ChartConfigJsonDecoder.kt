@@ -530,7 +530,7 @@ internal fun seriesConfigFromJson(
     declarative: Boolean = false,
 ): SeriesConfig = seriesConfig(JSONObject(json), fallback, declarative)
 
-private fun String.isLineLikeSeries() = this == "line" || this == "area"
+private fun String.isLineLikeSeries() = this == "line" || this == "area" || this == "macd"
 
 private fun JSONObject?.optionalColor(name: String): Int? =
     this?.optString(name)?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
@@ -564,7 +564,7 @@ private fun seriesLineSource(
     source: JSONObject?,
 ): String {
   val sourceType = source?.optString("type")
-  if (sourceType == "ohlcvSma" || sourceType == "ohlcvEma") {
+  if (sourceType == "ohlcvSma" || sourceType == "ohlcvEma" || sourceType == "ohlcvMacd") {
     return source.optString("valueSource", "close")
   }
   return if (type.isLineLikeSeries()) json.optString("source", "close") else "close"
@@ -607,6 +607,87 @@ private fun rsiConfigValues(
                 ?: Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)),
     )
 
+private fun halfAlpha(color: Int) =
+    Color.argb(128, Color.red(color), Color.green(color), Color.blue(color))
+
+private fun JSONObject?.colorOr(name: String, fallback: Int) = optionalColor(name) ?: fallback
+
+private fun JSONObject?.scaledWidthOr(fallback: ChartConfig) =
+    (this?.optDouble("width")?.toFloat() ?: fallback.lineWidthPx / fallback.displayScale) *
+        fallback.displayScale
+
+private fun JSONObject?.dashedOr(fallback: Boolean) =
+    this?.optString("style")?.takeIf { it.isNotEmpty() }?.let { it == "dashed" } ?: fallback
+
+private fun JSONObject?.intOr(name: String, fallback: Int) =
+    this?.optInt(name, fallback) ?: fallback
+
+private inline fun <T> String.macdOr(macd: T, fallback: () -> T) =
+    if (this == "macd") macd else fallback()
+
+private data class MacdConfigValues(
+    val fastPeriod: Int,
+    val slowPeriod: Int,
+    val signalPeriod: Int,
+    val lineWidthPx: Float,
+    val lineColor: Int,
+    val lineDashed: Boolean,
+    val lineGradientTopColor: Int,
+    val lineGradientBottomColor: Int,
+    val lineGradientEnabled: Boolean,
+    val signalLineWidthPx: Float,
+    val signalColor: Int,
+    val signalGradientTopColor: Int,
+    val signalGradientBottomColor: Int,
+    val signalGradientEnabled: Boolean,
+    val signalLineDashed: Boolean,
+    val positiveIncreasingColor: Int,
+    val positiveDecreasingColor: Int,
+    val negativeIncreasingColor: Int,
+    val negativeDecreasingColor: Int,
+    val zeroLineColor: Int,
+    val textColor: Int?,
+)
+
+private fun macdConfigValues(
+    source: JSONObject?,
+    appearance: JSONObject?,
+    fallback: ChartConfig,
+): MacdConfigValues {
+  val line = appearance?.optJSONObject("macdLine")
+  val signal = appearance?.optJSONObject("signalLine")
+  val histogram = appearance?.optJSONObject("histogram")
+  val lineGradient = line?.optJSONObject("gradient")
+  val signalGradient = signal?.optJSONObject("gradient")
+  val lineColor = line.colorOr("color", fallback.lineColor)
+  val signalColor = signal.colorOr("color", fallback.axisTextColor)
+  return MacdConfigValues(
+      fastPeriod = source.intOr("fastPeriod", 12),
+      slowPeriod = source.intOr("slowPeriod", 26),
+      signalPeriod = source.intOr("signalPeriod", 9),
+      lineWidthPx = line.scaledWidthOr(fallback),
+      lineColor = lineColor,
+      lineDashed = line.dashedOr(fallback.lineDashed),
+      lineGradientTopColor = lineGradient.colorOr("topColor", lineColor),
+      lineGradientBottomColor = lineGradient.colorOr("bottomColor", lineColor),
+      lineGradientEnabled = lineGradient != null,
+      signalLineWidthPx = signal.scaledWidthOr(fallback),
+      signalColor = signalColor,
+      signalGradientTopColor = signalGradient.colorOr("topColor", signalColor),
+      signalGradientBottomColor = signalGradient.colorOr("bottomColor", signalColor),
+      signalGradientEnabled = signalGradient != null,
+      signalLineDashed = signal.dashedOr(fallback.lineDashed),
+      positiveIncreasingColor = histogram.colorOr("positiveIncreasingColor", fallback.upColor),
+      positiveDecreasingColor =
+          histogram.colorOr("positiveDecreasingColor", halfAlpha(fallback.upColor)),
+      negativeIncreasingColor =
+          histogram.colorOr("negativeIncreasingColor", halfAlpha(fallback.downColor)),
+      negativeDecreasingColor = histogram.colorOr("negativeDecreasingColor", fallback.downColor),
+      zeroLineColor = appearance.colorOr("zeroLineColor", fallback.gridColor),
+      textColor = appearance.optionalColor("textColor"),
+  )
+}
+
 private fun seriesConfig(
     json: JSONObject,
     fallback: ChartConfig,
@@ -621,8 +702,11 @@ private fun seriesConfig(
   val areaFill = lineAppearance?.optJSONObject("fill")
   val levels = json.optJSONObject("levels")
   val fallbackColor = if (type == "area") fallback.areaLineColor else fallback.lineColor
+  val macd = macdConfigValues(source, appearance, fallback)
   val resolvedColor =
-      appearance.optionalColor("color") ?: if (lineLike) fallbackColor else fallback.axisTextColor
+      type.macdOr(macd.lineColor) {
+        appearance.optionalColor("color") ?: if (lineLike) fallbackColor else fallback.axisTextColor
+      }
   val rsi = rsiConfigValues(source, levels, appearance, resolvedColor)
   return SeriesConfig(
       seriesId = json.getString("seriesId"),
@@ -636,12 +720,24 @@ private fun seriesConfig(
       upColor = appearance.optionalColor("upColor") ?: fallback.upColor,
       downColor = appearance.optionalColor("downColor") ?: fallback.downColor,
       declarative = declarative,
-      lineWidthPx = seriesLineWidthPx(type, lineAppearance, fallback),
+      lineWidthPx =
+          type.macdOr(macd.lineWidthPx) {
+            seriesLineWidthPx(type, lineAppearance, fallback)
+          },
       lineSource = seriesLineSource(type, json, source),
-      lineDashed = seriesLineDashed(type, lineAppearance, fallback),
-      lineGradientTopColor = lineGradient.optionalColor("topColor") ?: resolvedColor,
-      lineGradientBottomColor = lineGradient.optionalColor("bottomColor") ?: resolvedColor,
-      lineGradientEnabled = lineGradient != null,
+      lineDashed =
+          type.macdOr(macd.lineDashed) {
+            seriesLineDashed(type, lineAppearance, fallback)
+          },
+      lineGradientTopColor =
+          type.macdOr(macd.lineGradientTopColor) {
+            lineGradient.optionalColor("topColor") ?: resolvedColor
+          },
+      lineGradientBottomColor =
+          type.macdOr(macd.lineGradientBottomColor) {
+            lineGradient.optionalColor("bottomColor") ?: resolvedColor
+          },
+      lineGradientEnabled = type.macdOr(macd.lineGradientEnabled) { lineGradient != null },
       lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
       movingAveragePeriod = movingAveragePeriod(source),
       areaFillTopColor = areaFill.optionalColor("topColor") ?: fallback.areaFillTopColor,
@@ -652,6 +748,21 @@ private fun seriesConfig(
       rsiTextColor = rsi.textColor,
       rsiLevelLineColor = rsi.levelLineColor,
       rsiBandColor = rsi.bandColor,
+      macdFastPeriod = macd.fastPeriod,
+      macdSlowPeriod = macd.slowPeriod,
+      macdSignalPeriod = macd.signalPeriod,
+      macdSignalLineWidthPx = macd.signalLineWidthPx,
+      macdSignalColor = macd.signalColor,
+      macdSignalGradientTopColor = macd.signalGradientTopColor,
+      macdSignalGradientBottomColor = macd.signalGradientBottomColor,
+      macdSignalGradientEnabled = macd.signalGradientEnabled,
+      macdSignalLineDashed = macd.signalLineDashed,
+      macdPositiveIncreasingColor = macd.positiveIncreasingColor,
+      macdPositiveDecreasingColor = macd.positiveDecreasingColor,
+      macdNegativeIncreasingColor = macd.negativeIncreasingColor,
+      macdNegativeDecreasingColor = macd.negativeDecreasingColor,
+      macdZeroLineColor = macd.zeroLineColor,
+      macdTextColor = macd.textColor,
   )
 }
 

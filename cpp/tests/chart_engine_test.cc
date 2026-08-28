@@ -22,6 +22,8 @@ using trading_charts::AxisTick;
 using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::Color;
+using trading_charts::IndicatorKind;
 using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
 using trading_charts::PaneSnapshot;
@@ -47,6 +49,28 @@ class ChartEngineTestAccess {
     const SeriesData* series = engine.FindSeriesLocked(series_id);
     return series == nullptr ? 0 : series->moving_average_states.size();
   }
+
+  static std::vector<Candle> SignalCandles(ChartEngine& engine,
+                                           const std::string& series_id) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    const SeriesData* series = engine.FindSeriesLocked(series_id);
+    return series == nullptr ? std::vector<Candle>{} : series->signal_candles;
+  }
+
+  static std::vector<HistogramPoint> SeriesHistogram(
+      ChartEngine& engine, const std::string& series_id) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    const SeriesData* series = engine.FindSeriesLocked(series_id);
+    return series == nullptr ? std::vector<HistogramPoint>{}
+                             : series->histogram;
+  }
+
+  static size_t MacdStateCount(ChartEngine& engine,
+                               const std::string& series_id) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    const SeriesData* series = engine.FindSeriesLocked(series_id);
+    return series == nullptr ? 0 : series->macd_states.size();
+  }
 };
 
 }  // namespace trading_charts
@@ -61,6 +85,13 @@ void ExpectNear(double actual, double expected, double tolerance = 1e-9) {
               << " of " << expected << '\n';
     assert(false);
   }
+}
+
+void ExpectColor(const Color& actual, const Color& expected) {
+  ExpectNear(actual.r, expected.r, kFloatGeometryTolerance);
+  ExpectNear(actual.g, expected.g, kFloatGeometryTolerance);
+  ExpectNear(actual.b, expected.b, kFloatGeometryTolerance);
+  ExpectNear(actual.a, expected.a, kFloatGeometryTolerance);
 }
 
 double UtcMilliseconds(int year, int month, int day, int hour = 0,
@@ -2168,20 +2199,21 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   assert(snapshot->panes[1].rsi_scale);
   ExpectNear(snapshot->panes[1].visible_y_min, 0.0);
   ExpectNear(snapshot->panes[1].visible_y_max, 100.0);
-  assert(snapshot->rsi_legends.size() == 1);
-  assert(snapshot->rsi_legends[0].has_value);
-  ExpectNear(snapshot->rsi_legends[0].value, 86.6666666667, 1e-6);
-  assert(!snapshot->rsi_legends[0].text_color_set);
-  ExpectNear(snapshot->rsi_legends[0].value_color.r, rsi.color.r);
-  ExpectNear(snapshot->rsi_legends[0].value_color.a, rsi.color.a);
+  assert(snapshot->indicator_legends.size() == 1);
+  assert(snapshot->indicator_legends[0].values[0].has_value);
+  ExpectNear(snapshot->indicator_legends[0].values[0].value, 86.6666666667,
+             1e-6);
+  assert(!snapshot->indicator_legends[0].text_color_set);
+  ExpectNear(snapshot->indicator_legends[0].values[0].color.r, rsi.color.r);
+  ExpectNear(snapshot->indicator_legends[0].values[0].color.a, rsi.color.a);
 
   rsi.rsi_text_color = {0.9f, 0.8f, 0.2f, 0.7f};
   rsi.rsi_text_color_set = true;
   assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
   const auto styled = engine.Snapshot();
-  assert(styled->rsi_legends[0].text_color_set);
-  ExpectNear(styled->rsi_legends[0].text_color.r, rsi.rsi_text_color.r);
-  ExpectNear(styled->rsi_legends[0].text_color.a, rsi.rsi_text_color.a);
+  assert(styled->indicator_legends[0].text_color_set);
+  ExpectNear(styled->indicator_legends[0].text_color.r, rsi.rsi_text_color.r);
+  ExpectNear(styled->indicator_legends[0].text_color.a, rsi.rsi_text_color.a);
   bool has_oversold = false;
   bool has_overbought = false;
   bool has_boundary_tick = false;
@@ -2211,7 +2243,8 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   assert(engine.UpdateCandle(replacement, trading_charts::kCandleValueCount) ==
          UpdateStatus::kApplied);
   const auto replaced = engine.Snapshot();
-  ExpectNear(replaced->rsi_legends[0].value, 80.9523809524, 1e-6);
+  ExpectNear(replaced->indicator_legends[0].values[0].value, 80.9523809524,
+             1e-6);
 
   const PaneSnapshot& selected_pane = replaced->panes[1];
   const float selected_x =
@@ -2225,8 +2258,9 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   const auto selected = engine.Snapshot();
   assert(selected->content_revision == replaced->content_revision);
   assert(selected->content_vertices == replaced->content_vertices);
-  assert(selected->rsi_legends[0].has_value);
-  ExpectNear(selected->rsi_legends[0].value, 66.6666666667, 1e-6);
+  assert(selected->indicator_legends[0].values[0].has_value);
+  ExpectNear(selected->indicator_legends[0].values[0].value, 66.6666666667,
+             1e-6);
 }
 
 void TestRsiEdgeValuesAndWarmup() {
@@ -2256,9 +2290,9 @@ void TestRsiEdgeValuesAndWarmup() {
     assert(engine.SetHistory(history.data(), history.size()) ==
            UpdateStatus::kApplied);
     const auto snapshot = engine.Snapshot();
-    assert(snapshot->rsi_legends.size() == 1);
-    return snapshot->rsi_legends[0].has_value
-               ? snapshot->rsi_legends[0].value
+    assert(snapshot->indicator_legends.size() == 1);
+    return snapshot->indicator_legends[0].values[0].has_value
+               ? snapshot->indicator_legends[0].values[0].value
                : std::numeric_limits<double>::quiet_NaN();
   };
 
@@ -2303,8 +2337,8 @@ void TestRsiFlatAndCascadeRemoval() {
   rsi.rsi_period = 2;
   assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
   const auto snapshot = engine.Snapshot();
-  assert(snapshot->rsi_legends.size() == 1);
-  ExpectNear(snapshot->rsi_legends[0].value, 50.0);
+  assert(snapshot->indicator_legends.size() == 1);
+  ExpectNear(snapshot->indicator_legends[0].values[0].value, 50.0);
   assert(engine.RemoveSeries("source"));
   assert(!engine.RemoveSeries("flat-rsi"));
 }
@@ -2522,6 +2556,246 @@ void TestMovingAverageAllValueSourcesAndTradeBatch() {
   assert(closes.size() == 3);
   ExpectNear(closes[1].close, 24.0);
   ExpectNear(closes[2].close, 30.0);
+}
+
+void TestMacdWarmupIncrementalLegendAndAutoscale() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 20;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(700.0f, 420.0f);
+  PaneConfig main;
+  main.height_weight = 3.0;
+  PaneConfig macd_pane;
+  macd_pane.pane_id = "macd";
+  macd_pane.price_scale_id = "macd";
+  engine.SetPanes({main, macd_pane}, true);
+
+  SeriesConfig macd;
+  macd.series_id = "macd";
+  macd.pane_id = "macd";
+  macd.price_scale_id = "macd";
+  macd.type = SeriesType::kLine;
+  macd.source = SeriesSource::kOhlcvMacd;
+  macd.source_series_id = "main";
+  macd.macd_fast_period = 3;
+  macd.macd_slow_period = 5;
+  macd.macd_signal_period = 2;
+  macd.color = {0.1f, 0.2f, 0.3f, 1.0f};
+  macd.macd_signal_color = {0.4f, 0.5f, 0.6f, 1.0f};
+  macd.macd_positive_increasing = {0.0f, 1.0f, 0.0f, 1.0f};
+  macd.macd_positive_decreasing = {0.0f, 0.5f, 0.0f, 1.0f};
+  macd.macd_negative_increasing = {0.5f, 0.0f, 0.0f, 1.0f};
+  macd.macd_negative_decreasing = {1.0f, 0.0f, 0.0f, 1.0f};
+  assert(engine.AddSeries(macd) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData("macd", nullptr, 0, false) ==
+         UpdateStatus::kInvalidInput);
+
+  const double insufficient[] = {
+      60.0,  1.0, 1.0, 1.0, 1.0, 1.0, 120.0, 2.0, 2.0, 2.0, 2.0, 1.0,
+      180.0, 3.0, 3.0, 3.0, 3.0, 1.0, 240.0, 4.0, 4.0, 4.0, 4.0, 1.0,
+  };
+  assert(engine.SetHistory(insufficient, std::size(insufficient)) ==
+         UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "macd")
+             .empty());
+  const auto warmup = engine.Snapshot();
+  assert(warmup->indicator_legends.size() == 1);
+  for (size_t index = 0; index < 3; ++index) {
+    assert(!warmup->indicator_legends[0].values[index].has_value);
+  }
+
+  const double history[] = {
+      60.0,  1.0, 1.0, 1.0, 1.0, 1.0, 120.0, 2.0, 2.0, 2.0, 2.0, 1.0,
+      180.0, 3.0, 3.0, 3.0, 3.0, 1.0, 240.0, 4.0, 4.0, 4.0, 4.0, 1.0,
+      300.0, 5.0, 5.0, 5.0, 5.0, 1.0, 360.0, 4.0, 4.0, 4.0, 4.0, 1.0,
+      420.0, 6.0, 6.0, 6.0, 6.0, 1.0, 480.0, 3.0, 3.0, 3.0, 3.0, 1.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  auto macd_values =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "macd");
+  auto signal_values =
+      trading_charts::ChartEngineTestAccess::SignalCandles(engine, "macd");
+  auto histogram =
+      trading_charts::ChartEngineTestAccess::SeriesHistogram(engine, "macd");
+  assert(macd_values.size() == 4);
+  assert(signal_values.size() == 3);
+  assert(histogram.size() == 3);
+  ExpectNear(macd_values[0].close, 1.0);
+  ExpectNear(macd_values[1].close, 2.0 / 3.0);
+  ExpectNear(macd_values[2].close, 7.0 / 9.0);
+  ExpectNear(macd_values[3].close, 5.0 / 27.0);
+  ExpectNear(signal_values[0].close, 5.0 / 6.0);
+  ExpectNear(signal_values[1].close, 43.0 / 54.0);
+  ExpectNear(signal_values[2].close, 7.0 / 18.0);
+  ExpectNear(histogram[0].value, -1.0 / 6.0);
+  ExpectNear(histogram[1].value, -1.0 / 54.0);
+  ExpectNear(histogram[2].value, -11.0 / 54.0);
+  assert(trading_charts::ChartEngineTestAccess::MacdStateCount(engine,
+                                                               "macd") == 8);
+
+  const auto latest = engine.Snapshot();
+  assert(latest->indicator_legends.size() == 1);
+  const auto& latest_legend = latest->indicator_legends[0];
+  assert(latest_legend.kind == IndicatorKind::kMacd);
+  assert(latest_legend.value_count == 3);
+  ExpectNear(latest_legend.values[0].value, -11.0 / 54.0);
+  ExpectNear(latest_legend.values[1].value, 5.0 / 27.0);
+  ExpectNear(latest_legend.values[2].value, 7.0 / 18.0);
+  ExpectColor(latest_legend.values[0].color, macd.macd_negative_decreasing);
+  assert(latest->panes[1].visible_y_min <= 0.0);
+  assert(latest->panes[1].visible_y_max >= 1.0);
+
+  const float selected_x =
+      latest->plot.left +
+      static_cast<float>((420.0 - latest->visible_x_min) /
+                         (latest->visible_x_max - latest->visible_x_min)) *
+          latest->plot.Width();
+  engine.SetCrosshair(true, selected_x, latest->panes[1].plot.top + 10.0f);
+  const auto selected = engine.Snapshot();
+  assert(selected->selected_candle.timestamp == 420.0);
+  assert(selected->indicator_legends[0].values[0].has_value);
+  assert(selected->content_revision == latest->content_revision);
+  assert(selected->content_vertices == latest->content_vertices);
+  ExpectNear(selected->indicator_legends[0].values[0].value, -1.0 / 54.0);
+  ExpectColor(selected->indicator_legends[0].values[0].color,
+              macd.macd_negative_increasing);
+
+  const double append[] = {540.0, 8.0, 8.0, 8.0, 8.0, 1.0};
+  assert(engine.UpdateCandle(append, std::size(append)) ==
+         UpdateStatus::kApplied);
+  histogram =
+      trading_charts::ChartEngineTestAccess::SeriesHistogram(engine, "macd");
+  assert(histogram.size() == 4);
+  assert(histogram.back().value > 0.0);
+  assert(trading_charts::ChartEngineTestAccess::MacdStateCount(engine,
+                                                               "macd") == 9);
+
+  const double replacement[] = {540.0, 7.0, 7.0, 7.0, 7.0, 1.0};
+  assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+         UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::MacdStateCount(engine,
+                                                               "macd") == 9);
+  const double prepended[] = {0.0, 2.0, 2.0, 2.0, 2.0, 1.0};
+  assert(engine.PrependHistory(prepended, std::size(prepended)) ==
+         UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::MacdStateCount(engine,
+                                                               "macd") == 10);
+}
+
+void TestMacdValidationSourcesAndRsiPaneExclusion() {
+  ChartEngine engine;
+  engine.SetSize(600.0f, 360.0f);
+  PaneConfig main;
+  PaneConfig indicator;
+  indicator.pane_id = "indicator";
+  indicator.price_scale_id = "indicator";
+  PaneConfig second_indicator = indicator;
+  second_indicator.pane_id = "second";
+  second_indicator.price_scale_id = "second";
+  engine.SetPanes({main, indicator, second_indicator}, true);
+
+  SeriesConfig macd;
+  macd.series_id = "invalid-main";
+  macd.type = SeriesType::kLine;
+  macd.source = SeriesSource::kOhlcvMacd;
+  macd.source_series_id = "main";
+  assert(engine.AddSeries(macd) == UpdateStatus::kInvalidInput);
+  macd.series_id = "invalid-order";
+  macd.pane_id = "indicator";
+  macd.price_scale_id = "indicator";
+  macd.macd_fast_period = 26;
+  macd.macd_slow_period = 12;
+  assert(engine.AddSeries(macd) == UpdateStatus::kInvalidInput);
+
+  macd.series_id = "macd";
+  macd.macd_fast_period = 3;
+  macd.macd_slow_period = 5;
+  macd.macd_signal_period = 2;
+  assert(engine.AddSeries(macd) == UpdateStatus::kApplied);
+  SeriesConfig rsi;
+  rsi.series_id = "rsi";
+  rsi.type = SeriesType::kLine;
+  rsi.source = SeriesSource::kOhlcvRsi;
+  rsi.source_series_id = "main";
+  rsi.pane_id = "indicator";
+  rsi.price_scale_id = "indicator";
+  assert(engine.AddSeries(rsi) == UpdateStatus::kInvalidInput);
+
+  SeriesConfig source;
+  source.series_id = "source";
+  source.type = SeriesType::kLine;
+  assert(engine.AddSeries(source) == UpdateStatus::kApplied);
+  SeriesConfig custom_macd = macd;
+  custom_macd.series_id = "custom-macd";
+  custom_macd.pane_id = "second";
+  custom_macd.price_scale_id = "second";
+  custom_macd.source_series_id = "source";
+  custom_macd.line_source = OhlcValueSource::kHigh;
+  assert(engine.AddSeries(custom_macd) == UpdateStatus::kApplied);
+  SeriesConfig derived_source = custom_macd;
+  derived_source.series_id = "derived-source";
+  derived_source.source_series_id = "macd";
+  assert(engine.AddSeries(derived_source) == UpdateStatus::kInvalidInput);
+  assert(engine.RemoveSeries("source"));
+  assert(!engine.RemoveSeries("custom-macd"));
+}
+
+void TestMacdAllOhlcSourcesAndFlatHistory() {
+  ChartEngine engine;
+  engine.SetSize(600.0f, 360.0f);
+  PaneConfig main;
+  PaneConfig indicator;
+  indicator.pane_id = "indicator";
+  indicator.price_scale_id = "indicator";
+  engine.SetPanes({main, indicator}, false);
+  const std::array<OhlcValueSource, 4> sources{
+      OhlcValueSource::kOpen,
+      OhlcValueSource::kHigh,
+      OhlcValueSource::kLow,
+      OhlcValueSource::kClose,
+  };
+  for (size_t index = 0; index < sources.size(); ++index) {
+    SeriesConfig macd;
+    macd.series_id = "macd-" + std::to_string(index);
+    macd.pane_id = "indicator";
+    macd.price_scale_id = "indicator";
+    macd.type = SeriesType::kLine;
+    macd.source = SeriesSource::kOhlcvMacd;
+    macd.source_series_id = "main";
+    macd.macd_fast_period = 1;
+    macd.macd_slow_period = 2;
+    macd.macd_signal_period = 1;
+    macd.line_source = sources[index];
+    assert(engine.AddSeries(macd) == UpdateStatus::kApplied);
+  }
+  const double history[] = {
+      60.0, 10.0, 14.0, 8.0, 11.0, 1.0, 120.0, 20.0, 26.0, 18.0, 22.0, 1.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  const std::array<double, 4> expected{5.0, 6.0, 5.0, 5.5};
+  for (size_t index = 0; index < expected.size(); ++index) {
+    const auto values = trading_charts::ChartEngineTestAccess::SeriesCandles(
+        engine, "macd-" + std::to_string(index));
+    assert(values.size() == 1);
+    ExpectNear(values[0].close, expected[index]);
+  }
+
+  const double flat[] = {
+      60.0, 10.0, 10.0, 10.0,  10.0, 1.0,  120.0, 10.0, 10.0,
+      10.0, 10.0, 1.0,  180.0, 10.0, 10.0, 10.0,  10.0, 1.0,
+  };
+  assert(engine.SetHistory(flat, std::size(flat)) == UpdateStatus::kApplied);
+  for (size_t index = 0; index < sources.size(); ++index) {
+    const auto histogram =
+        trading_charts::ChartEngineTestAccess::SeriesHistogram(
+            engine, "macd-" + std::to_string(index));
+    assert(histogram.size() == 2);
+    ExpectNear(histogram.back().value, 0.0);
+  }
 }
 
 void TestDashedLineGeometryUsesSharedTriangleContract() {
@@ -3192,6 +3466,9 @@ int main() noexcept {
     TestMovingAverageValuesWarmupAndIncrementalUpdates();
     TestMovingAverageSourcesValidationAndCascadeRemoval();
     TestMovingAverageAllValueSourcesAndTradeBatch();
+    TestMacdWarmupIncrementalLegendAndAutoscale();
+    TestMacdValidationSourcesAndRsiPaneExclusion();
+    TestMacdAllOhlcSourcesAndFlatHistory();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();
     TestViewportInDataGapReportsEmptyRange();

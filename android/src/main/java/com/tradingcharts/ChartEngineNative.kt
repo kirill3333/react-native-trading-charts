@@ -32,14 +32,23 @@ internal data class PaneSnapshot(
     val rsiScale: Boolean,
 )
 
-internal data class RsiLegendSnapshot(
-    val paneIndex: Int,
-    val period: Int,
+internal data class IndicatorLegendValueSnapshot(
     val value: Double,
     val hasValue: Boolean,
+    val color: Int,
+)
+
+internal data class IndicatorLegendSnapshot(
+    val paneIndex: Int,
+    val kind: Int,
+    val period: Int,
+    val fastPeriod: Int,
+    val slowPeriod: Int,
+    val signalPeriod: Int,
+    val valueSource: Int,
     val textColor: Int,
-    val valueColor: Int,
     val textColorSet: Boolean,
+    val values: List<IndicatorLegendValueSnapshot>,
 )
 
 internal data class ChartFrame(
@@ -73,7 +82,7 @@ internal data class ChartSnapshot(
     val xTicks: List<AxisTick>,
     val yTicks: List<AxisTick>,
     val panes: List<PaneSnapshot>,
-    val rsiLegends: List<RsiLegendSnapshot>,
+    val indicatorLegends: List<IndicatorLegendSnapshot>,
     val activePaneIndex: Int,
     val currentPriceVisible: Boolean,
     val currentPrice: Double,
@@ -321,7 +330,7 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotPanes(handle: Long): DoubleArray
 
-  @JvmStatic private external fun nativeSnapshotRsiLegends(handle: Long): DoubleArray
+  @JvmStatic private external fun nativeSnapshotIndicatorLegends(handle: Long): DoubleArray
 
   @JvmStatic private external fun nativeSnapshotActivePane(handle: Long): Int
 
@@ -461,7 +470,7 @@ internal object ChartEngineNative {
         xTicks = ticks(nativeSnapshotXTicks(snapshot)),
         yTicks = ticks(nativeSnapshotYTicks(snapshot)),
         panes = panes,
-        rsiLegends = snapshotRsiLegends(snapshot),
+        indicatorLegends = snapshotIndicatorLegends(snapshot),
         activePaneIndex = nativeSnapshotActivePane(snapshot),
         currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
         currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
@@ -546,23 +555,29 @@ internal object ChartEngineNative {
     }
   }
 
-  private fun snapshotRsiLegends(snapshot: Long): List<RsiLegendSnapshot> {
+  private fun snapshotIndicatorLegends(snapshot: Long): List<IndicatorLegendSnapshot> {
     val payload =
         decodeSnapshotRecordPayload(
-            nativeSnapshotRsiLegends(snapshot),
-            SnapshotTransportAbi.RSI_LEGEND_RECORD_WIDTH,
-            "RSI legends",
+            nativeSnapshotIndicatorLegends(snapshot),
+            SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH,
+            "indicator legends",
         )
     return List(payload.recordCount) { index ->
-      val record = payload.rsiLegendRecord(index)
-      RsiLegendSnapshot(
+      val record = payload.indicatorLegendRecord(index)
+      IndicatorLegendSnapshot(
           paneIndex = record.paneIndex,
+          kind = record.kind,
           period = record.period,
-          value = record.value,
-          hasValue = record.hasValue,
+          fastPeriod = record.fastPeriod,
+          slowPeriod = record.slowPeriod,
+          signalPeriod = record.signalPeriod,
+          valueSource = record.valueSource,
           textColor = record.textColor,
-          valueColor = record.valueColor,
           textColorSet = record.textColorSet,
+          values =
+              record.values.map { value ->
+                IndicatorLegendValueSnapshot(value.value, value.hasValue, value.color)
+              },
       )
     }
   }

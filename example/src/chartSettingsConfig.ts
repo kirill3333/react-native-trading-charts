@@ -8,6 +8,7 @@ import {
   type GestureOptions,
   type PriceDisplayFormat,
   type PriceExtremesOptions,
+  type MacdSeriesOptions,
   type RsiSeriesAppearance,
   type YAxisValueFormat,
   type XAxisOptions,
@@ -186,6 +187,75 @@ export function buildMovingAverageSeries(
     });
   }
   return result;
+}
+
+export function buildMacdSeries(settings: ChartSettings): MacdSeriesOptions {
+  const theme = APP_THEMES[settings.themeMode].macd;
+  return {
+    seriesId: 'macd',
+    type: 'macd',
+    paneId: 'macd',
+    priceScaleId: 'macd',
+    source: {
+      type: 'ohlcvMacd',
+      seriesId: 'main',
+      fastPeriod: settings.macdFastPeriod,
+      slowPeriod: settings.macdSlowPeriod,
+      signalPeriod: settings.macdSignalPeriod,
+      valueSource: settings.macdValueSource,
+    },
+    appearance: {
+      macdLine: {
+        width: settings.macdLineWidth,
+        style: settings.macdLineStyle,
+        color: settings.macdLineColor ?? theme.lineColor,
+        ...(settings.macdGradientEnabled
+          ? {
+              gradient: {
+                topColor:
+                  settings.macdGradientTopColor ?? theme.gradientTopColor,
+                bottomColor:
+                  settings.macdGradientBottomColor ??
+                  theme.gradientBottomColor,
+              },
+            }
+          : null),
+      },
+      signalLine: {
+        width: settings.macdSignalLineWidth,
+        style: settings.macdSignalLineStyle,
+        color: settings.macdSignalLineColor ?? theme.signalLineColor,
+        ...(settings.macdSignalGradientEnabled
+          ? {
+              gradient: {
+                topColor:
+                  settings.macdSignalGradientTopColor ??
+                  theme.signalGradientTopColor,
+                bottomColor:
+                  settings.macdSignalGradientBottomColor ??
+                  theme.signalGradientBottomColor,
+              },
+            }
+          : null),
+      },
+      histogram: {
+        positiveIncreasingColor:
+          settings.macdPositiveIncreasingColor ??
+          theme.positiveIncreasingColor,
+        positiveDecreasingColor:
+          settings.macdPositiveDecreasingColor ??
+          theme.positiveDecreasingColor,
+        negativeIncreasingColor:
+          settings.macdNegativeIncreasingColor ??
+          theme.negativeIncreasingColor,
+        negativeDecreasingColor:
+          settings.macdNegativeDecreasingColor ??
+          theme.negativeDecreasingColor,
+      },
+      textColor: settings.macdTextColor ?? theme.textColor,
+      zeroLineColor: settings.macdZeroLineColor ?? theme.zeroLineColor,
+    },
+  };
 }
 
 export function buildChartViewConfig(

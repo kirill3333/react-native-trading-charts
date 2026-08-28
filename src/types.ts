@@ -241,11 +241,41 @@ export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
   appearance?: ChartLineAppearance;
 };
 
+export type MacdHistogramAppearance = {
+  positiveIncreasingColor?: string;
+  positiveDecreasingColor?: string;
+  negativeIncreasingColor?: string;
+  negativeDecreasingColor?: string;
+};
+
+export type MacdSeriesAppearance = {
+  macdLine?: ChartLineAppearance;
+  signalLine?: ChartLineAppearance;
+  histogram?: MacdHistogramAppearance;
+  textColor?: string;
+  zeroLineColor?: string;
+};
+
+export type MacdSeriesOptions = AdditionalSeriesBase & {
+  type: 'macd';
+  source: {
+    type: 'ohlcvMacd';
+    seriesId: string;
+    fastPeriod?: number;
+    slowPeriod?: number;
+    signalPeriod?: number;
+    valueSource?: OhlcValueSource;
+  };
+  gapThresholdMs?: number;
+  appearance?: MacdSeriesAppearance;
+};
+
 export type AdditionalChartSeriesOptions =
   | AdditionalOhlcSeriesOptions
   | HistogramSeriesOptions
   | RsiSeriesOptions
-  | MovingAverageSeriesOptions;
+  | MovingAverageSeriesOptions
+  | MacdSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -270,6 +300,17 @@ export type NormalizedAdditionalChartSeriesOptions =
         type: 'ohlcvSma' | 'ohlcvEma';
         seriesId: string;
         period: number;
+        valueSource: OhlcValueSource;
+      };
+    })
+  | (Omit<MacdSeriesOptions, 'visible' | 'source'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvMacd';
+        seriesId: string;
+        fastPeriod: number;
+        slowPeriod: number;
+        signalPeriod: number;
         valueSource: OhlcValueSource;
       };
     })
@@ -613,6 +654,28 @@ export type ResolvedAdditionalChartSeriesOptions =
         seriesId: string;
         period: number;
         valueSource: OhlcValueSource;
+      };
+    })
+  | (Omit<MacdSeriesOptions, 'visible' | 'source' | 'appearance'> & {
+      visible: boolean;
+      source: {
+        type: 'ohlcvMacd';
+        seriesId: string;
+        fastPeriod: number;
+        slowPeriod: number;
+        signalPeriod: number;
+        valueSource: OhlcValueSource;
+      };
+      appearance: {
+        macdLine: Required<Pick<ChartLineAppearance, 'width' | 'color' | 'style'>> &
+          Pick<ChartLineAppearance, 'gradient'>;
+        signalLine: Required<
+          Pick<ChartLineAppearance, 'width' | 'color' | 'style'>
+        > &
+          Pick<ChartLineAppearance, 'gradient'>;
+        histogram: Required<MacdHistogramAppearance>;
+        zeroLineColor: string;
+        textColor?: string;
       };
     })
   | (Omit<HistogramSeriesOptions, 'visible' | 'source' | 'appearance'> & {

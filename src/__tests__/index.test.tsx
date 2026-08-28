@@ -250,6 +250,73 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('normalizes an imperative MACD composite series', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'macd',
+      type: 'macd',
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      source: { type: 'ohlcvMacd', seriesId: 'main' },
+      appearance: {
+        macdLine: { color: '#2E90F5', width: 1.5 },
+        signalLine: { color: '#E5B84B', style: 'dashed' },
+      },
+    });
+
+    expect(JSON.parse(mockNativeModule.addSeries.mock.calls[0]![1])).toEqual({
+      seriesId: 'macd',
+      type: 'macd',
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      source: {
+        type: 'ohlcvMacd',
+        seriesId: 'main',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        valueSource: 'close',
+      },
+      appearance: {
+        macdLine: { color: '#2E90F5', width: 1.5 },
+        signalLine: { color: '#E5B84B', style: 'dashed' },
+      },
+      visible: true,
+    });
+  });
+
+  it('validates imperative MACD periods, pane, source and colors', () => {
+    const base = {
+      seriesId: 'macd',
+      type: 'macd' as const,
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      source: { type: 'ohlcvMacd' as const, seriesId: 'main' },
+    };
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: { ...base.source, fastPeriod: 26, slowPeriod: 12 },
+      })
+    ).toThrow('fastPeriod must be less than slowPeriod');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        source: { ...base.source, signalPeriod: 0 },
+      })
+    ).toThrow('signalPeriod must be an integer from 1');
+    expect(() =>
+      resolveAdditionalSeriesOptions({ ...base, paneId: 'main' })
+    ).toThrow('separate MACD pane');
+    expect(() =>
+      resolveAdditionalSeriesOptions({
+        ...base,
+        appearance: {
+          histogram: { positiveIncreasingColor: 'green' },
+        },
+      })
+    ).toThrow('positiveIncreasingColor must be #RRGGBB or #RRGGBBAA');
+  });
+
   it('normalizes imperative SMA and EMA series', () => {
     TradingCharts.addSeries('chart', {
       seriesId: 'sma-20',
@@ -717,6 +784,93 @@ describe('chart config', () => {
     expect(resolved.additionalSeries[0]).toMatchObject({
       appearance: { textColor: '#ABCDEF80' },
     });
+  });
+
+  it('resolves MACD defaults, theme styles and pane restrictions', () => {
+    const panes = [
+      {
+        paneId: 'main',
+        heightWeight: 3,
+        priceScale: { priceScaleId: 'main' },
+      },
+      {
+        paneId: 'macd',
+        heightWeight: 1,
+        priceScale: { priceScaleId: 'macd' },
+      },
+    ] as const;
+    const resolved = resolveChartConfig({
+      chartId: 'price-macd',
+      theme: {
+        upColor: '#00AA00',
+        downColor: '#CC0000',
+        gridColor: '#22222280',
+        axisTextColor: '#999999',
+      },
+      appearance: {
+        line: { width: 2.5, color: '#3366FF', style: 'dashed' },
+      },
+      panes,
+      additionalSeries: [
+        {
+          seriesId: 'macd',
+          type: 'macd',
+          paneId: 'macd',
+          priceScaleId: 'macd',
+          source: { type: 'ohlcvMacd', seriesId: 'main' },
+        },
+      ],
+    });
+
+    expect(resolved.additionalSeries[0]).toEqual({
+      seriesId: 'macd',
+      type: 'macd',
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      visible: true,
+      source: {
+        type: 'ohlcvMacd',
+        seriesId: 'main',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        valueSource: 'close',
+      },
+      appearance: {
+        macdLine: { width: 2.5, color: '#3366FF', style: 'dashed' },
+        signalLine: { width: 2.5, color: '#999999', style: 'dashed' },
+        histogram: {
+          positiveIncreasingColor: '#00AA00',
+          positiveDecreasingColor: '#00AA0080',
+          negativeIncreasingColor: '#CC000080',
+          negativeDecreasingColor: '#CC0000',
+        },
+        zeroLineColor: '#22222280',
+      },
+    });
+
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'rsi-macd-shared-pane',
+        panes,
+        additionalSeries: [
+          {
+            seriesId: 'rsi',
+            type: 'line',
+            paneId: 'macd',
+            priceScaleId: 'macd',
+            source: { type: 'ohlcvRsi', seriesId: 'main' },
+          },
+          {
+            seriesId: 'macd',
+            type: 'macd',
+            paneId: 'macd',
+            priceScaleId: 'macd',
+            source: { type: 'ohlcvMacd', seriesId: 'main' },
+          },
+        ],
+      })
+    ).toThrow('cannot share a pane');
   });
 
   it('resolves moving averages only on their source pane and scale', () => {

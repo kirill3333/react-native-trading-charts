@@ -4,6 +4,7 @@
 #ifndef REACT_NATIVE_TRADING_CHARTS_CPP_CHART_ENGINE_H_
 #define REACT_NATIVE_TRADING_CHARTS_CPP_CHART_ENGINE_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -81,6 +82,7 @@ enum class SeriesSource : std::uint8_t {
   kOhlcvRsi = 2,
   kOhlcvSma = 3,
   kOhlcvEma = 4,
+  kOhlcvMacd = 5,
 };
 
 inline bool IsMovingAverageSource(SeriesSource source) {
@@ -89,7 +91,8 @@ inline bool IsMovingAverageSource(SeriesSource source) {
 
 inline bool IsDerivedOhlcvSource(SeriesSource source) {
   return source == SeriesSource::kOhlcvVolume ||
-         source == SeriesSource::kOhlcvRsi || IsMovingAverageSource(source);
+         source == SeriesSource::kOhlcvRsi ||
+         source == SeriesSource::kOhlcvMacd || IsMovingAverageSource(source);
 }
 
 struct PaneConfig {
@@ -141,6 +144,26 @@ struct SeriesConfig {
   Color rsi_level_line{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 0.5f};
   Color rsi_band{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
                  20.0f / 255.0f};
+  std::uint32_t macd_fast_period = 12;
+  std::uint32_t macd_slow_period = 26;
+  std::uint32_t macd_signal_period = 9;
+  float macd_signal_line_width = 1.0f;
+  Color macd_signal_color{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
+                          1.0f};
+  Color macd_signal_gradient_top{151.0f / 255.0f, 145.0f / 255.0f,
+                                 165.0f / 255.0f, 1.0f};
+  Color macd_signal_gradient_bottom{151.0f / 255.0f, 145.0f / 255.0f,
+                                    165.0f / 255.0f, 1.0f};
+  bool macd_signal_gradient_enabled = false;
+  bool macd_signal_line_dashed = false;
+  Color macd_positive_increasing = up;
+  Color macd_positive_decreasing{up.r, up.g, up.b, 0.5f};
+  Color macd_negative_increasing{down.r, down.g, down.b, 0.5f};
+  Color macd_negative_decreasing = down;
+  Color macd_zero_line{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
+  Color macd_text_color{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
+                        1.0f};
+  bool macd_text_color_set = false;
 };
 
 struct RsiSmoothingState {
@@ -148,13 +171,28 @@ struct RsiSmoothingState {
   double average_loss = 0.0;
 };
 
+struct MacdSmoothingState {
+  double fast = 0.0;
+  double slow = 0.0;
+  double signal = 0.0;
+  double fast_sum = 0.0;
+  double slow_sum = 0.0;
+  double signal_sum = 0.0;
+  std::uint32_t signal_count = 0;
+  bool fast_ready = false;
+  bool slow_ready = false;
+  bool signal_ready = false;
+};
+
 struct SeriesData {
   SeriesConfig config;
   std::vector<Candle> candles;
   std::vector<HistogramPoint> histogram;
+  std::vector<Candle> signal_candles;
   // SMA stores the rolling window sum; EMA stores the published EMA value.
   std::vector<double> moving_average_states;
   std::vector<RsiSmoothingState> rsi_states;
+  std::vector<MacdSmoothingState> macd_states;
   size_t pane_index = kInvalidStateIndex;
   size_t source_series_index = kInvalidStateIndex;
 };
@@ -359,17 +397,32 @@ struct PaneSnapshot {
   int precision = 2;
 };
 
-struct RsiLegend {
-  std::string pane_id;
-  size_t pane_index = 0;
-  std::uint32_t period = 14;
+enum class IndicatorKind : std::uint8_t {
+  kRsi = 0,
+  kMacd = 1,
+};
+
+struct IndicatorLegendValue {
   double value = 0.0;
   double latest_value = 0.0;
-  Color text_color;
-  Color value_color;
-  bool text_color_set = false;
+  Color color;
   bool has_value = false;
   bool has_latest_value = false;
+};
+
+struct IndicatorLegend {
+  std::string pane_id;
+  size_t pane_index = 0;
+  IndicatorKind kind = IndicatorKind::kRsi;
+  std::uint32_t period = 14;
+  std::uint32_t fast_period = 12;
+  std::uint32_t slow_period = 26;
+  std::uint32_t signal_period = 9;
+  OhlcValueSource value_source = OhlcValueSource::kClose;
+  Color text_color;
+  bool text_color_set = false;
+  size_t value_count = 0;
+  std::array<IndicatorLegendValue, 3> values;
 };
 
 // Immutable render state published to the platform GPU and text overlays.
@@ -401,7 +454,7 @@ struct RenderSnapshot {
   std::vector<AxisTick> y_ticks;
   std::vector<AxisTick> pane_y_ticks;
   std::vector<PaneSnapshot> panes;
-  std::vector<RsiLegend> rsi_legends;
+  std::vector<IndicatorLegend> indicator_legends;
   PriceExtremum visible_maximum;
   PriceExtremum visible_minimum;
   Candle selected_candle;
@@ -545,10 +598,13 @@ class ChartEngine {
                               size_t first_changed_source_index);
   void RebuildMovingAverageSeriesLocked(size_t series_index,
                                         size_t first_changed_source_index);
+  void RebuildMacdSeriesLocked(size_t series_index,
+                               size_t first_changed_source_index);
   void RefreshDerivedDependentsLocked(const std::string& source_series_id,
                                       size_t first_changed_source_index);
   void RebuildAllDerivedSeriesLocked();
   bool PaneHasRsiLocked(size_t pane_index) const;
+  bool PaneHasMacdLocked(size_t pane_index) const;
   void ClampViewportLocked();
   bool IsAtLiveEdgeLocked() const;
   UpdateStatus UpdateTradeLocked(double timestamp, double price, double size);

@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 2
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 3
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v2"
+  const val STRING_MARKER = "TradingCharts.Series.v3"
 
   object NumberIndex {
     const val VERSION = 0
@@ -24,7 +24,14 @@ internal object SeriesTransportAbi {
     const val RSI_TEXT_COLOR_SET = 15
     const val LINE_DASHED = 16
     const val MOVING_AVERAGE_PERIOD = 17
-    const val SIZE = 18
+    const val MACD_FAST_PERIOD = 18
+    const val MACD_SLOW_PERIOD = 19
+    const val MACD_SIGNAL_PERIOD = 20
+    const val MACD_TEXT_COLOR_SET = 21
+    const val MACD_SIGNAL_LINE_WIDTH = 22
+    const val MACD_SIGNAL_GRADIENT_ENABLED = 23
+    const val MACD_SIGNAL_LINE_DASHED = 24
+    const val SIZE = 25
   }
 
   object ColorIndex {
@@ -42,7 +49,16 @@ internal object SeriesTransportAbi {
     const val RSI_LEVEL_LINE = 32
     const val RSI_BAND = 36
     const val RSI_TEXT = 40
-    const val SIZE = 44
+    const val MACD_SIGNAL = 44
+    const val MACD_SIGNAL_GRADIENT_TOP = 48
+    const val MACD_SIGNAL_GRADIENT_BOTTOM = 52
+    const val MACD_POSITIVE_INCREASING = 56
+    const val MACD_POSITIVE_DECREASING = 60
+    const val MACD_NEGATIVE_INCREASING = 64
+    const val MACD_NEGATIVE_DECREASING = 68
+    const val MACD_ZERO_LINE = 72
+    const val MACD_TEXT = 76
+    const val SIZE = 80
   }
 
   object StringIndex {
@@ -54,8 +70,8 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 14
-  const val ROUND_TRIP_COLOR_COUNT = 40
+  const val ROUND_TRIP_NUMBER_COUNT = 21
+  const val ROUND_TRIP_COLOR_COUNT = 76
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
   const val ROUND_TRIP_SIZE =
@@ -77,6 +93,7 @@ private fun String.nativeSeriesType() =
       "hollowCandlestick" -> 2.0
       "histogram" -> 3.0
       "line" -> 4.0
+      "macd" -> 4.0
       "area" -> 5.0
       else -> 0.0
     }
@@ -96,7 +113,9 @@ private fun putColor(target: FloatArray, offset: Int, color: Int) {
   target[offset + 3] = ((color ushr 24) and 0xff) / 255f
 }
 
-internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
+private fun Boolean.transportDouble() = if (this) 1.0 else 0.0
+
+private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
   val numbers = DoubleArray(SeriesTransportAbi.NumberIndex.SIZE)
   numbers[SeriesTransportAbi.NumberIndex.VERSION] = CHART_ENGINE_TRANSPORT_ABI_VERSION.toDouble()
   numbers[SeriesTransportAbi.NumberIndex.NUMBER_SIZE] = numbers.size.toDouble()
@@ -110,23 +129,37 @@ internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
         "ohlcvRsi" -> 2.0
         "ohlcvSma" -> 3.0
         "ohlcvEma" -> 4.0
+        "ohlcvMacd" -> 5.0
         else -> 0.0
       }
-  numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = if (visible) 1.0 else 0.0
-  numbers[SeriesTransportAbi.NumberIndex.DECLARATIVE] = if (declarative) 1.0 else 0.0
+  numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = visible.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.DECLARATIVE] = declarative.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_WIDTH] = lineWidthPx.toDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_SOURCE] = lineSource.nativeLineSource()
   numbers[SeriesTransportAbi.NumberIndex.LINE_GRADIENT_ENABLED] =
-      if (lineGradientEnabled) 1.0 else 0.0
+      lineGradientEnabled.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_GAP_THRESHOLD_MS] = lineGapThresholdMs
   numbers[SeriesTransportAbi.NumberIndex.RSI_PERIOD] = rsiPeriod.toDouble()
   numbers[SeriesTransportAbi.NumberIndex.RSI_OVERSOLD] = rsiOversold
   numbers[SeriesTransportAbi.NumberIndex.RSI_OVERBOUGHT] = rsiOverbought
   numbers[SeriesTransportAbi.NumberIndex.RSI_TEXT_COLOR_SET] =
-      if (rsiTextColor != null) 1.0 else 0.0
-  numbers[SeriesTransportAbi.NumberIndex.LINE_DASHED] = if (lineDashed) 1.0 else 0.0
+      (rsiTextColor != null).transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.LINE_DASHED] = lineDashed.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.MOVING_AVERAGE_PERIOD] = movingAveragePeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_FAST_PERIOD] = macdFastPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_SLOW_PERIOD] = macdSlowPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_PERIOD] = macdSignalPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_TEXT_COLOR_SET] =
+      (macdTextColor != null).transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_LINE_WIDTH] = macdSignalLineWidthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_GRADIENT_ENABLED] =
+      macdSignalGradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_LINE_DASHED] =
+      macdSignalLineDashed.transportDouble()
+  return numbers
+}
 
+private fun SeriesConfig.nativeSeriesColors(numbers: DoubleArray): FloatArray {
   val colors = FloatArray(SeriesTransportAbi.ColorIndex.SIZE)
   colors[SeriesTransportAbi.ColorIndex.VERSION] = CHART_ENGINE_TRANSPORT_ABI_VERSION.toFloat()
   colors[SeriesTransportAbi.ColorIndex.NUMBER_SIZE] = numbers.size.toFloat()
@@ -142,7 +175,45 @@ internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
   putColor(colors, SeriesTransportAbi.ColorIndex.RSI_LEVEL_LINE, rsiLevelLineColor)
   putColor(colors, SeriesTransportAbi.ColorIndex.RSI_BAND, rsiBandColor)
   putColor(colors, SeriesTransportAbi.ColorIndex.RSI_TEXT, rsiTextColor ?: color)
+  putColor(colors, SeriesTransportAbi.ColorIndex.MACD_SIGNAL, macdSignalColor)
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_SIGNAL_GRADIENT_TOP,
+      macdSignalGradientTopColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_SIGNAL_GRADIENT_BOTTOM,
+      macdSignalGradientBottomColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_POSITIVE_INCREASING,
+      macdPositiveIncreasingColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_POSITIVE_DECREASING,
+      macdPositiveDecreasingColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_NEGATIVE_INCREASING,
+      macdNegativeIncreasingColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.MACD_NEGATIVE_DECREASING,
+      macdNegativeDecreasingColor,
+  )
+  putColor(colors, SeriesTransportAbi.ColorIndex.MACD_ZERO_LINE, macdZeroLineColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.MACD_TEXT, macdTextColor ?: color)
+  return colors
+}
 
+internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
+  val numbers = nativeSeriesNumbers()
+  val colors = nativeSeriesColors(numbers)
   return SeriesTransportPayload(
       strings =
           arrayOf(
@@ -164,7 +235,7 @@ internal object SnapshotTransportAbi {
   const val HEADER_SIZE = 3
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
-  const val RSI_LEGEND_RECORD_WIDTH = 13
+  const val INDICATOR_LEGEND_RECORD_WIDTH = 31
 
   object PaneIndex {
     const val PLOT_LEFT = 0
@@ -183,14 +254,19 @@ internal object SnapshotTransportAbi {
     const val RSI_SCALE = 13
   }
 
-  object RsiLegendIndex {
+  object IndicatorLegendIndex {
     const val PANE_INDEX = 0
-    const val PERIOD = 1
-    const val VALUE = 2
-    const val HAS_VALUE = 3
-    const val TEXT_COLOR = 4
-    const val VALUE_COLOR = 8
-    const val TEXT_COLOR_SET = 12
+    const val KIND = 1
+    const val PERIOD = 2
+    const val FAST_PERIOD = 3
+    const val SLOW_PERIOD = 4
+    const val SIGNAL_PERIOD = 5
+    const val VALUE_SOURCE = 6
+    const val VALUE_COUNT = 7
+    const val TEXT_COLOR_SET = 8
+    const val TEXT_COLOR = 9
+    const val VALUES = 13
+    const val VALUE_RECORD_WIDTH = 6
   }
 }
 
@@ -249,14 +325,23 @@ internal fun SnapshotRecordPayload.paneRecord(index: Int): PaneSnapshotRecord {
   )
 }
 
-internal data class RsiLegendSnapshotRecord(
-    val paneIndex: Int,
-    val period: Int,
+internal data class IndicatorLegendValueSnapshotRecord(
     val value: Double,
     val hasValue: Boolean,
+    val color: Int,
+)
+
+internal data class IndicatorLegendSnapshotRecord(
+    val paneIndex: Int,
+    val kind: Int,
+    val period: Int,
+    val fastPeriod: Int,
+    val slowPeriod: Int,
+    val signalPeriod: Int,
+    val valueSource: Int,
     val textColor: Int,
-    val valueColor: Int,
     val textColorSet: Boolean,
+    val values: List<IndicatorLegendValueSnapshotRecord>,
 )
 
 private fun Double.colorChannel() = (coerceIn(0.0, 1.0) * 255.0).toInt()
@@ -269,26 +354,46 @@ private fun SnapshotRecordPayload.colorAt(offset: Int, channelOffset: Int): Int 
   return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
 }
 
-internal fun SnapshotRecordPayload.rsiLegendRecord(index: Int): RsiLegendSnapshotRecord {
-  check(recordWidth == SnapshotTransportAbi.RSI_LEGEND_RECORD_WIDTH) {
-    "Cannot decode RSI legend from record width $recordWidth"
+internal fun SnapshotRecordPayload.indicatorLegendRecord(
+    index: Int
+): IndicatorLegendSnapshotRecord {
+  check(recordWidth == SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH) {
+    "Cannot decode indicator legend from record width $recordWidth"
   }
-  check(index in 0 until recordCount) { "Invalid RSI legend record index: $index" }
+  check(index in 0 until recordCount) { "Invalid indicator legend record index: $index" }
   val offset = offset(index)
   fun value(field: Int) = values[offset + field]
   fun exactInt(field: Int, name: String): Int {
     val raw = value(field)
-    check(raw == raw.toInt().toDouble()) { "Invalid native RSI legend $name: $raw" }
+    check(raw == raw.toInt().toDouble()) { "Invalid native indicator legend $name: $raw" }
     return raw.toInt()
   }
-  return RsiLegendSnapshotRecord(
-      paneIndex = exactInt(SnapshotTransportAbi.RsiLegendIndex.PANE_INDEX, "pane index"),
-      period = exactInt(SnapshotTransportAbi.RsiLegendIndex.PERIOD, "period"),
-      value = value(SnapshotTransportAbi.RsiLegendIndex.VALUE),
-      hasValue = value(SnapshotTransportAbi.RsiLegendIndex.HAS_VALUE) != 0.0,
-      textColor = colorAt(offset, SnapshotTransportAbi.RsiLegendIndex.TEXT_COLOR),
-      valueColor = colorAt(offset, SnapshotTransportAbi.RsiLegendIndex.VALUE_COLOR),
-      textColorSet = value(SnapshotTransportAbi.RsiLegendIndex.TEXT_COLOR_SET) != 0.0,
+  val valueCount = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.VALUE_COUNT, "value count")
+  check(valueCount in 0..3) { "Invalid native indicator legend value count: $valueCount" }
+  val legendValues =
+      List(valueCount) { valueIndex ->
+        val valueOffset =
+            SnapshotTransportAbi.IndicatorLegendIndex.VALUES +
+                valueIndex * SnapshotTransportAbi.IndicatorLegendIndex.VALUE_RECORD_WIDTH
+        IndicatorLegendValueSnapshotRecord(
+            value = value(valueOffset),
+            hasValue = value(valueOffset + 1) != 0.0,
+            color = colorAt(offset, valueOffset + 2),
+        )
+      }
+  return IndicatorLegendSnapshotRecord(
+      paneIndex = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.PANE_INDEX, "pane index"),
+      kind = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.KIND, "kind"),
+      period = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.PERIOD, "period"),
+      fastPeriod = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.FAST_PERIOD, "fast period"),
+      slowPeriod = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.SLOW_PERIOD, "slow period"),
+      signalPeriod =
+          exactInt(SnapshotTransportAbi.IndicatorLegendIndex.SIGNAL_PERIOD, "signal period"),
+      valueSource =
+          exactInt(SnapshotTransportAbi.IndicatorLegendIndex.VALUE_SOURCE, "value source"),
+      textColor = colorAt(offset, SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR),
+      textColorSet = value(SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR_SET) != 0.0,
+      values = legendValues,
   )
 }
 
@@ -335,7 +440,7 @@ internal fun validateTransportDescriptor(descriptor: IntArray) {
           SnapshotTransportAbi.HEADER_SIZE,
           SnapshotTransportAbi.TICK_RECORD_WIDTH,
           SnapshotTransportAbi.PANE_RECORD_WIDTH,
-          SnapshotTransportAbi.RSI_LEGEND_RECORD_WIDTH,
+          SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH,
       )
   check(descriptor.contentEquals(expected)) {
     "Incompatible ChartEngine JNI ABI: native=${descriptor.contentToString()}, " +

@@ -217,7 +217,7 @@ class RenderSnapshotBuilder {
     ComputeSeriesWindows();
     CalculateYRange();
     CalculateAdditionalPaneRanges();
-    BuildRsiLegends();
+    BuildIndicatorLegends();
     AddExtrema();
     AddTicks();
     ReserveGeometry();
@@ -259,9 +259,12 @@ class RenderSnapshotBuilder {
     snapshot_->selected_amplitude_percent = 0.0;
     snapshot_->selected_percentages_valid = false;
     snapshot_->active_pane_index = 0;
-    for (RsiLegend& legend : snapshot_->rsi_legends) {
-      legend.value = legend.latest_value;
-      legend.has_value = legend.has_latest_value;
+    for (IndicatorLegend& legend : snapshot_->indicator_legends) {
+      for (size_t index = 0; index < legend.value_count; ++index) {
+        IndicatorLegendValue& value = legend.values[index];
+        value.value = value.latest_value;
+        value.has_value = value.has_latest_value;
+      }
     }
     pane_y_min_.clear();
     pane_y_max_.clear();
@@ -538,6 +541,22 @@ class RenderSnapshotBuilder {
     }
   }
 
+  template <typename Timestamped>
+  SeriesWindow VisibleWindowFor(const std::vector<Timestamped>& values) const {
+    if (values.empty() ||
+        (!snapshot_->has_visible_candles && input_.config.logical_spacing)) {
+      return {};
+    }
+    double bound_min = input_.visible_x_min;
+    double bound_max = input_.visible_x_max;
+    if (input_.config.logical_spacing) {
+      bound_min = input_.candles[snapshot_->first_visible_index].timestamp;
+      bound_max = input_.candles[snapshot_->last_visible_index].timestamp;
+    }
+    return SeriesWindow{LowerTimestampBound(values, bound_min),
+                        UpperTimestampBound(values, bound_max)};
+  }
+
   // Returns true when `timestamp` exactly matches a visible main candle,
   // advancing `cursor` monotonically. Requires samples iterated in ascending
   // timestamp order; amortized O(1) per sample.
@@ -622,20 +641,33 @@ class RenderSnapshotBuilder {
         continue;
       }
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvMacd) {
+        minimum = std::min(minimum, 0.0);
+        maximum = std::max(maximum, 0.0);
+        const auto include_candle = [&](const Candle& candle) {
+          minimum = std::min(minimum, candle.close);
+          maximum = std::max(maximum, candle.close);
+        };
+        VisitVisibleSeriesSamples(window, series.candles,
+                                  input_.config.logical_spacing,
+                                  include_candle);
+        const SeriesWindow signal_window =
+            VisibleWindowFor(series.signal_candles);
+        VisitVisibleSeriesSamples(signal_window, series.signal_candles,
+                                  input_.config.logical_spacing,
+                                  include_candle);
+        VisitVisibleHistogram(index, [&](double, double value, const Color&) {
+          minimum = std::min(minimum, value);
+          maximum = std::max(maximum, value);
+        });
+        continue;
+      }
       if (series.config.type == SeriesType::kHistogram) {
         minimum = std::min(minimum, 0.0);
-        if (series.config.source == SeriesSource::kOhlcvVolume) {
-          VisitVisibleSeriesCandles(index, [&](const Candle& candle) {
-            maximum = std::max(maximum, candle.volume);
-          });
-        } else {
-          VisitVisibleSeriesSamples(window, series.histogram,
-                                    input_.config.logical_spacing,
-                                    [&](const HistogramPoint& point) {
-                                      minimum = std::min(minimum, point.value);
-                                      maximum = std::max(maximum, point.value);
-                                    });
-        }
+        VisitVisibleHistogram(index, [&](double, double value, const Color&) {
+          minimum = std::min(minimum, value);
+          maximum = std::max(maximum, value);
+        });
       } else {
         const auto include_candle = [&](const Candle& candle) {
           if (IsLineLikeSeries(series.config.type)) {
@@ -675,22 +707,34 @@ class RenderSnapshotBuilder {
           continue;
         }
         const SeriesWindow& window = series_windows_[index];
+        if (series.config.source == SeriesSource::kOhlcvMacd) {
+          has_value = true;
+          raw_min = std::min(raw_min, 0.0);
+          raw_max = std::max(raw_max, 0.0);
+          const auto include_candle = [&](const Candle& candle) {
+            raw_min = std::min(raw_min, candle.close);
+            raw_max = std::max(raw_max, candle.close);
+          };
+          VisitVisibleSeriesSamples(window, series.candles,
+                                    input_.config.logical_spacing,
+                                    include_candle);
+          const SeriesWindow signal_window =
+              VisibleWindowFor(series.signal_candles);
+          VisitVisibleSeriesSamples(signal_window, series.signal_candles,
+                                    input_.config.logical_spacing,
+                                    include_candle);
+          VisitVisibleHistogram(index, [&](double, double value, const Color&) {
+            raw_min = std::min(raw_min, value);
+            raw_max = std::max(raw_max, value);
+          });
+          continue;
+        }
         if (series.config.type == SeriesType::kHistogram) {
-          if (series.config.source == SeriesSource::kOhlcvVolume) {
-            VisitVisibleSeriesCandles(index, [&](const Candle& candle) {
-              has_value = true;
-              raw_min = std::min(raw_min, 0.0);
-              raw_max = std::max(raw_max, candle.volume);
-            });
-          } else {
-            VisitVisibleSeriesSamples(
-                window, series.histogram, input_.config.logical_spacing,
-                [&](const HistogramPoint& point) {
-                  has_value = true;
-                  raw_min = std::min({raw_min, 0.0, point.value});
-                  raw_max = std::max(raw_max, point.value);
-                });
-          }
+          VisitVisibleHistogram(index, [&](double, double value, const Color&) {
+            has_value = true;
+            raw_min = std::min({raw_min, 0.0, value});
+            raw_max = std::max(raw_max, value);
+          });
         } else {
           const auto include_candle = [&](const Candle& candle) {
             has_value = true;
@@ -941,6 +985,41 @@ class RenderSnapshotBuilder {
             (1 + 2 * SegmentCount(pane_plot.left, pane_plot.right, step)) *
             kFloatsPerQuad;
       }
+      if (series.config.source == SeriesSource::kOhlcvMacd) {
+        const SeriesWindow signal_window =
+            VisibleWindowFor(series.signal_candles);
+        const SeriesWindow histogram_window =
+            VisibleWindowFor(series.histogram);
+        float_count += (histogram_window.last - histogram_window.first + 1) *
+                       kFloatsPerQuad;
+        ChartConfig signal_config = input_.config;
+        signal_config.series_type = SeriesType::kLine;
+        signal_config.line_width = series.config.macd_signal_line_width;
+        signal_config.line_dashed = series.config.macd_signal_line_dashed;
+        signal_config.line_source = OhlcValueSource::kClose;
+        signal_config.line_gap_threshold_ms =
+            series.config.line_gap_threshold_ms;
+        size_t signal_first = signal_window.first;
+        size_t signal_last = signal_window.last;
+        if (signal_first > 0) {
+          --signal_first;
+        }
+        if (signal_last < series.signal_candles.size()) {
+          ++signal_last;
+        }
+        float_count += SeriesGeometryFloatCapacity(SeriesGeometryInput{
+            signal_config,
+            series.signal_candles,
+            signal_first,
+            signal_last,
+            snapshot_->panes[series.pane_index].plot,
+            input_.visible_x_min,
+            input_.visible_x_max,
+            pane_y_min_[series.pane_index],
+            pane_y_max_[series.pane_index],
+            input_.config.logical_spacing ? &input_.candles : nullptr,
+        });
+      }
       if (series.config.type == SeriesType::kHistogram) {
         float_count += (window.last - window.first) * kFloatsPerQuad;
         continue;
@@ -1107,6 +1186,96 @@ class RenderSnapshotBuilder {
                       x + width * 0.5f, bottom, plot, color);
   }
 
+  Color MacdHistogramColor(const SeriesData& series, size_t index) const {
+    const double value = series.histogram[index].value;
+    if (index == 0) {
+      return value >= 0.0 ? series.config.macd_positive_increasing
+                          : series.config.macd_negative_decreasing;
+    }
+    const double previous = series.histogram[index - 1].value;
+    if (value >= 0.0) {
+      return value > previous ? series.config.macd_positive_increasing
+                              : series.config.macd_positive_decreasing;
+    }
+    return value > previous ? series.config.macd_negative_increasing
+                            : series.config.macd_negative_decreasing;
+  }
+
+  template <typename Callback>
+  void VisitVisibleHistogram(size_t series_index, Callback&& callback) const {
+    const SeriesData& series = input_.additional_series[series_index];
+    if (series.config.source == SeriesSource::kOhlcvVolume) {
+      VisitVisibleSeriesCandles(series_index, [&](const Candle& candle) {
+        callback(candle.timestamp, candle.volume,
+                 candle.close >= candle.open ? series.config.up
+                                             : series.config.down);
+      });
+      return;
+    }
+    const SeriesWindow window = series.config.source == SeriesSource::kOhlcvMacd
+                                    ? VisibleWindowFor(series.histogram)
+                                    : series_windows_[series_index];
+    VisitVisibleSeriesSamples(
+        window, series.histogram, input_.config.logical_spacing,
+        [&](const HistogramPoint& point) {
+          const Color color =
+              series.config.source == SeriesSource::kOhlcvMacd
+                  ? MacdHistogramColor(
+                        series,
+                        static_cast<size_t>(&point - series.histogram.data()))
+                  : series.config.color;
+          callback(point.timestamp, point.value, color);
+        });
+  }
+
+  void AddLineComponent(const SeriesData& series,
+                        const std::vector<Candle>& values,
+                        const SeriesWindow& window, bool signal) {
+    if (values.empty()) {
+      return;
+    }
+    ChartConfig config = input_.config;
+    config.series_type = SeriesType::kLine;
+    config.line_width = signal ? series.config.macd_signal_line_width
+                               : series.config.line_width;
+    config.line =
+        signal ? series.config.macd_signal_color : series.config.color;
+    config.line_dashed = signal ? series.config.macd_signal_line_dashed
+                                : series.config.line_dashed;
+    config.line_gradient_top = signal ? series.config.macd_signal_gradient_top
+                                      : series.config.line_gradient_top;
+    config.line_gradient_bottom =
+        signal ? series.config.macd_signal_gradient_bottom
+               : series.config.line_gradient_bottom;
+    config.line_gradient_enabled =
+        signal ? series.config.macd_signal_gradient_enabled
+               : series.config.line_gradient_enabled;
+    config.line_source = OhlcValueSource::kClose;
+    config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
+    size_t first = window.first;
+    size_t last = window.last;
+    if (first > 0) {
+      --first;
+    }
+    if (last < values.size()) {
+      ++last;
+    }
+    AppendSeriesGeometry(
+        SeriesGeometryInput{
+            config,
+            values,
+            first,
+            last,
+            snapshot_->panes[series.pane_index].plot,
+            input_.visible_x_min,
+            input_.visible_x_max,
+            pane_y_min_[series.pane_index],
+            pane_y_max_[series.pane_index],
+            input_.config.logical_spacing ? &input_.candles : nullptr,
+        },
+        *content_vertices_);
+  }
+
   void AddAdditionalSeriesGeometry() {
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
       const SeriesData& series = input_.additional_series[index];
@@ -1118,21 +1287,29 @@ class RenderSnapshotBuilder {
         continue;
       }
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvMacd) {
+        VisitVisibleHistogram(
+            index, [&](double timestamp, double value, const Color& color) {
+              AddHistogramBar(pane_index, timestamp, value, color);
+            });
+        const Rect& plot = snapshot_->panes[pane_index].plot;
+        const float zero_y =
+            std::clamp(ProjectPaneY(pane_index, 0.0), plot.top, plot.bottom);
+        AppendClippedQuad(*content_vertices_, plot.left,
+                          zero_y - input_.config.display_scale * 0.5f,
+                          plot.right,
+                          zero_y + input_.config.display_scale * 0.5f, plot,
+                          series.config.macd_zero_line);
+        AddLineComponent(series, series.candles, window, false);
+        AddLineComponent(series, series.signal_candles,
+                         VisibleWindowFor(series.signal_candles), true);
+        continue;
+      }
       if (series.config.type == SeriesType::kHistogram) {
-        if (series.config.source == SeriesSource::kOhlcvVolume) {
-          VisitVisibleSeriesCandles(index, [&](const Candle& candle) {
-            AddHistogramBar(pane_index, candle.timestamp, candle.volume,
-                            candle.close >= candle.open ? series.config.up
-                                                        : series.config.down);
-          });
-        } else {
-          VisitVisibleSeriesSamples(
-              window, series.histogram, input_.config.logical_spacing,
-              [&](const HistogramPoint& point) {
-                AddHistogramBar(pane_index, point.timestamp, point.value,
-                                series.config.color);
-              });
-        }
+        VisitVisibleHistogram(
+            index, [&](double timestamp, double value, const Color& color) {
+              AddHistogramBar(pane_index, timestamp, value, color);
+            });
         continue;
       }
       if (series.candles.empty() || (window.first >= window.last &&
@@ -1242,51 +1419,111 @@ class RenderSnapshotBuilder {
     }
   }
 
-  void BuildRsiLegends() {
-    snapshot_->rsi_legends.clear();
+  void BuildIndicatorLegends() {
+    snapshot_->indicator_legends.clear();
     for (const SeriesData& series : input_.additional_series) {
       if (!series.config.visible ||
-          series.config.source != SeriesSource::kOhlcvRsi ||
+          (series.config.source != SeriesSource::kOhlcvRsi &&
+           series.config.source != SeriesSource::kOhlcvMacd) ||
           series.pane_index >= snapshot_->panes.size()) {
         continue;
       }
-      RsiLegend legend;
+      IndicatorLegend legend;
       legend.pane_id = series.config.pane_id;
       legend.pane_index = series.pane_index;
-      legend.period = series.config.rsi_period;
-      legend.text_color = series.config.rsi_text_color;
-      legend.value_color = series.config.color;
-      legend.text_color_set = series.config.rsi_text_color_set;
-      if (!series.candles.empty()) {
-        legend.latest_value = series.candles.back().close;
-        legend.value = legend.latest_value;
-        legend.has_latest_value = true;
-        legend.has_value = true;
+      if (series.config.source == SeriesSource::kOhlcvRsi) {
+        legend.kind = IndicatorKind::kRsi;
+        legend.period = series.config.rsi_period;
+        legend.text_color = series.config.rsi_text_color;
+        legend.text_color_set = series.config.rsi_text_color_set;
+        legend.value_count = 1;
+        legend.values[0].color = series.config.color;
+        if (!series.candles.empty()) {
+          IndicatorLegendValue& value = legend.values[0];
+          value.latest_value = series.candles.back().close;
+          value.value = value.latest_value;
+          value.has_latest_value = true;
+          value.has_value = true;
+        }
+      } else {
+        legend.kind = IndicatorKind::kMacd;
+        legend.fast_period = series.config.macd_fast_period;
+        legend.slow_period = series.config.macd_slow_period;
+        legend.signal_period = series.config.macd_signal_period;
+        legend.value_source = series.config.line_source;
+        legend.text_color = series.config.macd_text_color;
+        legend.text_color_set = series.config.macd_text_color_set;
+        legend.value_count = 3;
+        legend.values[1].color = series.config.color;
+        legend.values[2].color = series.config.macd_signal_color;
+        if (!series.candles.empty()) {
+          IndicatorLegendValue& value = legend.values[1];
+          value.latest_value = series.candles.back().close;
+          value.value = value.latest_value;
+          value.has_latest_value = true;
+          value.has_value = true;
+        }
+        if (!series.signal_candles.empty()) {
+          IndicatorLegendValue& value = legend.values[2];
+          value.latest_value = series.signal_candles.back().close;
+          value.value = value.latest_value;
+          value.has_latest_value = true;
+          value.has_value = true;
+        }
+        if (!series.histogram.empty()) {
+          IndicatorLegendValue& value = legend.values[0];
+          value.latest_value = series.histogram.back().value;
+          value.value = value.latest_value;
+          value.has_latest_value = true;
+          value.has_value = true;
+          value.color = MacdHistogramColor(series, series.histogram.size() - 1);
+        }
       }
-      snapshot_->rsi_legends.push_back(std::move(legend));
+      snapshot_->indicator_legends.push_back(std::move(legend));
     }
   }
 
-  void SelectRsiLegendValues(double timestamp) {
+  void SelectIndicatorLegendValues(double timestamp) {
     size_t legend_index = 0;
     for (const SeriesData& series : input_.additional_series) {
       if (!series.config.visible ||
-          series.config.source != SeriesSource::kOhlcvRsi ||
+          (series.config.source != SeriesSource::kOhlcvRsi &&
+           series.config.source != SeriesSource::kOhlcvMacd) ||
           series.pane_index >= snapshot_->panes.size()) {
         continue;
       }
-      RsiLegend& legend = snapshot_->rsi_legends[legend_index++];
-      const auto point =
-          std::lower_bound(series.candles.begin(), series.candles.end(),
-                           timestamp, [](const Candle& candle, double value) {
-                             return candle.timestamp < value;
-                           });
-      if (point != series.candles.end() && point->timestamp == timestamp) {
-        legend.value = point->close;
-        legend.has_value = true;
-      } else {
-        legend.value = 0.0;
-        legend.has_value = false;
+      IndicatorLegend& legend = snapshot_->indicator_legends[legend_index++];
+      const auto select_candle = [&](const std::vector<Candle>& values,
+                                     size_t value_index) {
+        const auto point =
+            std::lower_bound(values.begin(), values.end(), timestamp,
+                             [](const Candle& candle, double value) {
+                               return candle.timestamp < value;
+                             });
+        IndicatorLegendValue& value = legend.values[value_index];
+        value.has_value =
+            point != values.end() && point->timestamp == timestamp;
+        value.value = value.has_value ? point->close : 0.0;
+      };
+      if (series.config.source == SeriesSource::kOhlcvRsi) {
+        select_candle(series.candles, 0);
+        continue;
+      }
+      select_candle(series.candles, 1);
+      select_candle(series.signal_candles, 2);
+      const auto point = std::lower_bound(
+          series.histogram.begin(), series.histogram.end(), timestamp,
+          [](const HistogramPoint& item, double value) {
+            return item.timestamp < value;
+          });
+      IndicatorLegendValue& value = legend.values[0];
+      value.has_value =
+          point != series.histogram.end() && point->timestamp == timestamp;
+      value.value = value.has_value ? point->value : 0.0;
+      if (value.has_value) {
+        value.color =
+            MacdHistogramColor(series, static_cast<size_t>(std::distance(
+                                           series.histogram.begin(), point)));
       }
     }
   }
@@ -1344,7 +1581,7 @@ class RenderSnapshotBuilder {
 
     snapshot_->crosshair_visible = true;
     snapshot_->selected_candle = *nearest;
-    SelectRsiLegendValues(nearest->timestamp);
+    SelectIndicatorLegendValues(nearest->timestamp);
     snapshot_->crosshair_x =
         std::clamp(ProjectX(CandleX(nearest_index)), snapshot_->plot.left,
                    snapshot_->plot.right);

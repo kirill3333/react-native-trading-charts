@@ -4,6 +4,7 @@ import {
   type ChartAppearance,
   type ChartBorderStyle,
   type ChartFormatters,
+  type ChartLineAppearance,
   type ChartPaneOptions,
   type ChartSeriesType,
   type ChartTheme,
@@ -11,6 +12,7 @@ import {
   type CompactValueFormat,
   type CrosshairTooltipField,
   type HistogramSeriesOptions,
+  type MacdSeriesOptions,
   type MovingAverageSeriesOptions,
   type NormalizedAdditionalChartSeriesOptions,
   type OhlcValueSource,
@@ -56,6 +58,7 @@ const CHART_SERIES_TYPES = new Set<string>([
 const ADDITIONAL_SERIES_TYPES = new Set<string>([
   ...CHART_SERIES_TYPES,
   'histogram',
+  'macd',
 ]);
 
 const DEFAULT_THEME = {
@@ -1060,6 +1063,23 @@ type NormalizedRsiSeriesOptions = Extract<
   { source: { type: 'ohlcvRsi' } }
 >;
 
+type NormalizedMacdSeriesOptions = Extract<
+  NormalizedAdditionalChartSeriesOptions,
+  { source: { type: 'ohlcvMacd' } }
+>;
+
+function isMacdSeriesOptions(
+  options: NormalizedAdditionalChartSeriesOptions
+): options is NormalizedMacdSeriesOptions;
+function isMacdSeriesOptions(
+  options: AdditionalChartSeriesOptions
+): options is MacdSeriesOptions;
+function isMacdSeriesOptions(
+  options: AdditionalChartSeriesOptions | NormalizedAdditionalChartSeriesOptions
+): boolean {
+  return options.type === 'macd' && options.source.type === 'ohlcvMacd';
+}
+
 function isRsiSeriesOptions(
   options: NormalizedAdditionalChartSeriesOptions
 ): options is NormalizedRsiSeriesOptions;
@@ -1149,22 +1169,7 @@ function validateLineAppearance(
   name: string
 ): void {
   const appearance = options.appearance;
-  if (appearance?.width != null) {
-    finitePositive(appearance.width, `${name}.appearance.width`);
-  }
-  if (appearance?.color != null) {
-    color(appearance.color, `${name}.appearance.color`);
-  }
-  if (appearance?.style != null) {
-    lineStyle(appearance.style, `${name}.appearance.style`);
-  }
-  if (appearance?.gradient != null) {
-    color(appearance.gradient.topColor, `${name}.appearance.gradient.topColor`);
-    color(
-      appearance.gradient.bottomColor,
-      `${name}.appearance.gradient.bottomColor`
-    );
-  }
+  validateChartLineAppearance(appearance, `${name}.appearance`);
   if (options.type !== 'area') {
     return;
   }
@@ -1177,6 +1182,33 @@ function validateLineAppearance(
   }
   if (fill.bottomColor != null) {
     color(fill.bottomColor, `${name}.appearance.fill.bottomColor`);
+  }
+}
+
+function validateChartLineAppearance(
+  appearance: {
+    width?: number;
+    color?: string;
+    style?: 'solid' | 'dashed';
+    gradient?: { topColor: string; bottomColor: string };
+  } | undefined,
+  name: string
+): void {
+  if (appearance?.width != null) {
+    finitePositive(appearance.width, `${name}.width`);
+  }
+  if (appearance?.color != null) {
+    color(appearance.color, `${name}.color`);
+  }
+  if (appearance?.style != null) {
+    lineStyle(appearance.style, `${name}.style`);
+  }
+  if (appearance?.gradient != null) {
+    color(appearance.gradient.topColor, `${name}.gradient.topColor`);
+    color(
+      appearance.gradient.bottomColor,
+      `${name}.gradient.bottomColor`
+    );
   }
 }
 
@@ -1281,6 +1313,75 @@ function resolveRsiSeriesOptions(
   };
 }
 
+function resolveMacdSeriesOptions(
+  options: MacdSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedAdditionalChartSeriesOptions {
+  if (ids.paneId === 'main') {
+    throw new TypeError(`${name}.paneId must reference a separate MACD pane`);
+  }
+  const sourceSeriesId = identifier(
+    options.source.seriesId,
+    `${name}.source.seriesId`
+  );
+  const fastPeriod = options.source.fastPeriod ?? 12;
+  const slowPeriod = options.source.slowPeriod ?? 26;
+  const signalPeriod = options.source.signalPeriod ?? 9;
+  for (const [key, value] of [
+    ['fastPeriod', fastPeriod],
+    ['slowPeriod', slowPeriod],
+    ['signalPeriod', signalPeriod],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 1 || value > UINT32_MAX) {
+      throw new TypeError(
+        `${name}.source.${key} must be an integer from 1 to ${UINT32_MAX}`
+      );
+    }
+  }
+  if (fastPeriod >= slowPeriod) {
+    throw new TypeError(`${name}.source.fastPeriod must be less than slowPeriod`);
+  }
+  validateChartLineAppearance(
+    options.appearance?.macdLine,
+    `${name}.appearance.macdLine`
+  );
+  validateChartLineAppearance(
+    options.appearance?.signalLine,
+    `${name}.appearance.signalLine`
+  );
+  const histogram = options.appearance?.histogram;
+  for (const [key, value] of [
+    ['positiveIncreasingColor', histogram?.positiveIncreasingColor],
+    ['positiveDecreasingColor', histogram?.positiveDecreasingColor],
+    ['negativeIncreasingColor', histogram?.negativeIncreasingColor],
+    ['negativeDecreasingColor', histogram?.negativeDecreasingColor],
+    ['textColor', options.appearance?.textColor],
+    ['zeroLineColor', options.appearance?.zeroLineColor],
+  ] as const) {
+    if (value != null) {
+      color(value, `${name}.appearance.${key}`);
+    }
+  }
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    source: {
+      type: 'ohlcvMacd',
+      seriesId: sourceSeriesId,
+      fastPeriod,
+      slowPeriod,
+      signalPeriod,
+      valueSource: ohlcValueSource(
+        options.source.valueSource,
+        `${name}.source.valueSource`
+      ),
+    },
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
+}
+
 function resolveHistogramSeriesOptions(
   options: HistogramSeriesOptions,
   name: string,
@@ -1319,6 +1420,9 @@ export function resolveAdditionalSeriesOptions(
   name = 'options'
 ): NormalizedAdditionalChartSeriesOptions {
   const ids = resolveSeriesIdentifiers(options, name);
+  if (isMacdSeriesOptions(options)) {
+    return resolveMacdSeriesOptions(options, name, ids);
+  }
   if (isRsiSeriesOptions(options)) {
     return resolveRsiSeriesOptions(options, name, ids);
   }
@@ -1327,7 +1431,7 @@ export function resolveAdditionalSeriesOptions(
   }
   if (!isAdditionalSeriesType(options.type)) {
     throw new TypeError(
-      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'histogram'`
+      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'histogram' or 'macd'`
     );
   }
   if (options.type === 'histogram') {
@@ -1352,6 +1456,8 @@ type AdditionalSeriesResolutionContext = {
   >;
   appearance: ResolvedChartAppearance;
   theme: Required<ChartTheme>;
+  rsiPaneIds: ReadonlySet<string>;
+  macdPaneIds: ReadonlySet<string>;
 };
 
 function collectKnownOhlcSeries(
@@ -1361,6 +1467,7 @@ function collectKnownOhlcSeries(
   items.forEach((item) => {
     if (
       item.type !== 'histogram' &&
+      item.type !== 'macd' &&
       !isRsiSeriesOptions(item) &&
       !isMovingAverageSeriesOptions(item)
     ) {
@@ -1371,6 +1478,99 @@ function collectKnownOhlcSeries(
     }
   });
   return result;
+}
+
+function resolveConfiguredMacdSeries(
+  resolved: NormalizedMacdSeriesOptions,
+  name: string,
+  context: AdditionalSeriesResolutionContext
+): ResolvedAdditionalChartSeriesOptions {
+  if (!context.knownOhlcSeries.has(resolved.source.seriesId)) {
+    throw new TypeError(
+      `${name}.source.seriesId must reference data-backed OHLC data`
+    );
+  }
+  if (context.rsiPaneIds.has(resolved.paneId)) {
+    throw new TypeError(`${name}.paneId cannot share a pane with RSI`);
+  }
+  const baseLine = context.appearance.line;
+  const macdColor = color(
+    resolved.appearance?.macdLine?.color ?? baseLine.color,
+    `${name}.appearance.macdLine.color`
+  );
+  const signalColor = color(
+    resolved.appearance?.signalLine?.color ?? context.theme.axisTextColor,
+    `${name}.appearance.signalLine.color`
+  );
+  const textColor =
+    resolved.appearance?.textColor == null
+      ? {}
+      : {
+          textColor: color(
+            resolved.appearance.textColor,
+            `${name}.appearance.textColor`
+          ),
+        };
+  const line = (
+    input: ChartLineAppearance | undefined,
+    fallbackColor: string,
+    prefix: string
+  ) => {
+    const result: Required<
+      Pick<ChartLineAppearance, 'width' | 'color' | 'style'>
+    > &
+      Pick<ChartLineAppearance, 'gradient'> = {
+      width: finitePositive(input?.width ?? baseLine.width, `${prefix}.width`),
+      color: color(input?.color ?? fallbackColor, `${prefix}.color`),
+      style: input?.style ?? baseLine.style,
+    };
+    if (input?.gradient != null) {
+      result.gradient = input.gradient;
+    }
+    return result;
+  };
+  return {
+    ...resolved,
+    appearance: {
+      macdLine: line(
+        resolved.appearance?.macdLine,
+        macdColor,
+        `${name}.appearance.macdLine`
+      ),
+      signalLine: line(
+        resolved.appearance?.signalLine,
+        signalColor,
+        `${name}.appearance.signalLine`
+      ),
+      histogram: {
+        positiveIncreasingColor: color(
+          resolved.appearance?.histogram?.positiveIncreasingColor ??
+            context.theme.upColor,
+          `${name}.appearance.histogram.positiveIncreasingColor`
+        ),
+        positiveDecreasingColor: color(
+          resolved.appearance?.histogram?.positiveDecreasingColor ??
+            colorWithAlpha(context.theme.upColor, '80'),
+          `${name}.appearance.histogram.positiveDecreasingColor`
+        ),
+        negativeIncreasingColor: color(
+          resolved.appearance?.histogram?.negativeIncreasingColor ??
+            colorWithAlpha(context.theme.downColor, '80'),
+          `${name}.appearance.histogram.negativeIncreasingColor`
+        ),
+        negativeDecreasingColor: color(
+          resolved.appearance?.histogram?.negativeDecreasingColor ??
+            context.theme.downColor,
+          `${name}.appearance.histogram.negativeDecreasingColor`
+        ),
+      },
+      zeroLineColor: color(
+        resolved.appearance?.zeroLineColor ?? context.theme.gridColor,
+        `${name}.appearance.zeroLineColor`
+      ),
+      ...textColor,
+    },
+  };
 }
 
 function resolveConfiguredSeriesIdentifiers(
@@ -1405,6 +1605,9 @@ function resolveConfiguredRsiSeries(
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
+  if (context.macdPaneIds.has(resolved.paneId)) {
+    throw new TypeError(`${name}.paneId cannot share a pane with MACD`);
+  }
   if (!context.knownOhlcSeries.has(resolved.source.seriesId)) {
     throw new TypeError(
       `${name}.source.seriesId must reference data-backed OHLC data`
@@ -1514,6 +1717,13 @@ function resolveConfiguredAdditionalSeries(
 ): ResolvedAdditionalChartSeriesOptions {
   const name = `additionalSeries[${index}]`;
   const ids = resolveConfiguredSeriesIdentifiers(item, name, context);
+  if (item.type === 'macd') {
+    const resolved = resolveMacdSeriesOptions(item, name, ids);
+    if (!isMacdSeriesOptions(resolved)) {
+      throw new TypeError(`${name}.type must remain 'macd'`);
+    }
+    return resolveConfiguredMacdSeries(resolved, name, context);
+  }
   if (item.type === 'histogram') {
     return resolveConfiguredHistogramSeries(item, name, ids, context);
   }
@@ -1687,6 +1897,16 @@ export function resolveChartConfig(
     ]),
     appearance,
     theme,
+    rsiPaneIds: new Set(
+      additionalSeriesInputs
+        .filter(isRsiSeriesOptions)
+        .map((series) => series.paneId)
+    ),
+    macdPaneIds: new Set(
+      additionalSeriesInputs
+        .filter(isMacdSeriesOptions)
+        .map((series) => series.paneId)
+    ),
   };
   const additionalSeries: ResolvedAdditionalChartSeriesOptions[] =
     additionalSeriesInputs.map((item, index) =>

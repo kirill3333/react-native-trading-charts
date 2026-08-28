@@ -36,6 +36,8 @@ using trading_charts::BucketOrigin;
 using trading_charts::CandleTimestampPolicy;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
+using trading_charts::IndicatorKind;
+using trading_charts::IndicatorLegend;
 using trading_charts::OhlcValueSource;
 using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
@@ -43,7 +45,6 @@ using trading_charts::PaneSnapshot;
 using trading_charts::PriceExtremum;
 using trading_charts::RenderSnapshot;
 using trading_charts::ResolutionUnit;
-using trading_charts::RsiLegend;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
@@ -1600,24 +1601,47 @@ struct TCTextPresentation {
   if (staticUpdated || selectionUpdated) {
     std::vector<NSUInteger> paneRows(current.panes.size(), 0);
     NSUInteger legendIndex = 0;
-    for (const RsiLegend &legend : current.rsi_legends) {
+    for (const IndicatorLegend &legend : current.indicator_legends) {
       if (legend.pane_index >= current.panes.size()) continue;
       const PaneSnapshot &pane = current.panes[legend.pane_index];
       NSString *scaleId =
           [NSString stringWithUTF8String:pane.price_scale_id.c_str()] ?: @"main";
-      NSString *title = [NSString stringWithFormat:@"RSI %u", legend.period];
-      NSString *value = legend.has_value
-          ? [self formatValue:legend.value
-                         role:[@"scale:" stringByAppendingString:scaleId]
-                     snapshot:current]
-          : @"—";
-      NSString *cacheKey = [NSString stringWithFormat:
-          @"rsi\x1f%zu\x1f%u\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f"
-           @"\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f\x1f%d",
-          legend.pane_index, legend.period, value, legend.text_color.r,
-          legend.text_color.g, legend.text_color.b, legend.text_color.a,
-          legend.value_color.r, legend.value_color.g, legend.value_color.b,
-          legend.value_color.a, legend.text_color_set];
+      NSString *title;
+      if (legend.kind == IndicatorKind::kMacd) {
+        NSString *source = legend.value_source == OhlcValueSource::kOpen
+            ? @"OPEN"
+            : (legend.value_source == OhlcValueSource::kHigh
+                   ? @"HIGH"
+                   : (legend.value_source == OhlcValueSource::kLow
+                          ? @"LOW"
+                          : @"CLOSE"));
+        title = [NSString stringWithFormat:@"MACD %u %u %@ %u",
+                                           legend.fast_period,
+                                           legend.slow_period, source,
+                                           legend.signal_period];
+      } else {
+        title = [NSString stringWithFormat:@"RSI %u", legend.period];
+      }
+      NSMutableArray<NSString *> *values = [NSMutableArray array];
+      NSMutableString *cacheKey = [NSMutableString stringWithFormat:
+          @"indicator\x1f%zu\x1f%d\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f\x1f%d",
+          legend.pane_index, static_cast<int>(legend.kind), title,
+          legend.text_color.r, legend.text_color.g, legend.text_color.b,
+          legend.text_color.a, legend.text_color_set];
+      for (size_t valueIndex = 0; valueIndex < legend.value_count;
+           ++valueIndex) {
+        const auto &legendValue = legend.values[valueIndex];
+        NSString *value = legendValue.has_value
+            ? [self formatValue:legendValue.value
+                           role:[@"scale:" stringByAppendingString:scaleId]
+                       snapshot:current]
+            : @"—";
+        [values addObject:value];
+        [cacheKey appendFormat:@"\x1f%@\x1f%.6f\x1f%.6f\x1f%.6f\x1f%.6f",
+                               value, legendValue.color.r,
+                               legendValue.color.g, legendValue.color.b,
+                               legendValue.color.a];
+      }
       TCTextLayout *layout = [_axisLayoutCache objectForKey:cacheKey];
       if (layout) {
         ++metrics.layoutCacheHits;
@@ -1632,14 +1656,22 @@ struct TCTextPresentation {
           titleAttributes = customTitleAttributes;
         }
         NSMutableAttributedString *text = [[NSMutableAttributedString alloc]
-            initWithString:[title stringByAppendingString:@" "]
+            initWithString:title
                 attributes:titleAttributes];
-        NSMutableDictionary *valueAttributes = [_yAxisAttributes mutableCopy];
-        valueAttributes[NSForegroundColorAttributeName] =
-            TCUIColor(legend.text_color_set ? legend.text_color
-                                           : legend.value_color);
-        [text appendAttributedString:[[NSAttributedString alloc]
-            initWithString:value attributes:valueAttributes]];
+        for (size_t valueIndex = 0; valueIndex < legend.value_count;
+             ++valueIndex) {
+          NSMutableDictionary *valueAttributes =
+              [_yAxisAttributes mutableCopy];
+          const TCColor valueColor =
+              legend.kind == IndicatorKind::kRsi && legend.text_color_set
+                  ? legend.text_color
+                  : legend.values[valueIndex].color;
+          valueAttributes[NSForegroundColorAttributeName] =
+              TCUIColor(valueColor);
+          [text appendAttributedString:[[NSAttributedString alloc]
+              initWithString:[@" " stringByAppendingString:values[valueIndex]]
+                  attributes:valueAttributes]];
+        }
         layout = [[TCTextLayout alloc] initWithAttributedString:text];
         [_axisLayoutCache setObject:layout forKey:cacheKey];
       }
@@ -2589,6 +2621,8 @@ struct TCTextPresentation {
     config.type = SeriesType::kHistogram;
   } else if ([type isEqualToString:@"line"]) {
     config.type = SeriesType::kLine;
+  } else if ([type isEqualToString:@"macd"]) {
+    config.type = SeriesType::kLine;
   } else if ([type isEqualToString:@"area"]) {
     config.type = SeriesType::kArea;
   }
@@ -2609,6 +2643,19 @@ struct TCTextPresentation {
         ? [levels[@"oversold"] doubleValue] : 30.0;
     config.rsi_overbought = levels[@"overbought"]
         ? [levels[@"overbought"] doubleValue] : 70.0;
+  } else if ([source isKindOfClass:NSDictionary.class] &&
+             [source[@"type"] isEqualToString:@"ohlcvMacd"]) {
+    config.source = SeriesSource::kOhlcvMacd;
+    config.source_series_id = [source[@"seriesId"] UTF8String] ?: "main";
+    config.macd_fast_period = source[@"fastPeriod"]
+        ? static_cast<std::uint32_t>([source[@"fastPeriod"] unsignedIntegerValue])
+        : 12;
+    config.macd_slow_period = source[@"slowPeriod"]
+        ? static_cast<std::uint32_t>([source[@"slowPeriod"] unsignedIntegerValue])
+        : 26;
+    config.macd_signal_period = source[@"signalPeriod"]
+        ? static_cast<std::uint32_t>([source[@"signalPeriod"] unsignedIntegerValue])
+        : 9;
   } else if ([source isKindOfClass:NSDictionary.class] &&
              ([source[@"type"] isEqualToString:@"ohlcvSma"] ||
               [source[@"type"] isEqualToString:@"ohlcvEma"])) {
@@ -2683,6 +2730,58 @@ struct TCTextPresentation {
     config.line_gap_threshold_ms = item[@"gapThresholdMs"]
         ? [item[@"gapThresholdMs"] doubleValue]
         : 0.0;
+  }
+  if (config.source == SeriesSource::kOhlcvMacd) {
+    NSDictionary *macdLine = appearance[@"macdLine"];
+    NSDictionary *signalLine = appearance[@"signalLine"];
+    NSDictionary *histogram = appearance[@"histogram"];
+    config.line_width = macdLine[@"width"]
+        ? [macdLine[@"width"] floatValue]
+        : _lineAppearanceWidth;
+    config.color = TCColorFromHex(macdLine[@"color"], _lineAppearanceColor);
+    config.line_dashed = macdLine[@"style"]
+        ? [macdLine[@"style"] isEqualToString:@"dashed"]
+        : _lineAppearanceDashed;
+    NSDictionary *macdGradient = macdLine[@"gradient"];
+    config.line_gradient_enabled =
+        [macdGradient isKindOfClass:NSDictionary.class];
+    config.line_gradient_top =
+        TCColorFromHex(macdGradient[@"topColor"], config.color);
+    config.line_gradient_bottom =
+        TCColorFromHex(macdGradient[@"bottomColor"], config.color);
+    config.macd_signal_line_width = signalLine[@"width"]
+        ? [signalLine[@"width"] floatValue]
+        : _lineAppearanceWidth;
+    config.macd_signal_color =
+        TCColorFromHex(signalLine[@"color"], _config.axis_text);
+    config.macd_signal_line_dashed = signalLine[@"style"]
+        ? [signalLine[@"style"] isEqualToString:@"dashed"]
+        : _lineAppearanceDashed;
+    NSDictionary *signalGradient = signalLine[@"gradient"];
+    config.macd_signal_gradient_enabled =
+        [signalGradient isKindOfClass:NSDictionary.class];
+    config.macd_signal_gradient_top = TCColorFromHex(
+        signalGradient[@"topColor"], config.macd_signal_color);
+    config.macd_signal_gradient_bottom = TCColorFromHex(
+        signalGradient[@"bottomColor"], config.macd_signal_color);
+    TCColor positiveFaded = _config.up;
+    positiveFaded.a *= 0.5f;
+    TCColor negativeFaded = _config.down;
+    negativeFaded.a *= 0.5f;
+    config.macd_positive_increasing = TCColorFromHex(
+        histogram[@"positiveIncreasingColor"], _config.up);
+    config.macd_positive_decreasing = TCColorFromHex(
+        histogram[@"positiveDecreasingColor"], positiveFaded);
+    config.macd_negative_increasing = TCColorFromHex(
+        histogram[@"negativeIncreasingColor"], negativeFaded);
+    config.macd_negative_decreasing = TCColorFromHex(
+        histogram[@"negativeDecreasingColor"], _config.down);
+    config.macd_zero_line =
+        TCColorFromHex(appearance[@"zeroLineColor"], _config.grid);
+    config.macd_text_color_set =
+        [appearance[@"textColor"] isKindOfClass:NSString.class];
+    config.macd_text_color =
+        TCColorFromHex(appearance[@"textColor"], _config.axis_text);
   }
   return config;
 }

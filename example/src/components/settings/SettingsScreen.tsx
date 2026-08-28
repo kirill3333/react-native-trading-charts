@@ -52,6 +52,21 @@ const EMA_PERIOD_OPTIONS = [
   { label: '50', value: 50 },
   { label: '100', value: 100 },
 ] as const;
+const MACD_FAST_PERIOD_OPTIONS = [
+  { label: '8', value: 8 },
+  { label: '12', value: 12 },
+  { label: '16', value: 16 },
+] as const;
+const MACD_SLOW_PERIOD_OPTIONS = [
+  { label: '21', value: 21 },
+  { label: '26', value: 26 },
+  { label: '32', value: 32 },
+] as const;
+const MACD_SIGNAL_PERIOD_OPTIONS = [
+  { label: '5', value: 5 },
+  { label: '9', value: 9 },
+  { label: '12', value: 12 },
+] as const;
 const VALUE_SOURCE_OPTIONS = [
   { label: 'Open', value: 'open' },
   { label: 'High', value: 'high' },
@@ -263,6 +278,14 @@ export function SettingsScreen() {
             options={PANE_HEIGHT_WEIGHT_OPTIONS}
             value={settings.rsiPaneHeightWeight}
           />
+          <SettingSegments
+            label="MACD"
+            onValueChange={(macdPaneHeightWeight) =>
+              updateSettings({ macdPaneHeightWeight })
+            }
+            options={PANE_HEIGHT_WEIGHT_OPTIONS}
+            value={settings.macdPaneHeightWeight}
+          />
         </SettingsSection>
 
         <SettingsSection title="RSI">
@@ -305,6 +328,204 @@ export function SettingsScreen() {
             value={
               settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor
             }
+          />
+        </SettingsSection>
+
+        <SettingsSection title="MACD">
+          <SettingSegments
+            label="Fast period"
+            onValueChange={(macdFastPeriod) =>
+              updateSettings({ macdFastPeriod })
+            }
+            options={MACD_FAST_PERIOD_OPTIONS}
+            value={settings.macdFastPeriod}
+          />
+          <SettingSegments
+            label="Slow period"
+            onValueChange={(macdSlowPeriod) =>
+              updateSettings({ macdSlowPeriod })
+            }
+            options={MACD_SLOW_PERIOD_OPTIONS}
+            value={settings.macdSlowPeriod}
+          />
+          <SettingSegments
+            label="Signal period"
+            onValueChange={(macdSignalPeriod) =>
+              updateSettings({ macdSignalPeriod })
+            }
+            options={MACD_SIGNAL_PERIOD_OPTIONS}
+            value={settings.macdSignalPeriod}
+          />
+          <SettingSegments
+            label="Value source"
+            onValueChange={(macdValueSource) =>
+              updateSettings({ macdValueSource })
+            }
+            options={VALUE_SOURCE_OPTIONS}
+            value={settings.macdValueSource}
+          />
+          <SettingSegments
+            label="MACD width"
+            onValueChange={(macdLineWidth) =>
+              updateSettings({ macdLineWidth })
+            }
+            options={INDICATOR_LINE_WIDTH_OPTIONS}
+            value={settings.macdLineWidth}
+          />
+          <SettingSegments
+            label="MACD style"
+            onValueChange={(macdLineStyle) =>
+              updateSettings({ macdLineStyle })
+            }
+            options={LINE_OPTIONS}
+            value={settings.macdLineStyle}
+          />
+          <HexColorSetting
+            label="MACD color"
+            onValueChange={(macdLineColor) =>
+              updateSettings({ macdLineColor })
+            }
+            value={settings.macdLineColor ?? theme.macd.lineColor}
+          />
+          <SettingSwitch
+            label="MACD gradient"
+            onValueChange={(macdGradientEnabled) =>
+              updateSettings({ macdGradientEnabled })
+            }
+            value={settings.macdGradientEnabled}
+          />
+          {settings.macdGradientEnabled ? (
+            <>
+              <HexColorSetting
+                label="MACD gradient top"
+                onValueChange={(macdGradientTopColor) =>
+                  updateSettings({ macdGradientTopColor })
+                }
+                value={
+                  settings.macdGradientTopColor ?? theme.macd.gradientTopColor
+                }
+              />
+              <HexColorSetting
+                label="MACD gradient bottom"
+                onValueChange={(macdGradientBottomColor) =>
+                  updateSettings({ macdGradientBottomColor })
+                }
+                value={
+                  settings.macdGradientBottomColor ??
+                  theme.macd.gradientBottomColor
+                }
+              />
+            </>
+          ) : null}
+          <SettingSegments
+            label="Signal width"
+            onValueChange={(macdSignalLineWidth) =>
+              updateSettings({ macdSignalLineWidth })
+            }
+            options={INDICATOR_LINE_WIDTH_OPTIONS}
+            value={settings.macdSignalLineWidth}
+          />
+          <SettingSegments
+            label="Signal style"
+            onValueChange={(macdSignalLineStyle) =>
+              updateSettings({ macdSignalLineStyle })
+            }
+            options={LINE_OPTIONS}
+            value={settings.macdSignalLineStyle}
+          />
+          <HexColorSetting
+            label="Signal color"
+            onValueChange={(macdSignalLineColor) =>
+              updateSettings({ macdSignalLineColor })
+            }
+            value={
+              settings.macdSignalLineColor ?? theme.macd.signalLineColor
+            }
+          />
+          <SettingSwitch
+            label="Signal gradient"
+            onValueChange={(macdSignalGradientEnabled) =>
+              updateSettings({ macdSignalGradientEnabled })
+            }
+            value={settings.macdSignalGradientEnabled}
+          />
+          {settings.macdSignalGradientEnabled ? (
+            <>
+              <HexColorSetting
+                label="Signal gradient top"
+                onValueChange={(macdSignalGradientTopColor) =>
+                  updateSettings({ macdSignalGradientTopColor })
+                }
+                value={
+                  settings.macdSignalGradientTopColor ??
+                  theme.macd.signalGradientTopColor
+                }
+              />
+              <HexColorSetting
+                label="Signal gradient bottom"
+                onValueChange={(macdSignalGradientBottomColor) =>
+                  updateSettings({ macdSignalGradientBottomColor })
+                }
+                value={
+                  settings.macdSignalGradientBottomColor ??
+                  theme.macd.signalGradientBottomColor
+                }
+              />
+            </>
+          ) : null}
+          <HexColorSetting
+            label="Positive increasing"
+            onValueChange={(macdPositiveIncreasingColor) =>
+              updateSettings({ macdPositiveIncreasingColor })
+            }
+            value={
+              settings.macdPositiveIncreasingColor ??
+              theme.macd.positiveIncreasingColor
+            }
+          />
+          <HexColorSetting
+            label="Positive decreasing"
+            onValueChange={(macdPositiveDecreasingColor) =>
+              updateSettings({ macdPositiveDecreasingColor })
+            }
+            value={
+              settings.macdPositiveDecreasingColor ??
+              theme.macd.positiveDecreasingColor
+            }
+          />
+          <HexColorSetting
+            label="Negative increasing"
+            onValueChange={(macdNegativeIncreasingColor) =>
+              updateSettings({ macdNegativeIncreasingColor })
+            }
+            value={
+              settings.macdNegativeIncreasingColor ??
+              theme.macd.negativeIncreasingColor
+            }
+          />
+          <HexColorSetting
+            label="Negative decreasing"
+            onValueChange={(macdNegativeDecreasingColor) =>
+              updateSettings({ macdNegativeDecreasingColor })
+            }
+            value={
+              settings.macdNegativeDecreasingColor ??
+              theme.macd.negativeDecreasingColor
+            }
+          />
+          <HexColorSetting
+            label="Legend text"
+            onValueChange={(macdTextColor) =>
+              updateSettings({ macdTextColor })
+            }
+            value={settings.macdTextColor ?? theme.macd.textColor}
+          />
+          <HexColorSetting
+            label="Zero line"
+            onValueChange={(macdZeroLineColor) =>
+              updateSettings({ macdZeroLineColor })
+            }
+            value={settings.macdZeroLineColor ?? theme.macd.zeroLineColor}
           />
         </SettingsSection>
 

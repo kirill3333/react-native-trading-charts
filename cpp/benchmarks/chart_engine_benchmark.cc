@@ -102,6 +102,25 @@ bool AddMovingAverages(benchmark::State& state, ChartEngine& engine) {
   return true;
 }
 
+bool AddMacd(benchmark::State& state, ChartEngine& engine) {
+  PaneConfig main;
+  main.height_weight = 3.0;
+  PaneConfig pane;
+  pane.pane_id = "macd";
+  pane.price_scale_id = "macd";
+  engine.SetPanes({main, pane}, false);
+  SeriesConfig macd;
+  macd.series_id = "macd";
+  macd.pane_id = "macd";
+  macd.price_scale_id = "macd";
+  macd.type = SeriesType::kLine;
+  macd.source = SeriesSource::kOhlcvMacd;
+  macd.source_series_id = "main";
+  if (engine.AddSeries(macd) == UpdateStatus::kApplied) return true;
+  state.SkipWithError("Unable to configure MACD benchmark series");
+  return false;
+}
+
 bool LoadHistory(benchmark::State& state, ChartEngine& engine,
                  const std::vector<double>& history) {
   if (engine.SetHistory(history.data(), history.size()) ==
@@ -313,6 +332,53 @@ void BM_MovingAverageCrosshairOnly(benchmark::State& state) {
   state.counters["indicators"] = 4.0;
 }
 
+void BM_MacdSetHistory(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    state.PauseTiming();
+    auto engine = MakeEngine(50);
+    if (!AddMacd(state, *engine)) return;
+    state.ResumeTiming();
+    const UpdateStatus status =
+        engine->SetHistory(history.data(), history.size());
+    benchmark::DoNotOptimize(status);
+    benchmark::ClobberMemory();
+  }
+  state.SetItemsProcessed(state.iterations() *
+                          static_cast<int64_t>(candle_count));
+  state.counters["candles"] = static_cast<double>(candle_count);
+}
+
+void BM_MacdLiveUpdateAndSnapshot(benchmark::State& state) {
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  auto engine = MakeEngine(50);
+  if (!AddMacd(state, *engine) || !LoadHistory(state, *engine, history)) return;
+  const double timestamp =
+      history[history.size() - trading_charts::kCandleValueCount];
+  bool higher = true;
+  std::shared_ptr<const RenderSnapshot> snapshot;
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    const double close = higher ? 110.0 : 109.5;
+    higher = !higher;
+    const double candle[] = {timestamp, 109.0, 111.0, 108.0, close, 20.0};
+    const UpdateStatus status =
+        engine->UpdateCandle(candle, trading_charts::kCandleValueCount);
+    if (status != UpdateStatus::kApplied) {
+      state.SkipWithError("MACD live update was not applied");
+      break;
+    }
+    snapshot = engine->Snapshot();
+    benchmark::DoNotOptimize(snapshot.get());
+    benchmark::ClobberMemory();
+  }
+  if (snapshot != nullptr) SetSnapshotCounters(state, *snapshot);
+  state.counters["candles"] = static_cast<double>(candle_count);
+}
+
 void BM_SnapshotCold(benchmark::State& state) {
   const size_t total_count = static_cast<size_t>(state.range(0));
   const size_t visible_count = static_cast<size_t>(state.range(1));
@@ -500,6 +566,8 @@ BENCHMARK(BM_RsiLiveUpdateAndSnapshot)->Arg(1000)->Arg(10000)->Arg(100000);
 BENCHMARK(BM_MovingAverageSetHistory)->Apply(MovingAverageArguments);
 BENCHMARK(BM_MovingAverageLiveUpdateAndSnapshot)->Apply(MovingAverageArguments);
 BENCHMARK(BM_MovingAverageCrosshairOnly)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MacdSetHistory)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MacdLiveUpdateAndSnapshot)->Apply(MovingAverageArguments);
 BENCHMARK(BM_SnapshotCold)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCached)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCrosshairOnly)->Apply(InteractionArguments);

@@ -7,6 +7,7 @@ import {
 } from '../chartSettingsState';
 import {
   buildMainSeriesColors,
+  buildMacdSeries,
   buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
@@ -35,6 +36,7 @@ describe('chart settings', () => {
       mainPaneHeightWeight: 3,
       volumePaneHeightWeight: 1,
       rsiPaneHeightWeight: 1,
+      macdPaneHeightWeight: 1,
       rsiLineWidth: 0.5,
       rsiLineColorOverride: null,
       rsiTextColorOverride: null,
@@ -54,6 +56,14 @@ describe('chart settings', () => {
       emaLineStyle: 'dashed',
       emaLineColor: '#F5A623',
       emaGradientEnabled: false,
+      macdFastPeriod: 12,
+      macdSlowPeriod: 26,
+      macdSignalPeriod: 9,
+      macdValueSource: 'close',
+      macdLineColor: null,
+      macdSignalLineColor: null,
+      macdPositiveIncreasingColor: null,
+      macdZeroLineColor: null,
       themeMode: 'dark',
       xAxisSpacing: 'time',
       yAxisPosition: 'right',
@@ -63,6 +73,73 @@ describe('chart settings', () => {
       locale: 'en-GB',
       timeZone: 'utc',
       yAxisFormat: 'auto',
+    });
+  });
+
+  it('builds MACD from theme defaults and independent component styles', () => {
+    expect(buildMacdSeries(DEFAULT_CHART_SETTINGS)).toMatchObject({
+      seriesId: 'macd',
+      type: 'macd',
+      paneId: 'macd',
+      priceScaleId: 'macd',
+      source: {
+        type: 'ohlcvMacd',
+        seriesId: 'main',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        valueSource: 'close',
+      },
+      appearance: {
+        macdLine: { color: APP_THEMES.dark.macd.lineColor },
+        signalLine: { color: APP_THEMES.dark.macd.signalLineColor },
+        histogram: {
+          positiveIncreasingColor:
+            APP_THEMES.dark.macd.positiveIncreasingColor,
+          negativeDecreasingColor:
+            APP_THEMES.dark.macd.negativeDecreasingColor,
+        },
+        textColor: APP_THEMES.dark.macd.textColor,
+        zeroLineColor: APP_THEMES.dark.macd.zeroLineColor,
+      },
+    });
+
+    const custom =
+      buildMacdSeries(
+        settingsWith({
+          themeMode: 'light',
+          macdFastPeriod: 8,
+          macdSlowPeriod: 21,
+          macdSignalPeriod: 5,
+          macdValueSource: 'high',
+          macdLineStyle: 'dashed',
+          macdLineColor: '#112233',
+          macdGradientEnabled: true,
+          macdGradientTopColor: '#223344',
+          macdGradientBottomColor: '#334455',
+          macdSignalLineWidth: 2.5,
+          macdSignalLineColor: '#445566',
+          macdPositiveIncreasingColor: '#556677',
+          macdZeroLineColor: '#66778880',
+        })
+      );
+    expect(custom).toMatchObject({
+      source: {
+        fastPeriod: 8,
+        slowPeriod: 21,
+        signalPeriod: 5,
+        valueSource: 'high',
+      },
+      appearance: {
+        macdLine: {
+          style: 'dashed',
+          color: '#112233',
+          gradient: { topColor: '#223344', bottomColor: '#334455' },
+        },
+        signalLine: { width: 2.5, color: '#445566' },
+        histogram: { positiveIncreasingColor: '#556677' },
+        zeroLineColor: '#66778880',
+      },
     });
   });
 

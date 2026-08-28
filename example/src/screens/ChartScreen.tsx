@@ -178,6 +178,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
   const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
   const [showRsi, setShowRsi] = useState(true);
+  const [showMacd, setShowMacd] = useState(false);
   const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
@@ -351,12 +352,29 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
               precision={ticker.precision}
               showVolume={showVolume}
               showRsi={showRsi}
+              showMacd={showMacd}
               resolution={resolution}
             />
             <ConnectionBadge status={status} />
           </View>
         </View>
         <View style={styles.chartControls}>
+          <Pressable
+            accessibilityLabel={showMacd ? 'Hide MACD' : 'Show MACD'}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showMacd }}
+            onPress={() => setShowMacd((visible) => !visible)}
+            style={({ pressed }) => [
+              styles.chartControlButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              color={showMacd ? theme.macd.lineColor : theme.colors.iconMuted}
+              name="ssid-chart"
+              size={24}
+            />
+          </Pressable>
           <Pressable
             accessibilityLabel={showRsi ? 'Hide RSI' : 'Show RSI'}
             accessibilityRole="switch"
