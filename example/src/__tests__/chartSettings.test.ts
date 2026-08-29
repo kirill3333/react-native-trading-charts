@@ -11,6 +11,7 @@ import {
   buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
+  buildChartPanes,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
@@ -142,6 +143,35 @@ describe('chart settings', () => {
       },
     });
   });
+
+  it.each([0.00000001, 0.000000000001])(
+    'uses significant MACD formatting for a tiny market with minMove %s',
+    (minMove) => {
+      const panes = buildChartPanes(settingsWith({ locale: 'en-US' }), {
+        minMove,
+        showVolume: false,
+        showRsi: false,
+        showMacd: true,
+      });
+
+      expect(panes).toHaveLength(2);
+      expect(panes?.[1]).toEqual({
+        paneId: 'macd',
+        heightWeight: 1,
+        minHeight: 96,
+        priceScale: {
+          priceScaleId: 'macd',
+          valueFormat: {
+            type: 'significant',
+            significantDigits: 3,
+            minMove,
+            locale: 'en-US',
+            useGrouping: false,
+          },
+        },
+      });
+    }
+  );
 
   it('builds enabled SMA and EMA overlays with independent styles', () => {
     expect(buildMovingAverageSeries(DEFAULT_CHART_SETTINGS)).toEqual([]);

@@ -4,7 +4,6 @@ import {
   TradingChartsView,
   type AdditionalChartSeriesOptions,
   type ChartResolution,
-  type ChartPaneOptions,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
 
@@ -14,6 +13,7 @@ import {
   buildMovingAverageSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
+  buildChartPanes,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
@@ -52,68 +52,16 @@ export const InteractiveChart = memo(function InteractiveChart({
       }),
     [minMove, precision, settings, useSignificantPriceFormat]
   );
-  const panes = useMemo<ReadonlyArray<ChartPaneOptions> | undefined>(() => {
-    if (!showVolume && !showRsi && !showMacd) return undefined;
-    const result: ChartPaneOptions[] = [
-      {
-        paneId: 'main',
-        heightWeight: settings.mainPaneHeightWeight,
-        priceScale: { priceScaleId: 'main' },
-      },
-    ];
-    if (showVolume) {
-      result.push({
-        paneId: 'volume',
-        heightWeight: settings.volumePaneHeightWeight,
-        minHeight: 56,
-        priceScale: {
-          priceScaleId: 'volume',
-          valueFormat: { type: 'volume', precision: 1 },
-        },
-      });
-    }
-    if (showRsi) {
-      result.push({
-        paneId: 'rsi',
-        heightWeight: settings.rsiPaneHeightWeight,
-        minHeight: 96,
-        priceScale: {
-          priceScaleId: 'rsi',
-          valueFormat: {
-            type: 'price',
-            precision: 4,
-            minMove: 0.0001,
-            useGrouping: false,
-          },
-        },
-      });
-    }
-    if (showMacd) {
-      result.push({
-        paneId: 'macd',
-        heightWeight: settings.macdPaneHeightWeight,
-        minHeight: 96,
-        priceScale: {
-          priceScaleId: 'macd',
-          valueFormat: {
-            type: 'price',
-            precision: 4,
-            minMove: 0.0001,
-            useGrouping: false,
-          },
-        },
-      });
-    }
-    return result;
-  }, [
-    settings.mainPaneHeightWeight,
-    settings.macdPaneHeightWeight,
-    settings.rsiPaneHeightWeight,
-    settings.volumePaneHeightWeight,
-    showRsi,
-    showMacd,
-    showVolume,
-  ]);
+  const panes = useMemo(
+    () =>
+      buildChartPanes(settings, {
+        minMove,
+        showVolume,
+        showRsi,
+        showMacd,
+      }),
+    [minMove, settings, showMacd, showRsi, showVolume]
+  );
   const additionalSeries = useMemo<
     ReadonlyArray<AdditionalChartSeriesOptions> | undefined
   >(() => {
