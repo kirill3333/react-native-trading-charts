@@ -11,6 +11,18 @@ readonly cpp_files=(
   cpp/benchmarks/chart_engine_benchmark.cc
   cpp/chart_engine.h
   cpp/chart_engine.cc
+  cpp/chart_engine_config.cc
+  cpp/chart_engine_data.cc
+  cpp/chart_engine_series.cc
+  cpp/chart_engine_viewport.cc
+  cpp/internal/config_normalization.h
+  cpp/internal/config_normalization.cc
+  cpp/internal/indicator_series.h
+  cpp/internal/indicator_series.cc
+  cpp/internal/packed_data.h
+  cpp/internal/packed_data.cc
+  cpp/internal/pane_layout.h
+  cpp/internal/pane_layout.cc
   cpp/internal/render_snapshot_builder.h
   cpp/internal/render_snapshot_builder.cc
   cpp/internal/series_geometry.h

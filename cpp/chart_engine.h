@@ -626,12 +626,6 @@ class ChartEngine {
   void RebuildSeriesIndicesLocked();
   const std::vector<Candle>* SourceCandlesLocked(
       const SeriesData& series) const;
-  void RebuildRsiSeriesLocked(size_t series_index,
-                              size_t first_changed_source_index);
-  void RebuildMovingAverageSeriesLocked(size_t series_index,
-                                        size_t first_changed_source_index);
-  void RebuildMacdSeriesLocked(size_t series_index,
-                               size_t first_changed_source_index);
   void RefreshDerivedDependentsLocked(const std::string& source_series_id,
                                       size_t first_changed_source_index);
   void RebuildAllDerivedSeriesLocked();

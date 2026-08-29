@@ -1,14 +1,12 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(tradingcharts LANGUAGES CXX)
 
+include(${CMAKE_CURRENT_LIST_DIR}/../cpp/engine_sources.cmake)
+
 add_library(
   tradingcharts
   SHARED
-  ../cpp/chart_engine.cc
-  ../cpp/internal/pane_layout.cc
-  ../cpp/internal/render_snapshot_builder.cc
-  ../cpp/internal/series_geometry.cc
-  ../cpp/internal/trading_time.cc
+  ${TRADING_CHARTS_ENGINE_SOURCES}
   src/main/cpp/chart_engine_jni.cc
 )
 

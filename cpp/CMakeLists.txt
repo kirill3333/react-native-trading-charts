@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(trading_charts_engine LANGUAGES CXX)
 
+include(${CMAKE_CURRENT_LIST_DIR}/engine_sources.cmake)
+
 option(
   TRADING_CHARTS_BUILD_BENCHMARKS
   "Build standalone ChartEngine benchmarks"
@@ -10,11 +12,7 @@ option(
 add_library(
   trading_charts_engine
   STATIC
-  chart_engine.cc
-  internal/pane_layout.cc
-  internal/render_snapshot_builder.cc
-  internal/series_geometry.cc
-  internal/trading_time.cc
+  ${TRADING_CHARTS_ENGINE_SOURCES}
 )
 
 target_include_directories(
