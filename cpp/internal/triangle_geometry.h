@@ -15,6 +15,7 @@
 namespace trading_charts::internal {
 
 inline constexpr size_t kFloatsPerVertex = 6;
+inline constexpr size_t kFloatsPerTriangle = 18;
 inline constexpr size_t kVerticesPerQuad = 6;
 inline constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
 
@@ -26,12 +27,9 @@ struct ColoredVertex {
 
 inline void AppendVertex(std::vector<float>& out, float x, float y,
                          const Color& color) {
-  out.push_back(x);
-  out.push_back(y);
-  out.push_back(color.r);
-  out.push_back(color.g);
-  out.push_back(color.b);
-  out.push_back(color.a);
+  const std::array<float, kFloatsPerVertex> vertex = {
+      x, y, color.r, color.g, color.b, color.a};
+  out.insert(out.end(), vertex.begin(), vertex.end());
 }
 
 inline void AppendQuad(std::vector<float>& out, float left, float top,
@@ -39,12 +37,14 @@ inline void AppendQuad(std::vector<float>& out, float left, float top,
   if (!(right > left) || !(bottom > top)) {
     return;
   }
-  AppendVertex(out, left, top, color);
-  AppendVertex(out, right, top, color);
-  AppendVertex(out, right, bottom, color);
-  AppendVertex(out, left, top, color);
-  AppendVertex(out, right, bottom, color);
-  AppendVertex(out, left, bottom, color);
+  const std::array<float, kFloatsPerQuad> vertices = {
+      left,    top,     color.r, color.g, color.b, color.a, right,   top,
+      color.r, color.g, color.b, color.a, right,   bottom,  color.r, color.g,
+      color.b, color.a, left,    top,     color.r, color.g, color.b, color.a,
+      right,   bottom,  color.r, color.g, color.b, color.a, left,    bottom,
+      color.r, color.g, color.b, color.a,
+  };
+  out.insert(out.end(), vertices.begin(), vertices.end());
 }
 
 inline void AppendClippedQuad(std::vector<float>& out, float left, float top,
@@ -77,9 +77,14 @@ inline ColoredVertex InterpolateVertex(const ColoredVertex& first,
 inline void AppendTriangle(std::vector<float>& out, const ColoredVertex& first,
                            const ColoredVertex& second,
                            const ColoredVertex& third) {
-  AppendVertex(out, first.x, first.y, first.color);
-  AppendVertex(out, second.x, second.y, second.color);
-  AppendVertex(out, third.x, third.y, third.color);
+  const std::array<float, kFloatsPerTriangle> vertices = {
+      first.x,        first.y,        first.color.r,  first.color.g,
+      first.color.b,  first.color.a,  second.x,       second.y,
+      second.color.r, second.color.g, second.color.b, second.color.a,
+      third.x,        third.y,        third.color.r,  third.color.g,
+      third.color.b,  third.color.a,
+  };
+  out.insert(out.end(), vertices.begin(), vertices.end());
 }
 
 // Clips one colored triangle against an axis-aligned rect without heap
@@ -89,6 +94,20 @@ inline void AppendClippedTriangle(std::vector<float>& out,
                                   const ColoredVertex& second,
                                   const ColoredVertex& third,
                                   const Rect& clip) {
+  const float min_x = std::min(first.x, std::min(second.x, third.x));
+  const float max_x = std::max(first.x, std::max(second.x, third.x));
+  const float min_y = std::min(first.y, std::min(second.y, third.y));
+  const float max_y = std::max(first.y, std::max(second.y, third.y));
+  if (max_x < clip.left || min_x > clip.right || max_y < clip.top ||
+      min_y > clip.bottom) {
+    return;
+  }
+  if (min_x >= clip.left && max_x <= clip.right && min_y >= clip.top &&
+      max_y <= clip.bottom) {
+    AppendTriangle(out, first, second, third);
+    return;
+  }
+
   enum class Edge : std::uint8_t { kLeft, kRight, kTop, kBottom };
   std::array<ColoredVertex, 8> input{};
   std::array<ColoredVertex, 8> output{};

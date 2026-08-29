@@ -24,6 +24,7 @@ final class ChartTextLayout: NSObject {
 final class ChartTextLayerItem {
   let layer = CATextLayer()
   var layout: ChartTextLayout?
+  var appliedFrame: CGRect?
 
   init(parentLayer: CALayer) {
     layer.contentsScale = UIScreen.main.scale
@@ -52,6 +53,8 @@ struct OverlayUpdateMetrics {
   var xTextUpdates = 0
   var yTextUpdates = 0
   var frameUpdates = 0
+  var xFrameUpdates = 0
+  var yFrameUpdates = 0
   var layoutCacheHits = 0
   var layoutCacheMisses = 0
   var layerReassignments = 0
@@ -98,7 +101,8 @@ final class TextLayerPool {
       item.layer.string = layout.attributedString
       metrics.textUpdates += 1
     }
-    if item.layer.frame != frame {
+    if item.appliedFrame != frame {
+      item.appliedFrame = frame
       item.layer.frame = frame
       metrics.frameUpdates += 1
     }

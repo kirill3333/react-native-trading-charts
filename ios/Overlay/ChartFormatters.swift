@@ -4,6 +4,7 @@
 import Foundation
 
 private final class ValueFormatter {
+  let cacheID: UInt16
   let numberFormatter: NumberFormatter
   let currencySymbol: String
   let compact: Bool
@@ -11,12 +12,14 @@ private final class ValueFormatter {
   let significantDigits: Int
 
   init(
+    cacheID: UInt16,
     numberFormatter: NumberFormatter,
     currencySymbol: String,
     compact: Bool,
     significant: Bool,
     significantDigits: Int
   ) {
+    self.cacheID = cacheID
     self.numberFormatter = numberFormatter
     self.currencySymbol = currencySymbol
     self.compact = compact
@@ -25,46 +28,96 @@ private final class ValueFormatter {
   }
 }
 
+struct ChartValueFormatterToken {
+  fileprivate let formatterID: UInt16
+}
+
+struct ChartVolumeFormatterToken {
+  fileprivate let formatterID: UInt16?
+}
+
+private struct FormattedValueKey: Hashable {
+  let formatterID: UInt16
+  let valueBits: UInt64
+}
+
+private struct FormattedTimeKey: Hashable {
+  let formatterID: UInt16
+  let milliseconds: Int64
+}
+
+private struct BoundedStringCache<Key: Hashable> {
+  private let capacity: Int
+  private var values: [Key: String]
+  private var evictionSlots: [Key?]
+  private var nextEvictionIndex = 0
+
+  init(capacity: Int) {
+    precondition(capacity > 0)
+    self.capacity = capacity
+    var values: [Key: String] = [:]
+    values.reserveCapacity(capacity)
+    self.values = values
+    evictionSlots = Array(repeating: nil, count: capacity)
+  }
+
+  func value(for key: Key) -> String? {
+    values[key]
+  }
+
+  mutating func insert(_ value: String, for key: Key) {
+    if values.updateValue(value, forKey: key) != nil { return }
+    if let evictedKey = evictionSlots[nextEvictionIndex] {
+      values.removeValue(forKey: evictedKey)
+    }
+    evictionSlots[nextEvictionIndex] = key
+    nextEvictionIndex = (nextEvictionIndex + 1) % capacity
+  }
+
+  mutating func removeAll() {
+    values.removeAll(keepingCapacity: true)
+    for index in evictionSlots.indices { evictionSlots[index] = nil }
+    nextEvictionIndex = 0
+  }
+}
+
 final class ChartFormatters {
-  private var valueFormatters: [String: ValueFormatter] = [:]
+  private var valueFormatterIndices: [String: UInt16] = [:]
+  private var valueFormatters: [ValueFormatter] = []
   private var percentageFormatter = NumberFormatter()
   private var volumeFormatter = NumberFormatter()
   private var axisDateFormatters: [DateFormatter] = []
   private var crosshairTimeFormatter = DateFormatter()
   private var tooltipHeaderFormatter = DateFormatter()
 
-  private let formattedValueCache = NSCache<NSString, NSString>()
-  private let formattedTimeCache = NSCache<NSString, NSString>()
-  private let formattedPercentageCache = NSCache<NSNumber, NSString>()
-  private let formattedVolumeCache = NSCache<NSString, NSString>()
-
-  init() {
-    formattedValueCache.countLimit = 512
-    formattedTimeCache.countLimit = 512
-    formattedPercentageCache.countLimit = 256
-    formattedVolumeCache.countLimit = 256
-  }
+  private var formattedValueCache = BoundedStringCache<FormattedValueKey>(capacity: 512)
+  private var formattedTimeCache = BoundedStringCache<FormattedTimeKey>(capacity: 512)
+  private var formattedPercentageCache = BoundedStringCache<UInt64>(capacity: 256)
+  private var formattedVolumeCache = BoundedStringCache<FormattedValueKey>(capacity: 256)
 
   func configure(_ configuration: ResolvedChartConfiguration) {
     let config = configuration.native
     let formatters = configuration.presentation.dictionary("formatters")
     let price = formatters.dictionary("price")
-    valueFormatters = [
-      "yAxis": makeValueFormatter(price.dictionary("yAxis"), fallback: config),
-      "priceExtremes": makeValueFormatter(price.dictionary("priceExtremes"), fallback: config),
-      "currentPrice": makeValueFormatter(price.dictionary("currentPrice"), fallback: config),
-      "crosshairPrice": makeValueFormatter(price.dictionary("crosshairPrice"), fallback: config),
-      "tooltip": makeValueFormatter(price.dictionary("tooltip"), fallback: config),
-    ]
+    valueFormatterIndices.removeAll(keepingCapacity: true)
+    valueFormatters.removeAll(keepingCapacity: true)
+    registerValueFormatter(role: "yAxis", json: price.dictionary("yAxis"), fallback: config)
+    registerValueFormatter(
+      role: "priceExtremes", json: price.dictionary("priceExtremes"), fallback: config)
+    registerValueFormatter(
+      role: "currentPrice", json: price.dictionary("currentPrice"), fallback: config)
+    registerValueFormatter(
+      role: "crosshairPrice", json: price.dictionary("crosshairPrice"), fallback: config)
+    registerValueFormatter(role: "tooltip", json: price.dictionary("tooltip"), fallback: config)
     for pane in configuration.presentation.array("panes").compactMap({ $0 as? JSONDictionary }) {
       let scale = pane.dictionary("priceScale")
       let scaleId = scale.string("priceScaleId")
       guard !scaleId.isEmpty else { continue }
-      valueFormatters["scale:\(scaleId)"] = makeValueFormatter(
-        scale.dictionary("valueFormat"), fallback: config)
+      registerValueFormatter(
+        role: "scale:\(scaleId)", json: scale.dictionary("valueFormat"), fallback: config)
     }
 
-    let axisFormatter = valueFormatters["yAxis"]!
+    let axisFormatter = valueFormatters[0]
     percentageFormatter = NumberFormatter()
     percentageFormatter.locale = axisFormatter.numberFormatter.locale
     percentageFormatter.numberStyle = .decimal
@@ -103,16 +156,28 @@ final class ChartFormatters {
       timeZone: tooltip.stringOrNil("timeZone") ?? zone,
       fallback: "d MMM yyyy HH:mm:ss"
     )
-    formattedValueCache.removeAllObjects()
-    formattedTimeCache.removeAllObjects()
-    formattedPercentageCache.removeAllObjects()
-    formattedVolumeCache.removeAllObjects()
+    formattedValueCache.removeAll()
+    formattedTimeCache.removeAll()
+    formattedPercentageCache.removeAll()
+    formattedVolumeCache.removeAll()
   }
 
   func formatValue(_ value: Double, role: String) -> String {
-    let cacheKey = "\(role)\u{1f}\(NSNumber(value: value).stringValue)" as NSString
-    if let cached = formattedValueCache.object(forKey: cacheKey) { return cached as String }
-    let formatter = valueFormatters[role] ?? valueFormatters["yAxis"]!
+    formatValue(value, using: valueFormatterToken(for: role))
+  }
+
+  func valueFormatterToken(for role: String) -> ChartValueFormatterToken {
+    ChartValueFormatterToken(formatterID: valueFormatterIndices[role] ?? 0)
+  }
+
+  func valueFormatterToken(scaleId: String) -> ChartValueFormatterToken {
+    valueFormatterToken(for: "scale:\(scaleId)")
+  }
+
+  func formatValue(_ value: Double, using token: ChartValueFormatterToken) -> String {
+    let formatter = valueFormatters[Int(token.formatterID)]
+    let cacheKey = FormattedValueKey(formatterID: formatter.cacheID, valueBits: value.bitPattern)
+    if let cached = formattedValueCache.value(for: cacheKey) { return cached }
     let result: String
     if formatter.significant {
       let rounded = roundToSignificant(value, digits: formatter.significantDigits)
@@ -126,28 +191,39 @@ final class ChartFormatters {
         ?? String(format: "%g", compact.value)
       result = formatter.currencySymbol + number + compact.suffix
     }
-    formattedValueCache.setObject(result as NSString, forKey: cacheKey)
+    formattedValueCache.insert(result, for: cacheKey)
     return result
   }
 
   func formatPercentage(_ value: Double, valid: Bool) -> String {
     guard valid else { return "—" }
-    let key = NSNumber(value: value)
-    if let cached = formattedPercentageCache.object(forKey: key) { return cached as String }
-    let result = (percentageFormatter.string(from: key) ?? String(format: "%.2f", value)) + "%"
-    formattedPercentageCache.setObject(result as NSString, forKey: key)
+    let key = value.bitPattern
+    if let cached = formattedPercentageCache.value(for: key) { return cached }
+    let number = NSNumber(value: value)
+    let result = (percentageFormatter.string(from: number) ?? String(format: "%.2f", value)) + "%"
+    formattedPercentageCache.insert(result, for: key)
     return result
   }
 
   func formatVolume(_ value: Double, scaleId: String = "main") -> String {
-    let key = "\(scaleId)\u{1f}\(NSNumber(value: value).stringValue)" as NSString
-    if let cached = formattedVolumeCache.object(forKey: key) { return cached as String }
+    formatVolume(value, using: volumeFormatterToken(scaleId: scaleId))
+  }
+
+  func volumeFormatterToken(scaleId: String) -> ChartVolumeFormatterToken {
+    ChartVolumeFormatterToken(formatterID: valueFormatterIndices["scale:\(scaleId)"])
+  }
+
+  func formatVolume(_ value: Double, using token: ChartVolumeFormatterToken) -> String {
+    let formatterID = token.formatterID
+    let cacheID = formatterID ?? UInt16.max
+    let key = FormattedValueKey(formatterID: cacheID, valueBits: value.bitPattern)
+    if let cached = formattedVolumeCache.value(for: key) { return cached }
     let compact = compactValue(value, enabled: true)
-    let formatter = valueFormatters["scale:\(scaleId)"]?.numberFormatter ?? volumeFormatter
+    let formatter = formatterID.map { valueFormatters[Int($0)].numberFormatter } ?? volumeFormatter
     let number = formatter.string(from: NSNumber(value: compact.value))
       ?? String(format: "%g", compact.value)
     let result = number + compact.suffix
-    formattedVolumeCache.setObject(result as NSString, forKey: key)
+    formattedVolumeCache.insert(result, for: key)
     return result
   }
 
@@ -162,20 +238,38 @@ final class ChartFormatters {
 
   func formatTime(_ timestamp: Double, index: Int, full: Bool, tooltip: Bool) -> String {
     let milliseconds = Int64(timestamp.rounded())
-    let key = "\(milliseconds)\u{1f}\(index)\u{1f}\(full)\u{1f}\(tooltip)" as NSString
-    if let cached = formattedTimeCache.object(forKey: key) { return cached as String }
+    let formatter: DateFormatter
+    let formatterID: UInt16
+    if full {
+      formatter = tooltip ? tooltipHeaderFormatter : crosshairTimeFormatter
+      formatterID = UInt16(axisDateFormatters.count + (tooltip ? 1 : 0))
+    } else {
+      let formatterIndex = min(max(index, 0), axisDateFormatters.count - 1)
+      formatterID = UInt16(formatterIndex)
+      formatter = axisDateFormatters[formatterIndex]
+    }
+    let key = FormattedTimeKey(formatterID: formatterID, milliseconds: milliseconds)
+    if let cached = formattedTimeCache.value(for: key) { return cached }
     let date = Date(timeIntervalSince1970: timestamp / 1_000)
-    let formatter = full
-      ? (tooltip ? tooltipHeaderFormatter : crosshairTimeFormatter)
-      : axisDateFormatters[min(max(index, 0), axisDateFormatters.count - 1)]
     let result = formatter.string(from: date)
-    formattedTimeCache.setObject(result as NSString, forKey: key)
+    formattedTimeCache.insert(result, for: key)
     return result
+  }
+
+  private func registerValueFormatter(
+    role: String, json: JSONDictionary, fallback: NativeChartConfig
+  ) {
+    let index = valueFormatters.count
+    precondition(index < Int(UInt16.max))
+    let formatterID = UInt16(index)
+    valueFormatterIndices[role] = formatterID
+    valueFormatters.append(makeValueFormatter(json, fallback: fallback, cacheID: formatterID))
   }
 
   private func makeValueFormatter(
     _ json: JSONDictionary,
-    fallback: NativeChartConfig
+    fallback: NativeChartConfig,
+    cacheID: UInt16
   ) -> ValueFormatter {
     let locale = json.stringOrNil("locale") ?? String(fallback.y_locale)
     let compact = json.stringOrNil("type") != nil
@@ -189,6 +283,7 @@ final class ChartFormatters {
     formatter.minimumFractionDigits = compact || significant ? 0 : precision
     formatter.maximumFractionDigits = significant ? 12 : precision
     return ValueFormatter(
+      cacheID: cacheID,
       numberFormatter: formatter,
       currencySymbol: json.stringOrNil("currencySymbol") ?? String(fallback.currency_symbol),
       compact: compact,

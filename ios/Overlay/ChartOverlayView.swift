@@ -243,7 +243,7 @@ final class ChartOverlayView: UIView {
       frame.revision, frame.contentRevision, frame.xTickCount, frame.yTickCount)
     if hasAppliedRevision, appliedRevision == frame.revision {
       os_signpost(.end, log: ChartPerformance.log, name: "Overlay Update Layers", signpostID: updateId,
-        "cached=1 visible=0 textUpdates=0 xTextUpdates=0 yTextUpdates=0 layoutCacheHits=0 layoutCacheMisses=0 layerReassignments=0 frameUpdates=0 staticUpdated=0 selectionUpdated=0 crosshairTextUpdates=0 selectionTextUpdates=0")
+        "cached=1 visible=0 textUpdates=0 xTextUpdates=0 yTextUpdates=0 layoutCacheHits=0 layoutCacheMisses=0 layerReassignments=0 frameUpdates=0 xFrameUpdates=0 yFrameUpdates=0 staticUpdated=0 selectionUpdated=0 crosshairTextUpdates=0 selectionTextUpdates=0")
       return
     }
 
@@ -268,10 +268,10 @@ final class ChartOverlayView: UIView {
       applyStatic(frame: frame, configuration: configuration, style: style, timeIndex: timeIndex, metrics: &metrics)
       os_signpost(
         .end, log: ChartPerformance.log, name: "Overlay Static Update", signpostID: staticId,
-        "visible=%{public}lu textUpdates=%{public}lu frameUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu",
+        "visible=%{public}lu textUpdates=%{public}lu frameUpdates=%{public}lu xFrameUpdates=%{public}lu yFrameUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu",
         visibleStaticLabels, metrics.textUpdates - textUpdatesBefore,
-        metrics.frameUpdates - frameUpdatesBefore, metrics.layoutCacheHits - cacheHitsBefore,
-        metrics.layoutCacheMisses - cacheMissesBefore)
+        metrics.frameUpdates - frameUpdatesBefore, metrics.xFrameUpdates, metrics.yFrameUpdates,
+        metrics.layoutCacheHits - cacheHitsBefore, metrics.layoutCacheMisses - cacheMissesBefore)
       appliedContentRevision = frame.contentRevision
       hasAppliedContentRevision = true
     }
@@ -296,15 +296,17 @@ final class ChartOverlayView: UIView {
       frame.revision, staticUpdated, selectionUpdated)
     CATransaction.commit()
     os_signpost(.end, log: ChartPerformance.log, name: "Overlay Transaction Commit", signpostID: transactionId,
-      "textUpdates=%{public}lu frameUpdates=%{public}lu", metrics.textUpdates, metrics.frameUpdates)
+      "textUpdates=%{public}lu frameUpdates=%{public}lu xFrameUpdates=%{public}lu yFrameUpdates=%{public}lu",
+      metrics.textUpdates, metrics.frameUpdates, metrics.xFrameUpdates, metrics.yFrameUpdates)
     appliedRevision = frame.revision
     hasAppliedRevision = true
     let visible = visibleStaticLabels + visibleSelectionLabels + visibleLegendLabels + (frame.crosshairVisible ? 1 : 0)
     os_signpost(.end, log: ChartPerformance.log, name: "Overlay Update Layers", signpostID: updateId,
-      "cached=0 visible=%{public}lu textUpdates=%{public}lu xTextUpdates=%{public}lu yTextUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu layerReassignments=%{public}lu frameUpdates=%{public}lu staticUpdated=%{public}d selectionUpdated=%{public}d crosshairTextUpdates=%{public}lu selectionTextUpdates=%{public}lu",
+      "cached=0 visible=%{public}lu textUpdates=%{public}lu xTextUpdates=%{public}lu yTextUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu layerReassignments=%{public}lu frameUpdates=%{public}lu xFrameUpdates=%{public}lu yFrameUpdates=%{public}lu staticUpdated=%{public}d selectionUpdated=%{public}d crosshairTextUpdates=%{public}lu selectionTextUpdates=%{public}lu",
       visible, metrics.textUpdates, metrics.xTextUpdates, metrics.yTextUpdates,
       metrics.layoutCacheHits, metrics.layoutCacheMisses, metrics.layerReassignments,
-      metrics.frameUpdates, staticUpdated, selectionUpdated, crosshairTextUpdates, selectionTextUpdates)
+      metrics.frameUpdates, metrics.xFrameUpdates, metrics.yFrameUpdates,
+      staticUpdated, selectionUpdated, crosshairTextUpdates, selectionTextUpdates)
   }
 
   private func applyStatic(
@@ -329,7 +331,9 @@ final class ChartOverlayView: UIView {
         visible += 1
       }
     }
+    let xFrameUpdatesBefore = metrics.frameUpdates
     metrics.xTextUpdates += xAxisPool.reconcile(xPresentations, metrics: &metrics)
+    metrics.xFrameUpdates += metrics.frameUpdates - xFrameUpdatesBefore
 
     var activeKeys = Set<String>()
     if configuration.native.show_y_axis {
@@ -342,12 +346,14 @@ final class ChartOverlayView: UIView {
         activeKeys.insert(key)
         let pool = yAxisPools[key] ?? TextLayerPool(parentLayer: axisContainer)
         yAxisPools[key] = pool
+        let valueFormatter = formatters.valueFormatterToken(scaleId: scaleId)
+        let volumeFormatter = formatters.volumeFormatterToken(scaleId: scaleId)
         var presentations: [TextPresentation] = []
         for offset in 0..<Int(pane.y_tick_count) {
           let tick = frame.paneYTick(at: Int(pane.y_tick_offset) + offset)
           let text = pane.volume_format
-            ? formatters.formatVolume(tick.value, scaleId: scaleId)
-            : formatters.formatValue(tick.value, role: "scale:\(scaleId)")
+            ? formatters.formatVolume(tick.value, using: volumeFormatter)
+            : formatters.formatValue(tick.value, using: valueFormatter)
           let layout = cachedLayout(text, attributes: style.yAxis, cache: yAxisLayoutCache, metrics: &metrics)
           let rawX = configuration.native.y_axis_on_right
             ? CGFloat(pane.plot.right) + 6
@@ -357,7 +363,9 @@ final class ChartOverlayView: UIView {
             width: layout.size.width, height: layout.size.height)))
           visible += 1
         }
+        let yFrameUpdatesBefore = metrics.frameUpdates
         metrics.yTextUpdates += pool.reconcile(presentations, metrics: &metrics)
+        metrics.yFrameUpdates += metrics.frameUpdates - yFrameUpdatesBefore
       }
     }
     for (key, pool) in yAxisPools where !activeKeys.contains(key) { pool.hide(from: 0) }
@@ -430,6 +438,7 @@ final class ChartOverlayView: UIView {
       guard paneIndex < frame.paneCount else { continue }
       let pane = frame.pane(at: paneIndex)
       let scaleId = String(pane.price_scale_id)
+      let valueFormatter = formatters.valueFormatterToken(scaleId: scaleId)
       let title: String
       if legend.kind == .macd {
         let source = legend.value_source == .open ? "OPEN" : (legend.value_source == .high ? "HIGH" : (legend.value_source == .low ? "LOW" : "CLOSE"))
@@ -440,7 +449,8 @@ final class ChartOverlayView: UIView {
       var cacheKey = "indicator\u{1f}\(paneIndex)\u{1f}\(legend.kind.rawValue)\u{1f}\(title)"
       for valueIndex in 0..<Int(legend.value_count) {
         let value = frame.indicatorLegendValue(legendIndex: legendIndex, valueIndex: valueIndex)
-        let text = value.has_value ? formatters.formatValue(value.value, role: "scale:\(scaleId)") : "—"
+        let text = value.has_value
+          ? formatters.formatValue(value.value, using: valueFormatter) : "—"
         cacheKey += "\u{1f}\(text)\u{1f}\(value.color.r)\u{1f}\(value.color.g)\u{1f}\(value.color.b)\u{1f}\(value.color.a)"
         let color = legend.kind == .rsi && legend.text_color_set ? legend.text_color : value.color
         attributed.append(NSAttributedString(string: " " + text, attributes: replacingColor(style.yAxis, color: uiColor(color))))

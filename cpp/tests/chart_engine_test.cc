@@ -17,6 +17,7 @@
 
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
+#include "cpp/internal/triangle_geometry.h"
 
 using trading_charts::AxisTick;
 using trading_charts::Candle;
@@ -1501,6 +1502,79 @@ void TestLogicalSpacingUsesUniformCandleSlots() {
            tick.value == 600000.0 || tick.value == 601000.0 ||
            tick.value == 602000.0);
   }
+}
+
+void TestTriangleClippingFastPaths() {
+  using trading_charts::internal::AppendClippedTriangle;
+  using trading_charts::internal::ColoredVertex;
+
+  const trading_charts::Rect clip{10.0f, 20.0f, 30.0f, 40.0f};
+  const Color red{1.0f, 0.0f, 0.0f, 1.0f};
+  const Color green{0.0f, 1.0f, 0.0f, 0.75f};
+  const Color blue{0.0f, 0.0f, 1.0f, 0.5f};
+
+  std::vector<float> vertices;
+  AppendClippedTriangle(vertices, {12.0f, 22.0f, red}, {28.0f, 24.0f, green},
+                        {20.0f, 38.0f, blue}, clip);
+  const std::vector<float> expected = {
+      12.0f, 22.0f, 1.0f,  0.0f,  0.0f,  1.0f, 28.0f, 24.0f, 0.0f,
+      1.0f,  0.0f,  0.75f, 20.0f, 38.0f, 0.0f, 0.0f,  1.0f,  0.5f,
+  };
+  assert(vertices == expected);
+
+  const std::array<std::array<ColoredVertex, 3>, 4> outside = {{
+      {{{1.0f, 22.0f, red}, {2.0f, 30.0f, green}, {3.0f, 38.0f, blue}}},
+      {{{31.0f, 22.0f, red}, {32.0f, 30.0f, green}, {33.0f, 38.0f, blue}}},
+      {{{12.0f, 1.0f, red}, {20.0f, 2.0f, green}, {28.0f, 3.0f, blue}}},
+      {{{12.0f, 41.0f, red}, {20.0f, 42.0f, green}, {28.0f, 43.0f, blue}}},
+  }};
+  for (const auto& triangle : outside) {
+    vertices.clear();
+    AppendClippedTriangle(vertices, triangle[0], triangle[1], triangle[2],
+                          clip);
+    assert(vertices.empty());
+  }
+
+  vertices.clear();
+  AppendClippedTriangle(vertices, {10.0f, 22.0f, red}, {10.0f, 38.0f, green},
+                        {20.0f, 30.0f, blue}, clip);
+  assert(vertices.size() == 18);
+
+  vertices.clear();
+  AppendClippedTriangle(vertices, {5.0f, 30.0f, red}, {20.0f, 15.0f, green},
+                        {35.0f, 35.0f, blue}, clip);
+  assert(!vertices.empty());
+  assert(vertices.size() % 18 == 0);
+  for (size_t index = 0; index < vertices.size(); index += 6) {
+    assert(vertices[index] >= clip.left && vertices[index] <= clip.right);
+    assert(vertices[index + 1] >= clip.top &&
+           vertices[index + 1] <= clip.bottom);
+  }
+}
+
+void TestPackedGeometryAppendPreservesExistingVertices() {
+  using trading_charts::internal::AppendQuad;
+  using trading_charts::internal::AppendTriangle;
+  using trading_charts::internal::ColoredVertex;
+  using trading_charts::internal::kFloatsPerQuad;
+  using trading_charts::internal::kFloatsPerTriangle;
+
+  const Color color{0.1f, 0.2f, 0.3f, 0.4f};
+  std::vector<float> vertices = {99.0f, 98.0f};
+  AppendTriangle(vertices, ColoredVertex{1.0f, 2.0f, color},
+                 ColoredVertex{3.0f, 4.0f, color},
+                 ColoredVertex{5.0f, 6.0f, color});
+  assert(vertices.size() == 2 + kFloatsPerTriangle);
+  assert(vertices[0] == 99.0f && vertices[1] == 98.0f);
+  assert(vertices[2] == 1.0f && vertices[3] == 2.0f);
+  assert(vertices[14] == 5.0f && vertices[15] == 6.0f);
+
+  const size_t quad_offset = vertices.size();
+  AppendQuad(vertices, 10.0f, 20.0f, 30.0f, 40.0f, color);
+  assert(vertices.size() == quad_offset + kFloatsPerQuad);
+  assert(vertices[quad_offset] == 10.0f && vertices[quad_offset + 1] == 20.0f);
+  assert(vertices[vertices.size() - 6] == 10.0f &&
+         vertices[vertices.size() - 5] == 40.0f);
 }
 
 void TestBarGeometryAndRuntimeSwitch() {
@@ -3451,6 +3525,8 @@ int main() noexcept {
     TestCrosshairRevisionKeepsStaticContentRevision();
     TestHybridHistoryUsesLocalCandleWidths();
     TestLogicalSpacingUsesUniformCandleSlots();
+    TestTriangleClippingFastPaths();
+    TestPackedGeometryAppendPreservesExistingVertices();
     TestBarGeometryAndRuntimeSwitch();
     TestHollowCandlestickGeometry();
     TestRoundedCandlestickGeometry();
