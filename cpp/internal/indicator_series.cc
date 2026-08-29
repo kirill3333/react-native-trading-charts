@@ -7,20 +7,32 @@
 #include <limits>
 #include <vector>
 
+#include "cpp/internal/config_constants.h"
+
 namespace trading_charts::internal {
 namespace {
 
+constexpr double kRsiNeutralValue = (kRsiMinimumValue + kRsiMaximumValue) / 2.0;
+constexpr double kExponentialSmoothingNumerator = 2.0;
+constexpr double kExponentialSmoothingDenominatorOffset = 1.0;
+
+double ExponentialSmoothingAlpha(size_t period) {
+  return kExponentialSmoothingNumerator /
+         (static_cast<double>(period) + kExponentialSmoothingDenominatorOffset);
+}
+
 double RsiValue(double average_gain, double average_loss) {
   if (average_gain == 0.0 && average_loss == 0.0) {
-    return 50.0;
+    return kRsiNeutralValue;
   }
   if (average_loss == 0.0) {
-    return 100.0;
+    return kRsiMaximumValue;
   }
   if (average_gain == 0.0) {
-    return 0.0;
+    return kRsiMinimumValue;
   }
-  return 100.0 - 100.0 / (1.0 + average_gain / average_loss);
+  const double relative_strength = average_gain / average_loss;
+  return kRsiMaximumValue - kRsiMaximumValue / (1.0 + relative_strength);
 }
 
 void RebuildRsiSeries(SeriesData& series, const std::vector<Candle>* source) {
@@ -72,12 +84,15 @@ void RebuildRsiSeries(SeriesData& series, const std::vector<Candle>& source,
   for (size_t index = start; index < source.size(); ++index) {
     if (index > period) {
       const double delta = source[index].close - source[index - 1].close;
-      average_gain = (average_gain * static_cast<double>(period - 1) +
-                      std::max(delta, 0.0)) /
-                     static_cast<double>(period);
-      average_loss = (average_loss * static_cast<double>(period - 1) +
-                      std::max(-delta, 0.0)) /
-                     static_cast<double>(period);
+      const size_t previous_period_sample_count = period - 1;
+      average_gain =
+          (average_gain * static_cast<double>(previous_period_sample_count) +
+           std::max(delta, 0.0)) /
+          static_cast<double>(period);
+      average_loss =
+          (average_loss * static_cast<double>(previous_period_sample_count) +
+           std::max(-delta, 0.0)) /
+          static_cast<double>(period);
     }
     const double value = RsiValue(average_gain, average_loss);
     series.candles.push_back(
@@ -135,7 +150,7 @@ void RebuildMovingAverageSeries(SeriesData& series,
   const size_t output_size = source.size() - first_output_source_index;
   series.candles.reserve(output_size);
   series.moving_average_states.reserve(output_size);
-  const double alpha = 2.0 / (static_cast<double>(period) + 1.0);
+  const double alpha = ExponentialSmoothingAlpha(period);
   for (size_t index = start; index < source.size(); ++index) {
     if (index > first_output_source_index) {
       const double current =
@@ -209,9 +224,9 @@ void RebuildMacdSeries(SeriesData& series, const std::vector<Candle>& source,
                        }),
       series.histogram.end());
 
-  const double fast_alpha = 2.0 / (static_cast<double>(fast_period) + 1.0);
-  const double slow_alpha = 2.0 / (static_cast<double>(slow_period) + 1.0);
-  const double signal_alpha = 2.0 / (static_cast<double>(signal_period) + 1.0);
+  const double fast_alpha = ExponentialSmoothingAlpha(fast_period);
+  const double slow_alpha = ExponentialSmoothingAlpha(slow_period);
+  const double signal_alpha = ExponentialSmoothingAlpha(signal_period);
   series.macd_states.reserve(source.size());
   series.candles.reserve(source.size() -
                          std::min(source.size(), slow_period - 1));

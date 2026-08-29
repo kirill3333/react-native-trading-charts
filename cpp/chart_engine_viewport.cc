@@ -10,14 +10,18 @@
 #include <vector>
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/config_constants.h"
 #include "cpp/internal/pane_layout.h"
 #include "cpp/internal/trading_time.h"
 
 namespace trading_charts {
 namespace {
 
-constexpr double kMinYRangeMultiplier = 0.1;
-constexpr double kMaxYRangeMultiplier = 10.0;
+constexpr double kLeadingDataPaddingInSlots = 0.5;
+constexpr double kTrailingDataPaddingInSlots = 2.5;
+constexpr double kMinimumViewportSpanInSlots = 3.0;
+constexpr double kMinimumPlotLength = 1.0;
+constexpr double kMinimumLiveEdgeTolerance = 1.0;
 
 }  // namespace
 
@@ -33,11 +37,12 @@ double ChartEngine::CandleXLocked(size_t index) const {
 }
 
 double ChartEngine::DataXMinLocked() const {
-  return CandleXLocked(0) - XDomainUnitLocked() * 0.5;
+  return CandleXLocked(0) - XDomainUnitLocked() * kLeadingDataPaddingInSlots;
 }
 
 double ChartEngine::DataXMaxLocked() const {
-  return CandleXLocked(candles_.size() - 1) + XDomainUnitLocked() * 2.5;
+  return CandleXLocked(candles_.size() - 1) +
+         XDomainUnitLocked() * kTrailingDataPaddingInSlots;
 }
 
 void ChartEngine::SetSize(float width, float height) {
@@ -68,10 +73,11 @@ void ChartEngine::ResetViewportLocked() {
   const size_t visible = std::min(
       candles_.size(), static_cast<size_t>(config_.initial_visible_count));
   const size_t first = candles_.size() - visible;
-  visible_x_min_ = CandleXLocked(first) - unit * 0.5;
-  visible_x_max_ = CandleXLocked(candles_.size() - 1) + unit * 2.5;
+  visible_x_min_ = CandleXLocked(first) - unit * kLeadingDataPaddingInSlots;
+  visible_x_max_ =
+      CandleXLocked(candles_.size() - 1) + unit * kTrailingDataPaddingInSlots;
   if (!(visible_x_max_ > visible_x_min_)) {
-    visible_x_max_ = visible_x_min_ + unit * 3.0;
+    visible_x_max_ = visible_x_min_ + unit * kMinimumViewportSpanInSlots;
   }
   horizontal_scale_base_span_ = visible_x_max_ - visible_x_min_;
   visible_x_min_ = visible_x_max_ -
@@ -95,7 +101,7 @@ void ChartEngine::FitContentLocked() {
   visible_x_min_ = DataXMinLocked();
   visible_x_max_ = DataXMaxLocked();
   if (!(visible_x_max_ > visible_x_min_)) {
-    visible_x_max_ = visible_x_min_ + unit * 3.0;
+    visible_x_max_ = visible_x_min_ + unit * kMinimumViewportSpanInSlots;
   }
   viewport_initialized_ = true;
   ClampViewportLocked();
@@ -107,7 +113,7 @@ void ChartEngine::ClampViewportLocked() {
   }
   const double data_min = DataXMinLocked();
   const double data_max = DataXMaxLocked();
-  const double minimum_span = XDomainUnitLocked() * 3.0;
+  const double minimum_span = XDomainUnitLocked() * kMinimumViewportSpanInSlots;
   const double full_span = std::max(data_max - data_min, minimum_span);
   double span = std::max(visible_x_max_ - visible_x_min_, minimum_span);
   span = std::min(span, full_span);
@@ -126,10 +132,11 @@ bool ChartEngine::IsAtLiveEdgeLocked() const {
   const double data_max = DataXMaxLocked();
   const float axis_width = config_.show_y_axis ? config_.y_axis_width : 0.0F;
   const double plot_width =
-      std::max(static_cast<double>(width_ - axis_width), 1.0);
+      std::max(static_cast<double>(width_ - axis_width), kMinimumPlotLength);
   const double domain_per_pixel =
       (visible_x_max_ - visible_x_min_) / plot_width;
-  const double tolerance = std::max(domain_per_pixel, 1.0);
+  const double tolerance =
+      std::max(domain_per_pixel, kMinimumLiveEdgeTolerance);
   return visible_x_max_ >= data_max - tolerance;
 }
 
@@ -144,11 +151,12 @@ bool ChartEngine::Pan(float delta_pixels) {
   const bool crosshair_changed = crosshair_active_;
   const float axis_width = config_.show_y_axis ? config_.y_axis_width : 0.0F;
   const double plot_width =
-      std::max(static_cast<double>(width_ - axis_width), 1.0);
-  const double delta = -static_cast<double>(delta_pixels) / plot_width *
-                       (visible_x_max_ - visible_x_min_);
-  visible_x_min_ += delta;
-  visible_x_max_ += delta;
+      std::max(static_cast<double>(width_ - axis_width), kMinimumPlotLength);
+  const double visible_domain_span = visible_x_max_ - visible_x_min_;
+  const double domain_delta =
+      -static_cast<double>(delta_pixels) / plot_width * visible_domain_span;
+  visible_x_min_ += domain_delta;
+  visible_x_max_ += domain_delta;
   crosshair_active_ = false;
   ClampViewportLocked();
   const bool viewport_changed =
@@ -176,13 +184,14 @@ bool ChartEngine::Zoom(double scale, float focus_x) {
   const float right = width_ - (config_.show_y_axis && config_.y_axis_on_right
                                     ? config_.y_axis_width
                                     : 0.0F);
-  const float plot_width = std::max(right - left, 1.0F);
-  const double normalized =
+  const float plot_width =
+      std::max(right - left, static_cast<float>(kMinimumPlotLength));
+  const double focus_fraction =
       std::clamp(static_cast<double>((focus_x - left) / plot_width), 0.0, 1.0);
   const double old_span = visible_x_max_ - visible_x_min_;
-  const double focus = visible_x_min_ + normalized * old_span;
+  const double focus_domain_x = visible_x_min_ + focus_fraction * old_span;
   const double new_span = old_span / scale;
-  visible_x_min_ = focus - normalized * new_span;
+  visible_x_min_ = focus_domain_x - focus_fraction * new_span;
   visible_x_max_ = visible_x_min_ + new_span;
   crosshair_active_ = false;
   ClampViewportLocked();
@@ -216,8 +225,8 @@ bool ChartEngine::ScaleY(float delta_pixels) {
     std::lock_guard<std::mutex> lock(mutex_);
     const float axis_height =
         config_.show_x_axis ? config_.x_axis_height : 0.0F;
-    middle = internal::kTopInset +
-             (height_ - axis_height - internal::kTopInset) * 0.5F;
+    const float plot_height = height_ - axis_height - internal::kTopInset;
+    middle = internal::kTopInset + plot_height / 2.0F;
   }
   return ScaleYAt(delta_pixels, middle);
 }
@@ -256,12 +265,12 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
   if (PaneHasRsiLocked(pane_index)) {
     return false;
   }
-  const double plot_height =
-      std::max(static_cast<double>(rects[pane_index].Height()), 1.0);
+  const double plot_height = std::max(
+      static_cast<double>(rects[pane_index].Height()), kMinimumPlotLength);
   const double current = panes_[pane_index].y_range_multiplier;
   const double next = std::clamp(
       current * std::exp(static_cast<double>(delta_pixels) / plot_height),
-      kMinYRangeMultiplier, kMaxYRangeMultiplier);
+      internal::kMinYRangeMultiplier, internal::kMaxYRangeMultiplier);
   const bool crosshair_changed = crosshair_active_;
   crosshair_active_ = false;
   if (next == current) {
@@ -280,7 +289,8 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
 
 std::optional<size_t> ChartEngine::SeparatorAt(float y, float hit_slop) const {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!panes_resizable_ || panes_.size() < 2) {
+  if (!panes_resizable_ ||
+      panes_.size() < internal::kMinimumResizablePaneCount) {
     return std::nullopt;
   }
   const std::vector<Rect> rects = PaneRectsLocked();
@@ -302,12 +312,16 @@ bool ChartEngine::ResizePaneSeparator(size_t separator_index,
   const std::vector<Rect> rects = PaneRectsLocked();
   const float first_height = rects[separator_index].Height();
   const float second_height = rects[separator_index + 1].Height();
+  const float combined_height = first_height + second_height;
+  const float requested_first_height = first_height + delta_pixels;
+  const float minimum_first_height = panes_[separator_index].min_height;
+  const float maximum_first_height =
+      combined_height - panes_[separator_index + 1].min_height;
+  const float height_limited_by_second_pane =
+      std::min(requested_first_height, maximum_first_height);
   const float next_first =
-      std::max(panes_[separator_index].min_height,
-               std::min(first_height + delta_pixels,
-                        first_height + second_height -
-                            panes_[separator_index + 1].min_height));
-  const float next_second = first_height + second_height - next_first;
+      std::max(minimum_first_height, height_limited_by_second_pane);
+  const float next_second = combined_height - next_first;
   if (next_first == first_height || next_second <= 0.0F) {
     return false;
   }

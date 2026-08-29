@@ -13,6 +13,9 @@ namespace trading_charts::internal {
 
 // Visible samples are downsampled to at most this many positions.
 inline constexpr size_t kMaxVisibleSamples = 16384;
+inline constexpr float kBodyWidthToSlotRatio = 0.7f;
+inline constexpr float kMinimumBodyWidth = 1.0f;
+inline constexpr float kMaximumBodyWidth = 28.0f;
 
 struct SeriesGeometryInput {
   const ChartConfig& config;

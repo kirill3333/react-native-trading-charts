@@ -12,6 +12,21 @@
 
 namespace trading_charts::internal {
 
+inline constexpr size_t kPackedTimestampIndex = 0;
+inline constexpr size_t kPackedOpenIndex = 1;
+inline constexpr size_t kPackedHighIndex = 2;
+inline constexpr size_t kPackedLowIndex = 3;
+inline constexpr size_t kPackedCloseIndex = 4;
+inline constexpr size_t kPackedVolumeIndex = 5;
+
+inline constexpr size_t kPackedTradePriceIndex = 1;
+inline constexpr size_t kPackedTradeSizeIndex = 2;
+
+inline constexpr size_t kHistogramValueCount = 2;
+inline constexpr size_t kPackedHistogramValueIndex = 1;
+
+inline constexpr double kMaxJavaScriptSafeInteger = 9007199254740991.0;
+
 struct ParsedCandles {
   UpdateStatus status = UpdateStatus::kApplied;
   std::vector<Candle> candles;
@@ -28,10 +43,10 @@ bool ParsePackedCandle(const double* values, size_t value_count,
                        Candle* candle);
 
 inline bool IsValidTrade(double timestamp, double price, double size) {
-  constexpr double kMaxSafeInteger = 9007199254740991.0;
   return std::isfinite(timestamp) && timestamp >= 0.0 &&
-         timestamp <= kMaxSafeInteger && std::trunc(timestamp) == timestamp &&
-         std::isfinite(price) && std::isfinite(size) && size >= 0.0;
+         timestamp <= kMaxJavaScriptSafeInteger &&
+         std::trunc(timestamp) == timestamp && std::isfinite(price) &&
+         std::isfinite(size) && size >= 0.0;
 }
 
 }  // namespace trading_charts::internal

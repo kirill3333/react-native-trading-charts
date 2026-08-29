@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "cpp/internal/config_constants.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -23,8 +24,66 @@ namespace {
 
 constexpr int kMaxTickCount = 256;
 constexpr float kYAxisTickSpacing = 44.0f;
+constexpr float kXAxisTickSpacing = 72.0f;
 constexpr float kPaneSeparatorOpacityBoost = 0.2f;
 constexpr int kMinimumVolumeTickCount = 3;
+constexpr int kMinimumAxisTickCount = 2;
+constexpr double kTickBoundaryTolerance = 1e-9;
+constexpr double kDecimalStepBase = 10.0;
+constexpr size_t kNiceStepFactorCount = 4;
+using NiceStepFactors = std::array<double, kNiceStepFactorCount>;
+constexpr NiceStepFactors kNiceStepFactors = {1.0, 2.0, 2.5, 5.0};
+constexpr float kDashLength = 4.0f;
+constexpr float kDashGap = 3.0f;
+constexpr float kPriceLineDashLength = 3.0f;
+constexpr float kPriceLineDashGap = 3.0f;
+constexpr float kOnePixelLineHalfWidth = 0.5f;
+constexpr double kAutoscaleMinMoveExpansion = 5.0;
+constexpr double kEmptyPaneMinMoveCount = 10.0;
+constexpr double kMinimumPaneRange = 1.0;
+constexpr double kEmptyVolumeMaximum = 1.0;
+constexpr float kMinimumHistogramPixelHeight = 1.0f;
+constexpr size_t kRsiBandQuadCount = 1;
+constexpr size_t kRsiBoundaryLineCount = 2;
+constexpr size_t kSolidCrosshairLineCount = 2;
+constexpr double kPercentageScale = 100.0;
+constexpr size_t kRsiLegendValueIndex = 0;
+constexpr size_t kRsiLegendValueCount = 1;
+constexpr size_t kMacdHistogramLegendValueIndex = 0;
+constexpr size_t kMacdLineLegendValueIndex = 1;
+constexpr size_t kMacdSignalLegendValueIndex = 2;
+constexpr size_t kMacdLegendValueCount = 3;
+constexpr size_t kTimeStepCandidateCount = 19;
+
+constexpr double Seconds(double count) {
+  return count * static_cast<double>(kMillisecondsPerSecond);
+}
+
+constexpr double Minutes(double count) {
+  return count * static_cast<double>(kMillisecondsPerMinute);
+}
+
+constexpr double Hours(double count) {
+  return count * static_cast<double>(kMillisecondsPerHour);
+}
+
+constexpr double Days(double count) {
+  return count * static_cast<double>(kMillisecondsPerDay);
+}
+
+bool IsHorizontallyOutsidePlot(float center_x, float half_width,
+                               const Rect& plot) {
+  const float left_edge = center_x - half_width;
+  const float right_edge = center_x + half_width;
+  return right_edge < plot.left || left_edge > plot.right;
+}
+
+size_t ClampLogicalIndex(double index, size_t last_index) {
+  const double capped_at_last =
+      std::min(static_cast<double>(last_index), index);
+  const double non_negative_index = std::max(0.0, capped_at_last);
+  return static_cast<size_t>(non_negative_index);
+}
 
 size_t SegmentCount(float start, float end, float step) {
   if (!(end > start) || !(step > 0.0f)) {
@@ -35,12 +94,13 @@ size_t SegmentCount(float start, float end, float step) {
 
 void EmitDashedVertical(std::vector<float>& out, float x, float top,
                         float bottom, float display_scale, const Color& color) {
-  const float dash = 4.0f * display_scale;
-  const float gap = 3.0f * display_scale;
+  const float dash = kDashLength * display_scale;
+  const float gap = kDashGap * display_scale;
   float y = top;
   const size_t segment_count = SegmentCount(top, bottom, dash + gap);
   for (size_t segment = 0; segment < segment_count; ++segment) {
-    AppendQuad(out, x - 0.5f, y, x + 0.5f, std::min(y + dash, bottom), color);
+    AppendQuad(out, x - kOnePixelLineHalfWidth, y, x + kOnePixelLineHalfWidth,
+               std::min(y + dash, bottom), color);
     y += dash + gap;
   }
 }
@@ -48,12 +108,13 @@ void EmitDashedVertical(std::vector<float>& out, float x, float top,
 void EmitDashedHorizontal(std::vector<float>& out, float y, float left,
                           float right, float display_scale,
                           const Color& color) {
-  const float dash = 4.0f * display_scale;
-  const float gap = 3.0f * display_scale;
+  const float dash = kDashLength * display_scale;
+  const float gap = kDashGap * display_scale;
   float x = left;
   const size_t segment_count = SegmentCount(left, right, dash + gap);
   for (size_t segment = 0; segment < segment_count; ++segment) {
-    AppendQuad(out, x, y - 0.5f, std::min(x + dash, right), y + 0.5f, color);
+    AppendQuad(out, x, y - kOnePixelLineHalfWidth, std::min(x + dash, right),
+               y + kOnePixelLineHalfWidth, color);
     x += dash + gap;
   }
 }
@@ -64,17 +125,14 @@ double NiceStep(double range, int target_count, double minimum) {
   }
   const double raw =
       std::max(range / static_cast<double>(target_count), minimum);
-  const double power = std::pow(10.0, std::floor(std::log10(raw)));
+  const double power = std::pow(kDecimalStepBase, std::floor(std::log10(raw)));
   const double fraction = raw / power;
-  double nice = 10.0;
-  if (fraction <= 1.0) {
-    nice = 1.0;
-  } else if (fraction <= 2.0) {
-    nice = 2.0;
-  } else if (fraction <= 2.5) {
-    nice = 2.5;
-  } else if (fraction <= 5.0) {
-    nice = 5.0;
+  double nice = kDecimalStepBase;
+  for (double candidate : kNiceStepFactors) {
+    if (fraction <= candidate) {
+      nice = candidate;
+      break;
+    }
   }
   return std::max(nice * power, minimum);
 }
@@ -84,15 +142,16 @@ double PreviousNiceStep(double step, double minimum) {
     return step;
   }
   const double upper_bound = std::nextafter(step, 0.0);
-  const double power = std::pow(10.0, std::floor(std::log10(upper_bound)));
+  const double power =
+      std::pow(kDecimalStepBase, std::floor(std::log10(upper_bound)));
   const double fraction = upper_bound / power;
-  double nice = 1.0;
-  if (fraction >= 5.0) {
-    nice = 5.0;
-  } else if (fraction >= 2.5) {
-    nice = 2.5;
-  } else if (fraction >= 2.0) {
-    nice = 2.0;
+  double nice = kNiceStepFactors.front();
+  for (auto candidate = kNiceStepFactors.rbegin();
+       candidate != kNiceStepFactors.rend(); ++candidate) {
+    if (fraction >= *candidate) {
+      nice = *candidate;
+      break;
+    }
   }
   return std::max(nice * power, minimum);
 }
@@ -105,7 +164,7 @@ int TickCount(double minimum, double maximum, double step, int limit) {
   int count = 0;
   for (; count < limit; ++count) {
     const double value = first + static_cast<double>(count) * step;
-    if (value > maximum + step * 1e-9) {
+    if (value > maximum + step * kTickBoundaryTolerance) {
       break;
     }
   }
@@ -125,26 +184,11 @@ double EnsureMinimumNiceTickCount(double minimum, double maximum, double step,
 }
 
 double TimeStep(double span, int target_count) {
-  constexpr std::array<double, 19> kCandidates = {
-      1000.0,
-      5000.0,
-      15000.0,
-      30000.0,
-      60000.0,
-      5.0 * 60000.0,
-      15.0 * 60000.0,
-      30.0 * 60000.0,
-      60.0 * 60000.0,
-      4.0 * 60.0 * 60000.0,
-      12.0 * 60.0 * 60000.0,
-      24.0 * 60.0 * 60000.0,
-      2.0 * 24.0 * 60.0 * 60000.0,
-      7.0 * 24.0 * 60.0 * 60000.0,
-      14.0 * 24.0 * 60.0 * 60000.0,
-      30.0 * 24.0 * 60.0 * 60000.0,
-      90.0 * 24.0 * 60.0 * 60000.0,
-      180.0 * 24.0 * 60.0 * 60000.0,
-      365.0 * 24.0 * 60.0 * 60000.0,
+  constexpr std::array<double, kTimeStepCandidateCount> kCandidates = {
+      Seconds(1.0), Seconds(5.0),  Seconds(15.0), Seconds(30.0), Minutes(1.0),
+      Minutes(5.0), Minutes(15.0), Minutes(30.0), Hours(1.0),    Hours(4.0),
+      Hours(12.0),  Hours(24.0),   Days(2.0),     Days(7.0),     Days(14.0),
+      Days(30.0),   Days(90.0),    Days(180.0),   Days(365.0),
   };
   const double desired = span / static_cast<double>(std::max(target_count, 1));
   for (double candidate : kCandidates) {
@@ -324,8 +368,9 @@ class RenderSnapshotBuilder {
   }
 
   bool HasDrawableContent() {
-    if (snapshot_->plot.Width() >= 1.0f && snapshot_->plot.Height() >= 1.0f &&
-        !input_.candles.empty()) {
+    const bool plot_has_area =
+        snapshot_->plot.Width() >= 1.0f && snapshot_->plot.Height() >= 1.0f;
+    if (plot_has_area && !input_.candles.empty()) {
       return true;
     }
     snapshot_->visible_y_min = 0.0;
@@ -335,13 +380,13 @@ class RenderSnapshotBuilder {
 
   void FindVisibleRange() {
     if (input_.config.logical_spacing) {
-      const double last_index = static_cast<double>(input_.candles.size() - 1);
-      const size_t lower_index = static_cast<size_t>(
-          std::max(0.0, std::min(last_index, std::ceil(input_.visible_x_min))));
+      const size_t last_index = input_.candles.size() - 1;
+      const size_t lower_index =
+          ClampLogicalIndex(std::ceil(input_.visible_x_min), last_index);
+      // The iterator range is half-open, so the inclusive upper candle index
+      // advances by one after clamping.
       const size_t upper_index =
-          static_cast<size_t>(std::max(
-              0.0, std::min(last_index, std::floor(input_.visible_x_max)))) +
-          1;
+          ClampLogicalIndex(std::floor(input_.visible_x_max), last_index) + 1;
       lower_ =
           input_.candles.begin() + static_cast<std::ptrdiff_t>(lower_index);
       upper_ =
@@ -427,7 +472,8 @@ class RenderSnapshotBuilder {
     visible_maximum_value_ = raw_max;
     IncludeAdditionalSeriesRange(0, raw_min, raw_max);
     if (!(raw_max > raw_min)) {
-      const double extend_value = 5.0 * input_.config.min_move;
+      const double extend_value =
+          kAutoscaleMinMoveExpansion * input_.config.min_move;
       raw_min -= extend_value;
       raw_max += extend_value;
     }
@@ -445,18 +491,20 @@ class RenderSnapshotBuilder {
         raw_min - raw_range * input_.config.y_scale_margin_bottom / inner_scale;
     const double auto_y_max =
         raw_max + raw_range * input_.config.y_scale_margin_top / inner_scale;
-    const double y_center = auto_y_min + (auto_y_max - auto_y_min) * 0.5;
+    const double y_center = auto_y_min + (auto_y_max - auto_y_min) / 2.0;
     const double y_range =
         (auto_y_max - auto_y_min) * input_.y_range_multiplier;
-    y_min_ = y_center - y_range * 0.5;
-    y_max_ = y_center + y_range * 0.5;
+    const double half_y_range = y_range / 2.0;
+    y_min_ = y_center - half_y_range;
+    y_max_ = y_center + half_y_range;
     snapshot_->visible_y_min = y_min_;
     snapshot_->visible_y_max = y_max_;
-    pane_y_min_[0] = y_min_;
-    pane_y_max_[0] = y_max_;
-    snapshot_->panes[0].visible_y_min = y_min_;
-    snapshot_->panes[0].visible_y_max = y_max_;
-    snapshot_->panes[0].y_axis_scale = snapshot_->y_axis_scale;
+    pane_y_min_[kMainPaneIndex] = y_min_;
+    pane_y_max_[kMainPaneIndex] = y_max_;
+    PaneSnapshot& main_pane = snapshot_->panes[kMainPaneIndex];
+    main_pane.visible_y_min = y_min_;
+    main_pane.visible_y_max = y_max_;
+    main_pane.y_axis_scale = snapshot_->y_axis_scale;
   }
 
   std::optional<size_t> MainIndexForTimestamp(double timestamp) const {
@@ -693,10 +741,10 @@ class RenderSnapshotBuilder {
     for (size_t pane_index = 1; pane_index < snapshot_->panes.size();
          ++pane_index) {
       if (snapshot_->panes[pane_index].rsi_scale) {
-        pane_y_min_[pane_index] = 0.0;
-        pane_y_max_[pane_index] = 100.0;
-        snapshot_->panes[pane_index].visible_y_min = 0.0;
-        snapshot_->panes[pane_index].visible_y_max = 100.0;
+        pane_y_min_[pane_index] = kRsiMinimumValue;
+        pane_y_max_[pane_index] = kRsiMaximumValue;
+        snapshot_->panes[pane_index].visible_y_min = kRsiMinimumValue;
+        snapshot_->panes[pane_index].visible_y_max = kRsiMaximumValue;
         snapshot_->panes[pane_index].y_axis_scale = 1.0;
         continue;
       }
@@ -759,10 +807,13 @@ class RenderSnapshotBuilder {
       const PaneConfig& pane = PaneConfigAt(input_.panes, pane_index);
       if (!has_value) {
         raw_min = 0.0;
-        raw_max = pane.volume_format ? 1.0 : pane.min_move * 10.0;
+        raw_max = pane.volume_format ? kEmptyVolumeMaximum
+                                     : pane.min_move * kEmptyPaneMinMoveCount;
       }
       if (!(raw_max > raw_min)) {
-        raw_max = raw_min + std::max(pane.min_move * 5.0, 1.0);
+        const double minimum_range = std::max(
+            pane.min_move * kAutoscaleMinMoveExpansion, kMinimumPaneRange);
+        raw_max = raw_min + minimum_range;
       }
       const double inner =
           1.0 - pane.scale_margin_top - pane.scale_margin_bottom;
@@ -771,10 +822,11 @@ class RenderSnapshotBuilder {
           raw_min - raw_range * pane.scale_margin_bottom / inner;
       const double auto_max =
           raw_max + raw_range * pane.scale_margin_top / inner;
-      const double center = (auto_min + auto_max) * 0.5;
+      const double center = (auto_min + auto_max) / 2.0;
       const double range = (auto_max - auto_min) * pane.y_range_multiplier;
-      pane_y_min_[pane_index] = center - range * 0.5;
-      pane_y_max_[pane_index] = center + range * 0.5;
+      const double half_range = range / 2.0;
+      pane_y_min_[pane_index] = center - half_range;
+      pane_y_max_[pane_index] = center + half_range;
       snapshot_->panes[pane_index].visible_y_min = pane_y_min_[pane_index];
       snapshot_->panes[pane_index].visible_y_max = pane_y_max_[pane_index];
       snapshot_->panes[pane_index].y_axis_scale = 1.0 / pane.y_range_multiplier;
@@ -816,8 +868,9 @@ class RenderSnapshotBuilder {
     extremum.value = value;
     extremum.x = x;
     extremum.y = y;
-    extremum.label_on_right =
-        x <= (snapshot_->plot.left + snapshot_->plot.right) * 0.5f;
+    const float plot_center_x =
+        (snapshot_->plot.left + snapshot_->plot.right) / 2.0f;
+    extremum.label_on_right = x <= plot_center_x;
   }
 
   void AddExtrema() {
@@ -833,9 +886,11 @@ class RenderSnapshotBuilder {
   }
 
   void AddTicks() {
-    const int x_target =
-        std::max(2, static_cast<int>(snapshot_->plot.Width() /
-                                     (72.0f * input_.config.display_scale)));
+    const float scaled_x_tick_spacing =
+        kXAxisTickSpacing * input_.config.display_scale;
+    const int x_target = std::max(
+        kMinimumAxisTickCount,
+        static_cast<int>(snapshot_->plot.Width() / scaled_x_tick_spacing));
     if (input_.config.logical_spacing) {
       const double visible_span = input_.visible_x_max - input_.visible_x_min;
       const size_t index_step = std::max<size_t>(
@@ -861,7 +916,7 @@ class RenderSnapshotBuilder {
       const double first_x = std::ceil(input_.visible_x_min / x_step) * x_step;
       for (int i = 0; i < kMaxTickCount; ++i) {
         const double value = first_x + static_cast<double>(i) * x_step;
-        if (value > input_.visible_x_max + x_step * 1e-9) {
+        if (value > input_.visible_x_max + x_step * kTickBoundaryTolerance) {
           break;
         }
         snapshot_->x_ticks.push_back(AxisTick{value, ProjectX(value)});
@@ -869,23 +924,25 @@ class RenderSnapshotBuilder {
     }
 
     const int y_target = std::max(
-        2, static_cast<int>(snapshot_->plot.Height() /
-                            (kYAxisTickSpacing * input_.config.display_scale)));
+        kMinimumAxisTickCount,
+        static_cast<int>(snapshot_->plot.Height() /
+                         (kYAxisTickSpacing * input_.config.display_scale)));
     const double y_step =
         NiceStep(y_max_ - y_min_, y_target, input_.config.min_move);
     const double first_y = std::ceil(y_min_ / y_step) * y_step;
     for (int i = 0; i < kMaxTickCount; ++i) {
       const double value = first_y + static_cast<double>(i) * y_step;
-      if (value > y_max_ + y_step * 1e-9) {
+      if (value > y_max_ + y_step * kTickBoundaryTolerance) {
         break;
       }
       snapshot_->y_ticks.push_back(AxisTick{value, ProjectY(value)});
     }
-    snapshot_->panes[0].y_tick_offset = snapshot_->pane_y_ticks.size();
+    PaneSnapshot& main_pane = snapshot_->panes[kMainPaneIndex];
+    main_pane.y_tick_offset = snapshot_->pane_y_ticks.size();
     snapshot_->pane_y_ticks.insert(snapshot_->pane_y_ticks.end(),
                                    snapshot_->y_ticks.begin(),
                                    snapshot_->y_ticks.end());
-    snapshot_->panes[0].y_tick_count = snapshot_->y_ticks.size();
+    main_pane.y_tick_count = snapshot_->y_ticks.size();
 
     for (size_t pane_index = 1; pane_index < snapshot_->panes.size();
          ++pane_index) {
@@ -893,7 +950,7 @@ class RenderSnapshotBuilder {
       pane.y_tick_offset = snapshot_->pane_y_ticks.size();
       const PaneConfig& config = PaneConfigAt(input_.panes, pane_index);
       const int target = std::max(
-          2,
+          kMinimumAxisTickCount,
           static_cast<int>(pane.plot.Height() /
                            (kYAxisTickSpacing * input_.config.display_scale)));
       double step = NiceStep(pane_y_max_[pane_index] - pane_y_min_[pane_index],
@@ -913,7 +970,7 @@ class RenderSnapshotBuilder {
       const double first = std::ceil(pane_y_min_[pane_index] / step) * step;
       for (int index = 0; index < kMaxTickCount; ++index) {
         const double value = first + static_cast<double>(index) * step;
-        if (value > pane_y_max_[pane_index] + step * 1e-9) {
+        if (value > pane_y_max_[pane_index] + step * kTickBoundaryTolerance) {
           break;
         }
         const float position =
@@ -937,11 +994,11 @@ class RenderSnapshotBuilder {
                {series.config.rsi_oversold, series.config.rsi_overbought}) {
             const auto begin = snapshot_->pane_y_ticks.begin() +
                                static_cast<std::ptrdiff_t>(pane.y_tick_offset);
-            const bool exists =
-                std::any_of(begin, snapshot_->pane_y_ticks.end(),
-                            [&](const AxisTick& tick) {
-                              return std::abs(tick.value - value) < 1e-9;
-                            });
+            const bool exists = std::any_of(
+                begin, snapshot_->pane_y_ticks.end(),
+                [&](const AxisTick& tick) {
+                  return std::abs(tick.value - value) < kTickBoundaryTolerance;
+                });
             if (!exists) {
               snapshot_->pane_y_ticks.push_back(
                   AxisTick{value, ProjectPaneY(pane_index, value), false});
@@ -969,14 +1026,18 @@ class RenderSnapshotBuilder {
     float_count += snapshot_->panes.size() * kFloatsPerQuad;
     // Current price dashed line.
     if (input_.config.show_current_price) {
+      const float price_line_step = (kPriceLineDashLength + kPriceLineDashGap) *
+                                    input_.config.display_scale;
       float_count += SegmentCount(snapshot_->plot.left, snapshot_->plot.right,
-                                  6.0f * input_.config.display_scale) *
+                                  price_line_step) *
                      kFloatsPerQuad;
     }
+    const float dashed_line_step =
+        (kDashLength + kDashGap) * input_.config.display_scale;
     for (const PriceLineSnapshot& price_line : snapshot_->price_lines) {
       (void)price_line;
       float_count += SegmentCount(snapshot_->plot.left, snapshot_->plot.right,
-                                  6.0f * input_.config.display_scale) *
+                                  dashed_line_step) *
                      kFloatsPerQuad;
     }
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
@@ -988,10 +1049,13 @@ class RenderSnapshotBuilder {
       const SeriesWindow& window = series_windows_[index];
       if (series.config.source == SeriesSource::kOhlcvRsi) {
         const Rect& pane_plot = snapshot_->panes[series.pane_index].plot;
-        const float step = 7.0f * input_.config.display_scale;
-        float_count +=
-            (1 + 2 * SegmentCount(pane_plot.left, pane_plot.right, step)) *
-            kFloatsPerQuad;
+        const float step =
+            (kDashLength + kDashGap) * input_.config.display_scale;
+        const size_t boundary_segment_count =
+            SegmentCount(pane_plot.left, pane_plot.right, step);
+        float_count += (kRsiBandQuadCount +
+                        kRsiBoundaryLineCount * boundary_segment_count) *
+                       kFloatsPerQuad;
       }
       if (series.config.source == SeriesSource::kOhlcvMacd) {
         const SeriesWindow signal_window =
@@ -1067,7 +1131,8 @@ class RenderSnapshotBuilder {
     size_t overlay_float_count = 0;
     if (input_.crosshair_active && input_.config.crosshair_enabled) {
       if (input_.config.crosshair_dashed) {
-        const float dash_step = 7.0f * input_.config.display_scale;
+        const float dash_step =
+            (kDashLength + kDashGap) * input_.config.display_scale;
         overlay_float_count =
             (SegmentCount(snapshot_->panes.front().plot.top,
                           snapshot_->panes.back().plot.bottom, dash_step) +
@@ -1075,7 +1140,7 @@ class RenderSnapshotBuilder {
                           dash_step)) *
             kFloatsPerQuad;
       } else {
-        overlay_float_count = 2 * kFloatsPerQuad;
+        overlay_float_count = kSolidCrosshairLineCount * kFloatsPerQuad;
       }
     }
     snapshot_->overlay_vertices.reserve(overlay_float_count);
@@ -1085,8 +1150,9 @@ class RenderSnapshotBuilder {
     const Color grid =
         WithAlpha(input_.config.grid, input_.config.grid_opacity);
     for (const AxisTick& tick : snapshot_->x_ticks) {
-      AppendQuad(*content_vertices_, tick.position - 0.5f,
-                 snapshot_->panes.front().plot.top, tick.position + 0.5f,
+      AppendQuad(*content_vertices_, tick.position - kOnePixelLineHalfWidth,
+                 snapshot_->panes.front().plot.top,
+                 tick.position + kOnePixelLineHalfWidth,
                  snapshot_->panes.back().plot.bottom, grid);
     }
     for (const PaneSnapshot& pane : snapshot_->panes) {
@@ -1094,8 +1160,9 @@ class RenderSnapshotBuilder {
         const AxisTick& tick =
             snapshot_->pane_y_ticks[pane.y_tick_offset + index];
         if (tick.grid_visible) {
-          AppendQuad(*content_vertices_, pane.plot.left, tick.position - 0.5f,
-                     pane.plot.right, tick.position + 0.5f, grid);
+          AppendQuad(*content_vertices_, pane.plot.left,
+                     tick.position - kOnePixelLineHalfWidth, pane.plot.right,
+                     tick.position + kOnePixelLineHalfWidth, grid);
         }
       }
     }
@@ -1177,8 +1244,10 @@ class RenderSnapshotBuilder {
             : NominalResolutionMilliseconds(input_.config.resolution);
     const float slot_width =
         static_cast<float>(slot_domain / domain_span) * plot.Width();
-    const float width = std::clamp(slot_width * 0.7f, 1.0f, 28.0f);
-    if (x + width * 0.5f < plot.left || x - width * 0.5f > plot.right) {
+    const float width = std::clamp(slot_width * kBodyWidthToSlotRatio,
+                                   kMinimumBodyWidth, kMaximumBodyWidth);
+    const float half_width = width / 2.0f;
+    if (IsHorizontallyOutsidePlot(x, half_width, plot)) {
       return;
     }
     const float zero_y =
@@ -1187,11 +1256,11 @@ class RenderSnapshotBuilder {
         std::clamp(ProjectPaneY(pane_index, value), plot.top, plot.bottom);
     float top = std::min(zero_y, value_y);
     float bottom = std::max(zero_y, value_y);
-    if (bottom - top < 1.0f) {
-      top = std::max(plot.top, bottom - 1.0f);
+    if (bottom - top < kMinimumHistogramPixelHeight) {
+      top = std::max(plot.top, bottom - kMinimumHistogramPixelHeight);
     }
-    AppendClippedQuad(*content_vertices_, x - width * 0.5f, top,
-                      x + width * 0.5f, bottom, plot, color);
+    AppendClippedQuad(*content_vertices_, x - half_width, top, x + half_width,
+                      bottom, plot, color);
   }
 
   Color MacdHistogramColor(const SeriesData& series, size_t index) const {
@@ -1303,10 +1372,10 @@ class RenderSnapshotBuilder {
         const Rect& plot = snapshot_->panes[pane_index].plot;
         const float zero_y =
             std::clamp(ProjectPaneY(pane_index, 0.0), plot.top, plot.bottom);
+        const float half_zero_line_width = input_.config.display_scale / 2.0f;
         AppendClippedQuad(*content_vertices_, plot.left,
-                          zero_y - input_.config.display_scale * 0.5f,
-                          plot.right,
-                          zero_y + input_.config.display_scale * 0.5f, plot,
+                          zero_y - half_zero_line_width, plot.right,
+                          zero_y + half_zero_line_width, plot,
                           series.config.macd_zero_line);
         AddLineComponent(series, series.candles, window, false);
         AddLineComponent(series, series.signal_candles,
@@ -1367,19 +1436,19 @@ class RenderSnapshotBuilder {
   }
 
   void AddPaneSeparators() {
-    if (snapshot_->panes.size() < 2) {
+    if (snapshot_->panes.size() < kMinimumResizablePaneCount) {
       return;
     }
     const Color color = WithAlpha(
         input_.config.grid, std::min(1.0f, input_.config.grid_opacity +
                                                kPaneSeparatorOpacityBoost));
+    const float half_separator_height = input_.config.display_scale / 2.0f;
     for (size_t index = 0; index + 1 < snapshot_->panes.size(); ++index) {
-      const float y = snapshot_->panes[index].plot.bottom +
-                      input_.config.display_scale * 0.5f;
+      const float y =
+          snapshot_->panes[index].plot.bottom + half_separator_height;
       AppendQuad(*content_vertices_, snapshot_->panes[index].plot.left,
-                 y - input_.config.display_scale * 0.5f,
-                 snapshot_->panes[index].plot.right,
-                 y + input_.config.display_scale * 0.5f, color);
+                 y - half_separator_height, snapshot_->panes[index].plot.right,
+                 y + half_separator_height, color);
     }
   }
 
@@ -1434,21 +1503,27 @@ class RenderSnapshotBuilder {
         current_value >= y_min_ && current_value <= y_max_;
     if (price_in_range || input_.config.pin_current_price_to_edge) {
       snapshot_->current_price_visible = true;
-      snapshot_->current_price_y = current_value > y_max_ ? snapshot_->plot.top
-                                   : current_value < y_min_
-                                       ? snapshot_->plot.bottom
-                                       : ProjectY(current_value);
+      const bool price_above_range = current_value > y_max_;
+      const bool price_below_range = current_value < y_min_;
+      if (price_above_range) {
+        snapshot_->current_price_y = snapshot_->plot.top;
+      } else if (price_below_range) {
+        snapshot_->current_price_y = snapshot_->plot.bottom;
+      } else {
+        snapshot_->current_price_y = ProjectY(current_value);
+      }
     }
     if (price_in_range) {
-      const float dash = 3.0f * input_.config.display_scale;
-      const float gap = 3.0f * input_.config.display_scale;
+      const float dash = kPriceLineDashLength * input_.config.display_scale;
+      const float gap = kPriceLineDashGap * input_.config.display_scale;
       float x = snapshot_->plot.left;
       const size_t segment_count =
           SegmentCount(snapshot_->plot.left, snapshot_->plot.right, dash + gap);
       for (size_t segment = 0; segment < segment_count; ++segment) {
-        AppendQuad(*content_vertices_, x, snapshot_->current_price_y - 0.5f,
+        AppendQuad(*content_vertices_, x,
+                   snapshot_->current_price_y - kOnePixelLineHalfWidth,
                    std::min(x + dash, snapshot_->plot.right),
-                   snapshot_->current_price_y + 0.5f,
+                   snapshot_->current_price_y + kOnePixelLineHalfWidth,
                    snapshot_->current_price_color);
         x += dash + gap;
       }
@@ -1472,10 +1547,10 @@ class RenderSnapshotBuilder {
         legend.period = series.config.rsi_period;
         legend.text_color = series.config.rsi_text_color;
         legend.text_color_set = series.config.rsi_text_color_set;
-        legend.value_count = 1;
-        legend.values[0].color = series.config.color;
+        legend.value_count = kRsiLegendValueCount;
+        legend.values[kRsiLegendValueIndex].color = series.config.color;
         if (!series.candles.empty()) {
-          IndicatorLegendValue& value = legend.values[0];
+          IndicatorLegendValue& value = legend.values[kRsiLegendValueIndex];
           value.latest_value = series.candles.back().close;
           value.value = value.latest_value;
           value.has_latest_value = true;
@@ -1489,25 +1564,29 @@ class RenderSnapshotBuilder {
         legend.value_source = series.config.line_source;
         legend.text_color = series.config.macd_text_color;
         legend.text_color_set = series.config.macd_text_color_set;
-        legend.value_count = 3;
-        legend.values[1].color = series.config.color;
-        legend.values[2].color = series.config.macd_signal_color;
+        legend.value_count = kMacdLegendValueCount;
+        legend.values[kMacdLineLegendValueIndex].color = series.config.color;
+        legend.values[kMacdSignalLegendValueIndex].color =
+            series.config.macd_signal_color;
         if (!series.candles.empty()) {
-          IndicatorLegendValue& value = legend.values[1];
+          IndicatorLegendValue& value =
+              legend.values[kMacdLineLegendValueIndex];
           value.latest_value = series.candles.back().close;
           value.value = value.latest_value;
           value.has_latest_value = true;
           value.has_value = true;
         }
         if (!series.signal_candles.empty()) {
-          IndicatorLegendValue& value = legend.values[2];
+          IndicatorLegendValue& value =
+              legend.values[kMacdSignalLegendValueIndex];
           value.latest_value = series.signal_candles.back().close;
           value.value = value.latest_value;
           value.has_latest_value = true;
           value.has_value = true;
         }
         if (!series.histogram.empty()) {
-          IndicatorLegendValue& value = legend.values[0];
+          IndicatorLegendValue& value =
+              legend.values[kMacdHistogramLegendValueIndex];
           value.latest_value = series.histogram.back().value;
           value.value = value.latest_value;
           value.has_latest_value = true;
@@ -1542,17 +1621,18 @@ class RenderSnapshotBuilder {
         value.value = value.has_value ? point->close : 0.0;
       };
       if (series.config.source == SeriesSource::kOhlcvRsi) {
-        select_candle(series.candles, 0);
+        select_candle(series.candles, kRsiLegendValueIndex);
         continue;
       }
-      select_candle(series.candles, 1);
-      select_candle(series.signal_candles, 2);
+      select_candle(series.candles, kMacdLineLegendValueIndex);
+      select_candle(series.signal_candles, kMacdSignalLegendValueIndex);
       const auto point = std::lower_bound(
           series.histogram.begin(), series.histogram.end(), timestamp,
           [](const HistogramPoint& item, double value) {
             return item.timestamp < value;
           });
-      IndicatorLegendValue& value = legend.values[0];
+      IndicatorLegendValue& value =
+          legend.values[kMacdHistogramLegendValueIndex];
       value.has_value =
           point != series.histogram.end() && point->timestamp == timestamp;
       value.value = value.has_value ? point->value : 0.0;
@@ -1631,9 +1711,9 @@ class RenderSnapshotBuilder {
     if (nearest->open != 0.0) {
       const double denominator = std::abs(nearest->open);
       snapshot_->selected_change_percent =
-          snapshot_->selected_change / denominator * 100.0;
+          snapshot_->selected_change / denominator * kPercentageScale;
       snapshot_->selected_amplitude_percent =
-          (nearest->high - nearest->low) / denominator * 100.0;
+          (nearest->high - nearest->low) / denominator * kPercentageScale;
       snapshot_->selected_percentages_valid = true;
     }
 
@@ -1648,11 +1728,14 @@ class RenderSnapshotBuilder {
                            active_plot.left, active_plot.right,
                            input_.config.display_scale, line_color);
     } else {
-      AppendQuad(snapshot_->overlay_vertices, snapshot_->crosshair_x - 0.5f,
-                 snapshot_->plot.top, snapshot_->crosshair_x + 0.5f,
+      AppendQuad(snapshot_->overlay_vertices,
+                 snapshot_->crosshair_x - kOnePixelLineHalfWidth,
+                 snapshot_->plot.top,
+                 snapshot_->crosshair_x + kOnePixelLineHalfWidth,
                  snapshot_->panes.back().plot.bottom, line_color);
-      AppendQuad(snapshot_->overlay_vertices, active_plot.left, touch_y - 0.5f,
-                 active_plot.right, touch_y + 0.5f, line_color);
+      AppendQuad(snapshot_->overlay_vertices, active_plot.left,
+                 touch_y - kOnePixelLineHalfWidth, active_plot.right,
+                 touch_y + kOnePixelLineHalfWidth, line_color);
     }
   }
 

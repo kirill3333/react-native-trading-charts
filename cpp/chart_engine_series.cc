@@ -11,11 +11,49 @@
 #include <vector>
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/config_constants.h"
 #include "cpp/internal/config_normalization.h"
 #include "cpp/internal/indicator_series.h"
 #include "cpp/internal/packed_data.h"
 
 namespace trading_charts {
+namespace {
+
+constexpr size_t kSinglePointUpdateCount = 1;
+
+bool IsSupportedSeriesType(SeriesType type) {
+  return type == SeriesType::kCandlestick ||
+         type == SeriesType::kHollowCandlestick || type == SeriesType::kBar ||
+         type == SeriesType::kHistogram || type == SeriesType::kLine ||
+         type == SeriesType::kArea;
+}
+
+bool IsValidRsiSeriesConfig(const SeriesConfig& config) {
+  const bool has_valid_levels =
+      std::isfinite(config.rsi_oversold) &&
+      std::isfinite(config.rsi_overbought) &&
+      config.rsi_oversold >= internal::kRsiMinimumValue &&
+      config.rsi_overbought <= internal::kRsiMaximumValue &&
+      config.rsi_oversold < config.rsi_overbought;
+  return config.type == SeriesType::kLine && config.rsi_period > 0 &&
+         has_valid_levels;
+}
+
+bool IsValidMovingAverageSeriesConfig(const SeriesConfig& config) {
+  return config.type == SeriesType::kLine && config.moving_average_period > 0 &&
+         !config.source_series_id.empty();
+}
+
+bool IsValidMacdSeriesConfig(const SeriesConfig& config) {
+  const bool has_valid_periods =
+      config.macd_fast_period > 0 && config.macd_slow_period > 0 &&
+      config.macd_signal_period > 0 &&
+      config.macd_fast_period < config.macd_slow_period;
+  return config.type == SeriesType::kLine && has_valid_periods &&
+         !config.source_series_id.empty();
+}
+
+}  // namespace
 
 SeriesData* ChartEngine::FindSeriesLocked(const std::string& series_id) {
   auto found =
@@ -119,33 +157,22 @@ bool ChartEngine::PaneHasMacdLocked(size_t pane_index) const {
 }
 
 UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
-  if (config.series_id.empty() || config.series_id == "main" ||
-      config.pane_id.empty() || config.price_scale_id.empty() ||
-      (config.type != SeriesType::kCandlestick &&
-       config.type != SeriesType::kHollowCandlestick &&
-       config.type != SeriesType::kBar &&
-       config.type != SeriesType::kHistogram &&
-       config.type != SeriesType::kLine && config.type != SeriesType::kArea)) {
+  const bool has_valid_identifiers =
+      !config.series_id.empty() && config.series_id != "main" &&
+      !config.pane_id.empty() && !config.price_scale_id.empty();
+  if (!has_valid_identifiers || !IsSupportedSeriesType(config.type)) {
     return UpdateStatus::kInvalidInput;
   }
   if (config.source == SeriesSource::kOhlcvRsi &&
-      (config.type != SeriesType::kLine || config.rsi_period == 0 ||
-       !std::isfinite(config.rsi_oversold) ||
-       !std::isfinite(config.rsi_overbought) || config.rsi_oversold < 0.0 ||
-       config.rsi_overbought > 100.0 ||
-       config.rsi_oversold >= config.rsi_overbought)) {
+      !IsValidRsiSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
   if (IsMovingAverageSource(config.source) &&
-      (config.type != SeriesType::kLine || config.moving_average_period == 0 ||
-       config.source_series_id.empty())) {
+      !IsValidMovingAverageSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
   if (config.source == SeriesSource::kOhlcvMacd &&
-      (config.type != SeriesType::kLine || config.macd_fast_period == 0 ||
-       config.macd_slow_period == 0 || config.macd_signal_period == 0 ||
-       config.macd_fast_period >= config.macd_slow_period ||
-       config.source_series_id.empty())) {
+      !IsValidMacdSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
   std::lock_guard<std::mutex> lock(mutex_);
@@ -357,7 +384,8 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
   if (histogram) {
     internal::ParsedHistogram parsed =
         internal::ParsePackedHistogram(values, value_count);
-    if (parsed.status != UpdateStatus::kApplied || parsed.points.size() != 1) {
+    if (parsed.status != UpdateStatus::kApplied ||
+        parsed.points.size() != kSinglePointUpdateCount) {
       return UpdateStatus::kInvalidInput;
     }
     const HistogramPoint point = parsed.points.front();
@@ -372,7 +400,8 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
   } else {
     internal::ParsedCandles parsed =
         internal::ParsePackedCandles(values, value_count);
-    if (parsed.status != UpdateStatus::kApplied || parsed.candles.size() != 1) {
+    if (parsed.status != UpdateStatus::kApplied ||
+        parsed.candles.size() != kSinglePointUpdateCount) {
       return UpdateStatus::kInvalidInput;
     }
     const Candle candle = parsed.candles.front();

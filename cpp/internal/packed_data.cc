@@ -16,9 +16,8 @@ bool IsFinite(T value) {
 }
 
 bool IsValidTimestamp(double value) {
-  constexpr double kMaxSafeInteger = 9007199254740991.0;
-  return IsFinite(value) && value >= 0.0 && value <= kMaxSafeInteger &&
-         std::trunc(value) == value;
+  return IsFinite(value) && value >= 0.0 &&
+         value <= kMaxJavaScriptSafeInteger && std::trunc(value) == value;
 }
 
 bool IsValidCandle(const Candle& candle) {
@@ -31,8 +30,11 @@ bool IsValidCandle(const Candle& candle) {
 }
 
 Candle CandleFromValues(const double* values) {
-  return Candle{values[0], values[1], values[2],
-                values[3], values[4], values[5]};
+  return Candle{
+      values[kPackedTimestampIndex], values[kPackedOpenIndex],
+      values[kPackedHighIndex],      values[kPackedLowIndex],
+      values[kPackedCloseIndex],     values[kPackedVolumeIndex],
+  };
 }
 
 }  // namespace
@@ -63,15 +65,15 @@ ParsedHistogram ParsePackedHistogram(const double* values, size_t value_count) {
   if (value_count == 0) {
     return {};
   }
-  if (values == nullptr || value_count % 2 != 0) {
+  if (values == nullptr || value_count % kHistogramValueCount != 0) {
     return {UpdateStatus::kInvalidInput, {}};
   }
   ParsedHistogram parsed;
-  parsed.points.reserve(value_count / 2);
+  parsed.points.reserve(value_count / kHistogramValueCount);
   double previous = -std::numeric_limits<double>::infinity();
-  for (size_t index = 0; index < value_count; index += 2) {
-    const double timestamp = values[index];
-    const double value = values[index + 1];
+  for (size_t index = 0; index < value_count; index += kHistogramValueCount) {
+    const double timestamp = values[index + kPackedTimestampIndex];
+    const double value = values[index + kPackedHistogramValueIndex];
     if (!IsFinite(timestamp) || timestamp < 0.0 || timestamp <= previous ||
         !IsFinite(value)) {
       return {UpdateStatus::kInvalidInput, {}};

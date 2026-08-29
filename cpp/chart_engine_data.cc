@@ -167,7 +167,9 @@ UpdateStatus ChartEngine::UpdateTrade(const double* values,
   std::lock_guard<std::mutex> lock(mutex_);
   const size_t previous_size = candles_.size();
   const UpdateStatus status =
-      UpdateTradeLocked(values[0], values[1], values[2]);
+      UpdateTradeLocked(values[internal::kPackedTimestampIndex],
+                        values[internal::kPackedTradePriceIndex],
+                        values[internal::kPackedTradeSizeIndex]);
   if (status == UpdateStatus::kApplied) {
     RefreshDerivedDependentsLocked("main",
                                    previous_size == 0 ? 0 : previous_size - 1);
@@ -187,8 +189,10 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
   std::lock_guard<std::mutex> lock(mutex_);
   const size_t previous_size = candles_.size();
   for (size_t index = 0; index < value_count; index += kTradeValueCount) {
-    if (!internal::IsValidTrade(values[index], values[index + 1],
-                                values[index + 2])) {
+    if (!internal::IsValidTrade(
+            values[index + internal::kPackedTimestampIndex],
+            values[index + internal::kPackedTradePriceIndex],
+            values[index + internal::kPackedTradeSizeIndex])) {
       return UpdateStatus::kInvalidInput;
     }
   }
@@ -196,7 +200,9 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
   bool changed = false;
   for (size_t index = 0; index < value_count; index += kTradeValueCount) {
     const UpdateStatus status =
-        UpdateTradeLocked(values[index], values[index + 1], values[index + 2]);
+        UpdateTradeLocked(values[index + internal::kPackedTimestampIndex],
+                          values[index + internal::kPackedTradePriceIndex],
+                          values[index + internal::kPackedTradeSizeIndex]);
     if (status == UpdateStatus::kInvalidInput) {
       return status;
     }

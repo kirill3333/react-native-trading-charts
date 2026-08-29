@@ -9,9 +9,16 @@
 #include <vector>
 
 #include "cpp/chart_engine.h"
+#include "cpp/internal/config_constants.h"
 #include "cpp/internal/config_normalization.h"
 
 namespace trading_charts {
+namespace {
+
+constexpr double kFallbackPaneTopScaleMargin = 0.1;
+constexpr double kFallbackPaneBottomScaleMargin = 0.0;
+
+}  // namespace
 
 void ChartEngine::SetConfig(const ChartConfig& config) {
   ChartConfig normalized_config = internal::NormalizeChartConfig(config);
@@ -29,11 +36,12 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
       config_.logical_spacing != normalized_config.logical_spacing;
   config_ = std::move(normalized_config);
   if (!panes_.empty()) {
-    panes_[0].scale_margin_top = config_.y_scale_margin_top;
-    panes_[0].scale_margin_bottom = config_.y_scale_margin_bottom;
-    panes_[0].min_move = config_.min_move;
-    panes_[0].precision = config_.precision;
-    panes_[0].scale_visible = config_.show_y_axis;
+    PaneConfig& main_pane = panes_[internal::kMainPaneIndex];
+    main_pane.scale_margin_top = config_.y_scale_margin_top;
+    main_pane.scale_margin_bottom = config_.y_scale_margin_bottom;
+    main_pane.min_move = config_.min_move;
+    main_pane.precision = config_.precision;
+    main_pane.scale_visible = config_.show_y_axis;
   }
   if (viewport_defaults_changed && !candles_.empty()) {
     ResetViewportLocked();
@@ -60,22 +68,30 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
   if (panes.empty()) {
     normalized.push_back(PaneConfig{});
   } else {
+    const PaneConfig defaults;
     for (PaneConfig pane : panes) {
-      if (pane.pane_id.empty() || pane.price_scale_id.empty() ||
-          !std::isfinite(pane.height_weight) || pane.height_weight <= 0.0 ||
-          !std::isfinite(pane.min_height) || pane.min_height <= 0.0F) {
+      const bool has_identifiers =
+          !pane.pane_id.empty() && !pane.price_scale_id.empty();
+      const bool has_valid_weight =
+          std::isfinite(pane.height_weight) && pane.height_weight > 0.0;
+      const bool has_valid_minimum_height =
+          std::isfinite(pane.min_height) && pane.min_height > 0.0F;
+      if (!has_identifiers || !has_valid_weight || !has_valid_minimum_height) {
         continue;
       }
       pane.scale_margin_top = std::max(0.0, pane.scale_margin_top);
       pane.scale_margin_bottom = std::max(0.0, pane.scale_margin_bottom);
-      if (pane.scale_margin_top + pane.scale_margin_bottom >= 1.0) {
-        pane.scale_margin_top = 0.1;
-        pane.scale_margin_bottom = 0.0;
+      if (pane.scale_margin_top + pane.scale_margin_bottom >=
+          internal::kMaximumCombinedScaleMargin) {
+        pane.scale_margin_top = kFallbackPaneTopScaleMargin;
+        pane.scale_margin_bottom = kFallbackPaneBottomScaleMargin;
       }
       if (!std::isfinite(pane.min_move) || pane.min_move <= 0.0) {
-        pane.min_move = 0.01;
+        pane.min_move = defaults.min_move;
       }
-      pane.precision = std::clamp(pane.precision, 0, 12);
+      pane.precision =
+          std::clamp(pane.precision, internal::kMinimumPricePrecision,
+                     internal::kMaximumPricePrecision);
       auto previous = std::find_if(
           panes_.begin(), panes_.end(), [&](const PaneConfig& existing) {
             return existing.pane_id == pane.pane_id &&
@@ -110,7 +126,8 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
   normalized.front().scale_visible = config_.show_y_axis;
   normalized.front().y_range_multiplier = y_range_multiplier_;
   panes_ = std::move(normalized);
-  panes_resizable_ = resizable && panes_.size() > 1;
+  panes_resizable_ =
+      resizable && panes_.size() >= internal::kMinimumResizablePaneCount;
   additional_series_.erase(
       std::remove_if(
           additional_series_.begin(), additional_series_.end(),

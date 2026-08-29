@@ -11,7 +11,17 @@
 namespace trading_charts::internal {
 
 inline constexpr std::int64_t kMillisecondsPerSecond = 1000;
+inline constexpr std::int64_t kSecondsPerMinute = 60;
+inline constexpr std::int64_t kMinutesPerHour = 60;
+inline constexpr std::int64_t kHoursPerDay = 24;
+inline constexpr std::int64_t kDaysPerWeek = 7;
+inline constexpr std::int64_t kMonthsPerYear = 12;
+inline constexpr std::int64_t kMillisecondsPerMinute = 60000;
+inline constexpr std::int64_t kMillisecondsPerHour = 3600000;
 inline constexpr std::int64_t kMillisecondsPerDay = 86400000;
+
+inline constexpr int kIsoMonday = 1;
+inline constexpr int kIsoSunday = 7;
 
 struct TradeBucket {
   std::int64_t key_timestamp_ms = 0;

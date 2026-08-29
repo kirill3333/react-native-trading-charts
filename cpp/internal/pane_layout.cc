@@ -26,9 +26,11 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
   const float bottom =
       height - (config.show_x_axis ? config.x_axis_height : 0.0f);
   const float separator = config.display_scale;
+  const size_t separator_count = pane_count - 1;
+  const float total_separator_height =
+      separator * static_cast<float>(separator_count);
   const float available =
-      std::max(0.0f, bottom - kTopInset -
-                         separator * static_cast<float>(pane_count - 1));
+      std::max(0.0f, bottom - kTopInset - total_separator_height);
 
   // Iteratively fix panes whose proportional share falls below their minimum
   // height, then distribute the remaining space by weight.
@@ -47,12 +49,13 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
       }
       const PaneConfig& pane = PaneConfigAt(panes, index);
       const double weight = std::max(pane.height_weight, 0.0);
-      const float proposed =
-          remaining_weight > 0.0
+      const bool has_remaining_weight = remaining_weight > 0.0;
+      const float proportional_height =
+          has_remaining_weight
               ? static_cast<float>(static_cast<double>(remaining_height) *
                                    weight / remaining_weight)
               : 0.0f;
-      if (proposed < pane.min_height) {
+      if (proportional_height < pane.min_height) {
         heights[index] = std::min(pane.min_height, remaining_height);
         fixed[index] = true;
         remaining_height = std::max(0.0f, remaining_height - heights[index]);
@@ -73,20 +76,29 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
       continue;
     }
     const PaneConfig& pane = PaneConfigAt(panes, index);
-    heights[index] =
-        remaining_weight > 0.0
-            ? static_cast<float>(static_cast<double>(remaining_height) *
-                                 std::max(pane.height_weight, 0.0) /
-                                 remaining_weight)
-            : remaining_height /
-                  static_cast<float>(std::max<size_t>(flexible_count, 1));
+    const bool has_remaining_weight = remaining_weight > 0.0;
+    const float equal_share_height =
+        remaining_height /
+        static_cast<float>(std::max<size_t>(flexible_count, 1));
+    if (has_remaining_weight) {
+      const double normalized_weight =
+          std::max(pane.height_weight, 0.0) / remaining_weight;
+      heights[index] = static_cast<float>(
+          static_cast<double>(remaining_height) * normalized_weight);
+    } else {
+      heights[index] = equal_share_height;
+    }
   }
 
   std::vector<Rect> rects(pane_count);
   float top = kTopInset;
   for (size_t index = 0; index < pane_count; ++index) {
+    const bool is_last_pane = index + 1 == pane_count;
+    const float remaining_height_to_bottom = std::max(0.0f, bottom - top);
+    // Let the last pane absorb floating-point distribution remainder so the
+    // pane stack always ends exactly at the plot boundary.
     const float pane_height =
-        index + 1 == pane_count ? std::max(0.0f, bottom - top) : heights[index];
+        is_last_pane ? remaining_height_to_bottom : heights[index];
     rects[index] = Rect{left, top, right, top + pane_height};
     top += pane_height + separator;
   }

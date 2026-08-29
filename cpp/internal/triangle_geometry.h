@@ -18,6 +18,12 @@ inline constexpr size_t kFloatsPerVertex = 6;
 inline constexpr size_t kFloatsPerTriangle = 18;
 inline constexpr size_t kVerticesPerQuad = 6;
 inline constexpr size_t kFloatsPerQuad = kFloatsPerVertex * kVerticesPerQuad;
+inline constexpr size_t kTriangleVertexCount = 3;
+inline constexpr size_t kMaximumClippedPolygonVertexCount = 8;
+inline constexpr size_t kFirstVertexIndex = 0;
+inline constexpr size_t kSecondVertexIndex = 1;
+inline constexpr size_t kThirdVertexIndex = 2;
+inline constexpr size_t kFourthVertexIndex = 3;
 
 struct ColoredVertex {
   float x = 0.0f;
@@ -109,12 +115,12 @@ inline void AppendClippedTriangle(std::vector<float>& out,
   }
 
   enum class Edge : std::uint8_t { kLeft, kRight, kTop, kBottom };
-  std::array<ColoredVertex, 8> input{};
-  std::array<ColoredVertex, 8> output{};
-  input[0] = first;
-  input[1] = second;
-  input[2] = third;
-  size_t input_count = 3;
+  std::array<ColoredVertex, kMaximumClippedPolygonVertexCount> input{};
+  std::array<ColoredVertex, kMaximumClippedPolygonVertexCount> output{};
+  input[kFirstVertexIndex] = first;
+  input[kSecondVertexIndex] = second;
+  input[kThirdVertexIndex] = third;
+  size_t input_count = kTriangleVertexCount;
 
   const auto inside = [&](const ColoredVertex& vertex, Edge edge) {
     switch (edge) {
@@ -166,7 +172,8 @@ inline void AppendClippedTriangle(std::vector<float>& out,
   }
 
   for (size_t index = 1; index + 1 < input_count; ++index) {
-    AppendTriangle(out, input[0], input[index], input[index + 1]);
+    AppendTriangle(out, input[kFirstVertexIndex], input[index],
+                   input[index + 1]);
   }
 }
 
