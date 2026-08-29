@@ -12,6 +12,10 @@ pre-commit:
     cpp-style:
       glob: '{cpp,android/src/main/cpp}/**/*.{h,cc}'
       run: bash tools/cpp/check_staged.sh {staged_files}
+
+    swift:
+      glob: '{ios,example/ios/TradingChartsExample}/**/*.swift'
+      run: swiftlint lint --strict --no-cache --force-exclude {staged_files}
 commit-msg:
   parallel: true
   commands:

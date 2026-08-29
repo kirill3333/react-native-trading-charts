@@ -75,6 +75,20 @@ To fix auto-fixable linting errors, run the following:
 yarn lint --fix
 ```
 
+Swift changes also require [SwiftLint](https://github.com/realm/SwiftLint),
+installed through Homebrew:
+
+```sh
+brew install swiftlint
+yarn lint:swift
+```
+
+To apply SwiftLint's safe automatic corrections, run:
+
+```sh
+yarn format:swift
+```
+
 Remember to add tests for your change if possible. Run the unit tests by:
 
 ```sh
@@ -113,9 +127,11 @@ The `package.json` file contains various scripts for common tasks:
 
 - `yarn`: setup project by installing dependencies.
 - `yarn typecheck`: type-check files with TypeScript.
-  - `yarn lint`: lint files with [Oxlint](https://oxc.rs/docs/guide/usage/linter).
-    - `yarn test`: run unit tests with [Jest](https://jestjs.io/).
-  - `yarn example start`: start the Metro server for the example app.
+- `yarn lint`: lint files with [Oxlint](https://oxc.rs/docs/guide/usage/linter).
+- `yarn lint:swift`: lint the library and example Swift sources with SwiftLint.
+- `yarn format:swift`: apply SwiftLint's automatic corrections.
+- `yarn test`: run unit tests with [Jest](https://jestjs.io/).
+- `yarn example start`: start the Metro server for the example app.
 - `yarn example android`: run the example app on Android.
 - `yarn example ios`: run the example app on iOS.
 

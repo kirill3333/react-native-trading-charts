@@ -63,8 +63,7 @@ final class ChartEventCoordinator {
     if frame.hasVisibleCandles {
       let range = (frame.firstVisibleIndex, frame.lastVisibleIndex, frame.totalCandleCount)
       if lastVisibleRange == nil || lastVisibleRange!.0 != range.0
-        || lastVisibleRange!.1 != range.1 || lastVisibleRange!.2 != range.2
-      {
+        || lastVisibleRange!.1 != range.1 || lastVisibleRange!.2 != range.2 {
         lastVisibleRange = range
         delegate?.chartHostView(
           host,

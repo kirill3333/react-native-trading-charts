@@ -165,7 +165,10 @@ enum ChartConfigurationDecoder {
     config.up = colorFromHex(selectedSeriesAppearance.stringOrNil("upColor"), fallback: config.up)
     config.down = colorFromHex(selectedSeriesAppearance.stringOrNil("downColor"), fallback: config.down)
     config.crosshair = colorFromHex(crosshairLineAppearance.stringOrNil("color"), fallback: config.crosshair)
-    config.tooltip_background = colorFromHex(tooltipAppearance.stringOrNil("backgroundColor"), fallback: config.tooltip_background)
+    config.tooltip_background = colorFromHex(
+      tooltipAppearance.stringOrNil("backgroundColor"),
+      fallback: config.tooltip_background
+    )
     config.tooltip_text = colorFromHex(
       tooltipAppearance.dictionary("valueText").stringOrNil("color"),
       fallback: config.tooltip_text
@@ -174,8 +177,14 @@ enum ChartConfigurationDecoder {
     config.crosshair_opacity = crosshairLineAppearance.number("opacity")?.floatValue ?? 0.85
     config.current_price_line_up = colorFromHex(currentLineAppearance.stringOrNil("upColor"), fallback: config.up)
     config.current_price_line_down = colorFromHex(currentLineAppearance.stringOrNil("downColor"), fallback: config.down)
-    config.current_price_label_up = colorFromHex(currentLabelAppearance.stringOrNil("upBackgroundColor"), fallback: config.up)
-    config.current_price_label_down = colorFromHex(currentLabelAppearance.stringOrNil("downBackgroundColor"), fallback: config.down)
+    config.current_price_label_up = colorFromHex(
+      currentLabelAppearance.stringOrNil("upBackgroundColor"),
+      fallback: config.up
+    )
+    config.current_price_label_down = colorFromHex(
+      currentLabelAppearance.stringOrNil("downBackgroundColor"),
+      fallback: config.down
+    )
 
     config.show_x_axis = xAxis.bool("visible")
     config.x_axis_height = xAxis.float("height")
@@ -261,8 +270,7 @@ enum ChartConfigurationDecoder {
     for item in value.array("sessions").compactMap({ $0 as? JSONDictionary }) {
       var weekdayMask: UInt8 = 0
       for weekday in item.array("weekdays").compactMap({ ($0 as? NSNumber)?.intValue })
-        where (1...7).contains(weekday)
-      {
+        where (1...7).contains(weekday) {
         weekdayMask |= UInt8(1 << (weekday - 1))
       }
       appendNativeSession(&sessions, sessionConfig(item, weekdayMask: weekdayMask))

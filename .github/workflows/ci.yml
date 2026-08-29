@@ -67,6 +67,19 @@ jobs:
       - name: Typecheck files
         run: yarn typecheck
 
+  swift:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Validate Swift
+        run: swiftlint lint --strict --no-cache
+
   kotlin:
     runs-on: ubuntu-latest
 

@@ -1,0 +1,40 @@
+included:
+  - ios
+  - example/ios/TradingChartsExample
+
+excluded:
+  - ios/generated
+  - example/ios/build
+  - example/ios/Pods
+
+strict: true
+
+cyclomatic_complexity:
+  warning: 20
+  error: 25
+
+file_length:
+  warning: 800
+  error: 1000
+
+function_body_length:
+  warning: 220
+  error: 300
+
+function_parameter_count:
+  warning: 10
+  error: 12
+
+identifier_name:
+  excluded:
+    - "^id$"
+    - "^x$"
+    - "^y$"
+
+large_tuple:
+  warning: 3
+  error: 4
+
+type_body_length:
+  warning: 600
+  error: 800

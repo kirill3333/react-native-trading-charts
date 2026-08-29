@@ -5,112 +5,6 @@ import QuartzCore
 import UIKit
 import os
 
-private struct OverlayStyle {
-  var xAxis: [NSAttributedString.Key: Any]
-  var yAxis: [NSAttributedString.Key: Any]
-  var extrema: [NSAttributedString.Key: Any]
-  var currentPrice: [NSAttributedString.Key: Any]
-  var crosshairPrice: [NSAttributedString.Key: Any]
-  var crosshairTime: [NSAttributedString.Key: Any]
-  var tooltipHeader: [NSAttributedString.Key: Any]
-  var tooltipLabel: [NSAttributedString.Key: Any]
-  var tooltipValue: [NSAttributedString.Key: Any]
-  var tooltipUp: [NSAttributedString.Key: Any]
-  var tooltipDown: [NSAttributedString.Key: Any]
-  var extremaConnector: UIColor
-  var extremaBackground: UIColor
-  var crosshairPriceBackground: UIColor
-  var crosshairTimeBackground: UIColor
-  var tooltipBackground: NativeColor
-  var currentPriceBorder: BorderStyle
-  var crosshairPriceBorder: BorderStyle
-  var crosshairTimeBorder: BorderStyle
-  var tooltipBorder: BorderStyle
-
-  static func resolve(_ configuration: ResolvedChartConfiguration) -> OverlayStyle {
-    let config = configuration.native
-    let appearance = configuration.presentation.dictionary("appearance")
-    let xAxis = appearance.dictionary("xAxis")
-    let yAxis = appearance.dictionary("yAxis")
-    let extrema = appearance.dictionary("priceExtremes")
-    let currentLabel = appearance.dictionary("currentPrice").dictionary("label")
-    let crosshair = appearance.dictionary("crosshair")
-    let crosshairPrice = crosshair.dictionary("priceLabel")
-    let crosshairTime = crosshair.dictionary("timeLabel")
-    let tooltip = appearance.dictionary("tooltip")
-    let tooltipValue = textAttributes(
-      tooltip.dictionary("valueText"), fallback: config.tooltip_text,
-      size: 11, weight: .medium)
-    var tooltipUp = tooltipValue
-    tooltipUp[.foregroundColor] = uiColor(colorFromHex(
-      tooltip.stringOrNil("positiveValueColor"), fallback: config.up))
-    var tooltipDown = tooltipValue
-    tooltipDown[.foregroundColor] = uiColor(colorFromHex(
-      tooltip.stringOrNil("negativeValueColor"), fallback: config.down))
-    return OverlayStyle(
-      xAxis: textAttributes(xAxis.dictionary("text"), fallback: config.axis_text, size: 10.5, weight: .regular),
-      yAxis: textAttributes(yAxis.dictionary("text"), fallback: config.axis_text, size: 10.5, weight: .regular),
-      extrema: textAttributes(extrema.dictionary("text"), fallback: config.axis_text, size: 10.5, weight: .regular),
-      currentPrice: textAttributes(currentLabel.dictionary("text"), fallback: blackColor(), size: 11, weight: .semibold),
-      crosshairPrice: textAttributes(crosshairPrice.dictionary("text"), fallback: blackColor(), size: 11, weight: .semibold),
-      crosshairTime: textAttributes(crosshairTime.dictionary("text"), fallback: blackColor(), size: 10.5, weight: .semibold),
-      tooltipHeader: textAttributes(tooltip.dictionary("headerText"), fallback: config.tooltip_text, size: 11, weight: .medium),
-      tooltipLabel: textAttributes(tooltip.dictionary("labelText"), fallback: config.tooltip_text, size: 11, weight: .medium),
-      tooltipValue: tooltipValue,
-      tooltipUp: tooltipUp,
-      tooltipDown: tooltipDown,
-      extremaConnector: uiColor(colorFromHex(extrema.stringOrNil("connectorColor"), fallback: config.axis_text)),
-      extremaBackground: uiColor(colorFromHex(extrema.stringOrNil("backgroundColor"), fallback: config.background)),
-      crosshairPriceBackground: uiColor(colorFromHex(crosshairPrice.stringOrNil("backgroundColor"), fallback: config.crosshair)),
-      crosshairTimeBackground: uiColor(colorFromHex(crosshairTime.stringOrNil("backgroundColor"), fallback: config.crosshair)),
-      tooltipBackground: colorFromHex(tooltip.stringOrNil("backgroundColor"), fallback: config.tooltip_background),
-      currentPriceBorder: border(currentLabel.dictionary("border"), fallbackRadius: 4),
-      crosshairPriceBorder: border(crosshairPrice.dictionary("border"), fallbackRadius: 4),
-      crosshairTimeBorder: border(crosshairTime.dictionary("border"), fallbackRadius: 4),
-      tooltipBorder: border(tooltip.dictionary("border"), fallbackRadius: 8)
-    )
-  }
-
-  private static func blackColor() -> NativeColor {
-    var color = NativeColor(); color.r = 0; color.g = 0; color.b = 0; color.a = 1
-    return color
-  }
-
-  private static func textAttributes(
-    _ value: JSONDictionary,
-    fallback: NativeColor,
-    size: CGFloat,
-    weight: UIFont.Weight
-  ) -> [NSAttributedString.Key: Any] {
-    let fontSize = value.number("fontSize")?.doubleValue ?? size
-    let family = value.string("fontFamily")
-    let selectedWeight: UIFont.Weight
-    switch value.string("fontWeight") {
-    case "regular": selectedWeight = .regular
-    case "medium": selectedWeight = .medium
-    case "semibold": selectedWeight = .semibold
-    case "bold": selectedWeight = .bold
-    default: selectedWeight = weight
-    }
-    let font = (!family.isEmpty ? UIFont(name: family, size: fontSize) : nil)
-      ?? UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: selectedWeight)
-    return [
-      .font: font,
-      .foregroundColor: uiColor(colorFromHex(value.stringOrNil("color"), fallback: fallback)),
-    ]
-  }
-
-  private static func border(_ value: JSONDictionary, fallbackRadius: CGFloat) -> BorderStyle {
-    var transparent = NativeColor(); transparent.r = 0; transparent.g = 0
-    transparent.b = 0; transparent.a = 0
-    return BorderStyle(
-      color: uiColor(colorFromHex(value.stringOrNil("color"), fallback: transparent)),
-      width: value.number("width")?.doubleValue ?? 0,
-      radius: value.number("radius")?.doubleValue ?? fallbackRadius
-    )
-  }
-}
-
 final class ChartOverlayView: UIView {
   private let axisContainer = CALayer()
   private let badgeContainer = CALayer()
@@ -207,8 +101,13 @@ final class ChartOverlayView: UIView {
     style = OverlayStyle.resolve(configuration)
     formatters.configure(configuration)
     let crosshair = configuration.presentation.dictionary("crosshair")
-    if let fields = crosshair["tooltipFields"] as? [String] { tooltipFields = fields }
-    else { tooltipFields = ["open", "close", "high", "low", "amplitude", "changePercent", "change", "volume"] }
+    if let fields = crosshair["tooltipFields"] as? [String] {
+      tooltipFields = fields
+    } else {
+      tooltipFields = [
+        "open", "close", "high", "low", "amplitude", "changePercent", "change", "volume"
+      ]
+    }
     showTooltipHeader = crosshair.number("showTooltipHeader")?.boolValue ?? true
     presentationVersion += 1
     xAxisLayoutCache.removeAllObjects()
@@ -243,6 +142,7 @@ final class ChartOverlayView: UIView {
       frame.revision, frame.contentRevision, frame.xTickCount, frame.yTickCount)
     if hasAppliedRevision, appliedRevision == frame.revision {
       os_signpost(.end, log: ChartPerformance.log, name: "Overlay Update Layers", signpostID: updateId,
+        // swiftlint:disable:next line_length
         "cached=1 visible=0 textUpdates=0 xTextUpdates=0 yTextUpdates=0 layoutCacheHits=0 layoutCacheMisses=0 layerReassignments=0 frameUpdates=0 xFrameUpdates=0 yFrameUpdates=0 staticUpdated=0 selectionUpdated=0 crosshairTextUpdates=0 selectionTextUpdates=0")
       return
     }
@@ -268,6 +168,7 @@ final class ChartOverlayView: UIView {
       applyStatic(frame: frame, configuration: configuration, style: style, timeIndex: timeIndex, metrics: &metrics)
       os_signpost(
         .end, log: ChartPerformance.log, name: "Overlay Static Update", signpostID: staticId,
+        // swiftlint:disable:next line_length
         "visible=%{public}lu textUpdates=%{public}lu frameUpdates=%{public}lu xFrameUpdates=%{public}lu yFrameUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu",
         visibleStaticLabels, metrics.textUpdates - textUpdatesBefore,
         metrics.frameUpdates - frameUpdatesBefore, metrics.xFrameUpdates, metrics.yFrameUpdates,
@@ -302,6 +203,7 @@ final class ChartOverlayView: UIView {
     hasAppliedRevision = true
     let visible = visibleStaticLabels + visibleSelectionLabels + visibleLegendLabels + (frame.crosshairVisible ? 1 : 0)
     os_signpost(.end, log: ChartPerformance.log, name: "Overlay Update Layers", signpostID: updateId,
+      // swiftlint:disable:next line_length
       "cached=0 visible=%{public}lu textUpdates=%{public}lu xTextUpdates=%{public}lu yTextUpdates=%{public}lu layoutCacheHits=%{public}lu layoutCacheMisses=%{public}lu layerReassignments=%{public}lu frameUpdates=%{public}lu xFrameUpdates=%{public}lu yFrameUpdates=%{public}lu staticUpdated=%{public}d selectionUpdated=%{public}d crosshairTextUpdates=%{public}lu selectionTextUpdates=%{public}lu",
       visible, metrics.textUpdates, metrics.xTextUpdates, metrics.yTextUpdates,
       metrics.layoutCacheHits, metrics.layoutCacheMisses, metrics.layerReassignments,
@@ -319,14 +221,22 @@ final class ChartOverlayView: UIView {
     var xPresentations: [TextPresentation] = []
     if configuration.native.show_x_axis {
       var lastRight = -CGFloat.greatestFiniteMagnitude
-      let xAxisTop = frame.paneCount > 0 ? CGFloat(frame.pane(at: frame.paneCount - 1).plot.bottom) : CGFloat(frame.plot.bottom)
+      let xAxisTop = frame.paneCount > 0
+        ? CGFloat(frame.pane(at: frame.paneCount - 1).plot.bottom)
+        : CGFloat(frame.plot.bottom)
       for index in 0..<frame.xTickCount {
         let tick = frame.xTick(at: index)
         let text = formatters.formatTime(tick.value, index: timeIndex, full: false, tooltip: false)
         let layout = cachedLayout(text, attributes: style.xAxis, cache: xAxisLayoutCache, metrics: &metrics)
-        let x = max(2, min(CGFloat(frame.width) - layout.size.width - 2, CGFloat(tick.position) - layout.size.width / 2))
+        let x = max(
+          2,
+          min(CGFloat(frame.width) - layout.size.width - 2, CGFloat(tick.position) - layout.size.width / 2)
+        )
         if x < lastRight + 8 { continue }
-        xPresentations.append(TextPresentation(layout: layout, frame: CGRect(x: x, y: xAxisTop + 5, width: layout.size.width, height: layout.size.height)))
+        xPresentations.append(TextPresentation(
+          layout: layout,
+          frame: CGRect(x: x, y: xAxisTop + 5, width: layout.size.width, height: layout.size.height)
+        ))
         lastRight = x + layout.size.width
         visible += 1
       }
@@ -394,10 +304,27 @@ final class ChartOverlayView: UIView {
       let direction: CGFloat = extremum.label_on_right ? 1 : -1
       let lineEnd = max(CGFloat(frame.plot.left), min(CGFloat(frame.plot.right), CGFloat(extremum.x) + direction * 20))
       let rawX = extremum.label_on_right ? lineEnd + 4 : lineEnd - 4 - layout.size.width
-      let x = max(CGFloat(frame.plot.left), min(max(CGFloat(frame.plot.left), CGFloat(frame.plot.right) - layout.size.width), rawX))
-      let y = max(CGFloat(frame.plot.top), min(max(CGFloat(frame.plot.top), CGFloat(frame.plot.bottom) - layout.size.height), CGFloat(extremum.y) - layout.size.height / 2))
-      presentations.append(TextPresentation(layout: layout, frame: CGRect(x: x, y: y, width: layout.size.width, height: layout.size.height)))
-      connectorFrames.append(CGRect(x: min(CGFloat(extremum.x), lineEnd), y: CGFloat(extremum.y) - 0.5, width: abs(lineEnd - CGFloat(extremum.x)), height: 1))
+      let x = max(
+        CGFloat(frame.plot.left),
+        min(max(CGFloat(frame.plot.left), CGFloat(frame.plot.right) - layout.size.width), rawX)
+      )
+      let y = max(
+        CGFloat(frame.plot.top),
+        min(
+          max(CGFloat(frame.plot.top), CGFloat(frame.plot.bottom) - layout.size.height),
+          CGFloat(extremum.y) - layout.size.height / 2
+        )
+      )
+      presentations.append(TextPresentation(
+        layout: layout,
+        frame: CGRect(x: x, y: y, width: layout.size.width, height: layout.size.height)
+      ))
+      connectorFrames.append(CGRect(
+        x: min(CGFloat(extremum.x), lineEnd),
+        y: CGFloat(extremum.y) - 0.5,
+        width: abs(lineEnd - CGFloat(extremum.x)),
+        height: 1
+      ))
       visible += 1
     }
     _ = extremaPool.reconcile(presentations, metrics: &metrics)
@@ -412,7 +339,10 @@ final class ChartOverlayView: UIView {
         extremaPool.items[index].layer.zPosition = 2
       }
       let connector = extremaConnectorLayers[index]
-      if connector.frame != connectorFrames[index] { connector.frame = connectorFrames[index]; metrics.frameUpdates += 1 }
+      if connector.frame != connectorFrames[index] {
+        connector.frame = connectorFrames[index]
+        metrics.frameUpdates += 1
+      }
       setBackgroundColor(style.extremaConnector.cgColor, on: connector)
       setHidden(false, on: connector)
       let background = extremaBackgroundLayers[index]
@@ -441,7 +371,13 @@ final class ChartOverlayView: UIView {
       let valueFormatter = formatters.valueFormatterToken(scaleId: scaleId)
       let title: String
       if legend.kind == .macd {
-        let source = legend.value_source == .open ? "OPEN" : (legend.value_source == .high ? "HIGH" : (legend.value_source == .low ? "LOW" : "CLOSE"))
+        let source: String
+        switch legend.value_source {
+        case .open: source = "OPEN"
+        case .high: source = "HIGH"
+        case .low: source = "LOW"
+        default: source = "CLOSE"
+        }
         title = "MACD \(legend.fast_period) \(legend.slow_period) \(source) \(legend.signal_period)"
       } else { title = "RSI \(legend.period)" }
       let attributed = NSMutableAttributedString(string: title, attributes: legend.text_color_set
@@ -451,9 +387,14 @@ final class ChartOverlayView: UIView {
         let value = frame.indicatorLegendValue(legendIndex: legendIndex, valueIndex: valueIndex)
         let text = value.has_value
           ? formatters.formatValue(value.value, using: valueFormatter) : "—"
-        cacheKey += "\u{1f}\(text)\u{1f}\(value.color.r)\u{1f}\(value.color.g)\u{1f}\(value.color.b)\u{1f}\(value.color.a)"
+        cacheKey.append(contentsOf: "\u{1f}\(text)")
+        cacheKey.append(contentsOf: "\u{1f}\(value.color.r)\u{1f}\(value.color.g)")
+        cacheKey.append(contentsOf: "\u{1f}\(value.color.b)\u{1f}\(value.color.a)")
         let color = legend.kind == .rsi && legend.text_color_set ? legend.text_color : value.color
-        attributed.append(NSAttributedString(string: " " + text, attributes: replacingColor(style.yAxis, color: uiColor(color))))
+        attributed.append(NSAttributedString(
+          string: " " + text,
+          attributes: replacingColor(style.yAxis, color: uiColor(color))
+        ))
       }
       let layout: ChartTextLayout
       if let cached = indicatorLayoutCache.object(forKey: cacheKey as NSString) {
@@ -507,11 +448,21 @@ final class ChartOverlayView: UIView {
     }
     var visible = 1
     let time = formatters.formatTime(frame.selectedCandle.timestamp, index: timeIndex, full: true, tooltip: false)
-    let timeLayout = cachedLayout(time, attributes: style.crosshairTime, cache: crosshairTimeLayoutCache, metrics: &metrics)
+    let timeLayout = cachedLayout(
+      time, attributes: style.crosshairTime, cache: crosshairTimeLayoutCache, metrics: &metrics
+    )
     let height = max(20, timeLayout.size.height + 6)
-    let xAxisTop = frame.paneCount > 0 ? CGFloat(frame.pane(at: frame.paneCount - 1).plot.bottom) : CGFloat(frame.plot.bottom)
+    let xAxisTop = frame.paneCount > 0
+      ? CGFloat(frame.pane(at: frame.paneCount - 1).plot.bottom)
+      : CGFloat(frame.plot.bottom)
     let timeFrame = CGRect(
-      x: max(CGFloat(frame.plot.left), min(CGFloat(frame.plot.right) - timeLayout.size.width - 12, CGFloat(frame.crosshairX) - timeLayout.size.width / 2 - 6)),
+      x: max(
+        CGFloat(frame.plot.left),
+        min(
+          CGFloat(frame.plot.right) - timeLayout.size.width - 12,
+          CGFloat(frame.crosshairX) - timeLayout.size.width / 2 - 6
+        )
+      ),
       y: xAxisTop, width: timeLayout.size.width + 12, height: height)
     applyBadgeFrames(crosshairTimeBadge, layout: timeLayout, backgroundFrame: timeFrame,
       color: style.crosshairTimeBackground, border: style.crosshairTimeBorder, metrics: &metrics)
@@ -527,8 +478,14 @@ final class ChartOverlayView: UIView {
         case "close": value = formatters.formatValue(candle.close, role: "tooltip")
         case "high": value = formatters.formatValue(candle.high, role: "tooltip")
         case "low": value = formatters.formatValue(candle.low, role: "tooltip")
-        case "amplitude": value = formatters.formatPercentage(frame.selectedAmplitudePercent, valid: frame.selectedPercentagesValid)
-        case "changePercent": value = formatters.formatPercentage(frame.selectedChangePercent, valid: frame.selectedPercentagesValid)
+        case "amplitude":
+          value = formatters.formatPercentage(
+            frame.selectedAmplitudePercent, valid: frame.selectedPercentagesValid
+          )
+        case "changePercent":
+          value = formatters.formatPercentage(
+            frame.selectedChangePercent, valid: frame.selectedPercentagesValid
+          )
         case "change": value = formatters.formatValue(frame.selectedChange, role: "tooltip")
         case "volume": value = formatters.formatVolume(candle.volume)
         default: value = nil
@@ -536,7 +493,10 @@ final class ChartOverlayView: UIView {
         guard let value else { continue }
         labels.append(tooltipLabel(field, config: configuration.native)); values.append(value)
       }
-      applyTooltip(frame: frame, style: style, timeIndex: timeIndex, labels: labels, values: values, metrics: &metrics)
+      applyTooltip(
+        frame: frame, style: style, timeIndex: timeIndex,
+        labels: labels, values: values, metrics: &metrics
+      )
       visible += values.count * 2 + (showTooltipHeader ? 1 : 0)
     } else { setHidden(true, on: tooltipContainer) }
     visibleSelectionLabels = visible
@@ -561,12 +521,14 @@ final class ChartOverlayView: UIView {
     let valuesLayout = cachedLayout(
       valueText, attributes: multilineAttributes(valueAttributes), cache: valueCache,
       metrics: &metrics)
-    let headerText = formatters.formatTime(frame.selectedCandle.timestamp, index: timeIndex, full: true, tooltip: true)
+    let headerText = formatters.formatTime(
+      frame.selectedCandle.timestamp, index: timeIndex, full: true, tooltip: true
+    )
     let headerLayout = cachedLayout(
       headerText, attributes: style.tooltipHeader, cache: tooltipHeaderLayoutCache,
       metrics: &metrics)
-    let labelFont = style.tooltipLabel[.font] as! UIFont
-    let valueFont = style.tooltipValue[.font] as! UIFont
+    let labelFont = style.tooltipLabel[.font] as? UIFont ?? UIFont.systemFont(ofSize: 11)
+    let valueFont = style.tooltipValue[.font] as? UIFont ?? UIFont.systemFont(ofSize: 11)
     let rowHeight = max(labelFont.lineHeight, valueFont.lineHeight)
     let headerHeight = showTooltipHeader ? max(17, headerLayout.size.height) : 0
     let rowsWidth = labels.isEmpty ? 0 : labelsLayout.size.width + 12 + valuesLayout.size.width
@@ -574,7 +536,9 @@ final class ChartOverlayView: UIView {
     let rowsHeight = CGFloat(values.count) * rowHeight
     let height = headerHeight + rowsHeight + 18
     let midX = (CGFloat(frame.plot.left) + CGFloat(frame.plot.right)) / 2
-    let x = CGFloat(frame.crosshairX) > midX ? CGFloat(frame.plot.left) + 8 : CGFloat(frame.plot.right) - width - 8
+    let x = CGFloat(frame.crosshairX) > midX
+      ? CGFloat(frame.plot.left) + 8
+      : CGFloat(frame.plot.right) - width - 8
     let box = CGRect(x: x, y: CGFloat(frame.plot.top) + 8, width: width, height: height)
     if tooltipBackgroundLayer.frame != box { tooltipBackgroundLayer.frame = box; metrics.frameUpdates += 1 }
     var background = style.tooltipBackground
@@ -588,18 +552,39 @@ final class ChartOverlayView: UIView {
     }
     setHidden(false, on: tooltipContainer)
     setHidden(false, on: tooltipBackgroundLayer)
-    var y = box.minY + 9; var lineIndex = 0
+    var y = box.minY + 9
+    var lineIndex = 0
     if showTooltipHeader {
-      _ = tooltipLinePool.apply(layout: headerLayout, to: tooltipLinePool.item(at: lineIndex), frame: CGRect(
-        x: box.minX + 10, y: y, width: headerLayout.size.width, height: headerLayout.size.height), metrics: &metrics)
-      lineIndex += 1; y += headerHeight
+      _ = tooltipLinePool.apply(
+        layout: headerLayout,
+        to: tooltipLinePool.item(at: lineIndex),
+        frame: CGRect(
+          x: box.minX + 10, y: y,
+          width: headerLayout.size.width, height: headerLayout.size.height
+        ),
+        metrics: &metrics
+      )
+      lineIndex += 1
+      y += headerHeight
     }
     if !values.isEmpty {
-      _ = tooltipLinePool.apply(layout: labelsLayout, to: tooltipLinePool.item(at: lineIndex), frame: CGRect(
-        x: box.minX + 10, y: y, width: labelsLayout.size.width, height: rowsHeight), metrics: &metrics)
-      _ = tooltipValuePool.apply(layout: valuesLayout, to: tooltipValuePool.item(at: 0), frame: CGRect(
-        x: box.minX + 10 + labelsLayout.size.width + 12, y: y, width: valuesLayout.size.width, height: rowsHeight), metrics: &metrics)
-      lineIndex += 1; tooltipValuePool.hide(from: 1)
+      _ = tooltipLinePool.apply(
+        layout: labelsLayout,
+        to: tooltipLinePool.item(at: lineIndex),
+        frame: CGRect(x: box.minX + 10, y: y, width: labelsLayout.size.width, height: rowsHeight),
+        metrics: &metrics
+      )
+      _ = tooltipValuePool.apply(
+        layout: valuesLayout,
+        to: tooltipValuePool.item(at: 0),
+        frame: CGRect(
+          x: box.minX + 10 + labelsLayout.size.width + 12,
+          y: y, width: valuesLayout.size.width, height: rowsHeight
+        ),
+        metrics: &metrics
+      )
+      lineIndex += 1
+      tooltipValuePool.hide(from: 1)
     } else { tooltipValuePool.hide(from: 0) }
     tooltipLinePool.hide(from: lineIndex)
   }
@@ -616,14 +601,27 @@ final class ChartOverlayView: UIView {
     let x = configuration.native.y_axis_on_right ? CGFloat(frame.plot.right) : max(0, CGFloat(frame.plot.left) - width)
     let height = max(20, layout.size.height + 6); let half = height / 2
     let clampedY = max(half, min(max(half, CGFloat(frame.height) - half), y))
-    applyBadgeFrames(badge, layout: layout, backgroundFrame: CGRect(x: x, y: clampedY - half, width: width, height: height), color: color, border: border, metrics: &metrics)
+    applyBadgeFrames(
+      badge,
+      layout: layout,
+      backgroundFrame: CGRect(x: x, y: clampedY - half, width: width, height: height),
+      color: color,
+      border: border,
+      metrics: &metrics
+    )
   }
 
-  private func applyBadgeFrames(
+}
+
+private extension ChartOverlayView {
+  func applyBadgeFrames(
     _ badge: BadgeLayerGroup, layout: ChartTextLayout, backgroundFrame: CGRect,
     color: UIColor, border: BorderStyle, metrics: inout OverlayUpdateMetrics
   ) {
-    if badge.backgroundLayer.frame != backgroundFrame { badge.backgroundLayer.frame = backgroundFrame; metrics.frameUpdates += 1 }
+    if badge.backgroundLayer.frame != backgroundFrame {
+      badge.backgroundLayer.frame = backgroundFrame
+      metrics.frameUpdates += 1
+    }
     setBackgroundColor(color.cgColor, on: badge.backgroundLayer)
     if badge.appliedStyleVersion != presentationVersion {
       badge.appliedStyleVersion = presentationVersion
@@ -652,9 +650,11 @@ final class ChartOverlayView: UIView {
     return value
   }
 
-  private func multilineAttributes(_ attributes: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
+  private func multilineAttributes(
+    _ attributes: [NSAttributedString.Key: Any]
+  ) -> [NSAttributedString.Key: Any] {
     var result = attributes
-    let font = attributes[.font] as! UIFont
+    let font = attributes[.font] as? UIFont ?? UIFont.systemFont(ofSize: 11)
     let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 0
     paragraph.minimumLineHeight = font.lineHeight; paragraph.maximumLineHeight = font.lineHeight
     result[.paragraphStyle] = paragraph

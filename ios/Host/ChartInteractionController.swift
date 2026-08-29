@@ -116,8 +116,7 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
       if scalingYAxis {
         let point = recognizer.location(in: view)
         if config.allow_y_axis_scale,
-          engine.scaleY(Float(translation.y), at: Float(point.y))
-        {
+          engine.scaleY(Float(translation.y), at: Float(point.y)) {
           events.pendingYAxisScale = true
           requestFrame()
         }

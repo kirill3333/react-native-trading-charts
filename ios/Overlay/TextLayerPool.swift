@@ -15,7 +15,7 @@ final class ChartTextLayout: NSObject {
   }
 
   init(attributedString: NSAttributedString) {
-    self.attributedString = attributedString.copy() as! NSAttributedString
+    self.attributedString = NSAttributedString(attributedString: attributedString)
     let measured = self.attributedString.size()
     size = CGSize(width: ceil(measured.width), height: ceil(measured.height))
   }
@@ -121,8 +121,7 @@ final class TextLayerPool {
     // [A, B, C] -> [D, A, B] behavior of the original overlay.
     for presentationIndex in presentations.indices {
       for poolIndex in items.indices
-        where !used[poolIndex] && items[poolIndex].layout === presentations[presentationIndex].layout
-      {
+        where !used[poolIndex] && items[poolIndex].layout === presentations[presentationIndex].layout {
         assignments[presentationIndex] = poolIndex
         used[poolIndex] = true
         break

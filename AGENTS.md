@@ -304,6 +304,17 @@ yarn typecheck
 yarn lint
 ```
 
+If any Swift source under `ios` or `example/ios/TradingChartsExample` changed,
+run the strict SwiftLint validation:
+
+```sh
+yarn lint:swift
+```
+
+SwiftLint is installed through Homebrew with `brew install swiftlint`. If
+automatic corrections are needed, use `yarn format:swift`, review the diff,
+and rerun `yarn lint:swift`.
+
 If any C++ header or source file changed, including JNI code under
 `android/src/main/cpp`, run the full CI-equivalent C++ validation:
 

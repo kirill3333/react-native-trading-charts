@@ -44,6 +44,8 @@
     "test": "jest",
     "test:cpp": "bash tools/cpp/test.sh",
     "benchmark:cpp": "bash tools/cpp/benchmark.sh",
+    "lint:swift": "swiftlint lint --strict --no-cache",
+    "format:swift": "swiftlint lint --fix --no-cache",
     "lint:kotlin": "./example/android/gradlew -p tools/kotlin kotlinCheck --no-daemon --console=plain",
     "format:kotlin": "./example/android/gradlew -p tools/kotlin ktfmtFormat --no-daemon --console=plain",
     "format:cpp": "bash tools/cpp/format.sh -i",

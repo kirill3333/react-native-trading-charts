@@ -218,8 +218,7 @@ public final class TradingChartsRegistry: NSObject {
     failure: @escaping () -> Void
   ) {
     onMain { [self] in
-      if let view = entry(for: chartId, create: false)?.view { success(view.candleData()) }
-      else { failure() }
+      if let view = entry(for: chartId, create: false)?.view { success(view.candleData()) } else { failure() }
     }
   }
 
@@ -286,8 +285,7 @@ public final class TradingChartsRegistry: NSObject {
     guard !chartId.isEmpty else { return }
     onMain { [self] in
       let entry = entry(for: chartId, create: true)!
-      if let view = entry.view { command.replay(on: view) }
-      else { append(command, to: entry, chartId: chartId) }
+      if let view = entry.view { command.replay(on: view) } else { append(command, to: entry, chartId: chartId) }
     }
   }
 
@@ -317,7 +315,6 @@ public final class TradingChartsRegistry: NSObject {
   }
 
   private func onMain(_ work: @escaping () -> Void) {
-    if Thread.isMainThread { work() }
-    else { DispatchQueue.main.async(execute: work) }
+    if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
   }
 }
