@@ -49,6 +49,9 @@ using namespace facebook::react;
     [_host applyConfigJson:
                [NSString stringWithUTF8String:newViewProps.configJson.c_str()]];
   }
+  if (oldViewProps.yAxisPressEnabled != newViewProps.yAxisPressEnabled) {
+    [_host setYAxisPressEnabled:newViewProps.yAxisPressEnabled];
+  }
   NSString *newChartId =
       [NSString stringWithUTF8String:newViewProps.chartId.c_str()];
   if (!((_chartId == newChartId) || [_chartId isEqualToString:newChartId])) {
@@ -98,6 +101,24 @@ using namespace facebook::react;
       static_cast<int>(totalCandleCount),
       isAtStart == YES,
       isAtEnd == YES,
+  });
+}
+
+- (void)chartHostView:(TCChartHostView *)host
+          yAxisPressX:(double)x
+                    y:(double)y
+                price:(double)price
+               paneId:(NSString *)paneId
+         priceScaleId:(NSString *)priceScaleId {
+  if (!_eventEmitter) return;
+  auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
+      _eventEmitter);
+  emitter->onYAxisPress({
+      x,
+      y,
+      price,
+      paneId.UTF8String ?: "",
+      priceScaleId.UTF8String ?: "",
   });
 }
 
@@ -213,6 +234,28 @@ using namespace facebook::react;
 
 - (void)setPaneHeight:(NSString *)paneId weight:(double)weight {
   [_host setPaneHeight:paneId ?: @"" weight:weight];
+}
+
+- (void)setPriceLine:(NSString *)priceLineId
+               price:(double)price
+               label:(NSString *)label
+               color:(NSString *)color {
+  [_host setPriceLine:priceLineId ?: @""
+                price:price
+                label:label ?: @""
+                color:color ?: @""];
+}
+
+- (void)removePriceLine:(NSString *)priceLineId {
+  [_host removePriceLine:priceLineId ?: @""];
+}
+
+- (void)clearPriceLines {
+  [_host clearPriceLines];
+}
+
+- (NSString *)priceLinesJson {
+  return [_host priceLinesJson];
 }
 
 - (void)zoomByScale:(double)scale {

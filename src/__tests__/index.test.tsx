@@ -17,6 +17,10 @@ const mockNativeModule = {
   updateSeriesData: jest.fn<NativeTradingChartsSpec['updateSeriesData']>(),
   removeSeries: jest.fn<NativeTradingChartsSpec['removeSeries']>(),
   setPaneHeight: jest.fn<NativeTradingChartsSpec['setPaneHeight']>(),
+  setPriceLine: jest.fn<NativeTradingChartsSpec['setPriceLine']>(),
+  removePriceLine: jest.fn<NativeTradingChartsSpec['removePriceLine']>(),
+  clearPriceLines: jest.fn<NativeTradingChartsSpec['clearPriceLines']>(),
+  getPriceLines: jest.fn<NativeTradingChartsSpec['getPriceLines']>(),
   getCandles: jest.fn<NativeTradingChartsSpec['getCandles']>(),
   zoom: jest.fn<NativeTradingChartsSpec['zoom']>(),
   fitContent: jest.fn<NativeTradingChartsSpec['fitContent']>(),
@@ -102,6 +106,80 @@ describe('TradingCharts data API', () => {
     expect(mockNativeModule.updateTrades).toHaveBeenCalledWith(
       'main',
       [101, 13, 0, 102, 11, 2]
+    );
+  });
+
+  it('sets, removes, clears and reads price lines', async () => {
+    TradingCharts.setPriceLine('chart', {
+      id: 'all-time-high',
+      price: 35_970,
+      label: 'All Time High',
+      color: '#FF9966',
+    });
+    expect(mockNativeModule.setPriceLine).toHaveBeenCalledWith(
+      'chart',
+      'all-time-high',
+      35_970,
+      'All Time High',
+      '#FF9966'
+    );
+
+    TradingCharts.removePriceLine('chart', 'all-time-high');
+    TradingCharts.clearPriceLines('chart');
+    expect(mockNativeModule.removePriceLine).toHaveBeenCalledWith(
+      'chart',
+      'all-time-high'
+    );
+    expect(mockNativeModule.clearPriceLines).toHaveBeenCalledWith('chart');
+
+    mockNativeModule.getPriceLines.mockResolvedValueOnce(
+      JSON.stringify([
+        {
+          id: 'migration',
+          price: 42_570,
+          label: 'Migration Market Cap',
+          color: '#009F85CC',
+        },
+      ])
+    );
+    await expect(TradingCharts.getPriceLines('chart')).resolves.toEqual([
+      {
+        id: 'migration',
+        price: 42_570,
+        label: 'Migration Market Cap',
+        color: '#009F85CC',
+      },
+    ]);
+  });
+
+  it('validates price-line inputs and native getter payloads', async () => {
+    const valid = {
+      id: 'line',
+      price: 10,
+      label: 'Target',
+      color: '#00AAFF',
+    };
+    expect(() => TradingCharts.setPriceLine('', valid)).toThrow('chartId');
+    expect(() =>
+      TradingCharts.setPriceLine('chart', { ...valid, id: ' ' })
+    ).toThrow('priceLine.id');
+    expect(() =>
+      TradingCharts.setPriceLine('chart', { ...valid, price: Number.NaN })
+    ).toThrow('priceLine.price');
+    expect(() =>
+      TradingCharts.setPriceLine('chart', { ...valid, label: ' ' })
+    ).toThrow('priceLine.label');
+    expect(() =>
+      TradingCharts.setPriceLine('chart', { ...valid, color: 'red' })
+    ).toThrow('priceLine.color');
+    expect(() => TradingCharts.removePriceLine('chart', ' ')).toThrow(
+      'priceLineId'
+    );
+    expect(() => TradingCharts.clearPriceLines('')).toThrow('chartId');
+
+    mockNativeModule.getPriceLines.mockResolvedValueOnce('{}');
+    await expect(TradingCharts.getPriceLines('chart')).rejects.toThrow(
+      'must be an array'
     );
   });
 

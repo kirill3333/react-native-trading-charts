@@ -31,6 +31,17 @@ internal object TradingChartsRegistry {
 
     data class PaneHeight(val paneId: String, val heightWeight: Double) : Command
 
+    data class SetPriceLine(
+        val id: String,
+        val price: Double,
+        val label: String,
+        val color: String,
+    ) : Command
+
+    data class RemovePriceLine(val id: String) : Command
+
+    data object ClearPriceLines : Command
+
     data class Zoom(val scale: Double) : Command
 
     data object FitContent : Command
@@ -107,6 +118,18 @@ internal object TradingChartsRegistry {
   fun setPaneHeight(chartId: String, paneId: String, heightWeight: Double) =
       enqueue(chartId, Command.PaneHeight(paneId, heightWeight))
 
+  fun setPriceLine(chartId: String, id: String, price: Double, label: String, color: String) =
+      enqueue(chartId, Command.SetPriceLine(id, price, label, color))
+
+  fun removePriceLine(chartId: String, id: String) = enqueue(chartId, Command.RemovePriceLine(id))
+
+  fun clearPriceLines(chartId: String) = enqueue(chartId, Command.ClearPriceLines)
+
+  fun getPriceLines(chartId: String, onSuccess: (String) -> Unit, onError: () -> Unit) = onMain {
+    val view = entries[chartId]?.view?.get()
+    if (view == null) onError() else onSuccess(view.priceLinesJson())
+  }
+
   fun zoom(chartId: String, scale: Double) = enqueue(chartId, Command.Zoom(scale))
 
   fun fitContent(chartId: String) = enqueue(chartId, Command.FitContent)
@@ -135,7 +158,7 @@ internal object TradingChartsRegistry {
           it is Command.SeriesData
     }
     entry.view?.get()?.clearData()
-    if (entry.view?.get() == null) entries.remove(chartId)
+    if (entry.view?.get() == null && entry.pending.isEmpty()) entries.remove(chartId)
   }
 
   private fun enqueue(chartId: String, command: Command) = onMain {
@@ -144,27 +167,45 @@ internal object TradingChartsRegistry {
     if (view != null) {
       apply(view, command)
     } else {
-      if (command is Command.History) {
-        entry.pending.removeAll {
-          it is Command.History ||
-              it is Command.PrependHistory ||
-              it is Command.Candle ||
-              it is Command.Trade ||
-              it is Command.Trades
-        }
-      } else if (command is Command.SeriesData && !command.prepend && !command.update) {
-        entry.pending.removeAll {
-          it is Command.SeriesData && it.seriesId == command.seriesId
-        }
-      } else if (command is Command.PaneHeight) {
-        entry.pending.removeAll {
-          it is Command.PaneHeight && it.paneId == command.paneId
-        }
-      } else if (command is Command.FitContent) {
-        entry.pending.removeAll { it is Command.FitContent }
-      }
+      coalescePending(entry.pending, command)
       entry.pending += command
       trimPending(chartId, entry.pending)
+    }
+  }
+
+  private fun coalescePending(pending: MutableList<Command>, command: Command) {
+    when (command) {
+      is Command.History -> pending.removeAll { it.isMarketDataCommand() }
+      is Command.SeriesData -> {
+        if (!command.prepend && !command.update) {
+          pending.removeAll { it is Command.SeriesData && it.seriesId == command.seriesId }
+        }
+      }
+      is Command.PaneHeight ->
+          pending.removeAll { it is Command.PaneHeight && it.paneId == command.paneId }
+      is Command.FitContent -> pending.removeAll { it is Command.FitContent }
+      is Command.SetPriceLine -> removePendingPriceLine(pending, command.id)
+      is Command.RemovePriceLine -> removePendingPriceLine(pending, command.id)
+      is Command.ClearPriceLines -> pending.removeAll { it.isPriceLineCommand() }
+      else -> Unit
+    }
+  }
+
+  private fun Command.isMarketDataCommand(): Boolean =
+      this is Command.History ||
+          this is Command.PrependHistory ||
+          this is Command.Candle ||
+          this is Command.Trade ||
+          this is Command.Trades
+
+  private fun Command.isPriceLineCommand(): Boolean =
+      this is Command.SetPriceLine ||
+          this is Command.RemovePriceLine ||
+          this is Command.ClearPriceLines
+
+  private fun removePendingPriceLine(pending: MutableList<Command>, id: String) {
+    pending.removeAll {
+      (it is Command.SetPriceLine && it.id == id) || (it is Command.RemovePriceLine && it.id == id)
     }
   }
 
@@ -184,6 +225,7 @@ internal object TradingChartsRegistry {
     }
   }
 
+  @Suppress("CyclomaticComplexMethod")
   private fun apply(view: TradingChartsView, command: Command) {
     when (command) {
       is Command.History -> view.applyHistory(command.values)
@@ -202,6 +244,10 @@ internal object TradingChartsRegistry {
           )
       is Command.RemoveSeries -> view.removeSeries(command.seriesId)
       is Command.PaneHeight -> view.setPaneHeight(command.paneId, command.heightWeight)
+      is Command.SetPriceLine ->
+          view.setPriceLine(command.id, command.price, command.label, command.color)
+      is Command.RemovePriceLine -> view.removePriceLine(command.id)
+      is Command.ClearPriceLines -> view.clearPriceLines()
       is Command.Zoom -> view.zoom(command.scale)
       is Command.FitContent -> view.fitContent()
     }

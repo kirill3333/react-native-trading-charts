@@ -217,6 +217,7 @@ class RenderSnapshotBuilder {
     ComputeSeriesWindows();
     CalculateYRange();
     CalculateAdditionalPaneRanges();
+    BuildPriceLines();
     BuildIndicatorLegends();
     AddExtrema();
     AddTicks();
@@ -226,6 +227,7 @@ class RenderSnapshotBuilder {
     AddSeriesGeometry();
     AddAdditionalSeriesGeometry();
     AddPaneSeparators();
+    AddPriceLineGeometry();
     AddCurrentPriceGeometry();
     snapshot_->content_vertices = std::move(content_vertices_);
     AddCrosshair();
@@ -971,6 +973,12 @@ class RenderSnapshotBuilder {
                                   6.0f * input_.config.display_scale) *
                      kFloatsPerQuad;
     }
+    for (const PriceLineSnapshot& price_line : snapshot_->price_lines) {
+      (void)price_line;
+      float_count += SegmentCount(snapshot_->plot.left, snapshot_->plot.right,
+                                  6.0f * input_.config.display_scale) *
+                     kFloatsPerQuad;
+    }
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
       const SeriesData& series = input_.additional_series[index];
       if (!series.config.visible ||
@@ -1372,6 +1380,34 @@ class RenderSnapshotBuilder {
                  y - input_.config.display_scale * 0.5f,
                  snapshot_->panes[index].plot.right,
                  y + input_.config.display_scale * 0.5f, color);
+    }
+  }
+
+  void BuildPriceLines() {
+    if (!input_.config.show_y_axis || snapshot_->panes.empty() ||
+        !snapshot_->panes.front().scale_visible) {
+      return;
+    }
+    snapshot_->price_lines.reserve(input_.price_lines.size());
+    for (const PriceLine& price_line : input_.price_lines) {
+      if (price_line.price < y_min_ || price_line.price > y_max_) {
+        continue;
+      }
+      snapshot_->price_lines.push_back(PriceLineSnapshot{
+          price_line.id,
+          price_line.price,
+          price_line.label,
+          price_line.color,
+          ProjectY(price_line.price),
+      });
+    }
+  }
+
+  void AddPriceLineGeometry() {
+    for (const PriceLineSnapshot& price_line : snapshot_->price_lines) {
+      EmitDashedHorizontal(*content_vertices_, price_line.y,
+                           snapshot_->plot.left, snapshot_->plot.right,
+                           input_.config.display_scale, price_line.color);
     }
   }
 

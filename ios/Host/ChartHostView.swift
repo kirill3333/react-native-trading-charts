@@ -44,7 +44,18 @@ public final class ChartHostView: UIView {
       engine: engine,
       momentum: momentum,
       events: events,
-      requestFrame: { [weak self] in self?.requestFrame() }
+      requestFrame: { [weak self] in self?.requestFrame() },
+      onYAxisPress: { [weak self] point, paneId, priceScaleId, price in
+        guard let self else { return }
+        self.delegate?.chartHostView(
+          self,
+          yAxisPressX: point.x,
+          y: point.y,
+          price: price,
+          paneId: paneId,
+          priceScaleId: priceScaleId
+        )
+      }
     )
     NotificationCenter.default.addObserver(
       self,
@@ -201,6 +212,35 @@ public final class ChartHostView: UIView {
   @objc(setPaneHeight:weight:)
   public func setPaneHeight(_ paneId: String, weight: Double) {
     if engine.setPaneHeight(paneId, weight: weight) { requestFrame() }
+  }
+
+  @objc(setYAxisPressEnabled:)
+  public func setYAxisPressEnabled(_ enabled: Bool) {
+    interaction.setYAxisPressEnabled(enabled)
+  }
+
+  @objc(setPriceLine:price:label:color:)
+  public func setPriceLine(_ id: String, price: Double, label: String, color: String) {
+    if engine.setPriceLine(id: id, price: price, label: label, colorHex: color) {
+      requestFrame()
+    }
+  }
+
+  @objc(removePriceLine:)
+  public func removePriceLine(_ id: String) {
+    if engine.removePriceLine(id) { requestFrame() }
+  }
+
+  @objc public func clearPriceLines() {
+    if engine.clearPriceLines() { requestFrame() }
+  }
+
+  @objc public func priceLinesJson() -> String {
+    let values: [[String: Any]] = engine.priceLines().map {
+      ["id": $0.id, "price": $0.price, "label": $0.label, "color": $0.color]
+    }
+    guard let data = try? JSONSerialization.data(withJSONObject: values) else { return "[]" }
+    return String(data: data, encoding: .utf8) ?? "[]"
   }
 
   @objc(zoomByScale:)

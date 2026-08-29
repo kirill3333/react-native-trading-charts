@@ -192,6 +192,7 @@ The component also accepts standard React Native `ViewProps`, including
 | `onVisibleRangeChange` | `(event) => void` | `undefined` | Receives visible candle range changes. |
 | `onScaleChange` | `(event) => void` | `undefined` | Receives user-driven horizontal scale changes. |
 | `onYAxisScaleChange` | `(event) => void` | `undefined` | Receives user-driven main Y-scale changes. |
+| `onYAxisPress` | `(event: YAxisPressEvent) => void` | `undefined` | Receives taps on any visible pane Y-axis with local coordinates and the mapped price. |
 | `onPaneResize` | `(event) => void` | `undefined` | Receives interactive pane size changes. |
 | `onPriceScaleChange` | `(event) => void` | `undefined` | Receives per-pane price-scale changes. |
 | `onSelectedCandleChange` | `(candle: OhlcCandle \| null) => void` | `undefined` | Receives crosshair selection changes. |
@@ -1009,6 +1010,7 @@ An extremum outside a manually scaled viewport remains hidden.
 | `onPaneResize` | `PaneResizeEvent` | Separator drag | Reports both adjacent pane weights. |
 | `onPriceScaleChange` | `PriceScaleChangeEvent` | User pane-axis drag | Reports the affected pane and scale. |
 | `onSelectedCandleChange` | `OhlcCandle \| null` | Selected candle/value changed or selection cleared | Full OHLCV selection. |
+| `onYAxisPress` | `YAxisPressEvent` | Tap inside a visible pane Y-axis | Reports local layout coordinates, pane/scale IDs, and the exact price at the tap. |
 
 ### Event payloads
 
@@ -1025,6 +1027,9 @@ An extremum outside a manually scaled viewport remains hidden.
 | Price scale | `paneId`, `priceScaleId` | `string` | Changed pane and scale IDs. |
 | Price scale | `scale` | `number` | Absolute price scale. |
 | Selected candle | `timestamp`, `open`, `high`, `low`, `close`, `volume` | `number` | Selected OHLCV values exposed as `OhlcCandle`. |
+| Y-axis press | `x`, `y` | `number` | Local React Native layout coordinates (points on iOS, dp on Android). |
+| Y-axis press | `price` | `number` | Price mapped from the pane's immutable visible range. |
+| Y-axis press | `paneId`, `priceScaleId` | `string` | Pane and price scale under the tap. |
 
 Moving within the same unchanged candle does not emit another selection. A
 cleared selection emits `null` once. Programmatic `zoom`, `fitContent`, and
@@ -1048,9 +1053,50 @@ All commands use the stable `chartId` of a `TradingChartsView`.
 | `updateTrade` | `chartId, TradeEvent` | `void` | Aggregates one trade. |
 | `updateTrades` | `chartId, TradeEvent[]` | `void` | Aggregates a trade batch. |
 | `getCandles` | `chartId` | `Promise<OhlcCandle[]>` | Reads an atomic copy of native main history. |
+| `setPriceLine` | `chartId, PriceLineOptions` | `void` | Creates or updates a custom main-pane marker by application-owned ID. |
+| `removePriceLine` | `chartId, priceLineId` | `void` | Removes one custom marker. |
+| `clearPriceLines` | `chartId` | `void` | Removes every custom marker. |
+| `getPriceLines` | `chartId` | `Promise<ReadonlyArray<PriceLineOptions>>` | Reads all native markers in insertion order, including off-screen markers. |
 | `zoom` | `chartId, positive scale` | `void` | Scales the horizontal viewport from its right edge. |
 | `fitContent` | `chartId` | `void` | Fits loaded history and resets automatic Y scaling. |
 | `clear` | `chartId` | `void` | Clears chart data. |
+
+Custom price lines are stored by the mounted native chart and do not affect
+autoscale. A marker is drawn only while its price is inside the visible main
+price range and the main Y-axis is visible. The application owns stable IDs;
+calling `setPriceLine` again with the same ID updates the marker without
+changing its insertion order. `clear(chartId)` clears market data but preserves
+markers, while destroying the native view does not persist them.
+
+```tsx
+const chartId = 'btc-1m';
+
+TradingCharts.setPriceLine(chartId, {
+  id: 'all-time-high',
+  price: 73_737.94,
+  label: 'All Time High',
+  color: '#FF9457',
+});
+
+const lines = await TradingCharts.getPriceLines(chartId);
+TradingCharts.removePriceLine(chartId, lines[0]?.id ?? 'all-time-high');
+TradingCharts.clearPriceLines(chartId);
+
+<TradingChartsView
+  chartId={chartId}
+  onYAxisPress={({ price, paneId, priceScaleId, x, y }) => {
+    TradingCharts.setPriceLine(chartId, {
+      id: `manual-${paneId}-${priceScaleId}`,
+      price,
+      label: `Selected at ${x.toFixed(0)}, ${y.toFixed(0)}`,
+      color: '#2CBFAE',
+    });
+  }}
+/>
+```
+
+`getPriceLines` rejects with `E_CHART_NOT_MOUNTED` when no native view is
+registered for `chartId`, matching `getCandles`.
 
 Runtime additional series use pane definitions already supplied to the view:
 

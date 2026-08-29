@@ -30,6 +30,11 @@ class TradingChartsViewManager :
     view.setConfigJson(value)
   }
 
+  @ReactProp(name = "yAxisPressEnabled")
+  override fun setYAxisPressEnabled(view: TradingChartsView, value: Boolean) {
+    view.setYAxisPressEnabled(value)
+  }
+
   override fun onDropViewInstance(view: TradingChartsView) {
     view.dispose()
     super.onDropViewInstance(view)

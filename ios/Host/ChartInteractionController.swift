@@ -9,6 +9,7 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
   private let momentum: ChartMomentumController
   private let events: ChartEventCoordinator
   private let requestFrame: () -> Void
+  private let onYAxisPress: (CGPoint, String, String, Double) -> Void
   private var config = NativeChartConfig()
   private var panesResizable = false
   private var scalingYAxis = false
@@ -16,21 +17,28 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
   private var crosshairPinned = false
   private var crosshairGestureActive = false
   private var resizingSeparator: Int?
+  private var yAxisPressEnabled = false
 
   init(
     view: UIView,
     engine: ChartEngineClient,
     momentum: ChartMomentumController,
     events: ChartEventCoordinator,
-    requestFrame: @escaping () -> Void
+    requestFrame: @escaping () -> Void,
+    onYAxisPress: @escaping (CGPoint, String, String, Double) -> Void
   ) {
     self.view = view
     self.engine = engine
     self.momentum = momentum
     self.events = events
     self.requestFrame = requestFrame
+    self.onYAxisPress = onYAxisPress
     super.init()
     install(on: view)
+  }
+
+  func setYAxisPressEnabled(_ enabled: Bool) {
+    yAxisPressEnabled = enabled
   }
 
   func apply(config: NativeChartConfig, panesResizable: Bool) {
@@ -196,6 +204,11 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
   @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
     guard let view else { return }
     let point = recognizer.location(in: view)
+    if yAxisPressEnabled, isPointInYAxis(point, bounds: view.bounds),
+      let value = engine.yAxisValue(at: Float(point.y)) {
+      onYAxisPress(point, value.paneId, value.priceScaleId, value.price)
+      return
+    }
     if !crosshairPinned && (!config.crosshair_enabled || !isPointInPlot(point, bounds: view.bounds)) {
       return
     }

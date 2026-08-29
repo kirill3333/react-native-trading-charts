@@ -11,6 +11,8 @@ typealias NativeAxisTick = trading_charts.AxisTick
 typealias NativePaneSnapshot = trading_charts.PaneSnapshot
 typealias NativeIndicatorLegend = trading_charts.IndicatorLegend
 typealias NativePriceExtremum = trading_charts.PriceExtremum
+typealias NativePriceLine = trading_charts.PriceLine
+typealias NativePriceLineSnapshot = trading_charts.PriceLineSnapshot
 typealias NativeChartConfig = trading_charts.ChartConfig
 typealias NativePaneConfig = trading_charts.PaneConfig
 typealias NativeSeriesConfig = trading_charts.SeriesConfig
@@ -25,6 +27,13 @@ typealias NativeTransitionVector = trading_charts.swift_interop.TransitionVector
 typealias NativeTradingSession = trading_charts.TradingSessionConfig
 typealias NativeCivilDate = trading_charts.CivilDate
 typealias NativeTimeZoneTransition = trading_charts.TimeZoneTransition
+
+struct PriceLineValue {
+  let id: String
+  let price: Double
+  let label: String
+  let color: String
+}
 
 func nativeString(_ value: String) -> std.string { std.string(value) }
 
@@ -94,6 +103,7 @@ struct ChartRenderFrame {
   var paneYTickCount: Int { Int(handle.PaneYTickCount()) }
   var paneCount: Int { Int(handle.PaneCount()) }
   var indicatorLegendCount: Int { Int(handle.IndicatorLegendCount()) }
+  var priceLineCount: Int { Int(handle.PriceLineCount()) }
 
   func xTick(at index: Int) -> NativeAxisTick { handle.XTickAt(index) }
   func yTick(at index: Int) -> NativeAxisTick { handle.YTickAt(index) }
@@ -105,6 +115,7 @@ struct ChartRenderFrame {
   func indicatorLegendValue(legendIndex: Int, valueIndex: Int) -> trading_charts.IndicatorLegendValue {
     handle.IndicatorLegendValueAt(legendIndex, valueIndex)
   }
+  func priceLine(at index: Int) -> NativePriceLineSnapshot { handle.PriceLineAt(index) }
 
   func withContentVertices<Result>(
     _ body: (UnsafeBufferPointer<Float>) throws -> Result
@@ -174,6 +185,36 @@ final class ChartEngineClient {
   }
 
   @discardableResult
+  func setPriceLine(id: String, price: Double, label: String, colorHex: String) -> Bool {
+    var line = NativePriceLine()
+    line.id = nativeString(id)
+    line.price = price
+    line.label = nativeString(label)
+    line.color_hex = nativeString(colorHex)
+    line.color = colorFromHex(colorHex, fallback: NativeColor())
+    return handle.SetPriceLine(line)
+  }
+
+  @discardableResult
+  func removePriceLine(_ id: String) -> Bool { handle.RemovePriceLine(nativeString(id)) }
+
+  @discardableResult
+  func clearPriceLines() -> Bool { handle.ClearPriceLines() }
+
+  func priceLines() -> [PriceLineValue] {
+    let count = Int(handle.PriceLineCount())
+    return (0..<count).map { index in
+      let line = handle.PriceLineAt(index)
+      return PriceLineValue(
+        id: String(line.id),
+        price: line.price,
+        label: String(line.label),
+        color: String(line.color_hex)
+      )
+    }
+  }
+
+  @discardableResult
   func resizePaneSeparator(_ index: Int, delta: Float) -> Bool {
     handle.ResizePaneSeparator(index, delta)
   }
@@ -221,6 +262,16 @@ final class ChartEngineClient {
   func fitContent() { handle.FitContent() }
   func setCrosshair(active: Bool, x: Float, y: Float) {
     handle.SetCrosshair(active, x, y)
+  }
+
+  func yAxisValue(at y: Float) -> (paneId: String, priceScaleId: String, price: Double)? {
+    let result = handle.YAxisValueAt(y)
+    guard result.valid else { return nil }
+    return (
+      String(result.value.pane_id),
+      String(result.value.price_scale_id),
+      result.value.price
+    )
   }
 
   func snapshot() -> ChartRenderFrame {

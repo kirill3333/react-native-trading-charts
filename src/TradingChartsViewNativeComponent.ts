@@ -42,14 +42,24 @@ export type PriceScaleChangeNativeEvent = Readonly<{
   scale: CodegenTypes.Double;
 }>;
 
+export type YAxisPressNativeEvent = Readonly<{
+  x: CodegenTypes.Double;
+  y: CodegenTypes.Double;
+  price: CodegenTypes.Double;
+  paneId: string;
+  priceScaleId: string;
+}>;
+
 export interface NativeProps extends ViewProps {
   chartId: string;
   configJson: string;
+  yAxisPressEnabled: boolean;
   onVisibleRangeChange?: CodegenTypes.DirectEventHandler<VisibleRangeChangeNativeEvent>;
   onScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
   onYAxisScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
   onPaneResize?: CodegenTypes.DirectEventHandler<PaneResizeNativeEvent>;
   onPriceScaleChange?: CodegenTypes.DirectEventHandler<PriceScaleChangeNativeEvent>;
+  onYAxisPress?: CodegenTypes.DirectEventHandler<YAxisPressNativeEvent>;
   onSelectedCandleChange?: CodegenTypes.DirectEventHandler<SelectedCandleChangeNativeEvent>;
 }
 

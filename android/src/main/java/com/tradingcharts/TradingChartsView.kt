@@ -14,7 +14,9 @@ import com.facebook.react.bridge.ReactContext
 import com.facebook.react.uimanager.UIManagerHelper
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
+import org.json.JSONArray
 import org.json.JSONException
+import org.json.JSONObject
 
 private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
   if (other == null) return this == null
@@ -57,6 +59,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var pendingPaneResizeFinished = false
   private var lastSnapshot: ChartSnapshot? = null
   private var lastAppliedRevision = -1L
+  private var yAxisPressEnabled = false
 
   private val frameCallback = Runnable {
     frameScheduled.set(false)
@@ -216,20 +219,21 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
                 override fun onSingleTapUp(event: MotionEvent): Boolean {
                   performClick()
-                  if (crosshairPinned) {
+                  if (tryEmitYAxisPress(event)) {
+                    // Axis presses never alter crosshair state.
+                  } else if (crosshairPinned) {
                     crosshairPinned = false
                     crosshairGestureActive = false
                     ChartEngineNative.nativeSetCrosshair(engineHandle, false, event.x, event.y)
                     scheduleFrame()
-                    return true
+                  } else if (config.crosshairEnabled && isPointInPlot(event.x, event.y)) {
+                    suppressFlingForTouch = true
+                    stopFling()
+                    crosshairPinned = true
+                    crosshairGestureActive = false
+                    ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
+                    scheduleFrame()
                   }
-                  if (!config.crosshairEnabled || !isPointInPlot(event.x, event.y)) return true
-                  suppressFlingForTouch = true
-                  stopFling()
-                  crosshairPinned = true
-                  crosshairGestureActive = false
-                  ChartEngineNative.nativeSetCrosshair(engineHandle, true, event.x, event.y)
-                  scheduleFrame()
                   return true
                 }
 
@@ -339,6 +343,10 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     }
   }
 
+  fun setYAxisPressEnabled(enabled: Boolean) {
+    yAxisPressEnabled = enabled
+  }
+
   private fun logInvalidConfig(error: Exception) {
     Log.e(TAG, "Invalid configJson", error)
   }
@@ -440,6 +448,43 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     }
   }
 
+  fun setPriceLine(id: String, price: Double, label: String, color: String) {
+    if (
+        ChartEngineNative.nativeSetPriceLine(
+            engineHandle,
+            id,
+            price,
+            label,
+            color,
+            parseChartColor(color),
+        )
+    ) {
+      scheduleFrame()
+    }
+  }
+
+  fun removePriceLine(id: String) {
+    if (ChartEngineNative.nativeRemovePriceLine(engineHandle, id)) scheduleFrame()
+  }
+
+  fun clearPriceLines() {
+    if (ChartEngineNative.nativeClearPriceLines(engineHandle)) scheduleFrame()
+  }
+
+  fun priceLinesJson(): String {
+    val values = JSONArray()
+    ChartEngineNative.priceLines(engineHandle).forEach { line ->
+      values.put(
+          JSONObject()
+              .put("id", line.id)
+              .put("price", line.price)
+              .put("label", line.label)
+              .put("color", line.color)
+      )
+    }
+    return values.toString()
+  }
+
   fun zoom(scale: Double) {
     stopFling()
     crosshairPinned = false
@@ -488,6 +533,33 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   @Suppress("DEPRECATION")
   private fun eventDispatcher(reactContext: ReactContext) =
       UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
+
+  private fun tryEmitYAxisPress(event: MotionEvent): Boolean {
+    if (!yAxisPressEnabled || !isPointInYAxis(event)) return false
+    val value = ChartEngineNative.yAxisValueAt(engineHandle, event.y)
+    val pane = value?.let { config.panes.getOrNull(it.paneIndex) }
+    if (value == null || pane == null) return false
+    emitYAxisPress(event, value, pane)
+    return true
+  }
+
+  private fun emitYAxisPress(event: MotionEvent, value: YAxisValue, pane: PaneConfig) {
+    if (id == NO_ID) return
+    val reactContext = context as? ReactContext ?: return
+    val density = resources.displayMetrics.density.toDouble()
+    eventDispatcher(reactContext)
+        ?.dispatchEvent(
+            YAxisPressEvent(
+                UIManagerHelper.getSurfaceId(this),
+                id,
+                event.x / density,
+                event.y / density,
+                value.price,
+                pane.paneId,
+                pane.priceScaleId,
+            )
+        )
+  }
 
   private fun emitVisibleRangeChange(snapshot: ChartSnapshot) {
     if (!snapshot.hasVisibleCandles || id == NO_ID) return

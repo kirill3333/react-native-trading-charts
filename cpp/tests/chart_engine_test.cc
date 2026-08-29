@@ -28,6 +28,7 @@ using trading_charts::IndicatorKind;
 using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
 using trading_charts::PaneSnapshot;
+using trading_charts::PriceLine;
 using trading_charts::SeriesConfig;
 using trading_charts::SeriesSource;
 using trading_charts::SeriesType;
@@ -3473,6 +3474,118 @@ void TestLineSegmentsKeepConstantWidthAtSharpTurns() {
   assert(start_cross_x * end_cross_x + start_cross_y * end_cross_y > 0.0f);
 }
 
+void TestPriceLinesAndYAxisValueMapping() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 320.0f);
+  const double history[] = {
+      0.0, 10.0, 14.0, 8.0, 12.0, 1.0, 60'000.0, 12.0, 18.0, 11.0, 16.0, 1.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  const auto baseline = engine.Snapshot();
+  const double minimum = baseline->visible_y_min;
+  const double maximum = baseline->visible_y_max;
+  const double middle = (minimum + maximum) * 0.5;
+
+  PriceLine first{"minimum",
+                  minimum,
+                  "Minimum",
+                  "#00AAFF",
+                  {0.0f, 2.0f / 3.0f, 1.0f, 1.0f}};
+  PriceLine second{
+      "middle", middle, "Middle", "#FF9900", {1.0f, 0.6f, 0.0f, 1.0f}};
+  PriceLine hidden{
+      "hidden", maximum + 1.0, "Hidden", "#FFFFFF", {1.0f, 1.0f, 1.0f, 1.0f}};
+  assert(engine.SetPriceLine(first));
+  assert(engine.SetPriceLine(second));
+  assert(engine.SetPriceLine(hidden));
+  const uint64_t revision = engine.Revision();
+  assert(!engine.SetPriceLine(second));
+  assert(engine.Revision() == revision);
+
+  const auto snapshot = engine.Snapshot();
+  ExpectNear(snapshot->visible_y_min, minimum);
+  ExpectNear(snapshot->visible_y_max, maximum);
+  assert(snapshot->price_lines.size() == 2);
+  assert(snapshot->price_lines[0].id == "minimum");
+  assert(snapshot->price_lines[1].id == "middle");
+  ExpectNear(snapshot->price_lines[0].y, snapshot->plot.bottom, 1e-4);
+  ExpectNear(snapshot->price_lines[1].y,
+             (snapshot->plot.top + snapshot->plot.bottom) * 0.5, 1e-4);
+  assert(engine.PriceLines().size() == 3);
+  assert(engine.PriceLineAt(1).id == "middle");
+
+  const auto top = engine.YAxisValueAt(snapshot->plot.top);
+  const auto center =
+      engine.YAxisValueAt((snapshot->plot.top + snapshot->plot.bottom) * 0.5f);
+  const auto bottom = engine.YAxisValueAt(snapshot->plot.bottom);
+  assert(top.has_value() && center.has_value() && bottom.has_value());
+  ExpectNear(top->price, maximum);
+  ExpectNear(center->price, middle);
+  ExpectNear(bottom->price, minimum);
+  assert(!engine.YAxisValueAt(snapshot->plot.bottom + 1.0f).has_value());
+
+  PaneConfig main_pane;
+  PaneConfig volume_pane;
+  volume_pane.pane_id = "volume";
+  volume_pane.price_scale_id = "volume";
+  engine.SetPanes({main_pane, volume_pane}, true);
+  SeriesConfig volume_series;
+  volume_series.series_id = "volume";
+  volume_series.type = SeriesType::kHistogram;
+  volume_series.source = SeriesSource::kOhlcvVolume;
+  volume_series.source_series_id = "main";
+  volume_series.pane_id = "volume";
+  volume_series.price_scale_id = "volume";
+  assert(engine.AddSeries(volume_series) == UpdateStatus::kApplied);
+  const auto multi_pane = engine.Snapshot();
+  assert(multi_pane->panes.size() == 2);
+  for (size_t index = 0; index < multi_pane->panes.size(); ++index) {
+    const PaneSnapshot& pane = multi_pane->panes[index];
+    const auto pane_top = engine.YAxisValueAt(pane.plot.top);
+    const auto pane_middle =
+        engine.YAxisValueAt((pane.plot.top + pane.plot.bottom) * 0.5f);
+    const auto pane_bottom = engine.YAxisValueAt(pane.plot.bottom);
+    assert(pane_top.has_value() && pane_middle.has_value() &&
+           pane_bottom.has_value());
+    assert(pane_top->pane_id == pane.pane_id);
+    assert(pane_top->price_scale_id == pane.price_scale_id);
+    assert(pane_top->pane_index == index);
+    ExpectNear(pane_top->price, pane.visible_y_max);
+    ExpectNear(pane_middle->price,
+               (pane.visible_y_min + pane.visible_y_max) * 0.5);
+    ExpectNear(pane_bottom->price, pane.visible_y_min);
+  }
+  const float separator_middle =
+      (multi_pane->panes[0].plot.bottom + multi_pane->panes[1].plot.top) * 0.5f;
+  assert(!engine.YAxisValueAt(separator_middle).has_value());
+
+  volume_pane.scale_visible = false;
+  engine.SetPanes({main_pane, volume_pane}, true);
+  const auto hidden_scale = engine.Snapshot();
+  const auto& hidden_plot = hidden_scale->panes[1].plot;
+  assert(!engine.YAxisValueAt((hidden_plot.top + hidden_plot.bottom) * 0.5f)
+              .has_value());
+
+  assert(engine.RemovePriceLine("middle"));
+  assert(!engine.RemovePriceLine("missing"));
+  assert(engine.ClearPriceLines());
+  assert(!engine.ClearPriceLines());
+  assert(engine.PriceLineCount() == 0);
+
+  assert(engine.SetPriceLine(first));
+  engine.Clear();
+  assert(engine.PriceLineCount() == 1);
+  assert(engine.Snapshot()->price_lines.empty());
+
+  config.show_y_axis = false;
+  engine.SetConfig(config);
+  assert(!engine.YAxisValueAt(100.0f).has_value());
+}
+
 }  // namespace
 
 int main() noexcept {
@@ -3557,6 +3670,7 @@ int main() noexcept {
     TestAreaFillAndLineLikeSemantics();
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
+    TestPriceLinesAndYAxisValueMapping();
     TestDashedLineGeometryUsesSharedTriangleContract();
     std::cout << "ChartEngineTests passed\n";
     return 0;

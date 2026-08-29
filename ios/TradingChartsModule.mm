@@ -90,6 +90,43 @@ RCT_EXPORT_MODULE(TradingCharts)
                                         chartId:chartId];
 }
 
+- (void)setPriceLine:(NSString *)chartId
+         priceLineId:(NSString *)priceLineId
+               price:(double)price
+               label:(NSString *)label
+               color:(NSString *)color {
+  [[TradingChartsRegistry shared] setPriceLine:priceLineId
+                                         price:price
+                                         label:label
+                                         color:color
+                                       chartId:chartId];
+}
+
+- (void)removePriceLine:(NSString *)chartId
+            priceLineId:(NSString *)priceLineId {
+  [[TradingChartsRegistry shared] removePriceLine:priceLineId chartId:chartId];
+}
+
+- (void)clearPriceLines:(NSString *)chartId {
+  [[TradingChartsRegistry shared] clearPriceLinesForChart:chartId];
+}
+
+- (void)getPriceLines:(NSString *)chartId
+               resolve:(RCTPromiseResolveBlock)resolve
+                reject:(RCTPromiseRejectBlock)reject {
+  [[TradingChartsRegistry shared]
+      getPriceLinesForChart:chartId
+                    success:^(NSString *json) {
+                      resolve(json);
+                    }
+                    failure:^{
+                      reject(@"E_CHART_NOT_MOUNTED",
+                             [NSString stringWithFormat:
+                                 @"No mounted chart found for chartId '%@'", chartId],
+                             nil);
+                    }];
+}
+
 - (void)getCandles:(NSString *)chartId
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject {

@@ -9,6 +9,7 @@ import NativeTradingChartsView, {
   type ScaleChangeNativeEvent,
   type SelectedCandleChangeNativeEvent,
   type VisibleRangeChangeNativeEvent,
+  type YAxisPressNativeEvent,
 } from './TradingChartsViewNativeComponent';
 import { type TradingChartsViewProps } from './types';
 
@@ -36,6 +37,7 @@ export const TradingChartsView = memo(function TradingChartsView({
   onYAxisScaleChange,
   onPaneResize,
   onPriceScaleChange,
+  onYAxisPress,
   onSelectedCandleChange,
   ...viewProps
 }: TradingChartsViewProps) {
@@ -127,12 +129,19 @@ export const TradingChartsView = memo(function TradingChartsView({
     },
     [onSelectedCandleChange]
   );
+  const handleYAxisPress = useCallback(
+    (event: NativeSyntheticEvent<YAxisPressNativeEvent>) => {
+      onYAxisPress?.(event.nativeEvent);
+    },
+    [onYAxisPress]
+  );
 
   return (
     <NativeTradingChartsView
       {...viewProps}
       chartId={chartId}
       configJson={configJson}
+      yAxisPressEnabled={onYAxisPress != null}
       onVisibleRangeChange={
         onVisibleRangeChange ? handleVisibleRangeChange : undefined
       }
@@ -144,6 +153,7 @@ export const TradingChartsView = memo(function TradingChartsView({
       onPriceScaleChange={
         onPriceScaleChange ? handlePriceScaleChange : undefined
       }
+      onYAxisPress={onYAxisPress ? handleYAxisPress : undefined}
       onSelectedCandleChange={
         onSelectedCandleChange ? handleSelectedCandleChange : undefined
       }

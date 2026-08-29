@@ -381,6 +381,29 @@ struct PriceExtremum {
   bool label_on_right = true;
 };
 
+struct PriceLine {
+  std::string id;
+  double price = 0.0;
+  std::string label;
+  std::string color_hex;
+  Color color;
+};
+
+struct PriceLineSnapshot {
+  std::string id;
+  double price = 0.0;
+  std::string label;
+  Color color;
+  float y = 0.0f;
+};
+
+struct YAxisValue {
+  std::string pane_id;
+  std::string price_scale_id;
+  double price = 0.0;
+  size_t pane_index = 0;
+};
+
 struct PaneSnapshot {
   std::string pane_id;
   std::string price_scale_id;
@@ -455,6 +478,7 @@ struct RenderSnapshot {
   std::vector<AxisTick> pane_y_ticks;
   std::vector<PaneSnapshot> panes;
   std::vector<IndicatorLegend> indicator_legends;
+  std::vector<PriceLineSnapshot> price_lines;
   PriceExtremum visible_maximum;
   PriceExtremum visible_minimum;
   Candle selected_candle;
@@ -503,6 +527,12 @@ class ChartEngine {
                                 const double* values, size_t value_count,
                                 bool histogram);
   bool SetPaneHeight(const std::string& pane_id, double height_weight);
+  bool SetPriceLine(const PriceLine& price_line);
+  bool RemovePriceLine(const std::string& price_line_id);
+  bool ClearPriceLines();
+  std::vector<PriceLine> PriceLines() const;
+  size_t PriceLineCount() const;
+  PriceLine PriceLineAt(size_t index) const;
   bool ResizePaneSeparator(size_t separator_index, float delta_pixels);
   std::optional<size_t> SeparatorAt(float y, float hit_slop) const;
   void SetSize(float width, float height);
@@ -537,6 +567,7 @@ class ChartEngine {
   void ResetViewport();
   void FitContent();
   void SetCrosshair(bool active, float x, float y);
+  std::optional<YAxisValue> YAxisValueAt(float y);
 
   size_t CandleCount() const;
 
@@ -560,6 +591,7 @@ class ChartEngine {
   std::vector<Candle> candles_;
   std::vector<PaneConfig> panes_{PaneConfig{}};
   std::vector<SeriesData> additional_series_;
+  std::vector<PriceLine> price_lines_;
   bool panes_resizable_ = false;
   float width_ = 0.0f;
   float height_ = 0.0f;

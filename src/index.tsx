@@ -44,6 +44,7 @@ export type {
   OhlcCandle,
   OhlcValueSource,
   PriceExtremesOptions,
+  PriceLineOptions,
   PaneResizeEvent,
   PriceScaleChangeEvent,
   PriceScaleMargins,
@@ -64,5 +65,6 @@ export type {
   XAxisOptions,
   XAxisDateFormats,
   YAxisOptions,
+  YAxisPressEvent,
   YAxisValueFormat,
 } from './types';

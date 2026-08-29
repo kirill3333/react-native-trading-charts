@@ -20,6 +20,7 @@ struct SnapshotBuildInput {
   const std::vector<Candle>& candles;
   const std::vector<PaneConfig>& panes;
   const std::vector<SeriesData>& additional_series;
+  const std::vector<PriceLine>& price_lines;
   float width = 0.0f;
   float height = 0.0f;
   double visible_x_min = 0.0;

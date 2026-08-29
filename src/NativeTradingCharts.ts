@@ -28,6 +28,16 @@ export interface Spec extends TurboModule {
   ): void;
   removeSeries(chartId: string, seriesId: string): void;
   setPaneHeight(chartId: string, paneId: string, heightWeight: number): void;
+  setPriceLine(
+    chartId: string,
+    priceLineId: string,
+    price: number,
+    label: string,
+    color: string
+  ): void;
+  removePriceLine(chartId: string, priceLineId: string): void;
+  clearPriceLines(chartId: string): void;
+  getPriceLines(chartId: string): Promise<string>;
   getCandles(chartId: string): Promise<ReadonlyArray<number>>;
   zoom(chartId: string, scale: number): void;
   fitContent(chartId: string): void;

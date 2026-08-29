@@ -11,6 +11,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +27,7 @@ using trading_charts::Color;
 using trading_charts::OhlcValueSource;
 using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
+using trading_charts::PriceLine;
 using trading_charts::RenderSnapshot;
 using trading_charts::ResolutionUnit;
 using trading_charts::SeriesConfig;
@@ -502,6 +504,33 @@ jdoubleArray NewDoubleArray(JNIEnv* env, const std::vector<double>& values) {
                               values.data());
   }
   return result;
+}
+
+jobjectArray NewStringArray(JNIEnv* env,
+                            const std::vector<std::string>& values) {
+  jclass string_class = env->FindClass("java/lang/String");
+  if (!string_class) {
+    return nullptr;
+  }
+  jobjectArray result = env->NewObjectArray(static_cast<jsize>(values.size()),
+                                            string_class, nullptr);
+  for (size_t index = 0; result && index < values.size(); ++index) {
+    jstring value = env->NewStringUTF(values[index].c_str());
+    env->SetObjectArrayElement(result, static_cast<jsize>(index), value);
+    env->DeleteLocalRef(value);
+  }
+  env->DeleteLocalRef(string_class);
+  return result;
+}
+
+Color ColorFromArgb(jint value) {
+  const auto argb = static_cast<std::uint32_t>(value);
+  return Color{
+      static_cast<float>((argb >> 16) & 0xff) / 255.0f,
+      static_cast<float>((argb >> 8) & 0xff) / 255.0f,
+      static_cast<float>(argb & 0xff) / 255.0f,
+      static_cast<float>((argb >> 24) & 0xff) / 255.0f,
+  };
 }
 
 }  // namespace
@@ -1072,6 +1101,83 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetPaneHeight(
              : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetPriceLine(
+    JNIEnv* env, jclass, jlong handle, jstring price_line_id, jdouble price,
+    jstring label, jstring color_hex, jint color) {
+  auto* instance = EngineFromHandle(handle);
+  if (!instance) {
+    return JNI_FALSE;
+  }
+  PriceLine line;
+  line.id = CopyString(env, price_line_id);
+  line.price = price;
+  line.label = CopyString(env, label);
+  line.color_hex = CopyString(env, color_hex);
+  line.color = ColorFromArgb(color);
+  return instance->SetPriceLine(line) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeRemovePriceLine(
+    JNIEnv* env, jclass, jlong handle, jstring price_line_id) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->RemovePriceLine(CopyString(env, price_line_id))
+             ? JNI_TRUE
+             : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeClearPriceLines(JNIEnv*, jclass,
+                                                               jlong handle) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->ClearPriceLines() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativePriceLinePrices(JNIEnv* env,
+                                                               jclass,
+                                                               jlong handle) {
+  const auto values = EngineFromHandle(handle)
+                          ? EngineFromHandle(handle)->PriceLines()
+                          : std::vector<PriceLine>{};
+  std::vector<double> prices;
+  prices.reserve(values.size());
+  for (const PriceLine& value : values) {
+    prices.push_back(value.price);
+  }
+  return NewDoubleArray(env, prices);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativePriceLineStrings(JNIEnv* env,
+                                                                jclass,
+                                                                jlong handle) {
+  const auto values = EngineFromHandle(handle)
+                          ? EngineFromHandle(handle)->PriceLines()
+                          : std::vector<PriceLine>{};
+  std::vector<std::string> strings;
+  strings.reserve(values.size() * 3);
+  for (const PriceLine& value : values) {
+    strings.push_back(value.id);
+    strings.push_back(value.label);
+    strings.push_back(value.color_hex);
+  }
+  return NewStringArray(env, strings);
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeYAxisValueAt(JNIEnv* env, jclass,
+                                                            jlong handle,
+                                                            jfloat y) {
+  auto* instance = EngineFromHandle(handle);
+  const auto value = instance ? instance->YAxisValueAt(y) : std::nullopt;
+  return value.has_value()
+             ? NewDoubleArray(
+                   env, {value->price, static_cast<double>(value->pane_index)})
+             : NewDoubleArray(env, {});
+}
+
 JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetSize(
     JNIEnv*, jclass, jlong handle, jfloat width, jfloat height) {
   if (auto* instance = EngineFromHandle(handle)) {
@@ -1501,6 +1607,45 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotIndicatorLegends(
     }
   }
   return NewDoubleArray(env, packed);
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPriceLineValues(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* snapshot = holder && *holder ? holder->get() : nullptr;
+  constexpr size_t kRecordWidth = 6;
+  const size_t count = snapshot ? snapshot->price_lines.size() : 0;
+  auto packed = VersionedRecordPayload(kRecordWidth, count);
+  if (snapshot) {
+    for (size_t index = 0; index < count; ++index) {
+      const auto& line = snapshot->price_lines[index];
+      const size_t offset = RecordOffset(kRecordWidth, index);
+      packed[offset] = line.price;
+      packed[offset + 1] = line.y;
+      packed[offset + 2] = line.color.r;
+      packed[offset + 3] = line.color.g;
+      packed[offset + 4] = line.color.b;
+      packed[offset + 5] = line.color.a;
+    }
+  }
+  return NewDoubleArray(env, packed);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPriceLineStrings(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* snapshot = holder && *holder ? holder->get() : nullptr;
+  std::vector<std::string> strings;
+  if (snapshot) {
+    strings.reserve(snapshot->price_lines.size() * 2);
+    for (const auto& line : snapshot->price_lines) {
+      strings.push_back(line.id);
+      strings.push_back(line.label);
+    }
+  }
+  return NewStringArray(env, strings);
 }
 
 JNIEXPORT jint JNICALL

@@ -766,7 +766,7 @@ private fun seriesConfig(
   )
 }
 
-private fun parseChartColor(value: String): Int {
+internal fun parseChartColor(value: String): Int {
   val raw = value.removePrefix("#").toLong(16)
   return if (value.length == 7) {
     Color.rgb(

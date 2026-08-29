@@ -4,6 +4,7 @@ import {
   type PriceScaleChangeNativeEvent,
   type ScaleChangeNativeEvent,
   type VisibleRangeChangeNativeEvent,
+  type YAxisPressNativeEvent,
 } from './TradingChartsViewNativeComponent';
 
 export type OhlcCandle = {
@@ -22,6 +23,13 @@ export type TradeEvent = {
   price: number;
   size?: number;
 };
+
+export type PriceLineOptions = Readonly<{
+  id: string;
+  price: number;
+  label: string;
+  color: string;
+}>;
 
 export type ResolutionUnit =
   'second' | 'minute' | 'hour' | 'day' | 'week' | 'month';
@@ -560,6 +568,8 @@ export type PaneResizeEvent = PaneResizeNativeEvent;
 
 export type PriceScaleChangeEvent = PriceScaleChangeNativeEvent;
 
+export type YAxisPressEvent = YAxisPressNativeEvent;
+
 export type TradingChartsViewProps = ViewProps & {
   chartId: string;
   resolution?: ChartResolution;
@@ -584,6 +594,7 @@ export type TradingChartsViewProps = ViewProps & {
   onYAxisScaleChange?: (event: ScaleChangeEvent) => void;
   onPaneResize?: (event: PaneResizeEvent) => void;
   onPriceScaleChange?: (event: PriceScaleChangeEvent) => void;
+  onYAxisPress?: (event: YAxisPressEvent) => void;
   onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
 };
 

@@ -103,6 +103,16 @@ internal class ChartOverlayView(context: Context) : View(context) {
       val backgroundColor: Int,
   )
 
+  private data class PriceLineContent(
+      val label: AxisLabel,
+      val price: AxisLabel,
+      val priceBits: Long,
+      val color: Int,
+  ) {
+    fun matches(line: PriceLineSnapshot): Boolean =
+        label.text == line.label && priceBits == line.price.toBits() && color == line.color
+  }
+
   /** Access-ordered cache that evicts the least recently used label. */
   private class BoundedCache<K, V>(private val maximumSize: Int) :
       LinkedHashMap<K, V>(maximumSize + 1, 0.75f, true) {
@@ -117,6 +127,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private val currentPriceTextPaint = textPaint(10.5f, true)
   private val crosshairPriceTextPaint = textPaint(10.5f, true)
   private val crosshairTimeTextPaint = textPaint(10.5f, true)
+  private val priceLineLabelPaint = textPaint(10.5f, false)
+  private val priceLinePricePaint = textPaint(10.5f, true)
   private val tooltipHeaderPaint = textPaint(11f, false)
   private val tooltipLabelPaint = textPaint(11f, false)
   private val tooltipValuePaint = textPaint(11f, false)
@@ -154,6 +166,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private val xLabelCache = BoundedCache<Long, AxisLabel>(MAX_X_LABEL_CACHE_SIZE)
   private val yLabelCache = HashMap<String, BoundedCache<Long, AxisLabel>>()
   private val indicatorLegendCache = BoundedCache<IndicatorLegendKey, IndicatorLegendLabel>(64)
+  private val priceLineCache = BoundedCache<String, PriceLineContent>(256)
   private var timeBadgeLabel: AxisLabel? = null
   private var timeBadgeBits = 0L
   private var currentPriceLabel: AxisLabel? = null
@@ -181,6 +194,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
     applyTextStyle(currentPriceTextPaint, config.currentPriceTextStyle, 10.5f, true)
     applyTextStyle(crosshairPriceTextPaint, config.crosshairPriceTextStyle, 10.5f, true)
     applyTextStyle(crosshairTimeTextPaint, config.crosshairTimeTextStyle, 10.5f, true)
+    applyTextStyle(priceLineLabelPaint, config.yAxisTextStyle, 10.5f, false)
+    applyTextStyle(priceLinePricePaint, config.currentPriceTextStyle, 10.5f, true)
     applyTextStyle(tooltipHeaderPaint, config.tooltipHeaderTextStyle, 11f, false)
     applyTextStyle(tooltipLabelPaint, config.tooltipLabelTextStyle, 11f, false)
     applyTextStyle(tooltipValuePaint, config.tooltipValueTextStyle, 11f, false)
@@ -237,6 +252,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
     xLabelCache.clear()
     yLabelCache.clear()
     indicatorLegendCache.clear()
+    priceLineCache.clear()
     timeBadgeLabel = null
     currentPriceLabel = null
   }
@@ -402,6 +418,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
     if (config.showXAxis) drawXAxis(canvas, frame)
     if (config.showYAxis) drawYAxes(canvas, frame)
     drawIndicatorLegends(canvas, frame)
+    drawPriceLines(canvas, frame)
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
       drawBadge(
@@ -424,6 +441,94 @@ internal class ChartOverlayView(context: Context) : View(context) {
         drawTooltip(canvas, frame)
       }
     }
+  }
+
+  private fun drawPriceLines(canvas: Canvas, frame: ChartSnapshot) {
+    if (frame.priceLines.isEmpty()) return
+    val formatter =
+        frame.panes.firstOrNull()?.priceScaleId?.let(paneValueFormats::get) ?: yAxisValueFormat
+    frame.priceLines.forEach { line ->
+      val content = priceLineContent(line, formatter)
+      priceLineLabelPaint.color = line.color
+      priceLinePricePaint.color = contrastingTextColor(line.color)
+
+      val labelWidth = content.label.width + 8f * density
+      val labelHeight =
+          max(
+              18f * density,
+              priceLineLabelPaint.descent() - priceLineLabelPaint.ascent() + 4f * density,
+          )
+      val labelLeft =
+          if (frame.config.yAxisOnRight) {
+            max(frame.plotLeft, frame.plotRight - labelWidth - 8f * density)
+          } else {
+            frame.plotLeft + 8f * density
+          }
+      val labelTop =
+          (line.y - labelHeight / 2f).coerceIn(
+              frame.plotTop,
+              max(frame.plotTop, frame.plotBottom - labelHeight),
+          )
+      scratchRect.set(labelLeft, labelTop, labelLeft + labelWidth, labelTop + labelHeight)
+      fillPaint.color = frame.config.backgroundColor
+      canvas.drawRect(scratchRect, fillPaint)
+      canvas.drawText(
+          content.label.text,
+          scratchRect.left + 4f * density,
+          centeredBaseline(scratchRect.centerY(), priceLineLabelPaint),
+          priceLineLabelPaint,
+      )
+
+      val badgeHeight =
+          max(
+              20f * density,
+              priceLinePricePaint.descent() - priceLinePricePaint.ascent() + 6f * density,
+          )
+      val badgeWidth = min(frame.config.yAxisWidth, content.price.width + 12f * density)
+      val badgeY =
+          line.y.coerceIn(
+              badgeHeight / 2f,
+              max(badgeHeight / 2f, frame.height - badgeHeight / 2f),
+          )
+      val badgeLeft =
+          if (frame.config.yAxisOnRight) frame.plotRight else max(0f, frame.plotLeft - badgeWidth)
+      scratchRect.set(
+          badgeLeft,
+          badgeY - badgeHeight / 2f,
+          badgeLeft + badgeWidth,
+          badgeY + badgeHeight / 2f,
+      )
+      fillPaint.color = line.color
+      canvas.drawRect(scratchRect, fillPaint)
+      canvas.drawText(
+          content.price.text,
+          scratchRect.centerX() - content.price.width / 2f,
+          centeredBaseline(scratchRect.centerY(), priceLinePricePaint),
+          priceLinePricePaint,
+      )
+    }
+  }
+
+  private fun priceLineContent(
+      line: PriceLineSnapshot,
+      formatter: PreparedValueFormat,
+  ): PriceLineContent {
+    val cached = priceLineCache[line.id]
+    if (cached != null && cached.matches(line)) return cached
+    val price = formatValue(line.price, formatter)
+    return PriceLineContent(
+            AxisLabel(line.label, priceLineLabelPaint.measureText(line.label)),
+            AxisLabel(price, priceLinePricePaint.measureText(price)),
+            line.price.toBits(),
+            line.color,
+        )
+        .also { priceLineCache[line.id] = it }
+  }
+
+  private fun contrastingTextColor(color: Int): Int {
+    val luminance =
+        (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0
+    return if (luminance > 0.6) Color.BLACK else Color.WHITE
   }
 
   private fun currentPriceLabel(frame: ChartSnapshot): AxisLabel {

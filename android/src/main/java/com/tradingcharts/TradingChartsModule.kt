@@ -84,6 +84,37 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.setPaneHeight(chartId, paneId, heightWeight)
   }
 
+  override fun setPriceLine(
+      chartId: String,
+      priceLineId: String,
+      price: Double,
+      label: String,
+      color: String,
+  ) {
+    TradingChartsRegistry.setPriceLine(chartId, priceLineId, price, label, color)
+  }
+
+  override fun removePriceLine(chartId: String, priceLineId: String) {
+    TradingChartsRegistry.removePriceLine(chartId, priceLineId)
+  }
+
+  override fun clearPriceLines(chartId: String) {
+    TradingChartsRegistry.clearPriceLines(chartId)
+  }
+
+  override fun getPriceLines(chartId: String, promise: Promise) {
+    TradingChartsRegistry.getPriceLines(
+        chartId,
+        onSuccess = promise::resolve,
+        onError = {
+          promise.reject(
+              "E_CHART_NOT_MOUNTED",
+              "No mounted chart found for chartId '$chartId'",
+          )
+        },
+    )
+  }
+
   override fun getCandles(chartId: String, promise: Promise) {
     TradingChartsRegistry.getCandles(
         chartId,

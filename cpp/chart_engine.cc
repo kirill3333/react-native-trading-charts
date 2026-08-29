@@ -1589,6 +1589,98 @@ void ChartEngine::SetCrosshair(bool active, float x, float y) {
   MarkCrosshairDirtyLocked();
 }
 
+bool ChartEngine::SetPriceLine(const PriceLine& price_line) {
+  if (price_line.id.empty() || price_line.label.empty() ||
+      !std::isfinite(price_line.price)) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto found = std::find_if(
+      price_lines_.begin(), price_lines_.end(),
+      [&](const PriceLine& current) { return current.id == price_line.id; });
+  if (found != price_lines_.end()) {
+    const bool equal = found->price == price_line.price &&
+                       found->label == price_line.label &&
+                       found->color_hex == price_line.color_hex &&
+                       found->color.r == price_line.color.r &&
+                       found->color.g == price_line.color.g &&
+                       found->color.b == price_line.color.b &&
+                       found->color.a == price_line.color.a;
+    if (equal) {
+      return false;
+    }
+    *found = price_line;
+  } else {
+    price_lines_.push_back(price_line);
+  }
+  MarkDirtyLocked();
+  return true;
+}
+
+bool ChartEngine::RemovePriceLine(const std::string& price_line_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto found = std::find_if(
+      price_lines_.begin(), price_lines_.end(),
+      [&](const PriceLine& current) { return current.id == price_line_id; });
+  if (found == price_lines_.end()) {
+    return false;
+  }
+  price_lines_.erase(found);
+  MarkDirtyLocked();
+  return true;
+}
+
+bool ChartEngine::ClearPriceLines() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (price_lines_.empty()) {
+    return false;
+  }
+  price_lines_.clear();
+  MarkDirtyLocked();
+  return true;
+}
+
+std::vector<PriceLine> ChartEngine::PriceLines() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return price_lines_;
+}
+
+size_t ChartEngine::PriceLineCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return price_lines_.size();
+}
+
+PriceLine ChartEngine::PriceLineAt(size_t index) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return index < price_lines_.size() ? price_lines_[index] : PriceLine{};
+}
+
+std::optional<YAxisValue> ChartEngine::YAxisValueAt(float y) {
+  const std::shared_ptr<const RenderSnapshot> snapshot = Snapshot();
+  if (!snapshot || !snapshot->config.show_y_axis || !std::isfinite(y)) {
+    return std::nullopt;
+  }
+  for (size_t pane_index = 0; pane_index < snapshot->panes.size();
+       ++pane_index) {
+    const PaneSnapshot& pane = snapshot->panes[pane_index];
+    if (!pane.scale_visible || y < pane.plot.top || y > pane.plot.bottom ||
+        !(pane.visible_y_max > pane.visible_y_min)) {
+      continue;
+    }
+    const double position =
+        static_cast<double>(y - pane.plot.top) /
+        std::max(static_cast<double>(pane.plot.Height()), 1.0);
+    return YAxisValue{
+        pane.pane_id,
+        pane.price_scale_id,
+        pane.visible_y_max -
+            position * (pane.visible_y_max - pane.visible_y_min),
+        pane_index,
+    };
+  }
+  return std::nullopt;
+}
+
 size_t ChartEngine::CandleCount() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return candles_.size();
@@ -1615,7 +1707,7 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::Snapshot() {
     return snapshot_;
   }
   internal::SnapshotBuildInput input{config_, candles_, panes_,
-                                     additional_series_};
+                                     additional_series_, price_lines_};
   input.width = width_;
   input.height = height_;
   input.visible_x_min = visible_x_min_;

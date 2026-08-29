@@ -236,6 +236,7 @@ internal object SnapshotTransportAbi {
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
   const val INDICATOR_LEGEND_RECORD_WIDTH = 31
+  const val PRICE_LINE_RECORD_WIDTH = 6
 
   object PaneIndex {
     const val PLOT_LEFT = 0

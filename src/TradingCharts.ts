@@ -7,6 +7,7 @@ import {
   type ChartSeriesDataPoint,
   type HistogramPoint,
   type OhlcCandle,
+  type PriceLineOptions,
   type TradeEvent,
 } from './types';
 
@@ -28,6 +29,46 @@ function assertFinite(value: number, name: string) {
   if (!Number.isFinite(value)) {
     throw new TypeError(`${name} must be a finite number`);
   }
+}
+
+function validatePriceLine(options: PriceLineOptions) {
+  if (options.id.trim().length === 0) {
+    throw new TypeError('priceLine.id must be a non-empty string');
+  }
+  assertFinite(options.price, 'priceLine.price');
+  if (options.label.trim().length === 0) {
+    throw new TypeError('priceLine.label must be a non-empty string');
+  }
+  if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(options.color)) {
+    throw new TypeError('priceLine.color must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
+function unpackPriceLines(json: string): PriceLineOptions[] {
+  const parsed: unknown = JSON.parse(json);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Native price-line data must be an array');
+  }
+  // SAFETY: iOS and Android serialize this private transport from the native
+  // engine's typed PriceLine records; the array shape is checked above and
+  // every record is revalidated with the public PriceLineOptions invariants.
+  const lines = parsed as ReadonlyArray<PriceLineOptions>;
+  return lines.map((item, index) => {
+    const result = {
+      id: item.id,
+      price: item.price,
+      label: item.label,
+      color: item.color,
+    };
+    try {
+      validatePriceLine(result);
+    } catch (error) {
+      throw new Error(`Native priceLines[${index}] has invalid fields`, {
+        cause: error,
+      });
+    }
+    return result;
+  });
 }
 
 function validateCandle(candle: OhlcCandle, index?: number) {
@@ -306,6 +347,36 @@ export function createTradingCharts(
     async getCandles(chartId: string): Promise<OhlcCandle[]> {
       assertChartId(chartId);
       return unpackCandles(await nativeTradingCharts.getCandles(chartId));
+    },
+
+    setPriceLine(chartId: string, options: PriceLineOptions) {
+      assertChartId(chartId);
+      validatePriceLine(options);
+      nativeTradingCharts.setPriceLine(
+        chartId,
+        options.id,
+        options.price,
+        options.label,
+        options.color
+      );
+    },
+
+  removePriceLine(chartId: string, priceLineId: string) {
+    assertChartId(chartId);
+    if (priceLineId.trim().length === 0) {
+      throw new TypeError('priceLineId must be a non-empty string');
+    }
+      nativeTradingCharts.removePriceLine(chartId, priceLineId);
+    },
+
+    clearPriceLines(chartId: string) {
+      assertChartId(chartId);
+      nativeTradingCharts.clearPriceLines(chartId);
+    },
+
+    async getPriceLines(chartId: string): Promise<PriceLineOptions[]> {
+      assertChartId(chartId);
+      return unpackPriceLines(await nativeTradingCharts.getPriceLines(chartId));
     },
 
     zoom(chartId: string, scale: number) {

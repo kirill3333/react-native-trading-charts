@@ -7,10 +7,11 @@ import os
 
 final class ChartOverlayView: UIView {
   private let axisContainer = CALayer()
-  private let badgeContainer = CALayer()
+  let badgeContainer = CALayer()
   private let tooltipContainer = CALayer()
   private let extremaContainer = CALayer()
-  private lazy var xAxisPool = TextLayerPool(parentLayer: axisContainer)
+  let priceLineContainer = CALayer()
+  lazy var xAxisPool = TextLayerPool(parentLayer: axisContainer)
   private var yAxisPools: [String: TextLayerPool] = [:]
   private lazy var extremaPool = TextLayerPool(parentLayer: extremaContainer)
   private lazy var tooltipLinePool = TextLayerPool(parentLayer: tooltipContainer)
@@ -22,13 +23,15 @@ final class ChartOverlayView: UIView {
   private let tooltipBackgroundLayer = CALayer()
   private var extremaConnectorLayers: [CALayer] = []
   private var extremaBackgroundLayers: [CALayer] = []
+  var priceLineLayers: [String: PriceLineLayerGroup] = [:]
 
-  private let formatters = ChartFormatters()
+  let formatters = ChartFormatters()
   private let xAxisLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let yAxisLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let extremaLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let indicatorLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let currentPriceLayoutCache = NSCache<NSString, ChartTextLayout>()
+  let priceLineLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let crosshairPriceLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let crosshairTimeLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let tooltipHeaderLayoutCache = NSCache<NSString, ChartTextLayout>()
@@ -38,7 +41,7 @@ final class ChartOverlayView: UIView {
   private let tooltipDownLayoutCache = NSCache<NSString, ChartTextLayout>()
   private var configuration: ResolvedChartConfiguration?
   private var style: OverlayStyle?
-  private var presentationVersion = 0
+  var presentationVersion = 0
   private var appliedTooltipStyleVersion = 0
   private var appliedRevision: UInt64 = 0
   private var appliedContentRevision: UInt64 = 0
@@ -64,6 +67,7 @@ final class ChartOverlayView: UIView {
     layer.addSublayer(badgeContainer)
     layer.addSublayer(tooltipContainer)
     layer.addSublayer(extremaContainer)
+    layer.addSublayer(priceLineContainer)
     tooltipBackgroundLayer.cornerRadius = 8
     tooltipBackgroundLayer.isHidden = true
     tooltipContainer.addSublayer(tooltipBackgroundLayer)
@@ -74,6 +78,7 @@ final class ChartOverlayView: UIView {
     extremaLayoutCache.countLimit = 48
     indicatorLayoutCache.countLimit = 80
     currentPriceLayoutCache.countLimit = 64
+    priceLineLayoutCache.countLimit = 256
     crosshairPriceLayoutCache.countLimit = 64
     crosshairTimeLayoutCache.countLimit = 128
     tooltipHeaderLayoutCache.countLimit = 48
@@ -93,6 +98,7 @@ final class ChartOverlayView: UIView {
     if badgeContainer.frame != bounds { badgeContainer.frame = bounds }
     if tooltipContainer.frame != bounds { tooltipContainer.frame = bounds }
     if extremaContainer.frame != bounds { extremaContainer.frame = bounds }
+    if priceLineContainer.frame != bounds { priceLineContainer.frame = bounds }
     CATransaction.commit()
   }
 
@@ -115,6 +121,7 @@ final class ChartOverlayView: UIView {
     extremaLayoutCache.removeAllObjects()
     indicatorLayoutCache.removeAllObjects()
     currentPriceLayoutCache.removeAllObjects()
+    priceLineLayoutCache.removeAllObjects()
     crosshairPriceLayoutCache.removeAllObjects()
     crosshairTimeLayoutCache.removeAllObjects()
     tooltipHeaderLayoutCache.removeAllObjects()
@@ -217,6 +224,7 @@ final class ChartOverlayView: UIView {
   ) {
     setHidden(false, on: axisContainer)
     setHidden(false, on: extremaContainer)
+    setHidden(false, on: priceLineContainer)
     var visible = 0
     var xPresentations: [TextPresentation] = []
     if configuration.native.show_x_axis {
@@ -279,6 +287,13 @@ final class ChartOverlayView: UIView {
       }
     }
     for (key, pool) in yAxisPools where !activeKeys.contains(key) { pool.hide(from: 0) }
+    applyPriceLines(
+      frame: frame,
+      configuration: configuration,
+      style: style,
+      metrics: &metrics,
+      visible: &visible
+    )
     applyExtrema(frame: frame, style: style, metrics: &metrics, visible: &visible)
     if frame.currentPriceVisible && configuration.native.show_current_price_label {
       let text = formatters.formatValue(frame.currentPrice, role: "currentPrice")
@@ -613,7 +628,7 @@ final class ChartOverlayView: UIView {
 
 }
 
-private extension ChartOverlayView {
+extension ChartOverlayView {
   func applyBadgeFrames(
     _ badge: BadgeLayerGroup, layout: ChartTextLayout, backgroundFrame: CGRect,
     color: UIColor, border: BorderStyle, metrics: inout OverlayUpdateMetrics
@@ -636,13 +651,14 @@ private extension ChartOverlayView {
     _ = xAxisPool.apply(layout: layout, to: badge.textItem, frame: textFrame, metrics: &metrics)
   }
 
-  private func cachedLayout(
+  func cachedLayout(
     _ text: String, attributes: [NSAttributedString.Key: Any],
-    cache: NSCache<NSString, ChartTextLayout>, metrics: inout OverlayUpdateMetrics
+    cache: NSCache<NSString, ChartTextLayout>, cacheSuffix: String = "",
+    metrics: inout OverlayUpdateMetrics
   ) -> ChartTextLayout {
     // Each cache belongs to one resolved text style and is cleared whenever
     // presentation configuration changes, so the text itself is a complete key.
-    let key = text as NSString
+    let key = (cacheSuffix.isEmpty ? text : "\(cacheSuffix)\u{1f}\(text)") as NSString
     if let value = cache.object(forKey: key) { metrics.layoutCacheHits += 1; return value }
     metrics.layoutCacheMisses += 1
     let value = ChartTextLayout(text: text, attributes: attributes)
@@ -675,13 +691,13 @@ private extension ChartOverlayView {
     }
   }
 
-  private func replacingColor(
+  func replacingColor(
     _ attributes: [NSAttributedString.Key: Any], color: UIColor
   ) -> [NSAttributedString.Key: Any] {
     var result = attributes; result[.foregroundColor] = color; return result
   }
 
-  private func hideBadge(_ badge: BadgeLayerGroup) {
+  func hideBadge(_ badge: BadgeLayerGroup) {
     setHidden(true, on: badge.backgroundLayer)
     setHidden(true, on: badge.textItem.layer)
   }
@@ -691,13 +707,14 @@ private extension ChartOverlayView {
     setHidden(true, on: badgeContainer)
     setHidden(true, on: tooltipContainer)
     setHidden(true, on: extremaContainer)
+    setHidden(true, on: priceLineContainer)
   }
 
-  private func setHidden(_ hidden: Bool, on layer: CALayer) {
+  func setHidden(_ hidden: Bool, on layer: CALayer) {
     if layer.isHidden != hidden { layer.isHidden = hidden }
   }
 
-  private func setBackgroundColor(_ color: CGColor, on layer: CALayer) {
+  func setBackgroundColor(_ color: CGColor, on layer: CALayer) {
     if layer.backgroundColor == color { return }
     layer.backgroundColor = color
   }

@@ -1,10 +1,12 @@
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import {
   TradingChartsView,
+  TradingCharts,
   type AdditionalChartSeriesOptions,
   type ChartResolution,
   type VisibleRangeChangeEvent,
+  type YAxisPressEvent,
 } from 'react-native-trading-charts';
 
 import { useChartSettings } from '../chartSettings';
@@ -42,6 +44,17 @@ export const InteractiveChart = memo(function InteractiveChart({
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
+  const handleYAxisPress = useCallback(
+    (event: YAxisPressEvent) => {
+      TradingCharts.setPriceLine(chartId, {
+        id: 'axis-press',
+        price: event.price,
+        label: 'Axis press',
+        color: '#F59E0B',
+      });
+    },
+    [chartId]
+  );
   const useSignificantPriceFormat = shouldUseSignificantPriceFormat(lastPrice);
   const chartConfig = useMemo(
     () =>
@@ -110,6 +123,7 @@ export const InteractiveChart = memo(function InteractiveChart({
       initialVisibleCount={48}
       defaultScale={1.25}
       onVisibleRangeChange={onVisibleRangeChange}
+      onYAxisPress={handleYAxisPress}
       panes={panes}
       panesResizable
       style={styles.chart}

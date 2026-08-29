@@ -19,6 +19,10 @@ import Foundation
   )
   func removeSeries(_ seriesId: String)
   func setPaneHeight(_ paneId: String, weight: Double)
+  func setPriceLine(_ id: String, price: Double, label: String, color: String)
+  func removePriceLine(_ id: String)
+  func clearPriceLines()
+  func priceLinesJson() -> String
   func zoomByScale(_ scale: Double)
   func fitChartContent()
   func clearChartData()
@@ -35,6 +39,9 @@ private enum PendingCommand {
   case seriesData([NSNumber], seriesId: String, dataType: String, prepend: Bool, update: Bool)
   case removeSeries(String)
   case paneHeight(String, Double)
+  case setPriceLine(String, Double, String, String)
+  case removePriceLine(String)
+  case clearPriceLines
   case zoom(Double)
   case fitContent
 
@@ -49,6 +56,9 @@ private enum PendingCommand {
     case .seriesData: return "seriesData"
     case .removeSeries: return "removeSeries"
     case .paneHeight: return "paneHeight"
+    case .setPriceLine: return "setPriceLine"
+    case .removePriceLine: return "removePriceLine"
+    case .clearPriceLines: return "clearPriceLines"
     case .zoom: return "zoom"
     case .fitContent: return "fitContent"
     }
@@ -79,6 +89,10 @@ private enum PendingCommand {
       )
     case .removeSeries(let seriesId): target.removeSeries(seriesId)
     case .paneHeight(let paneId, let weight): target.setPaneHeight(paneId, weight: weight)
+    case .setPriceLine(let id, let price, let label, let color):
+      target.setPriceLine(id, price: price, label: label, color: color)
+    case .removePriceLine(let id): target.removePriceLine(id)
+    case .clearPriceLines: target.clearPriceLines()
     case .zoom(let scale): target.zoomByScale(scale)
     case .fitContent: target.fitChartContent()
     }
@@ -211,6 +225,60 @@ public final class TradingChartsRegistry: NSObject {
     }
   }
 
+  @objc(setPriceLine:price:label:color:chartId:)
+  public func setPriceLine(
+    _ id: String,
+    price: Double,
+    label: String,
+    color: String,
+    chartId: String
+  ) {
+    coalescePriceLine(
+      .setPriceLine(id, price, label, color),
+      id: id,
+      chartId: chartId
+    )
+  }
+
+  @objc(removePriceLine:chartId:)
+  public func removePriceLine(_ id: String, chartId: String) {
+    coalescePriceLine(.removePriceLine(id), id: id, chartId: chartId)
+  }
+
+  @objc(clearPriceLinesForChart:)
+  public func clearPriceLines(forChart chartId: String) {
+    guard !chartId.isEmpty else { return }
+    onMain { [self] in
+      let entry = entry(for: chartId, create: true)!
+      if let view = entry.view {
+        view.clearPriceLines()
+        return
+      }
+      entry.pending.removeAll { command in
+        switch command {
+        case .setPriceLine, .removePriceLine, .clearPriceLines: return true
+        default: return false
+        }
+      }
+      append(.clearPriceLines, to: entry, chartId: chartId)
+    }
+  }
+
+  @objc(getPriceLinesForChart:success:failure:)
+  public func getPriceLines(
+    forChart chartId: String,
+    success: @escaping (String) -> Void,
+    failure: @escaping () -> Void
+  ) {
+    onMain { [self] in
+      if let view = entry(for: chartId, create: false)?.view {
+        success(view.priceLinesJson())
+      } else {
+        failure()
+      }
+    }
+  }
+
   @objc(getCandlesForChart:success:failure:)
   public func getCandles(
     forChart chartId: String,
@@ -286,6 +354,26 @@ public final class TradingChartsRegistry: NSObject {
     onMain { [self] in
       let entry = entry(for: chartId, create: true)!
       if let view = entry.view { command.replay(on: view) } else { append(command, to: entry, chartId: chartId) }
+    }
+  }
+
+  private func coalescePriceLine(_ command: PendingCommand, id: String, chartId: String) {
+    guard !chartId.isEmpty, !id.isEmpty else { return }
+    onMain { [self] in
+      let entry = entry(for: chartId, create: true)!
+      if let view = entry.view {
+        command.replay(on: view)
+        return
+      }
+      entry.pending.removeAll { pending in
+        switch pending {
+        case .setPriceLine(let pendingId, _, _, _), .removePriceLine(let pendingId):
+          return pendingId == id
+        default:
+          return false
+        }
+      }
+      append(command, to: entry, chartId: chartId)
     }
   }
 

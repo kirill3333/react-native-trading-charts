@@ -21,6 +21,11 @@ using TransitionVector = std::vector<TimeZoneTransition>;
 using DateVector = std::vector<CivilDate>;
 using OverrideVector = std::vector<TradingCalendarOverrideConfig>;
 
+struct YAxisHitResult {
+  bool valid = false;
+  YAxisValue value;
+};
+
 // Copyable value handle imported by Swift. Copies retain the shared engine,
 // while all chart semantics remain implemented by ChartEngine.
 class ChartEngineHandle {
@@ -55,6 +60,17 @@ class ChartEngineHandle {
   }
   bool SetPaneHeight(const std::string& pane_id, double height_weight) {
     return engine_->SetPaneHeight(pane_id, height_weight);
+  }
+  bool SetPriceLine(const PriceLine& price_line) {
+    return engine_->SetPriceLine(price_line);
+  }
+  bool RemovePriceLine(const std::string& price_line_id) {
+    return engine_->RemovePriceLine(price_line_id);
+  }
+  bool ClearPriceLines() { return engine_->ClearPriceLines(); }
+  size_t PriceLineCount() const { return engine_->PriceLineCount(); }
+  PriceLine PriceLineAt(size_t index) const {
+    return engine_->PriceLineAt(index);
   }
   bool ResizePaneSeparator(size_t separator_index, float delta_pixels) {
     return engine_->ResizePaneSeparator(separator_index, delta_pixels);
@@ -94,6 +110,11 @@ class ChartEngineHandle {
   void FitContent() { engine_->FitContent(); }
   void SetCrosshair(bool active, float x, float y) {
     engine_->SetCrosshair(active, x, y);
+  }
+  YAxisHitResult YAxisValueAt(float y) {
+    const auto value = engine_->YAxisValueAt(y);
+    return value.has_value() ? YAxisHitResult{true, *value}
+                             : YAxisHitResult{};
   }
 
   size_t CandleCount() const { return engine_->CandleCount(); }
@@ -199,6 +220,10 @@ class RenderSnapshotHandle {
   IndicatorLegendValue IndicatorLegendValueAt(size_t legend_index,
                                                size_t value_index) const {
     return snapshot_->indicator_legends.at(legend_index).values.at(value_index);
+  }
+  size_t PriceLineCount() const { return snapshot_->price_lines.size(); }
+  PriceLineSnapshot PriceLineAt(size_t index) const {
+    return snapshot_->price_lines.at(index);
   }
 
  private:

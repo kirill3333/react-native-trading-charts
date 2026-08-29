@@ -1,6 +1,8 @@
 package com.tradingcharts
 
+import android.graphics.Color
 import java.nio.ByteBuffer
+import kotlin.math.roundToInt
 
 private const val CONTENT_FLOATS_PER_VERTEX = 6
 
@@ -51,6 +53,23 @@ internal data class IndicatorLegendSnapshot(
     val values: List<IndicatorLegendValueSnapshot>,
 )
 
+internal data class PriceLineSnapshot(
+    val id: String,
+    val price: Double,
+    val label: String,
+    val color: Int,
+    val y: Float,
+)
+
+internal data class PriceLineValue(
+    val id: String,
+    val price: Double,
+    val label: String,
+    val color: String,
+)
+
+internal data class YAxisValue(val price: Double, val paneIndex: Int)
+
 internal data class ChartFrame(
     val snapshot: ChartSnapshot,
     val contentVertices: ContentVertexBufferLease?,
@@ -83,6 +102,7 @@ internal data class ChartSnapshot(
     val yTicks: List<AxisTick>,
     val panes: List<PaneSnapshot>,
     val indicatorLegends: List<IndicatorLegendSnapshot>,
+    val priceLines: List<PriceLineSnapshot>,
     val activePaneIndex: Int,
     val currentPriceVisible: Boolean,
     val currentPrice: Double,
@@ -267,6 +287,27 @@ internal object ChartEngineNative {
   @JvmStatic
   external fun nativeSetPaneHeight(handle: Long, paneId: String, heightWeight: Double): Boolean
 
+  @JvmStatic
+  @Suppress("LongParameterList")
+  external fun nativeSetPriceLine(
+      handle: Long,
+      priceLineId: String,
+      price: Double,
+      label: String,
+      colorHex: String,
+      color: Int,
+  ): Boolean
+
+  @JvmStatic external fun nativeRemovePriceLine(handle: Long, priceLineId: String): Boolean
+
+  @JvmStatic external fun nativeClearPriceLines(handle: Long): Boolean
+
+  @JvmStatic private external fun nativePriceLinePrices(handle: Long): DoubleArray
+
+  @JvmStatic private external fun nativePriceLineStrings(handle: Long): Array<String>
+
+  @JvmStatic private external fun nativeYAxisValueAt(handle: Long, y: Float): DoubleArray
+
   @JvmStatic external fun nativeScaleYAt(handle: Long, delta: Float, y: Float): Boolean
 
   @JvmStatic external fun nativeSeparatorAt(handle: Long, y: Float, hitSlop: Float): Int
@@ -332,6 +373,10 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotIndicatorLegends(handle: Long): DoubleArray
 
+  @JvmStatic private external fun nativeSnapshotPriceLineValues(handle: Long): DoubleArray
+
+  @JvmStatic private external fun nativeSnapshotPriceLineStrings(handle: Long): Array<String>
+
   @JvmStatic private external fun nativeSnapshotActivePane(handle: Long): Int
 
   @JvmStatic private external fun nativeSnapshotMeta(handle: Long): DoubleArray
@@ -369,6 +414,31 @@ internal object ChartEngineNative {
         payload.numbers,
         payload.colors,
     )
+  }
+
+  fun priceLines(handle: Long): List<PriceLineValue> {
+    val prices = nativePriceLinePrices(handle)
+    val strings = nativePriceLineStrings(handle)
+    check(strings.size == prices.size * 3) {
+      "Invalid native price-line transport sizes"
+    }
+    return List(prices.size) { index ->
+      PriceLineValue(
+          id = strings[index * 3],
+          price = prices[index],
+          label = strings[index * 3 + 1],
+          color = strings[index * 3 + 2],
+      )
+    }
+  }
+
+  fun yAxisValueAt(handle: Long, y: Float): YAxisValue? {
+    val values = nativeYAxisValueAt(handle, y)
+    if (values.isEmpty()) return null
+    check(values.size == 2 && values[1] == values[1].toInt().toDouble()) {
+      "Invalid native Y-axis value payload"
+    }
+    return YAxisValue(values[0], values[1].toInt())
   }
 
   fun snapshot(
@@ -471,6 +541,7 @@ internal object ChartEngineNative {
         yTicks = ticks(nativeSnapshotYTicks(snapshot)),
         panes = panes,
         indicatorLegends = snapshotIndicatorLegends(snapshot),
+        priceLines = snapshotPriceLines(snapshot),
         activePaneIndex = nativeSnapshotActivePane(snapshot),
         currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
         currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
@@ -578,6 +649,36 @@ internal object ChartEngineNative {
               record.values.map { value ->
                 IndicatorLegendValueSnapshot(value.value, value.hasValue, value.color)
               },
+      )
+    }
+  }
+
+  private fun snapshotPriceLines(snapshot: Long): List<PriceLineSnapshot> {
+    val payload =
+        decodeSnapshotRecordPayload(
+            nativeSnapshotPriceLineValues(snapshot),
+            SnapshotTransportAbi.PRICE_LINE_RECORD_WIDTH,
+            "price lines",
+        )
+    val strings = nativeSnapshotPriceLineStrings(snapshot)
+    check(strings.size == payload.recordCount * 2) {
+      "Invalid native price-line snapshot strings"
+    }
+    return List(payload.recordCount) { index ->
+      val offset = payload.offset(index)
+      fun channel(value: Double) = (value * 255.0).roundToInt().coerceIn(0, 255)
+      PriceLineSnapshot(
+          id = strings[index * 2],
+          price = payload.values[offset],
+          label = strings[index * 2 + 1],
+          color =
+              Color.argb(
+                  channel(payload.values[offset + 5]),
+                  channel(payload.values[offset + 2]),
+                  channel(payload.values[offset + 3]),
+                  channel(payload.values[offset + 4]),
+              ),
+          y = payload.values[offset + 1].toFloat(),
       )
     }
   }

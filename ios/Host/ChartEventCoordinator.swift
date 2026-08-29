@@ -40,6 +40,14 @@ import Foundation
     secondHeightWeight: Double,
     resizeFinished: Bool
   )
+  func chartHostView(
+    _ host: ChartHostView,
+    yAxisPressX x: Double,
+    y: Double,
+    price: Double,
+    paneId: String,
+    priceScaleId: String
+  )
 }
 
 final class ChartEventCoordinator {
