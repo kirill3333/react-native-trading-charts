@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
+import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
-  type ListRenderItem,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -382,16 +381,11 @@ export function MarketsScreen() {
           <Text style={styles.columnLabel}>PAIR / 24H VOLUME</Text>
           <Text style={styles.columnLabel}>PRICE / 24H</Text>
         </View>
-        <FlatList
+        <FlashList
           data={tickers}
-          getItemLayout={(_data, index) => ({
-            length: ROW_HEIGHT,
-            offset: ROW_HEIGHT * index,
-            index,
-          })}
-          initialNumToRender={14}
           key={provider}
           keyExtractor={(item) => `${provider}:${item.symbol}`}
+          maintainVisibleContentPosition={{ disabled: true }}
           refreshControl={
             <RefreshControl
               colors={[theme.colors.accent]}
