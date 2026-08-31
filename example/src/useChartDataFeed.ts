@@ -6,6 +6,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TradingCharts, type OhlcCandle } from 'react-native-trading-charts';
 
+import {
+  calculateAllTimeExtremes,
+  extendAllTimeExtremes,
+  type AllTimeExtremes,
+} from './allTimeExtremes';
 import { type MarketDataAdapter } from './marketData';
 import { type MarketWebSocketEvent } from './marketWebSocket';
 
@@ -80,6 +85,8 @@ export function useChartDataFeed<
   const topic = adapter.topicFor(ticker.symbol, interval);
   const [connection, setConnection] =
     useState<ChartConnectionSnapshot>(EMPTY_CONNECTION);
+  const [allTimeExtremes, setAllTimeExtremes] =
+    useState<AllTimeExtremes | null>(null);
   const appliedPageCountRef = useRef(0);
   const synchronizedGenerationRef = useRef<number | null>(null);
   const activeGenerationRef = useRef<number | null>(null);
@@ -119,6 +126,7 @@ export function useChartDataFeed<
     activeGenerationRef.current = null;
     buffersRef.current.clear();
     hadLiveDataRef.current = false;
+    setAllTimeExtremes(null);
     setConnection({ ...EMPTY_CONNECTION, lastPrice: ticker.lastPrice });
   }, [sessionKey, ticker.lastPrice]);
 
@@ -132,6 +140,7 @@ export function useChartDataFeed<
       if (synchronizedGenerationRef.current == null) {
         const candles = mergeCandles(pages, adapter.maxCandles);
         charts.setHistory(chartId, candles);
+        setAllTimeExtremes(calculateAllTimeExtremes(candles));
         setConnection((current) => ({
           status:
             current.status === 'loading' || current.status === 'error'
@@ -151,6 +160,9 @@ export function useChartDataFeed<
       );
       if (older.length > 0) {
         charts.prependHistory(chartId, older);
+        setAllTimeExtremes((current) =>
+          extendAllTimeExtremes(current, older)
+        );
       }
       appliedPageCountRef.current = pages.length;
     }
@@ -224,6 +236,9 @@ export function useChartDataFeed<
           .filter((candle) => candle.timestamp >= latestSnapshotTimestamp)
           .sort((left, right) => left.timestamp - right.timestamp);
         buffered.forEach((candle) => charts.updateCandle(chartId, candle));
+        setAllTimeExtremes(
+          calculateAllTimeExtremes([...merged, ...buffered])
+        );
         buffersRef.current.clear();
         synchronizedGenerationRef.current = generation;
         activeGenerationRef.current = null;
@@ -253,6 +268,9 @@ export function useChartDataFeed<
           const candles = adapter.parseMarketMessage(event.message);
           if (synchronizedGenerationRef.current === event.generation) {
             candles.forEach((candle) => charts.updateCandle(chartId, candle));
+            setAllTimeExtremes((current) =>
+              extendAllTimeExtremes(current, candles)
+            );
           } else {
             const buffer =
               buffersRef.current.get(event.generation) ?? new Map();
@@ -338,7 +356,7 @@ export function useChartDataFeed<
   }, [adapter.websocket, historyQuery]);
 
   return useMemo(
-    () => ({ ...connection, loadOlder, retry }),
-    [connection, loadOlder, retry]
+    () => ({ ...connection, allTimeExtremes, loadOlder, retry }),
+    [allTimeExtremes, connection, loadOlder, retry]
   );
 }

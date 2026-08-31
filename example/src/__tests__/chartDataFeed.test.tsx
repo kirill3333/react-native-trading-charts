@@ -177,6 +177,7 @@ describe('useChartDataFeed', () => {
     expect(mockCharts.setHistory).toHaveBeenCalledWith('chart', [
       initialCandle,
     ]);
+    expect(feed!.allTimeExtremes).toEqual({ high: 12, low: 9 });
 
     await act(async () => {
       feed!.loadOlder();
@@ -185,6 +186,7 @@ describe('useChartDataFeed', () => {
     expect(mockCharts.prependHistory).toHaveBeenCalledWith('chart', [
       olderCandle,
     ]);
+    expect(feed!.allTimeExtremes).toEqual({ high: 12, low: 8 });
 
     await act(async () => {
       feed!.loadOlder();
@@ -300,9 +302,86 @@ describe('useChartDataFeed', () => {
       initialCandle,
     ]);
     expect(mockCharts.updateCandle).toHaveBeenCalledWith('chart', liveCandle);
-    expect(feed).toMatchObject({ status: 'live', lastPrice: 12, error: null });
+    expect(feed).toMatchObject({
+      status: 'live',
+      lastPrice: 12,
+      error: null,
+      allTimeExtremes: { high: 13, low: 9 },
+    });
 
     act(() => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('clears extremes immediately when the market session changes', async () => {
+    const nextCandle: OhlcCandle = {
+      timestamp: 2_000,
+      open: 20,
+      high: 24,
+      low: 18,
+      close: 22,
+      volume: 4,
+    };
+    let resolveNextHistory!: (candles: OhlcCandle[]) => void;
+    const nextHistory = new Promise<OhlcCandle[]>((resolve) => {
+      resolveNextHistory = resolve;
+    });
+    const fetchCandles = jest
+      .fn<MarketDataAdapter<TestTicker, '1m', TestMessage>['fetchCandles']>()
+      .mockResolvedValueOnce([initialCandle])
+      .mockReturnValueOnce(nextHistory);
+    const adapter = createAdapter(fetchCandles);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { gcTime: Infinity, networkMode: 'always', retry: false },
+      },
+    });
+    let symbol = 'BTCUSDT';
+    let feed: FeedResult | null = null;
+
+    function Harness() {
+      feed = useChartDataFeed(
+        adapter,
+        { symbol, lastPrice: symbol === 'BTCUSDT' ? 10 : 20 },
+        '1m',
+        `${symbol}:1m`,
+        mockCharts
+      );
+      return null;
+    }
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await flushQueries();
+    });
+    expect(feed!.allTimeExtremes).toEqual({ high: 12, low: 9 });
+
+    symbol = 'ETHUSDT';
+    await act(async () => {
+      renderer.update(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>
+      );
+      await Promise.resolve();
+    });
+    expect(feed!.allTimeExtremes).toBeNull();
+
+    await act(async () => {
+      resolveNextHistory([nextCandle]);
+      await flushQueries();
+    });
+    expect(feed!.allTimeExtremes).toEqual({ high: 24, low: 18 });
+
+    act(() => renderer.unmount());
     queryClient.clear();
   });
 });

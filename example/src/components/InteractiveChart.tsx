@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import {
   TradingChartsView,
@@ -11,6 +11,11 @@ import {
 
 import { useChartSettings } from '../chartSettings';
 import {
+  removeAllTimePriceLines,
+  syncAllTimePriceLines,
+  type AllTimeExtremes,
+} from '../allTimeExtremes';
+import {
   buildMacdSeries,
   buildMovingAverageSeries,
   buildRsiAppearance,
@@ -19,6 +24,7 @@ import {
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
+import { APP_THEMES } from '../theme';
 
 type InteractiveChartProps = {
   chartId: string;
@@ -29,6 +35,7 @@ type InteractiveChartProps = {
   showVolume: boolean;
   showRsi: boolean;
   showMacd: boolean;
+  allTimeExtremes: AllTimeExtremes | null;
   onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
 };
 
@@ -41,9 +48,11 @@ export const InteractiveChart = memo(function InteractiveChart({
   showVolume,
   showRsi,
   showMacd,
+  allTimeExtremes,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const { settings } = useChartSettings();
+  const themeColors = APP_THEMES[settings.themeMode].colors;
   const handleYAxisPress = useCallback(
     (event: YAxisPressEvent) => {
       TradingCharts.setPriceLine(chartId, {
@@ -108,6 +117,27 @@ export const InteractiveChart = memo(function InteractiveChart({
     }
     return result.length > 0 ? result : undefined;
   }, [settings, showMacd, showRsi, showVolume]);
+
+  useEffect(() => {
+    syncAllTimePriceLines(
+      TradingCharts,
+      chartId,
+      settings.allTimeExtremesVisible,
+      allTimeExtremes,
+      { high: themeColors.positive, low: themeColors.negative }
+    );
+  }, [
+    allTimeExtremes,
+    chartId,
+    settings.allTimeExtremesVisible,
+    themeColors.negative,
+    themeColors.positive,
+  ]);
+
+  useEffect(
+    () => () => removeAllTimePriceLines(TradingCharts, chartId),
+    [chartId]
+  );
 
   return (
     <TradingChartsView

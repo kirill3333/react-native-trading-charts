@@ -789,6 +789,14 @@ export function SettingsScreen() {
             }
             value={settings.priceExtremesVisible}
           />
+          <SettingSwitch
+            description="Calculated from all API candles loaded this session"
+            label="All-time high & low"
+            onValueChange={(allTimeExtremesVisible) =>
+              updateSettings({ allTimeExtremesVisible })
+            }
+            value={settings.allTimeExtremesVisible}
+          />
         </SettingsSection>
 
         <SettingsSection title="Crosshair">

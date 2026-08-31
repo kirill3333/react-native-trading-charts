@@ -180,12 +180,14 @@ function ChartContent<
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? { unit: 'minute' as const };
 
-  const { status, error, lastPrice, loadOlder, retry } = useChartDataFeed(
-    adapter,
-    ticker,
-    interval,
-    chartId
-  );
+  const {
+    status,
+    error,
+    lastPrice,
+    allTimeExtremes,
+    loadOlder,
+    retry,
+  } = useChartDataFeed(adapter, ticker, interval, chartId);
   const displayedPrice = lastPrice ?? ticker.lastPrice;
   const formattedPrice = useMemo(
     () => formatPrice(displayedPrice, ticker.precision),
@@ -332,6 +334,7 @@ function ChartContent<
             }
           >
             <InteractiveChart
+              allTimeExtremes={allTimeExtremes}
               chartId={chartId}
               key={chartId}
               lastPrice={ticker.lastPrice}

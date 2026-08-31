@@ -95,6 +95,7 @@ export type ChartSettings = {
   currentPriceShowLabel: boolean;
   currentPricePinToEdge: boolean;
   priceExtremesVisible: boolean;
+  allTimeExtremesVisible: boolean;
   crosshairEnabled: boolean;
   crosshairShowTooltip: boolean;
   crosshairLineStyle: CrosshairLineStyleSetting;
@@ -178,6 +179,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   currentPriceShowLabel: true,
   currentPricePinToEdge: true,
   priceExtremesVisible: true,
+  allTimeExtremesVisible: false,
   crosshairEnabled: true,
   crosshairShowTooltip: true,
   crosshairLineStyle: 'dashed',
