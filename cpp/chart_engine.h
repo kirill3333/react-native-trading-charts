@@ -586,6 +586,38 @@ class ChartEngine {
  private:
   friend class ChartEngineTestAccess;
 
+  enum class MutationKind : std::uint8_t {
+    kNone,
+    kOverlay,
+    kContent,
+  };
+
+  enum class TradeApplyStatus : std::uint8_t {
+    kApplied,
+    kIgnoredOldTimestamp,
+    kIgnoredOutsideSession,
+  };
+
+  // Owns the engine lock and publishes the strongest render mutation recorded
+  // during its lifetime. Destruction happens before the lock is released, so
+  // early returns and exceptions cannot leave the snapshot cache stale.
+  class MutationScope {
+   public:
+    explicit MutationScope(ChartEngine& engine);
+    ~MutationScope() noexcept;
+
+    MutationScope(const MutationScope&) = delete;
+    MutationScope& operator=(const MutationScope&) = delete;
+
+    void ContentChanged() noexcept;
+    void OverlayChanged() noexcept;
+
+   private:
+    ChartEngine& engine_;
+    std::unique_lock<std::mutex> lock_;
+    MutationKind kind_ = MutationKind::kNone;
+  };
+
   mutable std::mutex mutex_;
   ChartConfig config_;
   std::vector<Candle> candles_;
@@ -616,24 +648,30 @@ class ChartEngine {
   double CandleXLocked(size_t index) const;
   double DataXMinLocked() const;
   double DataXMaxLocked() const;
-  void ResetViewportLocked();
-  void FitContentLocked();
+  void ResetViewportLocked(MutationScope& mutation);
+  void FitContentLocked(MutationScope& mutation);
   size_t PaneIndexAtYLocked(float y) const;
   size_t PaneIndexAtYLocked(float y, const std::vector<Rect>& rects) const;
   std::vector<Rect> PaneRectsLocked() const;
   SeriesData* FindSeriesLocked(const std::string& series_id);
   const SeriesData* FindSeriesLocked(const std::string& series_id) const;
-  void RebuildSeriesIndicesLocked();
+  void RebuildSeriesIndicesLocked(MutationScope& mutation);
   const std::vector<Candle>* SourceCandlesLocked(
       const SeriesData& series) const;
   void RefreshDerivedDependentsLocked(const std::string& source_series_id,
-                                      size_t first_changed_source_index);
-  void RebuildAllDerivedSeriesLocked();
+                                      size_t first_changed_source_index,
+                                      MutationScope& mutation);
+  void RebuildAllDerivedSeriesLocked(MutationScope& mutation);
   bool PaneHasRsiLocked(size_t pane_index) const;
   bool PaneHasMacdLocked(size_t pane_index) const;
-  void ClampViewportLocked();
+  void ClampViewportValuesLocked(double* visible_x_min,
+                                 double* visible_x_max) const;
   bool IsAtLiveEdgeLocked() const;
-  UpdateStatus UpdateTradeLocked(double timestamp, double price, double size);
+  bool ValidateTradeSequenceLocked(const double* values,
+                                   size_t value_count) const;
+  TradeApplyStatus ApplyValidatedTradeLocked(double timestamp, double price,
+                                             double size,
+                                             MutationScope& mutation);
 };
 
 }  // namespace trading_charts

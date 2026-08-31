@@ -13,6 +13,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,38 @@ namespace trading_charts {
 
 class ChartEngineTestAccess {
  public:
+  static void ExitAfterContentMutation(ChartEngine& engine) {
+    ChartEngine::MutationScope mutation(engine);
+    mutation.ContentChanged();
+    engine.width_ += 1.0F;
+  }
+
+  static void ExitAfterOverlayMutation(ChartEngine& engine) {
+    ChartEngine::MutationScope mutation(engine);
+    mutation.OverlayChanged();
+    engine.crosshair_active_ = true;
+    engine.crosshair_touch_x_ += 1.0F;
+  }
+
+  static void PromoteOverlayToContent(ChartEngine& engine) {
+    ChartEngine::MutationScope mutation(engine);
+    mutation.OverlayChanged();
+    engine.crosshair_touch_x_ += 1.0F;
+    mutation.ContentChanged();
+    engine.width_ += 1.0F;
+  }
+
+  static void ThrowAfterContentMutation(ChartEngine& engine) {
+    ChartEngine::MutationScope mutation(engine);
+    mutation.ContentChanged();
+    engine.width_ += 1.0F;
+    throw std::runtime_error("mutation scope test");
+  }
+
+  static void ExitWithoutMutation(ChartEngine& engine) {
+    ChartEngine::MutationScope mutation(engine);
+  }
+
   static std::vector<Candle> SeriesCandles(ChartEngine& engine,
                                            const std::string& series_id) {
     std::lock_guard<std::mutex> lock(engine.mutex_);
@@ -116,8 +149,8 @@ void ExpectContentMutation(ChartEngine& engine, Operation operation) {
   const RenderCheckpoint before = CaptureRenderCheckpoint(engine);
   operation();
   const RenderCheckpoint after = CaptureRenderCheckpoint(engine);
-  assert(after.revision > before.revision);
-  assert(after.content_revision > before.content_revision);
+  assert(after.revision == before.revision + 1);
+  assert(after.content_revision == before.content_revision + 1);
   assert(after.snapshot != before.snapshot);
 }
 
@@ -126,7 +159,7 @@ void ExpectOverlayMutation(ChartEngine& engine, Operation operation) {
   const RenderCheckpoint before = CaptureRenderCheckpoint(engine);
   operation();
   const RenderCheckpoint after = CaptureRenderCheckpoint(engine);
-  assert(after.revision > before.revision);
+  assert(after.revision == before.revision + 1);
   assert(after.content_revision == before.content_revision);
   assert(after.snapshot != before.snapshot);
   assert(after.snapshot->content_vertices == before.snapshot->content_vertices);
@@ -349,17 +382,23 @@ void TestSessionAlignedBucketsAndExclusiveClose() {
   const double first_end[] = {UtcMilliseconds(2026, 8, 3, 10, 29), 12.0, 1.0};
   const double next[] = {UtcMilliseconds(2026, 8, 3, 10, 30), 13.0, 1.0};
   const double at_close[] = {UtcMilliseconds(2026, 8, 3, 16, 0), 14.0, 1.0};
-  assert(engine.UpdateTrade(before_open, 3) ==
-         UpdateStatus::kIgnoredOutsideSession);
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrade(before_open, 3) ==
+           UpdateStatus::kIgnoredOutsideSession);
+  });
   assert(engine.UpdateTrade(at_open, 3) == UpdateStatus::kApplied);
   assert(engine.UpdateTrade(first_end, 3) == UpdateStatus::kApplied);
   assert(engine.UpdateTrade(next, 3) == UpdateStatus::kApplied);
-  assert(engine.UpdateTrade(at_close, 3) ==
-         UpdateStatus::kIgnoredOutsideSession);
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrade(at_close, 3) ==
+           UpdateStatus::kIgnoredOutsideSession);
+  });
   const double older_after_ignored[] = {UtcMilliseconds(2026, 8, 3, 15, 0),
                                         15.0, 1.0};
-  assert(engine.UpdateTrade(older_after_ignored, 3) ==
-         UpdateStatus::kIgnoredOldTimestamp);
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrade(older_after_ignored, 3) ==
+           UpdateStatus::kIgnoredOldTimestamp);
+  });
   assert(engine.CandleCount() == 2);
   ExpectNear(engine.CandleAt(0).timestamp, UtcMilliseconds(2026, 8, 3, 9, 30));
   ExpectNear(engine.CandleAt(1).timestamp, UtcMilliseconds(2026, 8, 3, 10, 30));
@@ -498,15 +537,15 @@ void TestMixedTradeBatchReportsAppliedChange() {
   ChartEngine engine;
   const double first[] = {1000.0, 10.0, 1.0};
   assert(engine.UpdateTrade(first, 3) == UpdateStatus::kApplied);
-  const uint64_t revision = engine.Revision();
 
   // The old record is ignored, but the newer record mutates the current
   // candle. The aggregate status must still request a native frame.
   const double mixed[] = {
       999.0, 8.0, 1.0, 1001.0, 12.0, 2.0,
   };
-  assert(engine.UpdateTrades(mixed, 6) == UpdateStatus::kApplied);
-  assert(engine.Revision() > revision);
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateTrades(mixed, 6) == UpdateStatus::kApplied);
+  });
   ExpectNear(engine.CandleAt(0).close, 12.0);
   ExpectNear(engine.CandleAt(0).volume, 3.0);
 }
@@ -557,6 +596,37 @@ void TestRejectedTradeBatchStillIgnoresOldTimestamps() {
          UpdateStatus::kApplied);
   assert(engine.CandleCount() == 2);
   ExpectNear(engine.CandleAt(1).close, 12.0);
+}
+
+void TestMutationScopePublishesOnEveryExitPath() {
+  ChartEngine engine;
+  engine.SetSize(320.0F, 240.0F);
+  const double history[] = {0.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+
+  ExpectNoRenderMutation(engine, [&] {
+    trading_charts::ChartEngineTestAccess::ExitWithoutMutation(engine);
+  });
+  ExpectContentMutation(engine, [&] {
+    trading_charts::ChartEngineTestAccess::ExitAfterContentMutation(engine);
+  });
+  ExpectOverlayMutation(engine, [&] {
+    trading_charts::ChartEngineTestAccess::ExitAfterOverlayMutation(engine);
+  });
+  ExpectContentMutation(engine, [&] {
+    trading_charts::ChartEngineTestAccess::PromoteOverlayToContent(engine);
+  });
+
+  bool caught = false;
+  ExpectContentMutation(engine, [&] {
+    try {
+      trading_charts::ChartEngineTestAccess::ThrowAfterContentMutation(engine);
+    } catch (const std::runtime_error&) {
+      caught = true;
+    }
+  });
+  assert(caught);
 }
 
 void TestConfigurationAndPresentationMutationContract() {
@@ -694,6 +764,13 @@ void TestMarketDataMutationContract() {
   ExpectNoRenderMutation(engine, [&] {
     assert(engine.UpdateTrades(invalid, std::size(invalid)) ==
            UpdateStatus::kInvalidInput);
+  });
+  const double ignored[] = {
+      60'000.0, 9.0, 1.0, 120'000.0, 10.0, 1.0,
+  };
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrades(ignored, std::size(ignored)) ==
+           UpdateStatus::kIgnoredOldTimestamp);
   });
   ExpectContentMutation(engine, [&] { engine.Clear(); });
 }
@@ -2900,8 +2977,10 @@ void TestMovingAverageAllValueSourcesAndTradeBatch() {
   const double trades[] = {
       60'100.0, 24.0, 1.0, 120'000.0, 30.0, 1.0,
   };
-  assert(engine.UpdateTrades(trades, std::size(trades)) ==
-         UpdateStatus::kApplied);
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateTrades(trades, std::size(trades)) ==
+           UpdateStatus::kApplied);
+  });
   closes = trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "ma-3");
   assert(closes.size() == 3);
   ExpectNear(closes[1].close, 24.0);
@@ -3878,6 +3957,7 @@ int main() noexcept {
     TestMixedTradeBatchReportsAppliedChange();
     TestRejectedTradeBatchDoesNotPartiallyMutate();
     TestRejectedTradeBatchStillIgnoresOldTimestamps();
+    TestMutationScopePublishesOnEveryExitPath();
     TestConfigurationAndPresentationMutationContract();
     TestSeriesMutationContract();
     TestMarketDataMutationContract();

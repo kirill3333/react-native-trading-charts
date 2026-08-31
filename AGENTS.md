@@ -100,8 +100,11 @@ formatting, and React Native integration in the iOS and Android layers.
   storage outside the lock.
 - `RenderSnapshot` is immutable after publication. Preserve its lifetime until
   both the GPU and overlay have finished consuming it.
-- `revision` identifies all render-relevant state. Any state mutation that
-  changes output must call `markDirtyLocked()`.
+- `revision` identifies all render-relevant state. Public engine mutators must
+  hold a `ChartEngine::MutationScope` and record `ContentChanged()` or
+  `OverlayChanged()` before their first render-relevant write. Mutating locked
+  helpers accept that scope explicitly. Only the scope destructor may call the
+  low-level dirty-marking methods; do not publish revisions manually.
 - Geometry is interleaved as six floats per vertex: `x, y, r, g, b, a`, and is
   rendered as triangles. iOS and Android must keep this contract identical.
 - A snapshot carries two vertex buffers. `content_vertices` (grid, series,

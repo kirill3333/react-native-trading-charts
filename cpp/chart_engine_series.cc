@@ -74,7 +74,10 @@ const SeriesData* ChartEngine::FindSeriesLocked(
   return found == additional_series_.end() ? nullptr : &*found;
 }
 
-void ChartEngine::RebuildSeriesIndicesLocked() {
+void ChartEngine::RebuildSeriesIndicesLocked(MutationScope& mutation) {
+  if (!additional_series_.empty()) {
+    mutation.ContentChanged();
+  }
   for (SeriesData& series : additional_series_) {
     const auto pane =
         std::find_if(panes_.begin(), panes_.end(), [&](const PaneConfig& item) {
@@ -120,7 +123,8 @@ const std::vector<Candle>* ChartEngine::SourceCandlesLocked(
 }
 
 void ChartEngine::RefreshDerivedDependentsLocked(
-    const std::string& source_series_id, size_t first_changed_source_index) {
+    const std::string& source_series_id, size_t first_changed_source_index,
+    MutationScope& mutation) {
   for (SeriesData& series : additional_series_) {
     const SeriesSource source = series.config.source;
     if ((source == SeriesSource::kOhlcvRsi ||
@@ -128,14 +132,16 @@ void ChartEngine::RefreshDerivedDependentsLocked(
         (series.config.source_series_id.empty()
              ? source_series_id == "main"
              : series.config.source_series_id == source_series_id)) {
+      mutation.ContentChanged();
       internal::RebuildDerivedSeries(series, SourceCandlesLocked(series),
                                      first_changed_source_index);
     }
   }
 }
 
-void ChartEngine::RebuildAllDerivedSeriesLocked() {
+void ChartEngine::RebuildAllDerivedSeriesLocked(MutationScope& mutation) {
   for (SeriesData& series : additional_series_) {
+    mutation.ContentChanged();
     internal::RebuildDerivedSeries(series, SourceCandlesLocked(series), 0);
   }
 }
@@ -175,7 +181,7 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       !IsValidMacdSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   SeriesConfig normalized = internal::NormalizeSeriesConfig(config, config_);
   const auto pane = std::find_if(
       panes_.begin(), panes_.end(), [&](const PaneConfig& candidate) {
@@ -234,15 +240,16 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
     if (!existing->config.declarative || !normalized.declarative) {
       return UpdateStatus::kInvalidInput;
     }
+    mutation.ContentChanged();
     existing->config = normalized;
   } else {
     SeriesData series;
     series.config = normalized;
+    mutation.ContentChanged();
     additional_series_.push_back(std::move(series));
   }
-  RebuildSeriesIndicesLocked();
-  RebuildAllDerivedSeriesLocked();
-  MarkDirtyLocked();
+  RebuildSeriesIndicesLocked(mutation);
+  RebuildAllDerivedSeriesLocked(mutation);
   return UpdateStatus::kApplied;
 }
 
@@ -250,22 +257,23 @@ bool ChartEngine::RemoveSeries(const std::string& series_id) {
   if (series_id.empty() || series_id == "main") {
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  const auto old_size = additional_series_.size();
-  additional_series_.erase(
-      std::remove_if(additional_series_.begin(), additional_series_.end(),
-                     [&](const SeriesData& series) {
-                       return series.config.series_id == series_id ||
-                              (IsDerivedOhlcvSource(series.config.source) &&
-                               series.config.source_series_id == series_id);
-                     }),
-      additional_series_.end());
-  if (additional_series_.size() == old_size) {
+  MutationScope mutation(*this);
+  const auto should_remove = [&](const SeriesData& series) {
+    return series.config.series_id == series_id ||
+           (IsDerivedOhlcvSource(series.config.source) &&
+            series.config.source_series_id == series_id);
+  };
+  if (std::none_of(additional_series_.begin(), additional_series_.end(),
+                   should_remove)) {
     return false;
   }
-  RebuildSeriesIndicesLocked();
-  RebuildAllDerivedSeriesLocked();
-  MarkDirtyLocked();
+  mutation.ContentChanged();
+  additional_series_.erase(
+      std::remove_if(additional_series_.begin(), additional_series_.end(),
+                     should_remove),
+      additional_series_.end());
+  RebuildSeriesIndicesLocked(mutation);
+  RebuildAllDerivedSeriesLocked(mutation);
   return true;
 }
 
@@ -289,7 +297,7 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
       return candles.status;
     }
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   SeriesData* series = FindSeriesLocked(series_id);
   if (series == nullptr || series->config.source != SeriesSource::kData) {
     return UpdateStatus::kInvalidInput;
@@ -298,26 +306,26 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
     if (series->candles.empty() && series->histogram.empty()) {
       return UpdateStatus::kApplied;
     }
+    mutation.ContentChanged();
     series->candles.clear();
     series->histogram.clear();
     series->moving_average_states.clear();
     series->rsi_states.clear();
     series->signal_candles.clear();
     series->macd_states.clear();
-    RefreshDerivedDependentsLocked(series_id, 0);
-    MarkDirtyLocked();
+    RefreshDerivedDependentsLocked(series_id, 0, mutation);
     return UpdateStatus::kApplied;
   }
   if ((series->config.type == SeriesType::kHistogram) != histogram) {
     return UpdateStatus::kInvalidInput;
   }
+  mutation.ContentChanged();
   if (histogram) {
     series->histogram = std::move(points.points);
   } else {
     series->candles = std::move(candles.candles);
   }
-  RefreshDerivedDependentsLocked(series_id, 0);
-  MarkDirtyLocked();
+  RefreshDerivedDependentsLocked(series_id, 0, mutation);
   return UpdateStatus::kApplied;
 }
 
@@ -342,7 +350,7 @@ UpdateStatus ChartEngine::PrependSeriesData(const std::string& series_id,
       return candles.status;
     }
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   SeriesData* series = FindSeriesLocked(series_id);
   if (series == nullptr || series->config.source != SeriesSource::kData ||
       (series->config.type == SeriesType::kHistogram) != histogram) {
@@ -353,6 +361,7 @@ UpdateStatus ChartEngine::PrependSeriesData(const std::string& series_id,
         points.points.back().timestamp >= series->histogram.front().timestamp) {
       return UpdateStatus::kInvalidInput;
     }
+    mutation.ContentChanged();
     series->histogram.insert(series->histogram.begin(), points.points.begin(),
                              points.points.end());
   } else {
@@ -360,11 +369,11 @@ UpdateStatus ChartEngine::PrependSeriesData(const std::string& series_id,
         candles.candles.back().timestamp >= series->candles.front().timestamp) {
       return UpdateStatus::kInvalidInput;
     }
+    mutation.ContentChanged();
     series->candles.insert(series->candles.begin(), candles.candles.begin(),
                            candles.candles.end());
   }
-  RefreshDerivedDependentsLocked(series_id, 0);
-  MarkDirtyLocked();
+  RefreshDerivedDependentsLocked(series_id, 0, mutation);
   return UpdateStatus::kApplied;
 }
 
@@ -375,7 +384,7 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
     return histogram ? UpdateStatus::kInvalidInput
                      : UpdateCandle(values, value_count);
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   SeriesData* series = FindSeriesLocked(series_id);
   if (series == nullptr || series->config.source != SeriesSource::kData ||
       (series->config.type == SeriesType::kHistogram) != histogram) {
@@ -391,8 +400,10 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
     const HistogramPoint point = parsed.points.front();
     if (series->histogram.empty() ||
         point.timestamp > series->histogram.back().timestamp) {
+      mutation.ContentChanged();
       series->histogram.push_back(point);
     } else if (point.timestamp == series->histogram.back().timestamp) {
+      mutation.ContentChanged();
       series->histogram.back() = point;
     } else {
       return UpdateStatus::kIgnoredOldTimestamp;
@@ -410,15 +421,16 @@ UpdateStatus ChartEngine::UpdateSeriesData(const std::string& series_id,
     if (series->candles.empty() ||
         candle.timestamp > series->candles.back().timestamp) {
       first_changed = previous_size;
+      mutation.ContentChanged();
       series->candles.push_back(candle);
     } else if (candle.timestamp == series->candles.back().timestamp) {
+      mutation.ContentChanged();
       series->candles.back() = candle;
     } else {
       return UpdateStatus::kIgnoredOldTimestamp;
     }
-    RefreshDerivedDependentsLocked(series_id, first_changed);
+    RefreshDerivedDependentsLocked(series_id, first_changed, mutation);
   }
-  MarkDirtyLocked();
   return UpdateStatus::kApplied;
 }
 

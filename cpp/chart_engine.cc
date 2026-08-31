@@ -17,6 +17,33 @@ namespace trading_charts {
 
 ChartEngine::ChartEngine() = default;
 
+ChartEngine::MutationScope::MutationScope(ChartEngine& engine)
+    : engine_(engine),         // NOLINT(whitespace/indent_namespace)
+      lock_(engine.mutex_) {}  // NOLINT(whitespace/indent_namespace)
+
+ChartEngine::MutationScope::~MutationScope() noexcept {
+  switch (kind_) {
+    case MutationKind::kNone:
+      break;
+    case MutationKind::kOverlay:
+      engine_.MarkCrosshairDirtyLocked();
+      break;
+    case MutationKind::kContent:
+      engine_.MarkDirtyLocked();
+      break;
+  }
+}
+
+void ChartEngine::MutationScope::ContentChanged() noexcept {
+  kind_ = MutationKind::kContent;
+}
+
+void ChartEngine::MutationScope::OverlayChanged() noexcept {
+  if (kind_ == MutationKind::kNone) {
+    kind_ = MutationKind::kOverlay;
+  }
+}
+
 void ChartEngine::MarkDirtyLocked() {
   ++revision_;
   ++content_revision_;
@@ -33,7 +60,7 @@ bool ChartEngine::SetPriceLine(const PriceLine& price_line) {
       !std::isfinite(price_line.price)) {
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   auto found = std::find_if(
       price_lines_.begin(), price_lines_.end(),
       [&](const PriceLine& current) { return current.id == price_line.id; });
@@ -48,34 +75,35 @@ bool ChartEngine::SetPriceLine(const PriceLine& price_line) {
     if (equal) {
       return false;
     }
+    mutation.ContentChanged();
     *found = price_line;
   } else {
+    mutation.ContentChanged();
     price_lines_.push_back(price_line);
   }
-  MarkDirtyLocked();
   return true;
 }
 
 bool ChartEngine::RemovePriceLine(const std::string& price_line_id) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   const auto found = std::find_if(
       price_lines_.begin(), price_lines_.end(),
       [&](const PriceLine& current) { return current.id == price_line_id; });
   if (found == price_lines_.end()) {
     return false;
   }
+  mutation.ContentChanged();
   price_lines_.erase(found);
-  MarkDirtyLocked();
   return true;
 }
 
 bool ChartEngine::ClearPriceLines() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   if (price_lines_.empty()) {
     return false;
   }
+  mutation.ContentChanged();
   price_lines_.clear();
-  MarkDirtyLocked();
   return true;
 }
 

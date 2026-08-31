@@ -22,7 +22,7 @@ constexpr double kFallbackPaneBottomScaleMargin = 0.0;
 
 void ChartEngine::SetConfig(const ChartConfig& config) {
   ChartConfig normalized_config = internal::NormalizeChartConfig(config);
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   // Compare against the normalized config: raw inputs that normalize to the
   // current values must not trigger a viewport reset.
   const bool viewport_defaults_changed =
@@ -34,6 +34,7 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
       config_.resolution.fixed_duration_ms !=
           normalized_config.resolution.fixed_duration_ms ||
       config_.logical_spacing != normalized_config.logical_spacing;
+  mutation.ContentChanged();
   config_ = std::move(normalized_config);
   if (!panes_.empty()) {
     PaneConfig& main_pane = panes_[internal::kMainPaneIndex];
@@ -44,25 +45,24 @@ void ChartEngine::SetConfig(const ChartConfig& config) {
     main_pane.scale_visible = config_.show_y_axis;
   }
   if (viewport_defaults_changed && !candles_.empty()) {
-    ResetViewportLocked();
+    ResetViewportLocked(mutation);
   }
   if (!config_.crosshair_enabled) {
     crosshair_active_ = false;
   }
-  MarkDirtyLocked();
 }
 
 void ChartEngine::SetTradingCalendar(const TradingCalendarConfig& calendar) {
   TradingCalendarConfig normalized =
       internal::NormalizeTradingCalendar(calendar);
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
+  mutation.ContentChanged();
   config_.trade_aggregation.calendar = std::move(normalized);
-  MarkDirtyLocked();
 }
 
 void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
                            bool resizable) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   std::vector<PaneConfig> normalized;
   normalized.reserve(std::max<size_t>(panes.size(), 1));
   if (panes.empty()) {
@@ -125,6 +125,7 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
   normalized.front().precision = config_.precision;
   normalized.front().scale_visible = config_.show_y_axis;
   normalized.front().y_range_multiplier = y_range_multiplier_;
+  mutation.ContentChanged();
   panes_ = std::move(normalized);
   panes_resizable_ =
       resizable && panes_.size() >= internal::kMinimumResizablePaneCount;
@@ -142,9 +143,8 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
                 });
           }),
       additional_series_.end());
-  RebuildSeriesIndicesLocked();
-  RebuildAllDerivedSeriesLocked();
-  MarkDirtyLocked();
+  RebuildSeriesIndicesLocked(mutation);
+  RebuildAllDerivedSeriesLocked(mutation);
 }
 
 bool ChartEngine::SetPaneHeight(const std::string& pane_id,
@@ -152,7 +152,7 @@ bool ChartEngine::SetPaneHeight(const std::string& pane_id,
   if (!std::isfinite(height_weight) || height_weight <= 0.0) {
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
+  MutationScope mutation(*this);
   auto pane = std::find_if(panes_.begin(), panes_.end(),
                            [&](const PaneConfig& candidate) {
                              return candidate.pane_id == pane_id;
@@ -160,8 +160,8 @@ bool ChartEngine::SetPaneHeight(const std::string& pane_id,
   if (pane == panes_.end() || pane->height_weight == height_weight) {
     return false;
   }
+  mutation.ContentChanged();
   pane->height_weight = height_weight;
-  MarkDirtyLocked();
   return true;
 }
 
