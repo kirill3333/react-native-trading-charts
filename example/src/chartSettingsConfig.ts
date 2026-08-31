@@ -16,7 +16,7 @@ import {
   type YAxisOptions,
 } from 'react-native-trading-charts';
 
-import { type ChartSettings } from './chartSettingsState';
+import { type ChartSettings } from './stores/chartSettingsStore';
 import { APP_THEMES } from './theme';
 
 export const SCALE_MARGIN_PRESETS = {

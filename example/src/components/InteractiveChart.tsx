@@ -9,7 +9,6 @@ import {
   type YAxisPressEvent,
 } from 'react-native-trading-charts';
 
-import { useChartSettings } from '../chartSettings';
 import {
   removeAllTimePriceLines,
   syncAllTimePriceLines,
@@ -24,6 +23,7 @@ import {
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
+import { useChartSettingsStore } from '../stores/chartSettingsStore';
 import { APP_THEMES } from '../theme';
 
 type InteractiveChartProps = {
@@ -51,7 +51,7 @@ export const InteractiveChart = memo(function InteractiveChart({
   allTimeExtremes,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
-  const { settings } = useChartSettings();
+  const settings = useChartSettingsStore((state) => state.settings);
   const themeColors = APP_THEMES[settings.themeMode].colors;
   const handleYAxisPress = useCallback(
     (event: YAxisPressEvent) => {

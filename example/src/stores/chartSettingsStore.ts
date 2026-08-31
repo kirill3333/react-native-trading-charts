@@ -3,8 +3,9 @@ import {
   type ChartSeriesType,
   type OhlcValueSource,
 } from 'react-native-trading-charts';
+import { create } from 'zustand';
 
-import { type AppThemeMode } from './theme';
+import { type AppThemeMode } from '../theme';
 
 export type AxisSpacing = 'time' | 'logical';
 export type AxisPosition = 'left' | 'right';
@@ -189,15 +190,15 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   currencySymbol: '',
 };
 
-export type ChartSettingsAction =
-  { type: 'update'; patch: Partial<ChartSettings> } | { type: 'reset' };
+type ChartSettingsStore = {
+  settings: ChartSettings;
+  updateSettings: (patch: Partial<ChartSettings>) => void;
+  resetSettings: () => void;
+};
 
-export function chartSettingsReducer(
-  state: ChartSettings,
-  action: ChartSettingsAction
-): ChartSettings {
-  if (action.type === 'reset') {
-    return { ...DEFAULT_CHART_SETTINGS };
-  }
-  return { ...state, ...action.patch };
-}
+export const useChartSettingsStore = create<ChartSettingsStore>((set) => ({
+  settings: { ...DEFAULT_CHART_SETTINGS },
+  updateSettings: (patch) =>
+    set((state) => ({ settings: { ...state.settings, ...patch } })),
+  resetSettings: () => set({ settings: { ...DEFAULT_CHART_SETTINGS } }),
+}));

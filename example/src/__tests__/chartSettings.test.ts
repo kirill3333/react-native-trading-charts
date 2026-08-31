@@ -1,10 +1,10 @@
-import { describe, expect, it } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 import {
   DEFAULT_CHART_SETTINGS,
-  chartSettingsReducer,
   type ChartSettings,
-} from '../chartSettingsState';
+  useChartSettingsStore,
+} from '../stores/chartSettingsStore';
 import {
   buildMainSeriesColors,
   buildMacdSeries,
@@ -21,6 +21,10 @@ import { isHexColor, normalizeHexColor } from '../hexColor';
 function settingsWith(patch: Partial<ChartSettings>): ChartSettings {
   return { ...DEFAULT_CHART_SETTINGS, ...patch };
 }
+
+beforeEach(() => {
+  useChartSettingsStore.getState().resetSettings();
+});
 
 describe('chart settings', () => {
   it('uses the current chart defaults', () => {
@@ -319,17 +323,13 @@ describe('chart settings', () => {
   });
 
   it('preserves color overrides while untouched colors follow theme changes', () => {
-    const customized = chartSettingsReducer(DEFAULT_CHART_SETTINGS, {
-      type: 'update',
-      patch: {
-        mainUpColorOverride: '#112233',
-        volumeDownColorOverride: '#44556680',
-      },
+    const { updateSettings } = useChartSettingsStore.getState();
+    updateSettings({
+      mainUpColorOverride: '#112233',
+      volumeDownColorOverride: '#44556680',
     });
-    const light = chartSettingsReducer(customized, {
-      type: 'update',
-      patch: { themeMode: 'light' },
-    });
+    updateSettings({ themeMode: 'light' });
+    const light = useChartSettingsStore.getState().settings;
 
     expect(buildMainSeriesColors(light)).toMatchObject({
       upColor: '#112233',
@@ -350,18 +350,17 @@ describe('chart settings', () => {
   });
 
   it('updates a partial group and restores every default', () => {
-    const updated = chartSettingsReducer(DEFAULT_CHART_SETTINGS, {
-      type: 'update',
-      patch: {
-        seriesType: 'bar',
-        themeMode: 'light',
-        mainUpColorOverride: '#123456',
-        volumeDownColorOverride: '#65432180',
-        allTimeExtremesVisible: true,
-        panEnabled: false,
-        yAxisPosition: 'left',
-      },
+    const { resetSettings, updateSettings } = useChartSettingsStore.getState();
+    updateSettings({
+      seriesType: 'bar',
+      themeMode: 'light',
+      mainUpColorOverride: '#123456',
+      volumeDownColorOverride: '#65432180',
+      allTimeExtremesVisible: true,
+      panEnabled: false,
+      yAxisPosition: 'left',
     });
+    const updated = useChartSettingsStore.getState().settings;
 
     expect(updated).toMatchObject({
       seriesType: 'bar',
@@ -373,7 +372,8 @@ describe('chart settings', () => {
       yAxisPosition: 'left',
       zoomEnabled: true,
     });
-    expect(chartSettingsReducer(updated, { type: 'reset' })).toEqual(
+    resetSettings();
+    expect(useChartSettingsStore.getState().settings).toEqual(
       DEFAULT_CHART_SETTINGS
     );
   });
