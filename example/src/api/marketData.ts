@@ -18,6 +18,7 @@ import {
   HYPERLIQUID_WEBSOCKET_URL,
   hyperliquidCandleTopic,
   HyperliquidNoDataError,
+  isHyperliquidInterval,
   parseHyperliquidCandleMarketMessage,
   parseHyperliquidWebSocketEnvelope,
   type HyperliquidCandleSubscriptionPayload,
@@ -125,9 +126,10 @@ function hyperliquidSubscription(
   if (!topic.startsWith(prefix) || separator <= prefix.length) {
     throw new TypeError(`Invalid Hyperliquid candle topic: ${topic}`);
   }
-  // SAFETY: every topic reaches this boundary through hyperliquidCandleTopic,
-  // whose interval argument is already constrained to HyperliquidInterval.
-  const interval = topic.slice(separator + 1) as HyperliquidInterval;
+  const interval = topic.slice(separator + 1);
+  if (!isHyperliquidInterval(interval)) {
+    throw new TypeError(`Invalid Hyperliquid candle interval: ${interval}`);
+  }
   return {
     type: 'candle',
     coin: topic.slice(prefix.length, separator),

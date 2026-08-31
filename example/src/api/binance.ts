@@ -1,8 +1,27 @@
-import { type OhlcCandle } from 'react-native-trading-charts';
+import {
+  type ChartResolution,
+  type OhlcCandle,
+} from 'react-native-trading-charts';
 
 import { binanceHttp, requestData } from './http';
 
 export const BINANCE_WEBSOCKET_URL = 'wss://stream.binance.com:9443/ws';
+
+export type BinanceInterval =
+  | '1s'
+  | '1m'
+  | '5m'
+  | '15m'
+  | '1h'
+  | '6h'
+  | '12h'
+  | '1d';
+
+type BinanceIntervalOption = {
+  value: BinanceInterval;
+  label: string;
+  resolution: ChartResolution;
+};
 
 export const BINANCE_INTERVALS = [
   { value: '1s', label: '1s', resolution: { unit: 'second' } },
@@ -29,9 +48,7 @@ export const BINANCE_INTERVALS = [
     resolution: { unit: 'hour', multiplier: 12 },
   },
   { value: '1d', label: '1d', resolution: { unit: 'day' } },
-] as const;
-
-export type BinanceInterval = (typeof BINANCE_INTERVALS)[number]['value'];
+] satisfies ReadonlyArray<BinanceIntervalOption>;
 
 export type BinanceTicker = {
   symbol: string;
@@ -200,7 +217,12 @@ export function mergeTickersWithInstruments(
   instruments: ReadonlyArray<BinanceInstrument>
 ): BinanceTicker[] {
   const instrumentsBySymbol = new Map(
-    instruments.map((instrument) => [instrument.symbol, instrument] as const)
+    instruments.map(
+      (instrument): [string, BinanceInstrument] => [
+        instrument.symbol,
+        instrument,
+      ]
+    )
   );
   return tickers.flatMap((ticker) => {
     const instrument = instrumentsBySymbol.get(ticker.symbol);

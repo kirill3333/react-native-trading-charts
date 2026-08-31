@@ -23,6 +23,10 @@ import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 
 const ROW_HEIGHT = 73;
+const MARKET_PROVIDERS = [
+  'binance',
+  'hyperliquid',
+] satisfies ReadonlyArray<MarketProvider>;
 
 function isHyperliquidTicker(
   ticker: MarketTicker
@@ -146,7 +150,7 @@ function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
   return (
     <View style={styles.marketsHeader}>
       <View accessibilityRole="tablist" style={styles.providerTabs}>
-        {(['binance', 'hyperliquid'] as const).map((item) => {
+        {MARKET_PROVIDERS.map((item) => {
           const selected = item === provider;
           return (
             <Pressable

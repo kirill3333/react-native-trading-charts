@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect } from 'react';
 import {
+  type NavigationProp,
   type StaticScreenProps,
   useNavigation,
 } from '@react-navigation/native';
@@ -61,6 +62,13 @@ export type ChartRouteParams =
     };
 
 type ChartScreenProps = StaticScreenProps<ChartRouteParams>;
+type ChartInterval = ChartRouteParams['interval'];
+type ChartNavigation = NavigationProp<
+  { Chart: ChartRouteParams },
+  'Chart'
+>;
+
+const DEFAULT_RESOLUTION: ChartResolution = { unit: 'minute' };
 
 type PriceTicker = {
   symbol: string;
@@ -97,14 +105,14 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
   );
 }
 
-type IntervalOption<TInterval extends string> =
+type IntervalOption<TInterval extends ChartInterval> =
   TimeIntervalOption<TInterval> & {
     resolution: ChartResolution;
   };
 
 type ChartContentProps<
   TTicker extends PriceTicker,
-  TInterval extends string,
+  TInterval extends ChartInterval,
   TMessage,
 > = {
   ticker: TTicker;
@@ -119,7 +127,7 @@ type ChartContentProps<
 
 function ChartContent<
   TTicker extends PriceTicker,
-  TInterval extends string,
+  TInterval extends ChartInterval,
   TMessage,
 >({
   ticker,
@@ -131,7 +139,7 @@ function ChartContent<
   quoteAsset,
   venueLabel,
 }: ChartContentProps<TTicker, TInterval, TMessage>) {
-  const navigation = useNavigation();
+  const navigation = useNavigation<ChartNavigation>();
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
   const showVolume = useChartControlsStore((state) => state.showVolume);
@@ -149,7 +157,7 @@ function ChartContent<
   );
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
-  const resolution = intervalConfig?.resolution ?? { unit: 'minute' as const };
+  const resolution = intervalConfig?.resolution ?? DEFAULT_RESOLUTION;
 
   const { status, error, lastPrice, allTimeExtremes, loadOlder, retry } =
     useChartDataFeed(adapter, ticker, interval, chartId);
@@ -172,12 +180,7 @@ function ChartContent<
       if (nextInterval === interval) {
         return;
       }
-      // SAFETY: this screen's route contract owns the generic interval value
-      // and setParams accepts that same route-local parameter.
-      const setIntervalParam = navigation.setParams as (params: {
-        interval: TInterval;
-      }) => void;
-      setIntervalParam({ interval: nextInterval });
+      navigation.setParams({ interval: nextInterval });
     },
     [interval, navigation]
   );
@@ -195,6 +198,15 @@ function ChartContent<
   );
 
   const hasError = status === 'error' || status === 'no-data';
+  const errorStatus =
+    status === 'no-data'
+      ? `${venueLabel} returned no data for this market and interval`
+      : `Could not connect to ${venueLabel}`;
+
+  const chartHeight =
+    isChartHalfHeight && fullChartHeight != null
+      ? [styles.chartContainer, { height: Math.max(1, fullChartHeight / 2) }]
+      : styles.chartContainerExpanded;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -216,28 +228,11 @@ function ChartContent<
         />
 
         {hasError ? (
-          <ChartErrorBanner
-            message={
-              error ??
-              (status === 'no-data'
-                ? `${venueLabel} returned no data for this market and interval`
-                : `Could not connect to ${venueLabel}`)
-            }
-            onRetry={retry}
-          />
+          <ChartErrorBanner message={error ?? errorStatus} onRetry={retry} />
         ) : null}
 
         <View onLayout={handleChartViewportLayout} style={styles.chartViewport}>
-          <View
-            style={
-              isChartHalfHeight && fullChartHeight != null
-                ? [
-                    styles.chartContainer,
-                    { height: Math.max(1, fullChartHeight / 2) },
-                  ]
-                : styles.chartContainerExpanded
-            }
-          >
+          <View style={chartHeight}>
             <InteractiveChart
               allTimeExtremes={allTimeExtremes}
               chartId={chartId}

@@ -1,10 +1,36 @@
-import { type OhlcCandle } from 'react-native-trading-charts';
+import {
+  type ChartResolution,
+  type OhlcCandle,
+} from 'react-native-trading-charts';
 
 import { hyperliquidHttp, requestData } from './http';
 
 const HISTORY_CANDLE_COUNT = 300;
 
 export const HYPERLIQUID_WEBSOCKET_URL = 'wss://api.hyperliquid.xyz/ws';
+
+export type HyperliquidInterval =
+  | '1m'
+  | '3m'
+  | '5m'
+  | '15m'
+  | '30m'
+  | '1h'
+  | '2h'
+  | '4h'
+  | '8h'
+  | '12h'
+  | '1d'
+  | '3d'
+  | '1w'
+  | '1M';
+
+type HyperliquidIntervalOption = {
+  value: HyperliquidInterval;
+  label: string;
+  resolution: ChartResolution;
+  requestDurationMs: number;
+};
 
 export const HYPERLIQUID_INTERVALS = [
   {
@@ -91,10 +117,13 @@ export const HYPERLIQUID_INTERVALS = [
     resolution: { unit: 'month' },
     requestDurationMs: 31 * 24 * 60 * 60_000,
   },
-] as const;
+] satisfies ReadonlyArray<HyperliquidIntervalOption>;
 
-export type HyperliquidInterval =
-  (typeof HYPERLIQUID_INTERVALS)[number]['value'];
+export function isHyperliquidInterval(
+  value: string
+): value is HyperliquidInterval {
+  return HYPERLIQUID_INTERVALS.some((option) => option.value === value);
+}
 
 export type HyperliquidTicker = {
   provider: 'hyperliquid';

@@ -46,6 +46,36 @@ type WebSocketLike = {
   close(): void;
 };
 
+class NativeWebSocketAdapter implements WebSocketLike {
+  private readonly socket: WebSocket;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
+
+  constructor(url: string) {
+    this.socket = new WebSocket(url);
+    this.socket.onopen = () => this.onopen?.();
+    this.socket.onmessage = (event) =>
+      this.onmessage?.({ data: String(event.data) });
+    this.socket.onerror = () => this.onerror?.();
+    this.socket.onclose = (event) =>
+      this.onclose?.({ code: event.code, reason: event.reason });
+  }
+
+  get readyState(): number {
+    return this.socket.readyState;
+  }
+
+  send(data: string): void {
+    this.socket.send(data);
+  }
+
+  close(): void {
+    this.socket.close();
+  }
+}
+
 type LifecycleOptions = {
   isFocused?: () => boolean;
   isOnline?: () => boolean;
@@ -101,10 +131,8 @@ export class MarketWebSocketClient<TMessage> {
     options: MarketWebSocketClientOptions = {}
   ) {
     this.protocol = protocol;
-    // SAFETY: WebSocketLike is the exact mutable WebSocket subset consumed by
-    // this transport, and React Native's global WebSocket implements it.
     this.createSocket =
-      options.createSocket ?? ((url) => new WebSocket(url) as WebSocketLike);
+      options.createSocket ?? ((url) => new NativeWebSocketAdapter(url));
     this.random = options.random ?? Math.random;
     this.isFocused = options.isFocused ?? (() => focusManager.isFocused());
     this.isOnline = options.isOnline ?? (() => onlineManager.isOnline());

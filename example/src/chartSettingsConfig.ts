@@ -7,6 +7,7 @@ import {
   type CurrentPriceOptions,
   type GestureOptions,
   type PriceDisplayFormat,
+  type PriceScaleMargins,
   type PriceExtremesOptions,
   type MacdSeriesOptions,
   type ChartPaneOptions,
@@ -16,14 +17,17 @@ import {
   type YAxisOptions,
 } from 'react-native-trading-charts';
 
-import { type ChartSettings } from './stores/chartSettingsStore';
+import {
+  type ChartSettings,
+  type ScaleMarginPreset,
+} from './stores/chartSettingsStore';
 import { APP_THEMES } from './theme';
 
 export const SCALE_MARGIN_PRESETS = {
   tight: { top: 0.1, bottom: 0.1 },
   default: { top: 0.2, bottom: 0.1 },
   loose: { top: 0.3, bottom: 0.2 },
-} as const;
+} satisfies Record<ScaleMarginPreset, PriceScaleMargins>;
 
 const DEVICE_TIME_ZONE =
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';

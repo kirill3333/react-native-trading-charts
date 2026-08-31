@@ -15,6 +15,16 @@ type ChartControlsState = {
   toggleChartHeight: () => void;
 };
 
+type ChartControlValues = Pick<
+  ChartControlsState,
+  | 'activeChartId'
+  | 'showMacd'
+  | 'showRsi'
+  | 'showVolume'
+  | 'isChartHalfHeight'
+  | 'fullChartHeight'
+>;
+
 const INITIAL_CONTROLS = {
   activeChartId: null,
   showMacd: false,
@@ -22,7 +32,7 @@ const INITIAL_CONTROLS = {
   showVolume: true,
   isChartHalfHeight: false,
   fullChartHeight: null,
-} as const;
+} satisfies ChartControlValues;
 
 export const useChartControlsStore = create<ChartControlsState>((set) => ({
   ...INITIAL_CONTROLS,

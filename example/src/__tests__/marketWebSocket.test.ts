@@ -174,6 +174,12 @@ describe('MarketWebSocketClient', () => {
     );
   });
 
+  it('rejects unsupported Hyperliquid intervals in subscription topics', () => {
+    expect(() =>
+      hyperliquidProtocol.subscribe('candle:BTC:2m', 'request-1')
+    ).toThrow('Invalid Hyperliquid candle interval: 2m');
+  });
+
   it('reconnects, resubscribes, pauses and waits offline', () => {
     const { client, lifecycle, sockets } = setup(binanceProtocol);
     const events: Array<MarketWebSocketEvent<unknown>> = [];
