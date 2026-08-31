@@ -1,33 +1,40 @@
-import { type NetInfoState } from '@react-native-community/netinfo';
-import { AppState, type AppStateStatus } from 'react-native';
-
-import {
-  BINANCE_WEBSOCKET_URL,
-  parseBinanceWebSocketEnvelope,
-  type BinanceMarketMessage,
-} from './binance';
+import { focusManager, onlineManager } from '@tanstack/react-query';
 
 const OPEN_TIMEOUT_MS = 10_000;
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
-const STABLE_CONNECTION_MS = 30_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const SOCKET_OPEN = 1;
 const SOCKET_CLOSING = 2;
 
-export type BinanceWebSocketState =
+export type MarketWebSocketState =
   'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused' | 'offline';
 
-export type BinanceWebSocketEvent =
-  | { type: 'state'; state: BinanceWebSocketState; error: string | null }
+export type MarketWebSocketEvent<TMessage> =
+  | { type: 'state'; state: MarketWebSocketState; error: string | null }
   | { type: 'ready'; topic: string; generation: number }
   | {
       type: 'message';
       topic: string;
       generation: number;
-      message: BinanceMarketMessage;
+      message: TMessage;
     };
 
-export type BinanceWebSocketListener = (event: BinanceWebSocketEvent) => void;
+export type MarketWebSocketEnvelope<TMessage> =
+  | { kind: 'market'; topic: string; message: TMessage }
+  | { kind: 'subscribed'; acknowledgement: string | null }
+  | { kind: 'error'; message: string }
+  | { kind: 'control' };
+
+export type MarketWebSocketProtocol<TMessage> = {
+  label: string;
+  url: string;
+  parse(rawMessage: string): MarketWebSocketEnvelope<TMessage>;
+  subscribe(
+    topic: string,
+    requestId: string
+  ): { data: string; acknowledgement: string };
+  unsubscribe(topic: string, requestId: string): string;
+};
 
 type WebSocketLike = {
   readyState: number;
@@ -39,38 +46,22 @@ type WebSocketLike = {
   close(): void;
 };
 
-type AppStateSource = {
-  currentState: string | null | undefined;
-  addEventListener(
-    event: 'change',
-    listener: (state: AppStateStatus) => void
-  ): { remove(): void };
+type LifecycleOptions = {
+  isFocused?: () => boolean;
+  isOnline?: () => boolean;
+  subscribeFocused?: (listener: () => void) => () => void;
+  subscribeOnline?: (listener: () => void) => () => void;
 };
 
-type NetInfoSource = {
-  addEventListener(listener: (state: NetInfoState) => void): () => void;
-};
-
-const defaultNetInfoSource: NetInfoSource = {
-  addEventListener(listener) {
-    const netInfoModule: {
-      default: NetInfoSource;
-    } = require('@react-native-community/netinfo');
-    return netInfoModule.default.addEventListener(listener);
-  },
-};
-
-export type BinanceWebSocketClientOptions = {
-  url?: string;
+export type MarketWebSocketClientOptions = LifecycleOptions & {
   createSocket?: (url: string) => WebSocketLike;
-  appState?: AppStateSource;
-  netInfo?: NetInfoSource;
   random?: () => number;
 };
 
-type TopicSubscription = {
-  listeners: Set<BinanceWebSocketListener>;
+type TopicSubscription<TMessage> = {
+  listeners: Set<(event: MarketWebSocketEvent<TMessage>) => void>;
   readyGeneration: number | null;
+  pendingAcknowledgement: string | null;
 };
 
 type PendingSubscription = {
@@ -82,62 +73,70 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export class BinanceWebSocketClient {
-  private readonly url: string;
+export class MarketWebSocketClient<TMessage> {
+  private readonly protocol: MarketWebSocketProtocol<TMessage>;
   private readonly createSocket: (url: string) => WebSocketLike;
-  private readonly appState: AppStateSource;
-  private readonly netInfo: NetInfoSource;
   private readonly random: () => number;
-  private readonly topics = new Map<string, TopicSubscription>();
-  private readonly pendingSubscriptions = new Map<
-    string,
-    PendingSubscription
-  >();
+  private readonly isFocused: () => boolean;
+  private readonly isOnline: () => boolean;
+  private readonly subscribeFocused: (listener: () => void) => () => void;
+  private readonly subscribeOnline: (listener: () => void) => () => void;
+  private readonly topics = new Map<string, TopicSubscription<TMessage>>();
+  private readonly pending = new Map<string, PendingSubscription>();
   private socket: WebSocketLike | null = null;
-  private state: BinanceWebSocketState = 'idle';
+  private state: MarketWebSocketState = 'idle';
   private stateError: string | null = null;
   private generation = 0;
   private requestSequence = 0;
   private reconnectAttempt = 0;
-  private appIsActive = true;
-  private networkIsReachable = true;
-  private eligibleToConnect = false;
-  private appStateSubscription: { remove(): void } | null = null;
-  private netInfoUnsubscribe: (() => void) | null = null;
+  private removeFocusListener: (() => void) | null = null;
+  private removeOnlineListener: (() => void) | null = null;
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private closeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private failureReason: string | null = null;
 
-  constructor(options: BinanceWebSocketClientOptions = {}) {
-    this.url = options.url ?? BINANCE_WEBSOCKET_URL;
-    // SAFETY: WebSocketLike is the exact mutable subset of the standard
-    // WebSocket instance used by this client.
+  constructor(
+    protocol: MarketWebSocketProtocol<TMessage>,
+    options: MarketWebSocketClientOptions = {}
+  ) {
+    this.protocol = protocol;
+    // SAFETY: WebSocketLike is the exact mutable WebSocket subset consumed by
+    // this transport, and React Native's global WebSocket implements it.
     this.createSocket =
       options.createSocket ?? ((url) => new WebSocket(url) as WebSocketLike);
-    this.appState = options.appState ?? AppState;
-    this.netInfo = options.netInfo ?? defaultNetInfoSource;
     this.random = options.random ?? Math.random;
+    this.isFocused = options.isFocused ?? (() => focusManager.isFocused());
+    this.isOnline = options.isOnline ?? (() => onlineManager.isOnline());
+    this.subscribeFocused =
+      options.subscribeFocused ??
+      ((listener) => focusManager.subscribe(listener));
+    this.subscribeOnline =
+      options.subscribeOnline ??
+      ((listener) => onlineManager.subscribe(listener));
   }
 
-  subscribe(topic: string, listener: BinanceWebSocketListener): () => void {
+  subscribe(
+    topic: string,
+    listener: (event: MarketWebSocketEvent<TMessage>) => void
+  ): () => void {
     let subscription = this.topics.get(topic);
-    const isFirstTopic = this.topics.size === 0;
+    const firstTopic = this.topics.size === 0;
     if (subscription == null) {
-      subscription = { listeners: new Set(), readyGeneration: null };
+      subscription = {
+        listeners: new Set(),
+        readyGeneration: null,
+        pendingAcknowledgement: null,
+      };
       this.topics.set(topic, subscription);
     }
     subscription.listeners.add(listener);
 
-    if (isFirstTopic) {
+    if (firstTopic) {
       this.startLifecycleMonitoring();
     } else {
       listener({ type: 'state', state: this.state, error: this.stateError });
-      if (
-        subscription.readyGeneration === this.generation &&
-        this.socket?.readyState === SOCKET_OPEN
-      ) {
+      if (subscription.readyGeneration === this.generation) {
         listener({ type: 'ready', topic, generation: this.generation });
       } else if (
         subscription.listeners.size === 1 &&
@@ -149,10 +148,11 @@ export class BinanceWebSocketClient {
 
     let subscribed = true;
     return () => {
-      if (subscribed) {
-        subscribed = false;
-        this.unsubscribe(topic, listener);
+      if (!subscribed) {
+        return;
       }
+      subscribed = false;
+      this.unsubscribe(topic, listener);
     };
   }
 
@@ -170,11 +170,14 @@ export class BinanceWebSocketClient {
     this.failSocket(
       this.socket,
       generation,
-      `Invalid Binance stream data: ${errorMessage(cause)}`
+      `Invalid ${this.protocol.label} stream data: ${errorMessage(cause)}`
     );
   }
 
-  private unsubscribe(topic: string, listener: BinanceWebSocketListener): void {
+  private unsubscribe(
+    topic: string,
+    listener: (event: MarketWebSocketEvent<TMessage>) => void
+  ): void {
     const subscription = this.topics.get(topic);
     if (subscription == null) {
       return;
@@ -184,85 +187,57 @@ export class BinanceWebSocketClient {
       return;
     }
 
-    this.clearPendingSubscriptionForTopic(topic);
+    this.clearPending(subscription.pendingAcknowledgement);
     this.topics.delete(topic);
+    if (this.socket?.readyState === SOCKET_OPEN) {
+      this.socket.send(
+        this.protocol.unsubscribe(topic, this.nextRequestId('unsub'))
+      );
+    }
     if (this.topics.size === 0) {
       this.clearReconnectTimer();
       this.closeCurrentSocket();
       this.stopLifecycleMonitoring();
       this.state = 'idle';
       this.stateError = null;
-      return;
-    }
-
-    const socket = this.socket;
-    if (socket?.readyState === SOCKET_OPEN) {
-      socket.send(
-        JSON.stringify({
-          method: 'UNSUBSCRIBE',
-          params: [topic],
-          id: this.nextRequestId('unsub'),
-        })
-      );
     }
   }
 
   private startLifecycleMonitoring(): void {
-    const currentState = this.appState.currentState;
-    this.appIsActive =
-      currentState == null ||
-      (currentState !== 'background' && currentState !== 'inactive');
-    this.networkIsReachable = true;
-    this.eligibleToConnect = false;
-    this.appStateSubscription = this.appState.addEventListener(
-      'change',
-      (nextState) => {
-        this.appIsActive = nextState === 'active';
-        this.handleEligibilityChange();
-      }
+    this.removeFocusListener = this.subscribeFocused(() =>
+      this.handleEligibilityChange()
     );
-    this.netInfoUnsubscribe = this.netInfo.addEventListener((netInfo) => {
-      this.networkIsReachable = !(
-        netInfo.isConnected === false || netInfo.isInternetReachable === false
-      );
-      this.handleEligibilityChange();
-    });
+    this.removeOnlineListener = this.subscribeOnline(() =>
+      this.handleEligibilityChange()
+    );
     this.handleEligibilityChange();
   }
 
   private stopLifecycleMonitoring(): void {
-    this.appStateSubscription?.remove();
-    this.appStateSubscription = null;
-    this.netInfoUnsubscribe?.();
-    this.netInfoUnsubscribe = null;
-    this.eligibleToConnect = false;
+    this.removeFocusListener?.();
+    this.removeFocusListener = null;
+    this.removeOnlineListener?.();
+    this.removeOnlineListener = null;
   }
 
   private handleEligibilityChange(): void {
     if (this.topics.size === 0) {
       return;
     }
-    const nextEligible = this.appIsActive && this.networkIsReachable;
-    const becameEligible = !this.eligibleToConnect && nextEligible;
-    this.eligibleToConnect = nextEligible;
-    if (!nextEligible) {
+    if (!this.isFocused() || !this.isOnline()) {
       this.clearReconnectTimer();
       this.closeCurrentSocket();
-      this.emitState(this.appIsActive ? 'offline' : 'paused', null);
+      this.emitState(this.isFocused() ? 'offline' : 'paused', null);
       return;
     }
-    if (becameEligible) {
-      this.reconnectAttempt = 0;
-      this.clearReconnectTimer();
-      this.ensureConnection();
-    }
+    this.ensureConnection();
   }
 
   private canConnect(): boolean {
-    if (this.topics.size === 0 || !this.appIsActive) {
+    if (this.topics.size === 0 || this.socket != null) {
       return false;
     }
-    if (!this.networkIsReachable || this.socket != null) {
+    if (!this.isFocused() || !this.isOnline()) {
       return false;
     }
     return this.reconnectTimer == null;
@@ -273,15 +248,15 @@ export class BinanceWebSocketClient {
       return;
     }
 
-    this.emitState('connecting', null);
+    this.emitState(this.generation === 0 ? 'connecting' : 'reconnecting', null);
     const generation = this.generation + 1;
     this.generation = generation;
     this.failureReason = null;
     let socket: WebSocketLike;
     try {
-      socket = this.createSocket(this.url);
-    } catch (error) {
-      this.scheduleReconnect(errorMessage(error));
+      socket = this.createSocket(this.protocol.url);
+    } catch (cause) {
+      this.scheduleReconnect(errorMessage(cause));
       return;
     }
     this.socket = socket;
@@ -294,40 +269,32 @@ export class BinanceWebSocketClient {
         return;
       }
       this.clearOpenTimer();
-      for (const topic of this.topics.keys()) {
-        this.sendSubscribe(topic, socket, generation);
-      }
+      this.topics.forEach((_subscription, topic) =>
+        this.sendSubscribe(topic, socket, generation)
+      );
     };
-
     socket.onmessage = (event) => {
       if (!this.isCurrent(socket, generation)) {
         return;
       }
       try {
-        this.handleMessage(
-          parseBinanceWebSocketEnvelope(event.data),
-          socket,
-          generation
-        );
-      } catch (error) {
+        this.handleMessage(this.protocol.parse(event.data), socket, generation);
+      } catch (cause) {
         this.failSocket(
           socket,
           generation,
-          `Invalid WebSocket message: ${errorMessage(error)}`
+          `Invalid WebSocket message: ${errorMessage(cause)}`
         );
       }
     };
-
     socket.onerror = () => {
       this.failSocket(socket, generation, 'WebSocket connection error');
     };
     socket.onclose = (event) => {
-      let detail = 'unknown reason';
-      if (event.reason != null && event.reason.length > 0) {
-        detail = event.reason;
-      } else if (event.code != null) {
-        detail = `code ${event.code}`;
-      }
+      const detail =
+        event.reason != null && event.reason.length > 0
+          ? event.reason
+          : `code ${event.code ?? 'unknown'}`;
       this.handleSocketClose(
         socket,
         generation,
@@ -337,31 +304,26 @@ export class BinanceWebSocketClient {
   }
 
   private handleMessage(
-    envelope: ReturnType<typeof parseBinanceWebSocketEnvelope>,
+    envelope: MarketWebSocketEnvelope<TMessage>,
     socket: WebSocketLike,
     generation: number
   ): void {
     if (envelope.kind === 'market') {
-      const subscription = this.topics.get(envelope.topic);
-      if (subscription == null) {
-        return;
-      }
-      for (const listener of subscription.listeners) {
+      this.topics.get(envelope.topic)?.listeners.forEach((listener) =>
         listener({
           type: 'message',
           topic: envelope.topic,
           generation,
-          message: envelope,
-        });
-      }
+          message: envelope.message,
+        })
+      );
       return;
     }
-
     if (envelope.kind === 'error') {
       this.failSocket(
         socket,
         generation,
-        `Binance WebSocket error: ${envelope.message}`
+        `${this.protocol.label} WebSocket error: ${envelope.message}`
       );
       return;
     }
@@ -369,52 +331,50 @@ export class BinanceWebSocketClient {
       return;
     }
 
-    const pending = this.findPendingSubscription(envelope.requestId);
+    const pending = this.findPending(envelope.acknowledgement);
     if (pending == null) {
       return;
     }
     clearTimeout(pending.value.timer);
-    this.pendingSubscriptions.delete(pending.requestId);
+    this.pending.delete(pending.acknowledgement);
     const subscription = this.topics.get(pending.value.topic);
     if (subscription == null) {
       return;
     }
+    subscription.pendingAcknowledgement = null;
     subscription.readyGeneration = generation;
-    for (const listener of subscription.listeners) {
+    subscription.listeners.forEach((listener) =>
       listener({
         type: 'ready',
         topic: pending.value.topic,
         generation,
-      });
-    }
+      })
+    );
 
     if (
       [...this.topics.values()].every(
         (value) => value.readyGeneration === generation
       )
     ) {
+      this.reconnectAttempt = 0;
       this.emitState('connected', null);
-      this.clearStableTimer();
-      this.stableTimer = setTimeout(() => {
-        if (this.isCurrent(socket, generation)) {
-          this.reconnectAttempt = 0;
-        }
-      }, STABLE_CONNECTION_MS);
     }
   }
 
-  private findPendingSubscription(
-    requestId: string | null
-  ): { requestId: string; value: PendingSubscription } | undefined {
-    if (requestId != null) {
-      const value = this.pendingSubscriptions.get(requestId);
-      return value == null ? undefined : { requestId, value };
+  private findPending(
+    acknowledgement: string | null
+  ): { acknowledgement: string; value: PendingSubscription } | null {
+    if (acknowledgement != null) {
+      const value = this.pending.get(acknowledgement);
+      return value == null ? null : { acknowledgement, value };
     }
-    if (this.pendingSubscriptions.size !== 1) {
-      return undefined;
+    if (this.pending.size !== 1) {
+      return null;
     }
-    const entry = this.pendingSubscriptions.entries().next().value;
-    return entry == null ? undefined : { requestId: entry[0], value: entry[1] };
+    const entry = this.pending.entries().next().value;
+    return entry == null
+      ? null
+      : { acknowledgement: entry[0], value: entry[1] };
   }
 
   private sendSubscribe(
@@ -426,25 +386,23 @@ export class BinanceWebSocketClient {
     if (
       subscription == null ||
       subscription.readyGeneration === generation ||
-      [...this.pendingSubscriptions.values()].some(
-        (pending) => pending.topic === topic
-      )
+      subscription.pendingAcknowledgement != null
     ) {
       return;
     }
-    const requestId = this.nextRequestId('sub');
-    socket.send(
-      JSON.stringify({ method: 'SUBSCRIBE', params: [topic], id: requestId })
-    );
+    const request = this.protocol.subscribe(topic, this.nextRequestId('sub'));
+    socket.send(request.data);
     const timer = setTimeout(() => {
-      this.pendingSubscriptions.delete(requestId);
+      this.pending.delete(request.acknowledgement);
+      subscription.pendingAcknowledgement = null;
       this.failSocket(
         socket,
         generation,
         `Subscription timed out for ${topic}`
       );
     }, SUBSCRIBE_TIMEOUT_MS);
-    this.pendingSubscriptions.set(requestId, { topic, timer });
+    subscription.pendingAcknowledgement = request.acknowledgement;
+    this.pending.set(request.acknowledgement, { topic, timer });
   }
 
   private failSocket(
@@ -477,9 +435,10 @@ export class BinanceWebSocketClient {
     }
     this.socket = null;
     this.clearTransportTimers();
-    for (const subscription of this.topics.values()) {
+    this.topics.forEach((subscription) => {
       subscription.readyGeneration = null;
-    }
+      subscription.pendingAcknowledgement = null;
+    });
     this.scheduleReconnect(reason);
   }
 
@@ -487,8 +446,8 @@ export class BinanceWebSocketClient {
     if (this.topics.size === 0) {
       return;
     }
-    if (!this.appIsActive || !this.networkIsReachable) {
-      this.emitState(this.appIsActive ? 'offline' : 'paused', null);
+    if (!this.isFocused() || !this.isOnline()) {
+      this.emitState(this.isFocused() ? 'offline' : 'paused', null);
       return;
     }
     if (this.reconnectTimer != null) {
@@ -513,9 +472,10 @@ export class BinanceWebSocketClient {
     const socket = this.socket;
     this.socket = null;
     this.clearTransportTimers();
-    for (const subscription of this.topics.values()) {
+    this.topics.forEach((subscription) => {
       subscription.readyGeneration = null;
-    }
+      subscription.pendingAcknowledgement = null;
+    });
     if (socket == null) {
       return;
     }
@@ -528,26 +488,25 @@ export class BinanceWebSocketClient {
     }
   }
 
-  private clearPendingSubscriptionForTopic(topic: string): void {
-    for (const [requestId, pending] of this.pendingSubscriptions) {
-      if (pending.topic === topic) {
-        clearTimeout(pending.timer);
-        this.pendingSubscriptions.delete(requestId);
-      }
+  private clearPending(acknowledgement: string | null): void {
+    if (acknowledgement == null) {
+      return;
+    }
+    const pending = this.pending.get(acknowledgement);
+    if (pending != null) {
+      clearTimeout(pending.timer);
+      this.pending.delete(acknowledgement);
     }
   }
 
   private clearTransportTimers(): void {
     this.clearOpenTimer();
-    this.clearStableTimer();
     if (this.closeFallbackTimer != null) {
       clearTimeout(this.closeFallbackTimer);
       this.closeFallbackTimer = null;
     }
-    for (const pending of this.pendingSubscriptions.values()) {
-      clearTimeout(pending.timer);
-    }
-    this.pendingSubscriptions.clear();
+    this.pending.forEach((value) => clearTimeout(value.timer));
+    this.pending.clear();
   }
 
   private clearOpenTimer(): void {
@@ -564,24 +523,19 @@ export class BinanceWebSocketClient {
     }
   }
 
-  private clearStableTimer(): void {
-    if (this.stableTimer != null) {
-      clearTimeout(this.stableTimer);
-      this.stableTimer = null;
-    }
-  }
-
-  private emitState(state: BinanceWebSocketState, error: string | null): void {
+  private emitState(state: MarketWebSocketState, error: string | null): void {
     if (state === this.state && error === this.stateError) {
       return;
     }
     this.state = state;
     this.stateError = error;
-    for (const subscription of this.topics.values()) {
-      for (const listener of subscription.listeners) {
-        listener({ type: 'state', state, error });
-      }
-    }
+    const listeners = new Set<
+      (event: MarketWebSocketEvent<TMessage>) => void
+    >();
+    this.topics.forEach((topic) =>
+      topic.listeners.forEach((listener) => listeners.add(listener))
+    );
+    listeners.forEach((listener) => listener({ type: 'state', state, error }));
   }
 
   private nextRequestId(prefix: string): string {
@@ -593,5 +547,3 @@ export class BinanceWebSocketClient {
     return this.socket === socket && this.generation === generation;
   }
 }
-
-export const binanceWebSocketClient = new BinanceWebSocketClient();

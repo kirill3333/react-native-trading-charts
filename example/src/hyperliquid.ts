@@ -1,9 +1,7 @@
 import { type OhlcCandle } from 'react-native-trading-charts';
 
-const REST_URL = 'https://api.hyperliquid.xyz/info';
-const REQUEST_TIMEOUT_MS = 10_000;
-const CANDLE_RETRY_ATTEMPTS = 3;
-const CANDLE_RETRY_BASE_DELAY_MS = 750;
+import { hyperliquidHttp, requestData } from './http';
+
 const HISTORY_CANDLE_COUNT = 300;
 
 export const HYPERLIQUID_WEBSOCKET_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -198,14 +196,6 @@ export class HyperliquidNoDataError extends Error {
   }
 }
 
-type FetchCandlesRetryOptions = {
-  signal?: AbortSignal;
-  attempts?: number;
-  baseDelayMs?: number;
-  beforeTimestamp?: number;
-  allowEmpty?: boolean;
-};
-
 type HyperliquidRequestPayload =
   | { type: 'metaAndAssetCtxs' }
   | {
@@ -331,78 +321,16 @@ export function parseHyperliquidCandleMarketMessage(
   return message.data.map(parseCandle);
 }
 
-function abortError(): Error {
-  const error = new Error('The request was aborted');
-  error.name = 'AbortError';
-  return error;
-}
-
-function isAbortError(cause: unknown): boolean {
-  return cause instanceof Error && cause.name === 'AbortError';
-}
-
-async function waitForRetry(delayMs: number, signal?: AbortSignal) {
-  if (signal?.aborted) {
-    throw abortError();
-  }
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      reject(abortError());
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
 async function request<TPayload>(
   body: HyperliquidRequestPayload,
   signal?: AbortSignal
 ): Promise<TPayload> {
-  if (signal?.aborted) {
-    throw abortError();
-  }
-  const controller = new AbortController();
-  let timedOut = false;
-  const onAbort = () => controller.abort();
-  signal?.addEventListener('abort', onAbort, { once: true });
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(REST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Hyperliquid request failed with HTTP ${response.status}`
-      );
-    }
-    const payload: TPayload = await response.json();
-    return payload;
-  } catch (error) {
-    if (signal?.aborted) {
-      throw abortError();
-    }
-    if (timedOut) {
-      throw new Error(
-        `Hyperliquid request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds`
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', onAbort);
-  }
+  return requestData<TPayload>(hyperliquidHttp, 'Hyperliquid', {
+    method: 'POST',
+    url: '/info',
+    data: body,
+    signal,
+  });
 }
 
 export async function fetchHyperliquidTickers(
@@ -440,51 +368,4 @@ export async function fetchHyperliquidCandles(
       signal
     )
   );
-}
-
-export async function fetchHyperliquidCandlesWithRetry(
-  symbol: string,
-  interval: HyperliquidInterval,
-  options: FetchCandlesRetryOptions = {}
-): Promise<OhlcCandle[]> {
-  const attempts = Math.max(
-    1,
-    Math.floor(options.attempts ?? CANDLE_RETRY_ATTEMPTS)
-  );
-  const baseDelayMs = Math.max(
-    0,
-    options.baseDelayMs ?? CANDLE_RETRY_BASE_DELAY_MS
-  );
-  let lastError = new Error('Could not load candle history');
-
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      const candles = await fetchHyperliquidCandles(
-        symbol,
-        interval,
-        options.signal,
-        options.beforeTimestamp
-      );
-      if (candles.length > 0 || options.allowEmpty === true) {
-        return candles;
-      }
-      lastError = new HyperliquidNoDataError(
-        `Hyperliquid returned no candle history for ${symbol}`
-      );
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      lastError =
-        error instanceof Error
-          ? error
-          : new Error('Hyperliquid candle history request failed', {
-              cause: error,
-            });
-    }
-    if (attempt < attempts - 1) {
-      await waitForRetry(baseDelayMs * 2 ** attempt, options.signal);
-    }
-  }
-  throw lastError;
 }

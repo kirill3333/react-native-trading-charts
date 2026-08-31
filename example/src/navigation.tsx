@@ -1,16 +1,11 @@
 import {
-  createNavigationContainerRef,
   createStaticNavigation,
   type StaticParamList,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import {
-  chartDataController,
-  hyperliquidChartDataController,
-} from './chartDataController';
 import { SettingsScreen } from './components/settings/SettingsScreen';
-import { ChartScreen, type ChartRouteParams } from './screens/ChartScreen';
+import { ChartScreen } from './screens/ChartScreen';
 import { MarketsScreen } from './screens/MarketsScreen';
 import { useAppTheme } from './themeContext';
 
@@ -38,49 +33,14 @@ const RootStack = createNativeStackNavigator({
 
 export type RootStackParamList = StaticParamList<typeof RootStack>;
 type RootStackType = typeof RootStack;
-type RootRoute =
-  | { name: 'Markets'; params?: undefined }
-  | { name: 'ChartSettings'; params?: undefined }
-  | { name: 'Chart'; params: ChartRouteParams };
 
 declare module '@react-navigation/core' {
   interface RootNavigator extends RootStackType {}
 }
 
 const Navigation = createStaticNavigation(RootStack);
-const navigationRef = createNavigationContainerRef<RootStackParamList>();
-
-function synchronizeChartSession() {
-  // SAFETY: RootRoute mirrors the route names and params declared by
-  // RootStackParamList, which is the navigationRef's generic contract.
-  const route = navigationRef.getCurrentRoute() as RootRoute | undefined;
-  const routeName = route?.name;
-  if (routeName === 'ChartSettings') {
-    return;
-  }
-  if (!route || routeName !== 'Chart') {
-    chartDataController.deactivate();
-    hyperliquidChartDataController.deactivate();
-    return;
-  }
-  const params = route.params;
-  if (params.provider === 'hyperliquid') {
-    chartDataController.deactivate();
-    hyperliquidChartDataController.activate(params.ticker, params.interval);
-  } else {
-    hyperliquidChartDataController.deactivate();
-    chartDataController.activate(params.ticker, params.interval);
-  }
-}
 
 export function AppNavigation() {
   const theme = useAppTheme();
-  return (
-    <Navigation
-      onReady={synchronizeChartSession}
-      onStateChange={synchronizeChartSession}
-      ref={navigationRef}
-      theme={theme.navigationTheme}
-    />
-  );
+  return <Navigation theme={theme.navigationTheme} />;
 }

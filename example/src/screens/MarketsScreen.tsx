@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import {
@@ -11,47 +12,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchSpotTickers, type BinanceTicker } from '../binance';
 import {
-  chartDataController,
-  hyperliquidChartDataController,
-} from '../chartDataController';
-import {
-  fetchHyperliquidTickers,
-  type HyperliquidTicker,
-} from '../hyperliquid';
+  binanceMarketData,
+  hyperliquidMarketData,
+  type MarketProvider,
+  type MarketTicker,
+} from '../marketData';
+import { type HyperliquidTicker } from '../hyperliquid';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 
 const ROW_HEIGHT = 73;
 
-type MarketProvider = 'binance' | 'hyperliquid';
-type MarketTicker = BinanceTicker | HyperliquidTicker;
-
-type ProviderState = {
-  tickers: MarketTicker[];
-  loading: boolean;
-  loaded: boolean;
-  refreshing: boolean;
-  error: string | null;
-};
-
-const EMPTY_PROVIDER_STATE: ProviderState = {
-  tickers: [],
-  loading: false,
-  loaded: false,
-  refreshing: false,
-  error: null,
-};
-
 function isHyperliquidTicker(
   ticker: MarketTicker
 ): ticker is HyperliquidTicker {
   return 'provider' in ticker && ticker.provider === 'hyperliquid';
-}
-
-function isAbortError(cause: unknown): boolean {
-  return cause instanceof Error && cause.name === 'AbortError';
 }
 
 function errorMessage(cause: unknown): string {
@@ -88,106 +64,6 @@ function tickerPair(ticker: MarketTicker): TickerPair {
     return { base: ticker.baseAsset, quote: ticker.quoteAsset };
   }
   return { base: ticker.symbol.slice(0, -4), quote: 'USDT' };
-}
-
-function useProviderTickers(provider: MarketProvider) {
-  const [states, setStates] = useState<Record<MarketProvider, ProviderState>>({
-    binance: { ...EMPTY_PROVIDER_STATE },
-    hyperliquid: { ...EMPTY_PROVIDER_STATE },
-  });
-  const statesRef = useRef(states);
-  const controllersRef = useRef<
-    Partial<Record<MarketProvider, AbortController>>
-  >({});
-
-  useEffect(() => {
-    statesRef.current = states;
-  }, [states]);
-
-  const load = useCallback(async (target: MarketProvider, refresh: boolean) => {
-    controllersRef.current[target]?.abort();
-    const controller = new AbortController();
-    controllersRef.current[target] = controller;
-    setStates((current) => ({
-      ...current,
-      [target]: {
-        ...current[target],
-        error: null,
-        loading: refresh ? current[target].loading : true,
-        refreshing: refresh,
-      },
-    }));
-
-    try {
-      const nextTickers =
-        target === 'binance'
-          ? await fetchSpotTickers(controller.signal)
-          : await fetchHyperliquidTickers(controller.signal);
-      if (controllersRef.current[target] !== controller) {
-        return;
-      }
-      if (nextTickers.length === 0) {
-        throw new Error(
-          target === 'binance'
-            ? 'Binance returned no USDT tickers'
-            : 'Hyperliquid returned no perpetual markets'
-        );
-      }
-      setStates((current) => ({
-        ...current,
-        [target]: {
-          tickers: nextTickers,
-          loading: false,
-          loaded: true,
-          refreshing: false,
-          error: null,
-        },
-      }));
-    } catch (nextError) {
-      if (
-        controllersRef.current[target] === controller &&
-        !isAbortError(nextError)
-      ) {
-        setStates((current) => ({
-          ...current,
-          [target]: {
-            ...current[target],
-            loading: false,
-            loaded: true,
-            refreshing: false,
-            error: errorMessage(nextError),
-          },
-        }));
-      }
-    } finally {
-      if (controllersRef.current[target] === controller) {
-        delete controllersRef.current[target];
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const current = statesRef.current[provider];
-    if (!current.loaded && !current.loading) {
-      load(provider, false).catch(() => undefined);
-    }
-  }, [load, provider]);
-
-  useEffect(
-    () => () => {
-      Object.values(controllersRef.current).forEach((controller) =>
-        controller?.abort()
-      );
-      controllersRef.current = {};
-    },
-    []
-  );
-
-  return {
-    ...states[provider],
-    retry: () => load(provider, false),
-    refresh: () => load(provider, true),
-  };
 }
 
 type ErrorStateProps = {
@@ -312,13 +188,25 @@ export function MarketsScreen() {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
   const [provider, setProvider] = useState<MarketProvider>('binance');
-  const { tickers, loading, loaded, refreshing, error, retry, refresh } =
-    useProviderTickers(provider);
+  const adapter =
+    provider === 'binance' ? binanceMarketData : hyperliquidMarketData;
+  const tickersQuery = useQuery<MarketTicker[]>({
+    queryKey: adapter.tickersQueryKey,
+    queryFn: ({ signal }) => adapter.fetchTickers(signal),
+    staleTime: 30_000,
+  });
+  const tickers = tickersQuery.data ?? [];
+  const error =
+    tickersQuery.error == null ? null : errorMessage(tickersQuery.error);
+  const loading = tickersQuery.isPending;
+  const loaded = tickersQuery.data != null || tickersQuery.isError;
+  const refreshing = tickersQuery.isRefetching;
+  const refresh = tickersQuery.refetch;
+  const retry = tickersQuery.refetch;
 
   const openChart = useCallback(
     (ticker: MarketTicker) => {
       if (isHyperliquidTicker(ticker)) {
-        hyperliquidChartDataController.prepare(ticker, '1m');
         navigation.navigate('Chart', {
           provider: 'hyperliquid',
           ticker,
@@ -326,7 +214,6 @@ export function MarketsScreen() {
         });
         return;
       }
-      chartDataController.prepare(ticker, '1m');
       navigation.navigate('Chart', {
         provider: 'binance',
         ticker,

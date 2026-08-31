@@ -1,9 +1,7 @@
-import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 
 import {
   BINANCE_INTERVALS,
-  BinanceNoDataError,
-  fetchSpotKlinesWithRetry,
   klineTopic,
   mergeTickersWithInstruments,
   parseBinanceWebSocketEnvelope,
@@ -12,20 +10,6 @@ import {
   parseKlineWebSocketMessage,
   parseTickersResponse,
 } from '../binance';
-
-afterEach(() => {
-  jest.restoreAllMocks();
-});
-
-function jsonResponse<TPayload>(payload: TPayload): Response {
-  // SAFETY: the fake implements the exact Response fields consumed by the
-  // request decoder in these tests.
-  return {
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(payload),
-  } as Response;
-}
 
 describe('Binance Spot parsing', () => {
   it('keeps USDT tickers, uses percent values and sorts by quote volume', () => {
@@ -176,36 +160,5 @@ describe('Binance native klines', () => {
       requestId: '4',
       message: 'Invalid request',
     });
-  });
-
-  it('retries empty native kline responses and returns the next result', async () => {
-    const fetchMock = jest
-      .spyOn(global, 'fetch')
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(
-        jsonResponse([[1_000, '10', '11', '9', '10.5', '2']])
-      );
-    await expect(
-      fetchSpotKlinesWithRetry('BTCUSDT', '1s', {
-        attempts: 2,
-        baseDelayMs: 0,
-      })
-    ).resolves.toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('interval=1s'),
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    );
-  });
-
-  it('reports no data after retry exhaustion', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(jsonResponse([]));
-    await expect(
-      fetchSpotKlinesWithRetry('BTCUSDT', '1s', {
-        attempts: 1,
-        baseDelayMs: 0,
-      })
-    ).rejects.toBeInstanceOf(BinanceNoDataError);
   });
 });

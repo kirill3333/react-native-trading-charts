@@ -1,9 +1,13 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChartSettingsProvider } from './chartSettings';
 import { AppNavigation } from './navigation';
+import { configureQueryLifecycle, queryClient } from './queryClient';
 import { useAppTheme } from './themeContext';
+
+configureQueryLifecycle();
 
 function ThemedApp() {
   const theme = useAppTheme();
@@ -20,10 +24,12 @@ function ThemedApp() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ChartSettingsProvider>
-        <ThemedApp />
-      </ChartSettingsProvider>
-    </SafeAreaProvider>
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <ChartSettingsProvider>
+          <ThemedApp />
+        </ChartSettingsProvider>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   );
 }

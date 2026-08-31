@@ -1,9 +1,6 @@
 import { type OhlcCandle } from 'react-native-trading-charts';
 
-const REST_BASE_URL = 'https://api.binance.com';
-const REQUEST_TIMEOUT_MS = 10_000;
-const KLINE_RETRY_ATTEMPTS = 3;
-const KLINE_RETRY_BASE_DELAY_MS = 750;
+import { binanceHttp, requestData } from './http';
 
 export const BINANCE_WEBSOCKET_URL = 'wss://stream.binance.com:9443/ws';
 
@@ -148,14 +145,6 @@ export class BinanceNoDataError extends Error {
   }
 }
 
-type FetchKlinesRetryOptions = {
-  signal?: AbortSignal;
-  attempts?: number;
-  baseDelayMs?: number;
-  beforeTimestamp?: number;
-  allowEmpty?: boolean;
-};
-
 function requestId(value: string | number | null | undefined): string | null {
   return value == null ? null : String(value);
 }
@@ -285,73 +274,15 @@ export function parseKlineWebSocketMessage(
   return parseKlineMarketMessage(envelope);
 }
 
-function abortError(): Error {
-  const error = new Error('The request was aborted');
-  error.name = 'AbortError';
-  return error;
-}
-
-function isAbortError(cause: unknown): boolean {
-  return cause instanceof Error && cause.name === 'AbortError';
-}
-
-async function waitForRetry(delayMs: number, signal?: AbortSignal) {
-  if (signal?.aborted) {
-    throw abortError();
-  }
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      reject(abortError());
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
 async function request<TPayload>(
   path: string,
   signal?: AbortSignal
 ): Promise<TPayload> {
-  if (signal?.aborted) {
-    throw abortError();
-  }
-  const controller = new AbortController();
-  let timedOut = false;
-  const onAbort = () => controller.abort();
-  signal?.addEventListener('abort', onAbort, { once: true });
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${REST_BASE_URL}${path}`, {
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`Binance request failed with HTTP ${response.status}`);
-    }
-    const payload: TPayload = await response.json();
-    return payload;
-  } catch (error) {
-    if (signal?.aborted) {
-      throw abortError();
-    }
-    if (timedOut) {
-      throw new Error(
-        `Binance request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds`
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', onAbort);
-  }
+  return requestData<TPayload>(binanceHttp, 'Binance', {
+    method: 'GET',
+    url: path,
+    signal,
+  });
 }
 
 export async function fetchSpotTickers(
@@ -382,51 +313,4 @@ export async function fetchSpotKlines(
   return parseKlineResponse(
     await request<BinanceKlinePayload[]>(`/api/v3/klines${query}`, signal)
   );
-}
-
-export async function fetchSpotKlinesWithRetry(
-  symbol: string,
-  interval: BinanceInterval,
-  options: FetchKlinesRetryOptions = {}
-): Promise<OhlcCandle[]> {
-  const attempts = Math.max(
-    1,
-    Math.floor(options.attempts ?? KLINE_RETRY_ATTEMPTS)
-  );
-  const baseDelayMs = Math.max(
-    0,
-    options.baseDelayMs ?? KLINE_RETRY_BASE_DELAY_MS
-  );
-  let lastError = new Error('Could not load candle history');
-
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      const candles = await fetchSpotKlines(
-        symbol,
-        interval,
-        options.signal,
-        options.beforeTimestamp
-      );
-      if (candles.length > 0 || options.allowEmpty === true) {
-        return candles;
-      }
-      lastError = new BinanceNoDataError(
-        `Binance returned no candle history for ${symbol}`
-      );
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      lastError =
-        error instanceof Error
-          ? error
-          : new Error('Binance candle history request failed', {
-              cause: error,
-            });
-    }
-    if (attempt < attempts - 1) {
-      await waitForRetry(baseDelayMs * 2 ** attempt, options.signal);
-    }
-  }
-  throw lastError;
 }

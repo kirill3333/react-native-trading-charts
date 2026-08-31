@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
@@ -27,21 +27,24 @@ import {
   type BinanceTicker,
 } from '../binance';
 import {
-  chartDataController,
-  chartIdFor,
-  hyperliquidChartDataController,
-  hyperliquidChartIdFor,
-  type ChartConnectionStatus,
-  type ChartConnectionSnapshot,
-} from '../chartDataController';
-import {
   HYPERLIQUID_INTERVALS,
   type HyperliquidInterval,
   type HyperliquidTicker,
 } from '../hyperliquid';
 import { InteractiveChart } from '../components/InteractiveChart';
+import {
+  binanceMarketData,
+  chartIdFor,
+  hyperliquidChartIdFor,
+  hyperliquidMarketData,
+  type MarketDataAdapter,
+} from '../marketData';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
+import {
+  useChartDataFeed,
+  type ChartConnectionStatus,
+} from '../useChartDataFeed';
 
 export type ChartRouteParams =
   | {
@@ -136,42 +139,35 @@ type IntervalOption<TInterval extends string> = {
   resolution: ChartResolution;
 };
 
-type ChartController<TTicker, TInterval extends string> = {
-  prepare(ticker: TTicker, interval: TInterval): string;
-  retry(ticker: TTicker, interval: TInterval): void;
-  loadOlder(ticker: TTicker, interval: TInterval): void;
-  subscribe(
-    ticker: TTicker,
-    interval: TInterval,
-    listener: () => void
-  ): () => void;
-  getSnapshot(ticker: TTicker, interval: TInterval): ChartConnectionSnapshot;
-};
-
 type ChartContentProps<
   TTicker extends PriceTicker,
   TInterval extends string,
+  TMessage,
 > = {
   ticker: TTicker;
   interval: TInterval;
   intervals: ReadonlyArray<IntervalOption<TInterval>>;
-  controller: ChartController<TTicker, TInterval>;
+  adapter: MarketDataAdapter<TTicker, TInterval, TMessage>;
   chartId: string;
   baseAsset: string;
   quoteAsset: string;
   venueLabel: string;
 };
 
-function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
+function ChartContent<
+  TTicker extends PriceTicker,
+  TInterval extends string,
+  TMessage,
+>({
   ticker,
   interval,
   intervals,
-  controller,
+  adapter,
   chartId,
   baseAsset,
   quoteAsset,
   venueLabel,
-}: ChartContentProps<TTicker, TInterval>) {
+}: ChartContentProps<TTicker, TInterval, TMessage>) {
   const navigation = useNavigation();
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
@@ -184,18 +180,11 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? { unit: 'minute' as const };
 
-  const subscribe = useCallback(
-    (listener: () => void) => controller.subscribe(ticker, interval, listener),
-    [controller, interval, ticker]
-  );
-  const getSnapshot = useCallback(
-    () => controller.getSnapshot(ticker, interval),
-    [controller, interval, ticker]
-  );
-  const { status, error, lastPrice } = useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    getSnapshot
+  const { status, error, lastPrice, loadOlder, retry } = useChartDataFeed(
+    adapter,
+    ticker,
+    interval,
+    chartId
   );
   const displayedPrice = lastPrice ?? ticker.lastPrice;
   const formattedPrice = useMemo(
@@ -215,7 +204,6 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
       if (nextInterval === interval) {
         return;
       }
-      controller.prepare(ticker, nextInterval);
       // SAFETY: this screen's route contract owns the generic interval value
       // and setParams accepts that same route-local parameter.
       const setIntervalParam = navigation.setParams as (params: {
@@ -223,7 +211,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
       }) => void;
       setIntervalParam({ interval: nextInterval });
     },
-    [controller, interval, navigation, ticker]
+    [interval, navigation]
   );
 
   const handleVisibleRangeChange = useCallback(
@@ -232,10 +220,10 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
       const visibleCount = lastVisibleIndex - firstVisibleIndex + 1;
       const preloadThreshold = Math.max(30, visibleCount * 2);
       if (firstVisibleIndex <= preloadThreshold) {
-        controller.loadOlder(ticker, interval);
+        loadOlder();
       }
     },
-    [controller, interval, ticker]
+    [loadOlder]
   );
 
   const renderInterval = useCallback<ListRenderItem<IntervalOption<TInterval>>>(
@@ -316,7 +304,7 @@ function ChartContent<TTicker extends PriceTicker, TInterval extends string>({
         {hasError ? (
           <Pressable
             accessibilityRole="button"
-            onPress={() => controller.retry(ticker, interval)}
+            onPress={retry}
             style={({ pressed }) => [
               styles.chartErrorBanner,
               pressed && styles.pressed,
@@ -495,9 +483,9 @@ export function ChartScreen({ route }: ChartScreenProps) {
   if (params.provider === 'hyperliquid') {
     return (
       <ChartContent
+        adapter={hyperliquidMarketData}
         baseAsset={params.ticker.baseAsset}
         chartId={hyperliquidChartIdFor(params.ticker.symbol, params.interval)}
-        controller={hyperliquidChartDataController}
         interval={params.interval}
         intervals={HYPERLIQUID_INTERVALS}
         quoteAsset={params.ticker.quoteAsset}
@@ -508,9 +496,9 @@ export function ChartScreen({ route }: ChartScreenProps) {
   }
   return (
     <ChartContent
+      adapter={binanceMarketData}
       baseAsset={params.ticker.symbol.slice(0, -4)}
       chartId={chartIdFor(params.ticker.symbol, params.interval)}
-      controller={chartDataController}
       interval={params.interval}
       intervals={BINANCE_INTERVALS}
       quoteAsset="USDT"
