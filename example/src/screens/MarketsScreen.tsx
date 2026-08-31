@@ -1,190 +1,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { FlashList, type ListRenderItem } from '@shopify/flash-list';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { type HyperliquidTicker } from '../api/hyperliquid';
 import {
   binanceMarketData,
   hyperliquidMarketData,
   type MarketProvider,
   type MarketTicker,
 } from '../api/marketData';
-import { type HyperliquidTicker } from '../api/hyperliquid';
+import { MarketsContent } from '../components/markets/MarketsContent';
+import { MarketsHeader } from '../components/markets/MarketsHeader';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
-
-const ROW_HEIGHT = 73;
-const MARKET_PROVIDERS = [
-  'binance',
-  'hyperliquid',
-] satisfies ReadonlyArray<MarketProvider>;
 
 function isHyperliquidTicker(
   ticker: MarketTicker
 ): ticker is HyperliquidTicker {
   return 'provider' in ticker && ticker.provider === 'hyperliquid';
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : 'Unknown network error';
-}
-
-function formatPrice(ticker: MarketTicker): string {
-  return ticker.lastPrice.toLocaleString('en-US', {
-    minimumFractionDigits: ticker.precision,
-    maximumFractionDigits: ticker.precision,
-  });
-}
-
-function formatTurnover(value: number): string {
-  if (value >= 1_000_000_000) {
-    return `$${(value / 1_000_000_000).toFixed(2)}B`;
-  }
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(2)}M`;
-  }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(2)}K`;
-  }
-  return `$${value.toFixed(2)}`;
-}
-
-type TickerPair = {
-  base: string;
-  quote: string;
-};
-
-function tickerPair(ticker: MarketTicker): TickerPair {
-  if (isHyperliquidTicker(ticker)) {
-    return { base: ticker.baseAsset, quote: ticker.quoteAsset };
-  }
-  return { base: ticker.symbol.slice(0, -4), quote: 'USDT' };
-}
-
-type ErrorStateProps = {
-  title: string;
-  message: string;
-  onRetry: () => void;
-};
-
-function ErrorState({ title, message, onRetry }: ErrorStateProps) {
-  const theme = useAppTheme();
-  const styles = THEMED_STYLES[theme.mode];
-  return (
-    <View style={styles.centerState}>
-      <Text style={styles.errorTitle}>{title}</Text>
-      <Text style={styles.errorMessage}>{message}</Text>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onRetry}
-        style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-      >
-        <Text style={styles.retryButtonText}>Try again</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-type TickerRowProps = {
-  ticker: MarketTicker;
-  onPress: (ticker: MarketTicker) => void;
-};
-
-function TickerRow({ ticker, onPress }: TickerRowProps) {
-  const theme = useAppTheme();
-  const styles = THEMED_STYLES[theme.mode];
-  const positive = ticker.change24hPercent >= 0;
-  const change = `${positive ? '+' : ''}${ticker.change24hPercent.toFixed(2)}%`;
-  const pair = tickerPair(ticker);
-
-  return (
-    <Pressable
-      accessibilityHint="Opens the live candlestick chart"
-      accessibilityRole="button"
-      onPress={() => onPress(ticker)}
-      style={({ pressed }) => [
-        styles.tickerRow,
-        pressed && styles.tickerRowPressed,
-      ]}
-    >
-      <View style={styles.tickerIdentity}>
-        <Text style={styles.tickerSymbol}>
-          {pair.base}
-          <Text style={styles.quoteSymbol}> / {pair.quote}</Text>
-        </Text>
-        <Text style={styles.turnoverText}>
-          Vol {formatTurnover(ticker.turnover24h)}
-          {isHyperliquidTicker(ticker)
-            ? `  ·  up to ${ticker.maxLeverage}×`
-            : ''}
-        </Text>
-      </View>
-      <View style={styles.tickerPriceBlock}>
-        <Text style={styles.tickerPrice}>{formatPrice(ticker)}</Text>
-        <Text style={positive ? styles.positiveText : styles.negativeText}>
-          {change}
-        </Text>
-      </View>
-      <Text style={styles.disclosure}>›</Text>
-    </Pressable>
-  );
-}
-
-type MarketsHeaderProps = {
-  provider: MarketProvider;
-  onChange: (provider: MarketProvider) => void;
-};
-
-function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
-  const theme = useAppTheme();
-  const styles = THEMED_STYLES[theme.mode];
-  return (
-    <View style={styles.marketsHeader}>
-      <View accessibilityRole="tablist" style={styles.providerTabs}>
-        {MARKET_PROVIDERS.map((item) => {
-          const selected = item === provider;
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              key={item}
-              onPress={() => onChange(item)}
-              style={({ pressed }) => [
-                styles.providerTab,
-                selected && styles.providerTabSelected,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text
-                style={
-                  selected
-                    ? styles.providerTabTextSelected
-                    : styles.providerTabText
-                }
-              >
-                {item === 'binance' ? 'Binance' : 'Hyperliquid'}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={styles.screenTitle}>Markets</Text>
-      <Text style={styles.screenSubtitle}>
-        {provider === 'binance'
-          ? 'Binance Spot · USDT pairs by 24-hour turnover'
-          : 'Hyperliquid Perps · markets by 24-hour notional volume'}
-      </Text>
-    </View>
-  );
 }
 
 export function MarketsScreen() {
@@ -199,14 +34,7 @@ export function MarketsScreen() {
     queryFn: ({ signal }) => adapter.fetchTickers(signal),
     staleTime: 30_000,
   });
-  const tickers = tickersQuery.data ?? [];
-  const error =
-    tickersQuery.error == null ? null : errorMessage(tickersQuery.error);
-  const loading = tickersQuery.isPending;
-  const loaded = tickersQuery.data != null || tickersQuery.isError;
-  const refreshing = tickersQuery.isRefetching;
-  const refresh = tickersQuery.refetch;
-  const retry = tickersQuery.refetch;
+  const { refetch } = tickersQuery;
 
   const openChart = useCallback(
     (ticker: MarketTicker) => {
@@ -227,79 +55,24 @@ export function MarketsScreen() {
     [navigation]
   );
 
-  const renderItem = useCallback<ListRenderItem<MarketTicker>>(
-    ({ item }) => <TickerRow onPress={openChart} ticker={item} />,
-    [openChart]
-  );
-
-  let content;
-  if ((!loaded || loading) && tickers.length === 0) {
-    content = (
-      <View style={styles.centerState}>
-        <ActivityIndicator color={theme.colors.accent} size="large" />
-        <Text style={styles.loadingText}>
-          Loading {provider === 'binance' ? 'Binance' : 'Hyperliquid'} markets…
-        </Text>
-      </View>
-    );
-  } else if (error != null && tickers.length === 0) {
-    content = (
-      <ErrorState
-        message={error}
-        onRetry={() => {
-          void retry();
-        }}
-        title="Could not load markets"
-      />
-    );
-  } else {
-    content = (
-      <>
-        {error != null ? (
-          <Pressable
-            onPress={() => {
-              void refresh();
-            }}
-            style={styles.inlineError}
-          >
-            <Text numberOfLines={1} style={styles.inlineErrorText}>
-              Refresh failed: {error}
-            </Text>
-            <Text style={styles.inlineRetry}>Retry</Text>
-          </Pressable>
-        ) : null}
-        <View style={styles.columnLabels}>
-          <Text style={styles.columnLabel}>PAIR / 24H VOLUME</Text>
-          <Text style={styles.columnLabel}>PRICE / 24H</Text>
-        </View>
-        <FlashList
-          data={tickers}
-          key={provider}
-          keyExtractor={(item) => `${provider}:${item.symbol}`}
-          maintainVisibleContentPosition={{ disabled: true }}
-          refreshControl={
-            <RefreshControl
-              colors={[theme.colors.accent]}
-              onRefresh={() => {
-                void refresh();
-              }}
-              progressBackgroundColor={theme.colors.surface}
-              refreshing={refreshing}
-              tintColor={theme.colors.accent}
-            />
-          }
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-        />
-      </>
-    );
-  }
+  const refresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
         <MarketsHeader onChange={setProvider} provider={provider} />
-        {content}
+        <MarketsContent
+          error={tickersQuery.error}
+          isError={tickersQuery.isError}
+          isPending={tickersQuery.isPending}
+          isRefreshing={tickersQuery.isRefetching}
+          onRefresh={refresh}
+          onTickerPress={openChart}
+          provider={provider}
+          tickers={tickersQuery.data}
+        />
       </View>
     </SafeAreaView>
   );
@@ -309,160 +82,6 @@ function createStyles(colors: AppThemeColors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
     screen: { flex: 1, backgroundColor: colors.background },
-    marketsHeader: {
-      paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 20,
-    },
-    providerTabs: {
-      backgroundColor: colors.surfaceMuted,
-      borderColor: colors.borderSubtle,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      marginBottom: 20,
-      padding: 3,
-    },
-    providerTab: {
-      alignItems: 'center',
-      borderRadius: 9,
-      flex: 1,
-      justifyContent: 'center',
-      minHeight: 38,
-    },
-    providerTabSelected: { backgroundColor: colors.accent },
-    providerTabText: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      fontWeight: '700',
-    },
-    providerTabTextSelected: {
-      color: colors.onAccent,
-      fontSize: 13,
-      fontWeight: '800',
-    },
-    screenTitle: {
-      color: colors.text,
-      fontSize: 32,
-      fontWeight: '800',
-      letterSpacing: -0.8,
-    },
-    screenSubtitle: {
-      color: colors.textSecondary,
-      fontSize: 14,
-      marginTop: 5,
-    },
-    columnLabels: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      borderBottomColor: colors.borderSubtle,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      paddingHorizontal: 20,
-      paddingBottom: 9,
-    },
-    columnLabel: {
-      color: colors.textMuted,
-      fontSize: 10,
-      fontWeight: '700',
-      letterSpacing: 0.7,
-    },
-    tickerRow: {
-      alignItems: 'center',
-      borderBottomColor: colors.borderSubtle,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      height: ROW_HEIGHT,
-      paddingHorizontal: 20,
-    },
-    tickerRowPressed: { backgroundColor: colors.pressed },
-    tickerIdentity: { flex: 1 },
-    tickerSymbol: { color: colors.text, fontSize: 16, fontWeight: '700' },
-    quoteSymbol: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-    turnoverText: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
-    tickerPriceBlock: { alignItems: 'flex-end', minWidth: 112 },
-    tickerPrice: {
-      color: colors.text,
-      fontSize: 15,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '600',
-    },
-    positiveText: {
-      color: colors.positive,
-      fontSize: 12,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-      marginTop: 5,
-    },
-    negativeText: {
-      color: colors.negative,
-      fontSize: 12,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-      marginTop: 5,
-    },
-    disclosure: {
-      color: colors.textMuted,
-      fontSize: 26,
-      marginLeft: 12,
-      marginTop: -3,
-    },
-    centerState: {
-      alignItems: 'center',
-      flex: 1,
-      justifyContent: 'center',
-      padding: 28,
-    },
-    loadingText: {
-      color: colors.textSecondary,
-      fontSize: 14,
-      marginTop: 14,
-    },
-    errorTitle: {
-      color: colors.text,
-      fontSize: 18,
-      fontWeight: '700',
-      textAlign: 'center',
-    },
-    errorMessage: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      lineHeight: 19,
-      marginTop: 8,
-      maxWidth: 320,
-      textAlign: 'center',
-    },
-    retryButton: {
-      backgroundColor: colors.accent,
-      borderRadius: 10,
-      marginTop: 18,
-      paddingHorizontal: 18,
-      paddingVertical: 11,
-    },
-    retryButtonText: {
-      color: colors.onAccent,
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    inlineError: {
-      alignItems: 'center',
-      backgroundColor: colors.errorSurface,
-      borderColor: colors.errorBorder,
-      borderWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      marginHorizontal: 20,
-      marginBottom: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      borderRadius: 8,
-    },
-    inlineErrorText: { color: colors.errorText, flex: 1, fontSize: 12 },
-    inlineRetry: {
-      color: colors.accentText,
-      fontSize: 12,
-      fontWeight: '700',
-      marginLeft: 12,
-    },
-    pressed: { opacity: 0.7 },
   });
 }
 

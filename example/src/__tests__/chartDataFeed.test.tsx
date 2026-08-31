@@ -9,7 +9,7 @@ import { type OhlcCandle } from 'react-native-trading-charts';
 
 import { type MarketDataAdapter } from '../api/marketData';
 import {
-  MarketWebSocketClient,
+  createMarketWebSocketFactory,
   type MarketWebSocketProtocol,
 } from '../api/marketWebSocket';
 import {
@@ -48,13 +48,8 @@ const olderCandle: OhlcCandle = {
 
 const protocol: MarketWebSocketProtocol<TestMessage> = {
   label: 'Test',
-  url: 'wss://example.test',
+  url: () => 'wss://example.test',
   parse: () => ({ kind: 'control' }),
-  subscribe: (_topic, requestId) => ({
-    data: requestId,
-    acknowledgement: requestId,
-  }),
-  unsubscribe: (_topic, requestId) => requestId,
 };
 
 function createAdapter(
@@ -63,7 +58,7 @@ function createAdapter(
     '1m',
     TestMessage
   >['fetchCandles'],
-  websocket = new MarketWebSocketClient(protocol, {
+  websocket = createMarketWebSocketFactory(protocol, {
     isFocused: () => false,
     isOnline: () => true,
     subscribeFocused: () => () => undefined,
@@ -234,23 +229,19 @@ describe('useChartDataFeed', () => {
     };
     const liveProtocol: MarketWebSocketProtocol<TestMessage> = {
       label: 'Test',
-      url: 'wss://example.test',
+      url: () => 'wss://example.test',
       parse: (message) =>
         message === 'ack'
-          ? { kind: 'subscribed', acknowledgement: 'BTCUSDT:1m' }
+          ? { kind: 'ready', topic: 'BTCUSDT:1m' }
           : {
               kind: 'market',
               topic: 'BTCUSDT:1m',
               message: { candle: liveCandle },
             },
-      subscribe: (topic) => ({
-        data: 'subscribe',
-        acknowledgement: topic,
-      }),
-      unsubscribe: () => 'unsubscribe',
+      subscribe: () => 'subscribe',
     };
     const sockets: FakeSocket[] = [];
-    const websocket = new MarketWebSocketClient(liveProtocol, {
+    const websocket = createMarketWebSocketFactory(liveProtocol, {
       isFocused: () => true,
       isOnline: () => true,
       subscribeFocused: () => () => undefined,

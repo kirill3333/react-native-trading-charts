@@ -7,7 +7,7 @@ const SOCKET_OPEN = 1;
 const SOCKET_CLOSING = 2;
 
 export type MarketWebSocketState =
-  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused' | 'offline';
+  'connecting' | 'connected' | 'reconnecting' | 'paused' | 'offline';
 
 export type MarketWebSocketEvent<TMessage> =
   | { type: 'state'; state: MarketWebSocketState; error: string | null }
@@ -21,19 +21,16 @@ export type MarketWebSocketEvent<TMessage> =
 
 export type MarketWebSocketEnvelope<TMessage> =
   | { kind: 'market'; topic: string; message: TMessage }
-  | { kind: 'subscribed'; acknowledgement: string | null }
+  | { kind: 'ready'; topic: string | null }
   | { kind: 'error'; message: string }
   | { kind: 'control' };
 
 export type MarketWebSocketProtocol<TMessage> = {
   label: string;
-  url: string;
+  url(topic: string): string;
   parse(rawMessage: string): MarketWebSocketEnvelope<TMessage>;
-  subscribe(
-    topic: string,
-    requestId: string
-  ): { data: string; acknowledgement: string };
-  unsubscribe(topic: string, requestId: string): string;
+  subscribe?(topic: string): string;
+  heartbeat?: { intervalMs: number; message: string };
 };
 
 type WebSocketLike = {
@@ -83,495 +80,334 @@ type LifecycleOptions = {
   subscribeOnline?: (listener: () => void) => () => void;
 };
 
-export type MarketWebSocketClientOptions = LifecycleOptions & {
+export type MarketWebSocketFactoryOptions = LifecycleOptions & {
   createSocket?: (url: string) => WebSocketLike;
   random?: () => number;
 };
 
-type TopicSubscription<TMessage> = {
-  listeners: Set<(event: MarketWebSocketEvent<TMessage>) => void>;
-  readyGeneration: number | null;
-  pendingAcknowledgement: string | null;
+export type MarketWebSocketConnection = {
+  retry(): void;
+  reportProtocolError(generation: number, cause: unknown): void;
+  close(): void;
 };
 
-type PendingSubscription = {
-  topic: string;
-  timer: ReturnType<typeof setTimeout>;
+export type MarketWebSocketFactory<TMessage> = {
+  connect(
+    topic: string,
+    listener: (event: MarketWebSocketEvent<TMessage>) => void
+  ): MarketWebSocketConnection;
 };
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export class MarketWebSocketClient<TMessage> {
-  private readonly protocol: MarketWebSocketProtocol<TMessage>;
-  private readonly createSocket: (url: string) => WebSocketLike;
-  private readonly random: () => number;
-  private readonly isFocused: () => boolean;
-  private readonly isOnline: () => boolean;
-  private readonly subscribeFocused: (listener: () => void) => () => void;
-  private readonly subscribeOnline: (listener: () => void) => () => void;
-  private readonly topics = new Map<string, TopicSubscription<TMessage>>();
-  private readonly pending = new Map<string, PendingSubscription>();
-  private socket: WebSocketLike | null = null;
-  private state: MarketWebSocketState = 'idle';
-  private stateError: string | null = null;
-  private generation = 0;
-  private requestSequence = 0;
-  private reconnectAttempt = 0;
-  private removeFocusListener: (() => void) | null = null;
-  private removeOnlineListener: (() => void) | null = null;
-  private openTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private closeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  private failureReason: string | null = null;
+export function createMarketWebSocketFactory<TMessage>(
+  protocol: MarketWebSocketProtocol<TMessage>,
+  options: MarketWebSocketFactoryOptions = {}
+): MarketWebSocketFactory<TMessage> {
+  const createSocket =
+    options.createSocket ?? ((url: string) => new NativeWebSocketAdapter(url));
+  const random = options.random ?? Math.random;
+  const isFocused = options.isFocused ?? (() => focusManager.isFocused());
+  const isOnline = options.isOnline ?? (() => onlineManager.isOnline());
+  const subscribeFocused =
+    options.subscribeFocused ??
+    ((listener: () => void) => focusManager.subscribe(listener));
+  const subscribeOnline =
+    options.subscribeOnline ??
+    ((listener: () => void) => onlineManager.subscribe(listener));
 
-  constructor(
-    protocol: MarketWebSocketProtocol<TMessage>,
-    options: MarketWebSocketClientOptions = {}
-  ) {
-    this.protocol = protocol;
-    this.createSocket =
-      options.createSocket ?? ((url) => new NativeWebSocketAdapter(url));
-    this.random = options.random ?? Math.random;
-    this.isFocused = options.isFocused ?? (() => focusManager.isFocused());
-    this.isOnline = options.isOnline ?? (() => onlineManager.isOnline());
-    this.subscribeFocused =
-      options.subscribeFocused ??
-      ((listener) => focusManager.subscribe(listener));
-    this.subscribeOnline =
-      options.subscribeOnline ??
-      ((listener) => onlineManager.subscribe(listener));
-  }
+  return {
+    connect(topic, listener) {
+      let active = true;
+      let socket: WebSocketLike | null = null;
+      let generation = 0;
+      let readyGeneration = 0;
+      let reconnectAttempt = 0;
+      let state: MarketWebSocketState | null = null;
+      let stateError: string | null = null;
+      let failureReason: string | null = null;
+      let openTimer: ReturnType<typeof setTimeout> | null = null;
+      let subscribeTimer: ReturnType<typeof setTimeout> | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let closeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  subscribe(
-    topic: string,
-    listener: (event: MarketWebSocketEvent<TMessage>) => void
-  ): () => void {
-    let subscription = this.topics.get(topic);
-    const firstTopic = this.topics.size === 0;
-    if (subscription == null) {
-      subscription = {
-        listeners: new Set(),
-        readyGeneration: null,
-        pendingAcknowledgement: null,
-      };
-      this.topics.set(topic, subscription);
-    }
-    subscription.listeners.add(listener);
-
-    if (firstTopic) {
-      this.startLifecycleMonitoring();
-    } else {
-      listener({ type: 'state', state: this.state, error: this.stateError });
-      if (subscription.readyGeneration === this.generation) {
-        listener({ type: 'ready', topic, generation: this.generation });
-      } else if (
-        subscription.listeners.size === 1 &&
-        this.socket?.readyState === SOCKET_OPEN
+      function emitState(
+        nextState: MarketWebSocketState,
+        error: string | null
       ) {
-        this.sendSubscribe(topic, this.socket, this.generation);
+        if (state === nextState && stateError === error) return;
+        state = nextState;
+        stateError = error;
+        listener({ type: 'state', state: nextState, error });
       }
-    }
 
-    let subscribed = true;
-    return () => {
-      if (!subscribed) {
-        return;
+      function isCurrent(target: WebSocketLike, targetGeneration: number) {
+        return active && socket === target && generation === targetGeneration;
       }
-      subscribed = false;
-      this.unsubscribe(topic, listener);
-    };
-  }
 
-  retry(): void {
-    this.reconnectAttempt = 0;
-    this.clearReconnectTimer();
-    this.closeCurrentSocket();
-    this.ensureConnection();
-  }
-
-  reportProtocolError(generation: number, cause: unknown): void {
-    if (generation !== this.generation || this.socket == null) {
-      return;
-    }
-    this.failSocket(
-      this.socket,
-      generation,
-      `Invalid ${this.protocol.label} stream data: ${errorMessage(cause)}`
-    );
-  }
-
-  private unsubscribe(
-    topic: string,
-    listener: (event: MarketWebSocketEvent<TMessage>) => void
-  ): void {
-    const subscription = this.topics.get(topic);
-    if (subscription == null) {
-      return;
-    }
-    subscription.listeners.delete(listener);
-    if (subscription.listeners.size > 0) {
-      return;
-    }
-
-    this.clearPending(subscription.pendingAcknowledgement);
-    this.topics.delete(topic);
-    if (this.socket?.readyState === SOCKET_OPEN) {
-      this.socket.send(
-        this.protocol.unsubscribe(topic, this.nextRequestId('unsub'))
-      );
-    }
-    if (this.topics.size === 0) {
-      this.clearReconnectTimer();
-      this.closeCurrentSocket();
-      this.stopLifecycleMonitoring();
-      this.state = 'idle';
-      this.stateError = null;
-    }
-  }
-
-  private startLifecycleMonitoring(): void {
-    this.removeFocusListener = this.subscribeFocused(() =>
-      this.handleEligibilityChange()
-    );
-    this.removeOnlineListener = this.subscribeOnline(() =>
-      this.handleEligibilityChange()
-    );
-    this.handleEligibilityChange();
-  }
-
-  private stopLifecycleMonitoring(): void {
-    this.removeFocusListener?.();
-    this.removeFocusListener = null;
-    this.removeOnlineListener?.();
-    this.removeOnlineListener = null;
-  }
-
-  private handleEligibilityChange(): void {
-    if (this.topics.size === 0) {
-      return;
-    }
-    if (!this.isFocused() || !this.isOnline()) {
-      this.clearReconnectTimer();
-      this.closeCurrentSocket();
-      this.emitState(this.isFocused() ? 'offline' : 'paused', null);
-      return;
-    }
-    this.ensureConnection();
-  }
-
-  private canConnect(): boolean {
-    if (this.topics.size === 0 || this.socket != null) {
-      return false;
-    }
-    if (!this.isFocused() || !this.isOnline()) {
-      return false;
-    }
-    return this.reconnectTimer == null;
-  }
-
-  private ensureConnection(): void {
-    if (!this.canConnect()) {
-      return;
-    }
-
-    this.emitState(this.generation === 0 ? 'connecting' : 'reconnecting', null);
-    const generation = this.generation + 1;
-    this.generation = generation;
-    this.failureReason = null;
-    let socket: WebSocketLike;
-    try {
-      socket = this.createSocket(this.protocol.url);
-    } catch (cause) {
-      this.scheduleReconnect(errorMessage(cause));
-      return;
-    }
-    this.socket = socket;
-    this.openTimer = setTimeout(() => {
-      this.failSocket(socket, generation, 'WebSocket connection timed out');
-    }, OPEN_TIMEOUT_MS);
-
-    socket.onopen = () => {
-      if (!this.isCurrent(socket, generation)) {
-        return;
+      function clearTransportTimers() {
+        if (openTimer != null) clearTimeout(openTimer);
+        if (subscribeTimer != null) clearTimeout(subscribeTimer);
+        if (closeFallbackTimer != null) clearTimeout(closeFallbackTimer);
+        if (heartbeatTimer != null) clearInterval(heartbeatTimer);
+        openTimer = null;
+        subscribeTimer = null;
+        closeFallbackTimer = null;
+        heartbeatTimer = null;
       }
-      this.clearOpenTimer();
-      this.topics.forEach((_subscription, topic) =>
-        this.sendSubscribe(topic, socket, generation)
-      );
-    };
-    socket.onmessage = (event) => {
-      if (!this.isCurrent(socket, generation)) {
-        return;
+
+      function clearReconnectTimer() {
+        if (reconnectTimer != null) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
       }
-      try {
-        this.handleMessage(this.protocol.parse(event.data), socket, generation);
-      } catch (cause) {
-        this.failSocket(
-          socket,
-          generation,
-          `Invalid WebSocket message: ${errorMessage(cause)}`
+
+      function closeSocket() {
+        const current = socket;
+        socket = null;
+        clearTransportTimers();
+        if (current == null) return;
+        current.onopen = null;
+        current.onmessage = null;
+        current.onerror = null;
+        current.onclose = null;
+        if (current.readyState < SOCKET_CLOSING) current.close();
+      }
+
+      function eligible() {
+        return active && isFocused() && isOnline();
+      }
+
+      function scheduleReconnect(reason: string) {
+        if (!active) return;
+        if (!isFocused() || !isOnline()) {
+          emitState(isFocused() ? 'offline' : 'paused', null);
+          return;
+        }
+        if (reconnectTimer != null) return;
+        emitState('reconnecting', reason);
+        const exponentialDelay = Math.min(
+          MAX_RECONNECT_DELAY_MS,
+          1_000 * 2 ** Math.min(reconnectAttempt, 10)
         );
+        const delay = Math.round(
+          exponentialDelay / 2 + random() * (exponentialDelay / 2)
+        );
+        reconnectAttempt += 1;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          openSocket();
+        }, delay);
       }
-    };
-    socket.onerror = () => {
-      this.failSocket(socket, generation, 'WebSocket connection error');
-    };
-    socket.onclose = (event) => {
-      const detail =
-        event.reason != null && event.reason.length > 0
-          ? event.reason
-          : `code ${event.code ?? 'unknown'}`;
-      this.handleSocketClose(
-        socket,
-        generation,
-        this.failureReason ?? `Live connection closed (${detail})`
-      );
-    };
-  }
 
-  private handleMessage(
-    envelope: MarketWebSocketEnvelope<TMessage>,
-    socket: WebSocketLike,
-    generation: number
-  ): void {
-    if (envelope.kind === 'market') {
-      this.topics.get(envelope.topic)?.listeners.forEach((listener) =>
-        listener({
-          type: 'message',
-          topic: envelope.topic,
-          generation,
-          message: envelope.message,
-        })
-      );
-      return;
-    }
-    if (envelope.kind === 'error') {
-      this.failSocket(
-        socket,
-        generation,
-        `${this.protocol.label} WebSocket error: ${envelope.message}`
-      );
-      return;
-    }
-    if (envelope.kind !== 'subscribed') {
-      return;
-    }
+      function handleClose(
+        target: WebSocketLike,
+        targetGeneration: number,
+        reason: string
+      ) {
+        if (!isCurrent(target, targetGeneration)) return;
+        socket = null;
+        clearTransportTimers();
+        scheduleReconnect(reason);
+      }
 
-    const pending = this.findPending(envelope.acknowledgement);
-    if (pending == null) {
-      return;
-    }
-    clearTimeout(pending.value.timer);
-    this.pending.delete(pending.acknowledgement);
-    const subscription = this.topics.get(pending.value.topic);
-    if (subscription == null) {
-      return;
-    }
-    subscription.pendingAcknowledgement = null;
-    subscription.readyGeneration = generation;
-    subscription.listeners.forEach((listener) =>
-      listener({
-        type: 'ready',
-        topic: pending.value.topic,
-        generation,
-      })
-    );
+      function failSocket(
+        target: WebSocketLike,
+        targetGeneration: number,
+        reason: string
+      ) {
+        if (!isCurrent(target, targetGeneration)) return;
+        failureReason = reason;
+        if (target.readyState < SOCKET_CLOSING) target.close();
+        if (closeFallbackTimer == null) {
+          closeFallbackTimer = setTimeout(() => {
+            closeFallbackTimer = null;
+            handleClose(target, targetGeneration, reason);
+          }, 0);
+        }
+      }
 
-    if (
-      [...this.topics.values()].every(
-        (value) => value.readyGeneration === generation
-      )
-    ) {
-      this.reconnectAttempt = 0;
-      this.emitState('connected', null);
-    }
-  }
+      function markReady(target: WebSocketLike, targetGeneration: number) {
+        if (!isCurrent(target, targetGeneration)) return;
+        if (readyGeneration === targetGeneration) return;
+        readyGeneration = targetGeneration;
+        if (subscribeTimer != null) clearTimeout(subscribeTimer);
+        subscribeTimer = null;
+        reconnectAttempt = 0;
+        listener({ type: 'ready', topic, generation: targetGeneration });
+        emitState('connected', null);
+      }
 
-  private findPending(
-    acknowledgement: string | null
-  ): { acknowledgement: string; value: PendingSubscription } | null {
-    if (acknowledgement != null) {
-      const value = this.pending.get(acknowledgement);
-      return value == null ? null : { acknowledgement, value };
-    }
-    if (this.pending.size !== 1) {
-      return null;
-    }
-    const entry = this.pending.entries().next().value;
-    return entry == null
-      ? null
-      : { acknowledgement: entry[0], value: entry[1] };
-  }
+      function handleEnvelope(
+        envelope: MarketWebSocketEnvelope<TMessage>,
+        target: WebSocketLike,
+        targetGeneration: number
+      ) {
+        if (envelope.kind === 'market') {
+          if (envelope.topic === topic) {
+            listener({
+              type: 'message',
+              topic,
+              generation: targetGeneration,
+              message: envelope.message,
+            });
+          }
+          return;
+        }
+        if (envelope.kind === 'ready') {
+          if (envelope.topic == null || envelope.topic === topic) {
+            markReady(target, targetGeneration);
+          }
+          return;
+        }
+        if (envelope.kind === 'error') {
+          failSocket(
+            target,
+            targetGeneration,
+            `${protocol.label} WebSocket error: ${envelope.message}`
+          );
+        }
+      }
 
-  private sendSubscribe(
-    topic: string,
-    socket: WebSocketLike,
-    generation: number
-  ): void {
-    const subscription = this.topics.get(topic);
-    if (
-      subscription == null ||
-      subscription.readyGeneration === generation ||
-      subscription.pendingAcknowledgement != null
-    ) {
-      return;
-    }
-    const request = this.protocol.subscribe(topic, this.nextRequestId('sub'));
-    socket.send(request.data);
-    const timer = setTimeout(() => {
-      this.pending.delete(request.acknowledgement);
-      subscription.pendingAcknowledgement = null;
-      this.failSocket(
-        socket,
-        generation,
-        `Subscription timed out for ${topic}`
-      );
-    }, SUBSCRIBE_TIMEOUT_MS);
-    subscription.pendingAcknowledgement = request.acknowledgement;
-    this.pending.set(request.acknowledgement, { topic, timer });
-  }
+      function startHeartbeat(target: WebSocketLike, targetGeneration: number) {
+        const heartbeat = protocol.heartbeat;
+        if (heartbeat == null) return;
+        heartbeatTimer = setInterval(() => {
+          if (
+            isCurrent(target, targetGeneration) &&
+            target.readyState === SOCKET_OPEN
+          ) {
+            target.send(heartbeat.message);
+          }
+        }, heartbeat.intervalMs);
+      }
 
-  private failSocket(
-    socket: WebSocketLike,
-    generation: number,
-    reason: string
-  ): void {
-    if (!this.isCurrent(socket, generation)) {
-      return;
-    }
-    this.failureReason = reason;
-    if (socket.readyState < SOCKET_CLOSING) {
-      socket.close();
-    }
-    if (this.closeFallbackTimer == null) {
-      this.closeFallbackTimer = setTimeout(() => {
-        this.closeFallbackTimer = null;
-        this.handleSocketClose(socket, generation, reason);
-      }, 0);
-    }
-  }
+      function startSubscription(
+        target: WebSocketLike,
+        targetGeneration: number
+      ) {
+        const subscribe = protocol.subscribe;
+        if (subscribe == null) {
+          markReady(target, targetGeneration);
+          return;
+        }
+        try {
+          target.send(subscribe(topic));
+        } catch (cause) {
+          failSocket(target, targetGeneration, errorMessage(cause));
+          return;
+        }
+        subscribeTimer = setTimeout(() => {
+          failSocket(
+            target,
+            targetGeneration,
+            `Subscription timed out for ${topic}`
+          );
+        }, SUBSCRIBE_TIMEOUT_MS);
+      }
 
-  private handleSocketClose(
-    socket: WebSocketLike,
-    generation: number,
-    reason: string
-  ): void {
-    if (!this.isCurrent(socket, generation)) {
-      return;
-    }
-    this.socket = null;
-    this.clearTransportTimers();
-    this.topics.forEach((subscription) => {
-      subscription.readyGeneration = null;
-      subscription.pendingAcknowledgement = null;
-    });
-    this.scheduleReconnect(reason);
-  }
+      function openSocket() {
+        if (!eligible() || socket != null || reconnectTimer != null) return;
+        emitState(generation === 0 ? 'connecting' : 'reconnecting', null);
+        const targetGeneration = generation + 1;
+        generation = targetGeneration;
+        failureReason = null;
+        let target: WebSocketLike;
+        try {
+          target = createSocket(protocol.url(topic));
+        } catch (cause) {
+          scheduleReconnect(errorMessage(cause));
+          return;
+        }
+        socket = target;
+        openTimer = setTimeout(() => {
+          failSocket(
+            target,
+            targetGeneration,
+            'WebSocket connection timed out'
+          );
+        }, OPEN_TIMEOUT_MS);
 
-  private scheduleReconnect(reason: string): void {
-    if (this.topics.size === 0) {
-      return;
-    }
-    if (!this.isFocused() || !this.isOnline()) {
-      this.emitState(this.isFocused() ? 'offline' : 'paused', null);
-      return;
-    }
-    if (this.reconnectTimer != null) {
-      return;
-    }
-    this.emitState('reconnecting', reason);
-    const exponentialDelay = Math.min(
-      MAX_RECONNECT_DELAY_MS,
-      1_000 * 2 ** Math.min(this.reconnectAttempt, 10)
-    );
-    const delay = Math.round(
-      exponentialDelay / 2 + this.random() * (exponentialDelay / 2)
-    );
-    this.reconnectAttempt += 1;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.ensureConnection();
-    }, delay);
-  }
+        target.onopen = () => {
+          if (!isCurrent(target, targetGeneration)) return;
+          if (openTimer != null) clearTimeout(openTimer);
+          openTimer = null;
+          startHeartbeat(target, targetGeneration);
+          startSubscription(target, targetGeneration);
+        };
+        target.onmessage = (event) => {
+          if (!isCurrent(target, targetGeneration)) return;
+          try {
+            handleEnvelope(
+              protocol.parse(event.data),
+              target,
+              targetGeneration
+            );
+          } catch (cause) {
+            failSocket(
+              target,
+              targetGeneration,
+              `Invalid WebSocket message: ${errorMessage(cause)}`
+            );
+          }
+        };
+        target.onerror = () => {
+          failSocket(target, targetGeneration, 'WebSocket connection error');
+        };
+        target.onclose = (event) => {
+          const detail =
+            event.reason != null && event.reason.length > 0
+              ? event.reason
+              : `code ${event.code ?? 'unknown'}`;
+          handleClose(
+            target,
+            targetGeneration,
+            failureReason ?? `Live connection closed (${detail})`
+          );
+        };
+      }
 
-  private closeCurrentSocket(): void {
-    const socket = this.socket;
-    this.socket = null;
-    this.clearTransportTimers();
-    this.topics.forEach((subscription) => {
-      subscription.readyGeneration = null;
-      subscription.pendingAcknowledgement = null;
-    });
-    if (socket == null) {
-      return;
-    }
-    socket.onopen = null;
-    socket.onmessage = null;
-    socket.onerror = null;
-    socket.onclose = null;
-    if (socket.readyState < SOCKET_CLOSING) {
-      socket.close();
-    }
-  }
+      function handleEligibilityChange() {
+        if (!active) return;
+        if (!isFocused() || !isOnline()) {
+          clearReconnectTimer();
+          closeSocket();
+          emitState(isFocused() ? 'offline' : 'paused', null);
+          return;
+        }
+        openSocket();
+      }
 
-  private clearPending(acknowledgement: string | null): void {
-    if (acknowledgement == null) {
-      return;
-    }
-    const pending = this.pending.get(acknowledgement);
-    if (pending != null) {
-      clearTimeout(pending.timer);
-      this.pending.delete(acknowledgement);
-    }
-  }
+      const removeFocusListener = subscribeFocused(handleEligibilityChange);
+      const removeOnlineListener = subscribeOnline(handleEligibilityChange);
+      handleEligibilityChange();
 
-  private clearTransportTimers(): void {
-    this.clearOpenTimer();
-    if (this.closeFallbackTimer != null) {
-      clearTimeout(this.closeFallbackTimer);
-      this.closeFallbackTimer = null;
-    }
-    this.pending.forEach((value) => clearTimeout(value.timer));
-    this.pending.clear();
-  }
-
-  private clearOpenTimer(): void {
-    if (this.openTimer != null) {
-      clearTimeout(this.openTimer);
-      this.openTimer = null;
-    }
-  }
-
-  private clearReconnectTimer(): void {
-    if (this.reconnectTimer != null) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-  }
-
-  private emitState(state: MarketWebSocketState, error: string | null): void {
-    if (state === this.state && error === this.stateError) {
-      return;
-    }
-    this.state = state;
-    this.stateError = error;
-    const listeners = new Set<
-      (event: MarketWebSocketEvent<TMessage>) => void
-    >();
-    this.topics.forEach((topic) =>
-      topic.listeners.forEach((listener) => listeners.add(listener))
-    );
-    listeners.forEach((listener) => listener({ type: 'state', state, error }));
-  }
-
-  private nextRequestId(prefix: string): string {
-    this.requestSequence += 1;
-    return `${prefix}-${this.generation}-${this.requestSequence}`;
-  }
-
-  private isCurrent(socket: WebSocketLike, generation: number): boolean {
-    return this.socket === socket && this.generation === generation;
-  }
+      return {
+        retry() {
+          reconnectAttempt = 0;
+          clearReconnectTimer();
+          closeSocket();
+          openSocket();
+        },
+        reportProtocolError(targetGeneration, cause) {
+          if (targetGeneration !== generation || socket == null) return;
+          failSocket(
+            socket,
+            targetGeneration,
+            `Invalid ${protocol.label} stream data: ${errorMessage(cause)}`
+          );
+        },
+        close() {
+          if (!active) return;
+          active = false;
+          clearReconnectTimer();
+          closeSocket();
+          removeFocusListener();
+          removeOnlineListener();
+        },
+      };
+    },
+  };
 }

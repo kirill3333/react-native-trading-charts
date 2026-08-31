@@ -11,7 +11,7 @@ import { type BinanceWebSocketPayload } from '../api/binance';
 import { type HyperliquidWebSocketPayload } from '../api/hyperliquid';
 import { binanceProtocol, hyperliquidProtocol } from '../api/marketData';
 import {
-  MarketWebSocketClient,
+  createMarketWebSocketFactory,
   type MarketWebSocketEvent,
   type MarketWebSocketProtocol,
 } from '../api/marketWebSocket';
@@ -88,26 +88,33 @@ class FakeLifecycle {
   }
 }
 
-function setup<TMessage>(protocol: MarketWebSocketProtocol<TMessage>) {
+function setup<TMessage>(
+  protocol: MarketWebSocketProtocol<TMessage>,
+  topic: string
+) {
   const sockets: FakeSocket[] = [];
+  const urls: string[] = [];
+  const events: Array<MarketWebSocketEvent<TMessage>> = [];
   const lifecycle = new FakeLifecycle();
-  const client = new MarketWebSocketClient(protocol, {
+  const websocket = createMarketWebSocketFactory(protocol, {
     ...lifecycle.options(),
     random: () => 0,
-    createSocket: () => {
+    createSocket: (url) => {
+      urls.push(url);
       const socket = new FakeSocket();
       sockets.push(socket);
       return socket;
     },
   });
-  return { client, lifecycle, sockets };
+  const connection = websocket.connect(topic, (event) => events.push(event));
+  return { connection, events, lifecycle, sockets, urls };
 }
 
 function sentMessages(socket: FakeSocket): ClientMessage[] {
   return socket.sent.map((message) => JSON.parse(message));
 }
 
-describe('MarketWebSocketClient', () => {
+describe('single-topic market WebSocket', () => {
   beforeEach(() => {
     jest.useFakeTimers();
   });
@@ -115,21 +122,15 @@ describe('MarketWebSocketClient', () => {
     jest.useRealTimers();
   });
 
-  it('uses Binance request ids to acknowledge and route subscriptions', () => {
-    const { client, sockets } = setup(binanceProtocol);
-    const events: Array<MarketWebSocketEvent<unknown>> = [];
-    client.subscribe('btcusdt@kline_1s', (event) => events.push(event));
+  it('opens a raw Binance stream and routes its candles', () => {
+    const { connection, events, sockets, urls } = setup(
+      binanceProtocol,
+      'btcusdt@kline_1s'
+    );
+    expect(urls).toEqual(['wss://stream.binance.com:9443/ws/btcusdt@kline_1s']);
     const socket = sockets[0]!;
     socket.open();
-    const request = sentMessages(socket)[0]!;
-    expect(request).toMatchObject({
-      method: 'SUBSCRIBE',
-      params: ['btcusdt@kline_1s'],
-    });
-    if (request.id == null) {
-      throw new Error('Expected a Binance subscription request id');
-    }
-    socket.message({ result: null, id: request.id });
+    expect(socket.sent).toEqual([]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'ready',
@@ -147,12 +148,14 @@ describe('MarketWebSocketClient', () => {
       type: 'message',
       topic: 'btcusdt@kline_1s',
     });
+    connection.close();
   });
 
-  it('uses Hyperliquid topics as subscription acknowledgements', () => {
-    const { client, sockets } = setup(hyperliquidProtocol);
-    const events: Array<MarketWebSocketEvent<unknown>> = [];
-    client.subscribe('candle:xyz:MEME:1m', (event) => events.push(event));
+  it('acknowledges Hyperliquid subscriptions and sends heartbeats', () => {
+    const { connection, events, sockets } = setup(
+      hyperliquidProtocol,
+      'candle:xyz:MEME:1m'
+    );
     const socket = sockets[0]!;
     socket.open();
     expect(sentMessages(socket)[0]).toMatchObject({
@@ -172,27 +175,36 @@ describe('MarketWebSocketClient', () => {
         topic: 'candle:xyz:MEME:1m',
       })
     );
+    socket.message({
+      channel: 'subscriptionResponse',
+      data: {
+        method: 'subscribe',
+        subscription: { coin: 'xyz:MEME', interval: '1m', type: 'candle' },
+      },
+    });
+    expect(events.filter((event) => event.type === 'ready')).toHaveLength(1);
+    jest.advanceTimersByTime(45_000);
+    expect(sentMessages(socket).at(-1)).toEqual({ method: 'ping' });
+    connection.close();
   });
 
   it('rejects unsupported Hyperliquid intervals in subscription topics', () => {
-    expect(() =>
-      hyperliquidProtocol.subscribe('candle:BTC:2m', 'request-1')
-    ).toThrow('Invalid Hyperliquid candle interval: 2m');
+    expect(() => hyperliquidProtocol.subscribe?.('candle:BTC:2m')).toThrow(
+      'Invalid Hyperliquid candle interval: 2m'
+    );
   });
 
-  it('reconnects, resubscribes, pauses and waits offline', () => {
-    const { client, lifecycle, sockets } = setup(binanceProtocol);
-    const events: Array<MarketWebSocketEvent<unknown>> = [];
-    client.subscribe('btcusdt@kline_1s', (event) => events.push(event));
+  it('reconnects, pauses and waits offline', () => {
+    const { connection, events, lifecycle, sockets } = setup(
+      binanceProtocol,
+      'btcusdt@kline_1s'
+    );
     sockets[0]!.open();
     sockets[0]!.error();
     jest.advanceTimersByTime(500);
     expect(sockets).toHaveLength(2);
     sockets[1]!.open();
-    expect(sentMessages(sockets[1]!)[0]).toMatchObject({
-      method: 'SUBSCRIBE',
-      params: ['btcusdt@kline_1s'],
-    });
+    expect(sockets[1]!.sent).toEqual([]);
 
     lifecycle.setFocused(false);
     expect(events.at(-1)).toMatchObject({ type: 'state', state: 'paused' });
@@ -202,5 +214,6 @@ describe('MarketWebSocketClient', () => {
     expect(events.at(-1)).toMatchObject({ type: 'state', state: 'offline' });
     lifecycle.setOnline(true);
     expect(sockets).toHaveLength(4);
+    connection.close();
   });
 });

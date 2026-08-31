@@ -27,7 +27,8 @@ import {
   type HyperliquidTicker,
 } from './hyperliquid';
 import {
-  MarketWebSocketClient,
+  createMarketWebSocketFactory,
+  type MarketWebSocketFactory,
   type MarketWebSocketProtocol,
 } from './marketWebSocket';
 
@@ -47,7 +48,7 @@ export type MarketDataAdapter<
 > = {
   provider: MarketProvider;
   maxCandles: number;
-  websocket: MarketWebSocketClient<TMessage>;
+  websocket: MarketWebSocketFactory<TMessage>;
   chartIdFor(symbol: string, interval: TInterval): string;
   topicFor(symbol: string, interval: TInterval): string;
   parseMarketMessage(message: TMessage): OhlcCandle[];
@@ -83,38 +84,15 @@ export function hyperliquidChartIdFor(
 
 export const binanceProtocol: MarketWebSocketProtocol<BinanceMarketMessage> = {
   label: 'Binance',
-  url: BINANCE_WEBSOCKET_URL,
+  url: (topic) => `${BINANCE_WEBSOCKET_URL}/${topic}`,
   parse(rawMessage) {
     const envelope = parseBinanceWebSocketEnvelope(rawMessage);
     if (envelope.kind === 'market') {
       return { kind: 'market', topic: envelope.topic, message: envelope };
     }
-    if (envelope.kind === 'subscribed') {
-      return {
-        kind: 'subscribed',
-        acknowledgement: envelope.requestId,
-      };
-    }
     return envelope.kind === 'error'
       ? { kind: 'error', message: envelope.message }
       : { kind: 'control' };
-  },
-  subscribe(topic, requestId) {
-    return {
-      data: JSON.stringify({
-        method: 'SUBSCRIBE',
-        params: [topic],
-        id: requestId,
-      }),
-      acknowledgement: requestId,
-    };
-  },
-  unsubscribe(topic, requestId) {
-    return JSON.stringify({
-      method: 'UNSUBSCRIBE',
-      params: [topic],
-      id: requestId,
-    });
   },
 };
 
@@ -140,33 +118,28 @@ function hyperliquidSubscription(
 export const hyperliquidProtocol: MarketWebSocketProtocol<HyperliquidMarketMessage> =
   {
     label: 'Hyperliquid',
-    url: HYPERLIQUID_WEBSOCKET_URL,
+    url: () => HYPERLIQUID_WEBSOCKET_URL,
     parse(rawMessage) {
       const envelope = parseHyperliquidWebSocketEnvelope(rawMessage);
       if (envelope.kind === 'market') {
         return { kind: 'market', topic: envelope.topic, message: envelope };
       }
       if (envelope.kind === 'subscribed') {
-        return { kind: 'subscribed', acknowledgement: envelope.topic };
+        return { kind: 'ready', topic: envelope.topic };
       }
       return envelope.kind === 'error'
         ? { kind: 'error', message: envelope.message }
         : { kind: 'control' };
     },
     subscribe(topic) {
-      return {
-        data: JSON.stringify({
-          method: 'subscribe',
-          subscription: hyperliquidSubscription(topic),
-        }),
-        acknowledgement: topic,
-      };
-    },
-    unsubscribe(topic) {
       return JSON.stringify({
-        method: 'unsubscribe',
+        method: 'subscribe',
         subscription: hyperliquidSubscription(topic),
       });
+    },
+    heartbeat: {
+      intervalMs: 45_000,
+      message: JSON.stringify({ method: 'ping' }),
     },
   };
 
@@ -192,7 +165,7 @@ export const binanceMarketData: MarketDataAdapter<
 > = {
   provider: 'binance',
   maxCandles: 20_000,
-  websocket: new MarketWebSocketClient(binanceProtocol),
+  websocket: createMarketWebSocketFactory(binanceProtocol),
   chartIdFor,
   topicFor: klineTopic,
   parseMarketMessage: parseKlineMarketMessage,
@@ -237,7 +210,7 @@ export const hyperliquidMarketData: MarketDataAdapter<
 > = {
   provider: 'hyperliquid',
   maxCandles: 6_000,
-  websocket: new MarketWebSocketClient(hyperliquidProtocol),
+  websocket: createMarketWebSocketFactory(hyperliquidProtocol),
   chartIdFor: hyperliquidChartIdFor,
   topicFor: hyperliquidCandleTopic,
   parseMarketMessage: parseHyperliquidCandleMarketMessage,

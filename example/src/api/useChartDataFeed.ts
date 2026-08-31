@@ -12,7 +12,10 @@ import {
   type AllTimeExtremes,
 } from '../allTimeExtremes';
 import { type MarketDataAdapter } from './marketData';
-import { type MarketWebSocketEvent } from './marketWebSocket';
+import {
+  type MarketWebSocketConnection,
+  type MarketWebSocketEvent,
+} from './marketWebSocket';
 
 export type ChartConnectionStatus =
   | 'loading'
@@ -37,6 +40,12 @@ type ChartConnectionSnapshot = {
 };
 
 type CandlePages = InfiniteData<OhlcCandle[], unknown>;
+
+type LiveSession = {
+  generation: number;
+  synchronized: boolean;
+  bufferedCandles: Map<number, OhlcCandle>;
+};
 
 const EMPTY_CONNECTION: ChartConnectionSnapshot = {
   status: 'loading',
@@ -88,11 +97,8 @@ export function useChartDataFeed<
   const [allTimeExtremes, setAllTimeExtremes] =
     useState<AllTimeExtremes | null>(null);
   const appliedPageCountRef = useRef(0);
-  const synchronizedGenerationRef = useRef<number | null>(null);
-  const activeGenerationRef = useRef<number | null>(null);
-  const buffersRef = useRef(new Map<number, Map<number, OhlcCandle>>());
-  const hadLiveDataRef = useRef(false);
-  const historyDataRef = useRef<CandlePages | undefined>(undefined);
+  const liveHistoryAppliedRef = useRef(false);
+  const websocketRef = useRef<MarketWebSocketConnection | null>(null);
 
   const historyQuery = useInfiniteQuery<
     OhlcCandle[],
@@ -118,14 +124,10 @@ export function useChartDataFeed<
     },
     staleTime: Infinity,
   });
-  historyDataRef.current = historyQuery.data;
 
   useEffect(() => {
     appliedPageCountRef.current = 0;
-    synchronizedGenerationRef.current = null;
-    activeGenerationRef.current = null;
-    buffersRef.current.clear();
-    hadLiveDataRef.current = false;
+    liveHistoryAppliedRef.current = false;
     setAllTimeExtremes(null);
     setConnection({ ...EMPTY_CONNECTION, lastPrice: ticker.lastPrice });
   }, [sessionKey, ticker.lastPrice]);
@@ -137,7 +139,7 @@ export function useChartDataFeed<
     }
     const appliedPageCount = appliedPageCountRef.current;
     if (appliedPageCount === 0) {
-      if (synchronizedGenerationRef.current == null) {
+      if (!liveHistoryAppliedRef.current) {
         const candles = mergeCandles(pages, adapter.maxCandles);
         charts.setHistory(chartId, candles);
         setAllTimeExtremes(calculateAllTimeExtremes(candles));
@@ -178,15 +180,26 @@ export function useChartDataFeed<
   }, [adapter, historyQuery.data, historyQuery.error]);
 
   useEffect(() => {
-    let active = true;
+    let liveSession: LiveSession | null = null;
+    let hasBeenLive = false;
+
+    const sessionFor = (generation: number): LiveSession => {
+      if (liveSession?.generation === generation) return liveSession;
+      liveSession = {
+        generation,
+        synchronized: false,
+        bufferedCandles: new Map(),
+      };
+      return liveSession;
+    };
 
     const synchronize = async (generation: number) => {
-      activeGenerationRef.current = generation;
-      synchronizedGenerationRef.current = null;
+      const session = sessionFor(generation);
+      session.synchronized = false;
       let synchronizationStatus: ChartConnectionStatus = 'historical';
-      if (hadLiveDataRef.current) {
+      if (hasBeenLive) {
         synchronizationStatus = 'reconnecting';
-      } else if (historyDataRef.current == null) {
+      } else if (appliedPageCountRef.current === 0) {
         synchronizationStatus = 'loading';
       }
       setConnection((current) => ({
@@ -203,7 +216,12 @@ export function useChartDataFeed<
           staleTime: 0,
           gcTime: 0,
         });
-        if (!active || activeGenerationRef.current !== generation) {
+        if (liveSession !== session) {
+          return;
+        }
+
+        await queryClient.cancelQueries({ queryKey, exact: true });
+        if (liveSession !== session) {
           return;
         }
 
@@ -219,6 +237,7 @@ export function useChartDataFeed<
           adapter.maxCandles
         );
 
+        liveHistoryAppliedRef.current = true;
         queryClient.setQueryData<CandlePages>(queryKey, (current) => ({
           pages: [snapshot, ...(current?.pages.slice(1) ?? [])],
           pageParams: current?.pageParams ?? [undefined],
@@ -228,17 +247,14 @@ export function useChartDataFeed<
           queryClient.getQueryData<CandlePages>(queryKey)?.pages.length ?? 1;
 
         const latestSnapshotTimestamp = snapshot.at(-1)?.timestamp ?? 0;
-        const buffered = [
-          ...(buffersRef.current.get(generation)?.values() ?? []),
-        ]
+        const buffered = [...session.bufferedCandles.values()]
           .filter((candle) => candle.timestamp >= latestSnapshotTimestamp)
           .sort((left, right) => left.timestamp - right.timestamp);
         buffered.forEach((candle) => charts.updateCandle(chartId, candle));
         setAllTimeExtremes(calculateAllTimeExtremes([...merged, ...buffered]));
-        buffersRef.current.clear();
-        synchronizedGenerationRef.current = generation;
-        activeGenerationRef.current = null;
-        hadLiveDataRef.current = true;
+        session.bufferedCandles.clear();
+        session.synchronized = true;
+        hasBeenLive = true;
         setConnection({
           status: 'live',
           error: null,
@@ -246,10 +262,9 @@ export function useChartDataFeed<
             latestPrice(buffered) ?? latestPrice(snapshot) ?? ticker.lastPrice,
         });
       } catch (cause) {
-        if (!active || activeGenerationRef.current !== generation) {
+        if (liveSession !== session) {
           return;
         }
-        activeGenerationRef.current = null;
         setConnection((current) => ({
           ...current,
           status: adapter.isNoDataError(cause) ? 'no-data' : 'error',
@@ -262,27 +277,27 @@ export function useChartDataFeed<
       if (event.type === 'message') {
         try {
           const candles = adapter.parseMarketMessage(event.message);
-          if (synchronizedGenerationRef.current === event.generation) {
+          const session = sessionFor(event.generation);
+          if (session.synchronized) {
             candles.forEach((candle) => charts.updateCandle(chartId, candle));
             setAllTimeExtremes((current) =>
               extendAllTimeExtremes(current, candles)
             );
           } else {
-            const buffer =
-              buffersRef.current.get(event.generation) ?? new Map();
-            candles.forEach((candle) => buffer.set(candle.timestamp, candle));
-            while (buffer.size > 1_000) {
-              const oldest = Math.min(...buffer.keys());
-              buffer.delete(oldest);
+            candles.forEach((candle) =>
+              session.bufferedCandles.set(candle.timestamp, candle)
+            );
+            while (session.bufferedCandles.size > 1_000) {
+              const oldest = Math.min(...session.bufferedCandles.keys());
+              session.bufferedCandles.delete(oldest);
             }
-            buffersRef.current.set(event.generation, buffer);
           }
           const price = latestPrice(candles);
           if (price != null) {
             setConnection((current) => ({ ...current, lastPrice: price }));
           }
         } catch (cause) {
-          adapter.websocket.reportProtocolError(event.generation, cause);
+          websocketRef.current?.reportProtocolError(event.generation, cause);
         }
         return;
       }
@@ -291,14 +306,14 @@ export function useChartDataFeed<
         return;
       }
       if (event.state === 'paused' || event.state === 'offline') {
-        activeGenerationRef.current = null;
-        synchronizedGenerationRef.current = null;
+        liveSession = null;
         setConnection((current) => ({
           ...current,
           status: event.state === 'paused' ? 'paused' : 'offline',
           error: null,
         }));
       } else if (event.state === 'reconnecting') {
+        liveSession = null;
         setConnection((current) => ({
           ...current,
           status: 'reconnecting',
@@ -307,18 +322,18 @@ export function useChartDataFeed<
       } else if (event.state === 'connecting') {
         setConnection((current) => ({
           ...current,
-          status: historyDataRef.current == null ? 'loading' : 'connecting',
+          status: appliedPageCountRef.current === 0 ? 'loading' : 'connecting',
           error: null,
         }));
       }
     };
 
-    const unsubscribe = adapter.websocket.subscribe(topic, handleEvent);
+    const websocket = adapter.websocket.connect(topic, handleEvent);
+    websocketRef.current = websocket;
     return () => {
-      active = false;
-      activeGenerationRef.current = null;
-      synchronizedGenerationRef.current = null;
-      unsubscribe();
+      liveSession = null;
+      websocket.close();
+      if (websocketRef.current === websocket) websocketRef.current = null;
     };
   }, [
     adapter,
@@ -348,8 +363,8 @@ export function useChartDataFeed<
     if (historyQuery.data == null) {
       void historyQuery.refetch();
     }
-    adapter.websocket.retry();
-  }, [adapter.websocket, historyQuery]);
+    websocketRef.current?.retry();
+  }, [historyQuery]);
 
   return useMemo(
     () => ({ ...connection, allTimeExtremes, loadOlder, retry }),
