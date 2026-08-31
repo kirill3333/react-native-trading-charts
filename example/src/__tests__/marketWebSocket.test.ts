@@ -7,14 +7,14 @@ import {
   jest,
 } from '@jest/globals';
 
-import { type BinanceWebSocketPayload } from '../binance';
-import { type HyperliquidWebSocketPayload } from '../hyperliquid';
-import { binanceProtocol, hyperliquidProtocol } from '../marketData';
+import { type BinanceWebSocketPayload } from '../api/binance';
+import { type HyperliquidWebSocketPayload } from '../api/hyperliquid';
+import { binanceProtocol, hyperliquidProtocol } from '../api/marketData';
 import {
   MarketWebSocketClient,
   type MarketWebSocketEvent,
   type MarketWebSocketProtocol,
-} from '../marketWebSocket';
+} from '../api/marketWebSocket';
 
 type TestWebSocketPayload =
   BinanceWebSocketPayload | HyperliquidWebSocketPayload;

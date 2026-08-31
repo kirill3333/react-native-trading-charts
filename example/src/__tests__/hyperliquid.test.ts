@@ -6,7 +6,7 @@ import {
   parseHyperliquidCandlesResponse,
   parseHyperliquidTickersResponse,
   parseHyperliquidWebSocketEnvelope,
-} from '../hyperliquid';
+} from '../api/hyperliquid';
 
 describe('Hyperliquid market data', () => {
   it('parses active perpetual markets and sorts them by notional volume', () => {

@@ -9,7 +9,7 @@ import {
   parseKlineResponse,
   parseKlineWebSocketMessage,
   parseTickersResponse,
-} from '../binance';
+} from '../api/binance';
 
 describe('Binance Spot parsing', () => {
   it('keeps USDT tickers, uses percent values and sorts by quote volume', () => {

@@ -17,8 +17,8 @@ import {
   hyperliquidMarketData,
   type MarketProvider,
   type MarketTicker,
-} from '../marketData';
-import { type HyperliquidTicker } from '../hyperliquid';
+} from '../api/marketData';
+import { type HyperliquidTicker } from '../api/hyperliquid';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 

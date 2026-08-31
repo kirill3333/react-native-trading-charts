@@ -10,7 +10,7 @@ import {
   calculateAllTimeExtremes,
   extendAllTimeExtremes,
   type AllTimeExtremes,
-} from './allTimeExtremes';
+} from '../allTimeExtremes';
 import { type MarketDataAdapter } from './marketData';
 import { type MarketWebSocketEvent } from './marketWebSocket';
 
@@ -160,9 +160,7 @@ export function useChartDataFeed<
       );
       if (older.length > 0) {
         charts.prependHistory(chartId, older);
-        setAllTimeExtremes((current) =>
-          extendAllTimeExtremes(current, older)
-        );
+        setAllTimeExtremes((current) => extendAllTimeExtremes(current, older));
       }
       appliedPageCountRef.current = pages.length;
     }
@@ -236,9 +234,7 @@ export function useChartDataFeed<
           .filter((candle) => candle.timestamp >= latestSnapshotTimestamp)
           .sort((left, right) => left.timestamp - right.timestamp);
         buffered.forEach((candle) => charts.updateCandle(chartId, candle));
-        setAllTimeExtremes(
-          calculateAllTimeExtremes([...merged, ...buffered])
-        );
+        setAllTimeExtremes(calculateAllTimeExtremes([...merged, ...buffered]));
         buffersRef.current.clear();
         synchronizedGenerationRef.current = generation;
         activeGenerationRef.current = null;

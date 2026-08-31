@@ -1,22 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
 } from '@react-navigation/native';
-import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 import {
   ActivityIndicator,
-  FlatList,
-  Pressable,
   StyleSheet,
-  Text,
   View,
-  type ListRenderItem,
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  TradingCharts,
   type ChartResolution,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
@@ -25,26 +19,34 @@ import {
   BINANCE_INTERVALS,
   type BinanceInterval,
   type BinanceTicker,
-} from '../binance';
+} from '../api/binance';
 import {
   HYPERLIQUID_INTERVALS,
   type HyperliquidInterval,
   type HyperliquidTicker,
-} from '../hyperliquid';
-import { InteractiveChart } from '../components/InteractiveChart';
+} from '../api/hyperliquid';
 import {
   binanceMarketData,
   chartIdFor,
   hyperliquidChartIdFor,
   hyperliquidMarketData,
   type MarketDataAdapter,
-} from '../marketData';
-import { APP_THEMES, type AppThemeColors } from '../theme';
-import { useAppTheme } from '../themeContext';
+} from '../api/marketData';
 import {
   useChartDataFeed,
   type ChartConnectionStatus,
-} from '../useChartDataFeed';
+} from '../api/useChartDataFeed';
+import { ChartControls } from '../components/ChartControls';
+import { ChartErrorBanner } from '../components/ChartErrorBanner';
+import { ChartHeader } from '../components/ChartHeader';
+import { InteractiveChart } from '../components/InteractiveChart';
+import {
+  TimeIntervalSelector,
+  type TimeIntervalOption,
+} from '../components/TimeIntervalSelector';
+import { useChartControlsStore } from '../stores/chartControlsStore';
+import { APP_THEMES, type AppThemeColors } from '../theme';
+import { useAppTheme } from '../themeContext';
 
 export type ChartRouteParams =
   | {
@@ -68,24 +70,6 @@ type PriceTicker = {
   minMove: number;
 };
 
-const priceFormatters = new Map<number, Intl.NumberFormat>();
-
-function priceFormatter(precision: number): Intl.NumberFormat {
-  const cached = priceFormatters.get(precision);
-  if (cached) return cached;
-
-  const formatter = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: precision,
-    maximumFractionDigits: precision,
-  });
-  priceFormatters.set(precision, formatter);
-  return formatter;
-}
-
-function formatPrice(value: number, precision: number): string {
-  return priceFormatter(precision).format(value);
-}
-
 type ConnectionBadgeProps = {
   status: ChartConnectionStatus;
 };
@@ -104,40 +88,19 @@ function ConnectionBadge({ status }: ConnectionBadgeProps) {
     );
   }
 
-  let label = 'Connecting live data…';
-  if (status === 'loading') {
-    label = 'Loading history…';
-  } else if (status === 'reconnecting') {
-    label = 'Resyncing live data…';
-  } else if (status === 'offline') {
-    label = 'Waiting for internet…';
-  } else if (status === 'paused') {
-    label = 'Paused in background';
-  }
-
   return (
     <View pointerEvents="none" style={styles.connectionBadge}>
       {status !== 'paused' && status !== 'offline' ? (
         <ActivityIndicator color={theme.colors.accentText} size="small" />
       ) : null}
-      <Text
-        style={[
-          styles.connectionText,
-          (status === 'paused' || status === 'offline') &&
-            styles.connectionTextWithoutSpinner,
-        ]}
-      >
-        {label}
-      </Text>
     </View>
   );
 }
 
-type IntervalOption<TInterval extends string> = {
-  value: TInterval;
-  label: string;
-  resolution: ChartResolution;
-};
+type IntervalOption<TInterval extends string> =
+  TimeIntervalOption<TInterval> & {
+    resolution: ChartResolution;
+  };
 
 type ChartContentProps<
   TTicker extends PriceTicker,
@@ -171,35 +134,38 @@ function ChartContent<
   const navigation = useNavigation();
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
-  const [isChartHalfHeight, setIsChartHalfHeight] = useState(false);
-  const [showVolume, setShowVolume] = useState(true);
-  const [showRsi, setShowRsi] = useState(true);
-  const [showMacd, setShowMacd] = useState(false);
-  const [fullChartHeight, setFullChartHeight] = useState<number | null>(null);
+  const showVolume = useChartControlsStore((state) => state.showVolume);
+  const showRsi = useChartControlsStore((state) => state.showRsi);
+  const showMacd = useChartControlsStore((state) => state.showMacd);
+  const isChartHalfHeight = useChartControlsStore(
+    (state) => state.isChartHalfHeight
+  );
+  const fullChartHeight = useChartControlsStore(
+    (state) => state.fullChartHeight
+  );
+  const activateChart = useChartControlsStore((state) => state.activateChart);
+  const setFullChartHeight = useChartControlsStore(
+    (state) => state.setFullChartHeight
+  );
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? { unit: 'minute' as const };
 
-  const {
-    status,
-    error,
-    lastPrice,
-    allTimeExtremes,
-    loadOlder,
-    retry,
-  } = useChartDataFeed(adapter, ticker, interval, chartId);
+  const { status, error, lastPrice, allTimeExtremes, loadOlder, retry } =
+    useChartDataFeed(adapter, ticker, interval, chartId);
   const displayedPrice = lastPrice ?? ticker.lastPrice;
-  const formattedPrice = useMemo(
-    () => formatPrice(displayedPrice, ticker.precision),
-    [displayedPrice, ticker.precision]
-  );
 
-  const handleChartViewportLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextHeight = event.nativeEvent.layout.height;
-    setFullChartHeight((currentHeight) =>
-      currentHeight === nextHeight ? currentHeight : nextHeight
-    );
-  }, []);
+  useLayoutEffect(() => {
+    activateChart(chartId);
+  }, [activateChart, chartId]);
+
+  const handleChartViewportLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextHeight = event.nativeEvent.layout.height;
+      setFullChartHeight(nextHeight);
+    },
+    [setFullChartHeight]
+  );
 
   const changeInterval = useCallback(
     (nextInterval: TInterval) => {
@@ -228,98 +194,37 @@ function ChartContent<
     [loadOlder]
   );
 
-  const renderInterval = useCallback<ListRenderItem<IntervalOption<TInterval>>>(
-    ({ item }) => {
-      const selected = item.value === interval;
-      return (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ selected }}
-          onPress={() => changeInterval(item.value)}
-          style={({ pressed }) => [
-            styles.intervalButton,
-            selected && styles.intervalButtonSelected,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text
-            style={selected ? styles.intervalTextSelected : styles.intervalText}
-          >
-            {item.label}
-          </Text>
-        </Pressable>
-      );
-    },
-    [changeInterval, interval, styles]
-  );
-
   const hasError = status === 'error' || status === 'no-data';
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
-        <View style={styles.chartHeader}>
-          <Pressable
-            accessibilityLabel="Back to markets"
-            accessibilityRole="button"
-            hitSlop={12}
-            onPress={() => navigation.goBack()}
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.backIcon}>‹</Text>
-          </Pressable>
-          <View style={styles.chartTitleBlock}>
-            <Text style={styles.chartTitle}>
-              {baseAsset}
-              <Text style={styles.quoteSymbol}> / {quoteAsset}</Text>
-            </Text>
-            <Text style={styles.chartSubtitle}>{venueLabel}</Text>
-          </View>
-          <View style={styles.headerPriceBlock}>
-            <Text style={styles.headerPrice}>{formattedPrice}</Text>
-            <Text
-              style={
-                ticker.change24hPercent >= 0
-                  ? styles.positiveText
-                  : styles.negativeText
-              }
-            >
-              {ticker.change24hPercent >= 0 ? '+' : ''}
-              {ticker.change24hPercent.toFixed(2)}%
-            </Text>
-          </View>
-        </View>
+        <ChartHeader
+          baseAsset={baseAsset}
+          change24hPercent={ticker.change24hPercent}
+          onBack={() => navigation.goBack()}
+          price={displayedPrice}
+          pricePrecision={ticker.precision}
+          quoteAsset={quoteAsset}
+          venueLabel={venueLabel}
+        />
 
-        <FlatList
-          contentContainerStyle={styles.intervalBarContent}
-          data={intervals}
-          horizontal
-          keyExtractor={(item) => item.value}
-          renderItem={renderInterval}
-          showsHorizontalScrollIndicator={false}
-          style={styles.intervalBar}
+        <TimeIntervalSelector
+          intervals={intervals}
+          onSelect={changeInterval}
+          selectedInterval={interval}
         />
 
         {hasError ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={retry}
-            style={({ pressed }) => [
-              styles.chartErrorBanner,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text numberOfLines={2} style={styles.chartErrorText}>
-              {error ??
-                (status === 'no-data'
-                  ? `${venueLabel} returned no data for this market and interval`
-                  : `Could not connect to ${venueLabel}`)}
-            </Text>
-            <Text style={styles.chartErrorRetry}>Try again</Text>
-          </Pressable>
+          <ChartErrorBanner
+            message={
+              error ??
+              (status === 'no-data'
+                ? `${venueLabel} returned no data for this market and interval`
+                : `Could not connect to ${venueLabel}`)
+            }
+            onRetry={retry}
+          />
         ) : null}
 
         <View onLayout={handleChartViewportLayout} style={styles.chartViewport}>
@@ -349,133 +254,7 @@ function ChartContent<
             <ConnectionBadge status={status} />
           </View>
         </View>
-        <View style={styles.chartControls}>
-          <Pressable
-            accessibilityLabel={showMacd ? 'Hide MACD' : 'Show MACD'}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: showMacd }}
-            onPress={() => setShowMacd((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={showMacd ? theme.macd.lineColor : theme.colors.iconMuted}
-              name="ssid-chart"
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={showRsi ? 'Hide RSI' : 'Show RSI'}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: showRsi }}
-            onPress={() => setShowRsi((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={showRsi ? theme.colors.accent : theme.colors.iconMuted}
-              name="show-chart"
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={showVolume ? 'Hide volume' : 'Show volume'}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: showVolume }}
-            onPress={() => setShowVolume((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={
-                showVolume ? theme.colors.positive : theme.colors.iconMuted
-              }
-              name="bar-chart"
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Zoom in chart"
-            accessibilityRole="button"
-            hitSlop={4}
-            onPress={() => TradingCharts.zoom(chartId, 1.25)}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons color={theme.colors.text} name="zoom-in" size={24} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Zoom out chart"
-            accessibilityRole="button"
-            hitSlop={4}
-            onPress={() => TradingCharts.zoom(chartId, 0.8)}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={theme.colors.text}
-              name="zoom-out"
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={
-              isChartHalfHeight
-                ? 'Restore full chart height'
-                : 'Reduce chart to half height'
-            }
-            accessibilityRole="switch"
-            accessibilityState={{
-              checked: isChartHalfHeight,
-              disabled: fullChartHeight == null,
-            }}
-            disabled={fullChartHeight == null}
-            onPress={() =>
-              setIsChartHalfHeight((isHalfHeight) => !isHalfHeight)
-            }
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              fullChartHeight == null && styles.chartControlButtonDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={
-                isChartHalfHeight
-                  ? theme.colors.positive
-                  : theme.colors.accentText
-              }
-              name="height"
-              size={24}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Open chart settings"
-            accessibilityRole="button"
-            hitSlop={4}
-            onPress={() => navigation.navigate('ChartSettings')}
-            style={({ pressed }) => [
-              styles.chartControlButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              color={theme.colors.accentText}
-              name="settings"
-              size={24}
-            />
-          </Pressable>
-        </View>
+        <ChartControls />
       </View>
     </SafeAreaView>
   );
@@ -515,130 +294,9 @@ function createStyles(colors: AppThemeColors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
     screen: { flex: 1, backgroundColor: colors.background },
-    chartHeader: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      minHeight: 72,
-      paddingHorizontal: 12,
-    },
-    backButton: {
-      alignItems: 'center',
-      borderRadius: 20,
-      height: 40,
-      justifyContent: 'center',
-      width: 40,
-    },
-    backIcon: {
-      color: colors.text,
-      fontSize: 38,
-      fontWeight: '300',
-      lineHeight: 38,
-      marginTop: -3,
-    },
-    chartTitleBlock: { flex: 1, marginLeft: 4 },
-    chartTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
-    quoteSymbol: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-    chartSubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-    headerPriceBlock: { alignItems: 'flex-end', paddingRight: 8 },
-    headerPrice: {
-      color: colors.text,
-      fontSize: 14,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-    },
-    positiveText: {
-      color: colors.positive,
-      fontSize: 12,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-      marginTop: 5,
-    },
-    negativeText: {
-      color: colors.negative,
-      fontSize: 12,
-      fontVariant: ['tabular-nums'],
-      fontWeight: '700',
-      marginTop: 5,
-    },
-    intervalBar: {
-      borderBottomColor: colors.borderSubtle,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.borderSubtle,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      flexGrow: 0,
-    },
-    intervalBarContent: {
-      flexDirection: 'row',
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-    },
-    intervalButton: {
-      alignItems: 'center',
-      borderRadius: 8,
-      justifyContent: 'center',
-      marginRight: 6,
-      minWidth: 48,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    intervalButtonSelected: { backgroundColor: colors.accent },
-    intervalText: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      fontWeight: '700',
-    },
-    intervalTextSelected: {
-      color: colors.onAccent,
-      fontSize: 13,
-      fontWeight: '800',
-    },
-    chartErrorBanner: {
-      alignItems: 'center',
-      backgroundColor: colors.errorSurface,
-      borderBottomColor: colors.errorBorder,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      minHeight: 42,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-    },
-    chartErrorText: {
-      color: colors.errorText,
-      flex: 1,
-      fontSize: 12,
-      lineHeight: 16,
-    },
-    chartErrorRetry: {
-      color: colors.accentText,
-      fontSize: 12,
-      fontWeight: '700',
-      marginLeft: 12,
-    },
     chartViewport: { flex: 1 },
     chartContainer: { position: 'relative' },
     chartContainerExpanded: { flex: 1, position: 'relative' },
-    chartControls: {
-      alignItems: 'center',
-      borderTopColor: colors.borderSubtle,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      justifyContent: 'center',
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    chartControlButton: {
-      alignItems: 'center',
-      backgroundColor: colors.control,
-      borderColor: colors.border,
-      borderRadius: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      height: 40,
-      justifyContent: 'center',
-      marginHorizontal: 4,
-      minWidth: 48,
-      width: 48,
-    },
-    chartControlButtonDisabled: { opacity: 0.4 },
     liveBadge: {
       alignItems: 'center',
       backgroundColor: colors.liveSurface,
@@ -683,7 +341,6 @@ function createStyles(colors: AppThemeColors) {
       marginLeft: 8,
     },
     connectionTextWithoutSpinner: { marginLeft: 0 },
-    pressed: { opacity: 0.7 },
   });
 }
 

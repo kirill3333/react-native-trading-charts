@@ -7,12 +7,15 @@ import {
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { type OhlcCandle } from 'react-native-trading-charts';
 
-import { type MarketDataAdapter } from '../marketData';
+import { type MarketDataAdapter } from '../api/marketData';
 import {
   MarketWebSocketClient,
   type MarketWebSocketProtocol,
-} from '../marketWebSocket';
-import { useChartDataFeed, type ChartDataFeedApi } from '../useChartDataFeed';
+} from '../api/marketWebSocket';
+import {
+  useChartDataFeed,
+  type ChartDataFeedApi,
+} from '../api/useChartDataFeed';
 
 const mockCharts = {
   setHistory: jest.fn<ChartDataFeedApi['setHistory']>(),

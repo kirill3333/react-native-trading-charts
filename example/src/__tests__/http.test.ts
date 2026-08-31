@@ -6,15 +6,15 @@ import {
   type AxiosResponse,
 } from 'axios';
 
-import { fetchSpotKlines } from '../binance';
-import { fetchHyperliquidCandles } from '../hyperliquid';
+import { fetchSpotKlines } from '../api/binance';
+import { fetchHyperliquidCandles } from '../api/hyperliquid';
 import {
   binanceHttp,
   hyperliquidHttp,
   MarketHttpError,
   queryRetryDelay,
   shouldRetryQuery,
-} from '../http';
+} from '../api/http';
 
 function response<TPayload>(
   data: TPayload,

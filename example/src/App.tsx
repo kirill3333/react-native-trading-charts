@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChartSettingsProvider } from './chartSettings';
 import { AppNavigation } from './navigation';
-import { configureQueryLifecycle, queryClient } from './queryClient';
+import { configureQueryLifecycle, queryClient } from './api/queryClient';
 import { useAppTheme } from './themeContext';
 
 configureQueryLifecycle();
