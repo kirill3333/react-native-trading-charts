@@ -32,6 +32,8 @@ readonly cpp_files=(
   cpp/internal/triangle_geometry.h
   cpp/tests/chart_engine_header_test.cc
   cpp/tests/chart_engine_test.cc
+  cpp/tests/binance_market_replay_test.cc
+  cpp/tests/fixtures/binance_btcusdt_1m.h
   android/src/main/cpp/chart_engine_jni.cc
   ios/cxx/TradingChartsCxx.h
   ios/cxx/TradingChartsCxx.cc

@@ -1160,6 +1160,9 @@ of being recreated during steady-state interaction. For high-frequency feeds,
 `updateTrades` and `createTradeBatcher` reduce bridge calls and engine
 mutations.
 
+The normative command, revision, and snapshot contract is documented in
+[ChartEngine state and rendering protocol](docs/chart-engine-state-protocol.md).
+
 On iOS, Swift talks to the shared engine through the private
 `TradingChartsCxx` Clang module. Snapshot handles retain the underlying C++
 `shared_ptr`, while vertex storage is exposed only through scoped Swift buffer

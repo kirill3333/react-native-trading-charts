@@ -47,14 +47,28 @@ target_link_libraries(chart_engine_header_test PRIVATE trading_charts_engine)
 
 add_executable(chart_engine_test tests/chart_engine_test.cc)
 target_link_libraries(chart_engine_test PRIVATE trading_charts_engine)
+
+add_executable(
+  binance_market_replay_test
+  tests/binance_market_replay_test.cc
+)
+target_link_libraries(
+  binance_market_replay_test
+  PRIVATE
+  trading_charts_engine
+)
+
 if(MSVC)
   target_compile_options(chart_engine_test PRIVATE /UNDEBUG)
+  target_compile_options(binance_market_replay_test PRIVATE /UNDEBUG)
 else()
   target_compile_options(chart_engine_test PRIVATE -UNDEBUG)
+  target_compile_options(binance_market_replay_test PRIVATE -UNDEBUG)
 endif()
 
 enable_testing()
 add_test(NAME chart_engine_test COMMAND chart_engine_test)
+add_test(NAME binance_market_replay_test COMMAND binance_market_replay_test)
 
 if(TRADING_CHARTS_BUILD_BENCHMARKS)
   include(FetchContent)

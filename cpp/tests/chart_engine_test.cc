@@ -11,6 +11,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -94,6 +95,51 @@ void ExpectColor(const Color& actual, const Color& expected) {
   ExpectNear(actual.g, expected.g, kFloatGeometryTolerance);
   ExpectNear(actual.b, expected.b, kFloatGeometryTolerance);
   ExpectNear(actual.a, expected.a, kFloatGeometryTolerance);
+}
+
+struct RenderCheckpoint {
+  uint64_t revision = 0;
+  uint64_t content_revision = 0;
+  std::shared_ptr<const trading_charts::RenderSnapshot> snapshot;
+};
+
+RenderCheckpoint CaptureRenderCheckpoint(ChartEngine& engine) {
+  const auto snapshot = engine.Snapshot();
+  const uint64_t revision = engine.Revision();
+  assert(snapshot != nullptr);
+  assert(snapshot->revision == revision);
+  return {revision, snapshot->content_revision, snapshot};
+}
+
+template <typename Operation>
+void ExpectContentMutation(ChartEngine& engine, Operation operation) {
+  const RenderCheckpoint before = CaptureRenderCheckpoint(engine);
+  operation();
+  const RenderCheckpoint after = CaptureRenderCheckpoint(engine);
+  assert(after.revision > before.revision);
+  assert(after.content_revision > before.content_revision);
+  assert(after.snapshot != before.snapshot);
+}
+
+template <typename Operation>
+void ExpectOverlayMutation(ChartEngine& engine, Operation operation) {
+  const RenderCheckpoint before = CaptureRenderCheckpoint(engine);
+  operation();
+  const RenderCheckpoint after = CaptureRenderCheckpoint(engine);
+  assert(after.revision > before.revision);
+  assert(after.content_revision == before.content_revision);
+  assert(after.snapshot != before.snapshot);
+  assert(after.snapshot->content_vertices == before.snapshot->content_vertices);
+}
+
+template <typename Operation>
+void ExpectNoRenderMutation(ChartEngine& engine, Operation operation) {
+  const RenderCheckpoint before = CaptureRenderCheckpoint(engine);
+  operation();
+  const RenderCheckpoint after = CaptureRenderCheckpoint(engine);
+  assert(after.revision == before.revision);
+  assert(after.content_revision == before.content_revision);
+  assert(after.snapshot == before.snapshot);
 }
 
 double UtcMilliseconds(int year, int month, int day, int hour = 0,
@@ -463,6 +509,235 @@ void TestMixedTradeBatchReportsAppliedChange() {
   assert(engine.Revision() > revision);
   ExpectNear(engine.CandleAt(0).close, 12.0);
   ExpectNear(engine.CandleAt(0).volume, 3.0);
+}
+
+void TestRejectedTradeBatchDoesNotPartiallyMutate() {
+  ChartEngine engine;
+  ChartConfig config =
+      WeekdaySessionConfig(trading_charts::ResolutionUnit::kHour);
+  config.trade_aggregation.outside_session =
+      trading_charts::OutsideSessionPolicy::kReject;
+  engine.SetConfig(config);
+
+  const auto snapshot = engine.Snapshot();
+  const uint64_t revision = engine.Revision();
+  const double trades[] = {
+      UtcMilliseconds(2026, 8, 3, 10, 0), 10.0, 1.0,
+      UtcMilliseconds(2026, 8, 3, 16, 0), 12.0, 1.0,
+  };
+
+  assert(engine.UpdateTrades(trades, std::size(trades)) ==
+         UpdateStatus::kInvalidInput);
+  assert(engine.CandleCount() == 0);
+  assert(engine.Revision() == revision);
+  assert(engine.Snapshot() == snapshot);
+}
+
+void TestRejectedTradeBatchStillIgnoresOldTimestamps() {
+  ChartEngine engine;
+  ChartConfig config =
+      WeekdaySessionConfig(trading_charts::ResolutionUnit::kHour);
+  config.trade_aggregation.outside_session =
+      trading_charts::OutsideSessionPolicy::kReject;
+  engine.SetConfig(config);
+
+  const double initial[] = {
+      UtcMilliseconds(2026, 8, 3, 10, 0),
+      10.0,
+      1.0,
+  };
+  assert(engine.UpdateTrade(initial, std::size(initial)) ==
+         UpdateStatus::kApplied);
+  const double trades[] = {
+      UtcMilliseconds(2026, 8, 3, 9, 0),  8.0,  1.0,
+      UtcMilliseconds(2026, 8, 3, 11, 0), 12.0, 1.0,
+  };
+
+  assert(engine.UpdateTrades(trades, std::size(trades)) ==
+         UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 2);
+  ExpectNear(engine.CandleAt(1).close, 12.0);
+}
+
+void TestConfigurationAndPresentationMutationContract() {
+  ChartEngine engine;
+
+  ChartConfig config;
+  config.initial_visible_count = 4;
+  ExpectContentMutation(engine, [&] { engine.SetConfig(config); });
+
+  trading_charts::TradingCalendarConfig calendar;
+  calendar.configured = true;
+  ExpectContentMutation(engine, [&] { engine.SetTradingCalendar(calendar); });
+
+  PaneConfig secondary;
+  secondary.pane_id = "secondary";
+  secondary.price_scale_id = "secondary";
+  secondary.min_height = 20.0F;
+  ExpectContentMutation(
+      engine, [&] { engine.SetPanes({PaneConfig{}, secondary}, true); });
+  ExpectContentMutation(
+      engine, [&] { assert(engine.SetPaneHeight("secondary", 2.0)); });
+  ExpectNoRenderMutation(
+      engine, [&] { assert(!engine.SetPaneHeight("secondary", 2.0)); });
+
+  ExpectContentMutation(engine, [&] { engine.SetSize(400.0F, 320.0F); });
+  ExpectNoRenderMutation(engine, [&] { engine.SetSize(400.0F, 320.0F); });
+  ExpectContentMutation(engine,
+                        [&] { assert(engine.ResizePaneSeparator(0, 12.0F)); });
+  ExpectNoRenderMutation(
+      engine, [&] { assert(!engine.ResizePaneSeparator(9, 12.0F)); });
+
+  PriceLine line;
+  line.id = "entry";
+  line.price = 100.0;
+  line.label = "Entry";
+  ExpectContentMutation(engine, [&] { assert(engine.SetPriceLine(line)); });
+  ExpectNoRenderMutation(engine, [&] { assert(!engine.SetPriceLine(line)); });
+  line.price = 101.0;
+  ExpectContentMutation(engine, [&] { assert(engine.SetPriceLine(line)); });
+  ExpectContentMutation(engine,
+                        [&] { assert(engine.RemovePriceLine("entry")); });
+  ExpectNoRenderMutation(engine,
+                         [&] { assert(!engine.RemovePriceLine("entry")); });
+  assert(engine.SetPriceLine(line));
+  ExpectContentMutation(engine, [&] { assert(engine.ClearPriceLines()); });
+  ExpectNoRenderMutation(engine, [&] { assert(!engine.ClearPriceLines()); });
+}
+
+void TestSeriesMutationContract() {
+  ChartEngine engine;
+  SeriesConfig series;
+  series.series_id = "comparison";
+  series.type = SeriesType::kLine;
+
+  ExpectContentMutation(engine, [&] {
+    assert(engine.AddSeries(series) == UpdateStatus::kApplied);
+  });
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.AddSeries(series) == UpdateStatus::kInvalidInput);
+  });
+
+  const double initial[] = {60000.0, 10.0, 12.0, 9.0, 11.0, 1.0};
+  ExpectContentMutation(engine, [&] {
+    assert(engine.SetSeriesData("comparison", initial, std::size(initial),
+                                false) == UpdateStatus::kApplied);
+  });
+  const double older[] = {0.0, 9.0, 11.0, 8.0, 10.0, 1.0};
+  ExpectContentMutation(engine, [&] {
+    assert(engine.PrependSeriesData("comparison", older, std::size(older),
+                                    false) == UpdateStatus::kApplied);
+  });
+  const double newer[] = {120000.0, 11.0, 13.0, 10.0, 12.0, 1.0};
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateSeriesData("comparison", newer, std::size(newer),
+                                   false) == UpdateStatus::kApplied);
+  });
+  ExpectNoRenderMutation(engine, [&] {
+    assert(
+        engine.UpdateSeriesData("comparison", older, std::size(older), false) ==
+        UpdateStatus::kIgnoredOldTimestamp);
+  });
+  ExpectContentMutation(engine,
+                        [&] { assert(engine.RemoveSeries("comparison")); });
+  ExpectNoRenderMutation(engine,
+                         [&] { assert(!engine.RemoveSeries("comparison")); });
+}
+
+void TestMarketDataMutationContract() {
+  ChartEngine engine;
+  const double history[] = {
+      60000.0,  10.0, 12.0, 9.0,  11.0, 1.0,
+      120000.0, 11.0, 13.0, 10.0, 12.0, 1.0,
+  };
+  ExpectContentMutation(engine, [&] {
+    assert(engine.SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+  });
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.PrependHistory(nullptr, 0) == UpdateStatus::kApplied);
+  });
+
+  const double older[] = {0.0, 9.0, 11.0, 8.0, 10.0, 1.0};
+  ExpectContentMutation(engine, [&] {
+    assert(engine.PrependHistory(older, std::size(older)) ==
+           UpdateStatus::kApplied);
+  });
+  const double replacement[] = {
+      120000.0, 11.0, 14.0, 10.0, 13.0, 2.0,
+  };
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+           UpdateStatus::kApplied);
+  });
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateCandle(older, std::size(older)) ==
+           UpdateStatus::kIgnoredOldTimestamp);
+  });
+
+  const double trade[] = {121000.0, 15.0, 1.0};
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateTrade(trade, std::size(trade)) ==
+           UpdateStatus::kApplied);
+  });
+  const double trades[] = {
+      122000.0, 14.0, 1.0, 180000.0, 16.0, 1.0,
+  };
+  ExpectContentMutation(engine, [&] {
+    assert(engine.UpdateTrades(trades, std::size(trades)) ==
+           UpdateStatus::kApplied);
+  });
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrades(nullptr, 0) == UpdateStatus::kApplied);
+  });
+  const double invalid[] = {240000.0, 17.0, -1.0};
+  ExpectNoRenderMutation(engine, [&] {
+    assert(engine.UpdateTrades(invalid, std::size(invalid)) ==
+           UpdateStatus::kInvalidInput);
+  });
+  ExpectContentMutation(engine, [&] { engine.Clear(); });
+}
+
+void TestViewportAndOverlayMutationContract() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.initial_visible_count = 3;
+  engine.SetConfig(config);
+  engine.SetSize(400.0F, 300.0F);
+  const double history[] = {
+      0.0,      10.0, 12.0, 9.0,      11.0, 1.0,  60000.0,  11.0, 13.0,
+      10.0,     12.0, 1.0,  120000.0, 12.0, 14.0, 11.0,     13.0, 1.0,
+      180000.0, 13.0, 15.0, 12.0,     14.0, 1.0,  240000.0, 14.0, 16.0,
+      13.0,     15.0, 1.0,  300000.0, 15.0, 17.0, 14.0,     16.0, 1.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+
+  ExpectContentMutation(engine, [&] { assert(engine.Pan(80.0F)); });
+  ExpectContentMutation(engine, [&] { assert(engine.Zoom(1.5, 200.0F)); });
+  ExpectContentMutation(engine, [&] { engine.ZoomAtRightEdge(1.2); });
+  ExpectContentMutation(engine, [&] { assert(engine.ScaleY(20.0F)); });
+  ExpectContentMutation(engine,
+                        [&] { assert(engine.ScaleYAt(-10.0F, 100.0F)); });
+  ExpectContentMutation(engine, [&] { engine.ResetViewport(); });
+  ExpectContentMutation(engine, [&] { engine.FitContent(); });
+
+  ExpectOverlayMutation(engine,
+                        [&] { engine.SetCrosshair(true, 120.0F, 100.0F); });
+  ExpectNoRenderMutation(engine,
+                         [&] { engine.SetCrosshair(true, 120.0F, 100.0F); });
+  ExpectOverlayMutation(engine, [&] { assert(engine.Pan(80.0F)); });
+
+  engine.SetCrosshair(true, 120.0F, 100.0F);
+  ExpectOverlayMutation(engine, [&] { assert(engine.Zoom(1.0, 200.0F)); });
+  engine.SetCrosshair(true, 120.0F, 100.0F);
+  ExpectOverlayMutation(engine, [&] { assert(engine.ScaleYAt(0.0F, 100.0F)); });
+
+  ExpectNoRenderMutation(engine, [&] {
+    assert(!engine.Pan(std::numeric_limits<float>::quiet_NaN()));
+  });
+  ExpectNoRenderMutation(engine, [&] { assert(!engine.Zoom(0.0, 200.0F)); });
+  ExpectNoRenderMutation(engine, [&] { engine.ZoomAtRightEdge(0.0); });
 }
 
 void TestHistoryContinuation() {
@@ -3601,6 +3876,12 @@ int main() noexcept {
     TestCalendarWeekRespectsConfiguredWeekStart();
     TestBucketTransitionAndNoGaps();
     TestMixedTradeBatchReportsAppliedChange();
+    TestRejectedTradeBatchDoesNotPartiallyMutate();
+    TestRejectedTradeBatchStillIgnoresOldTimestamps();
+    TestConfigurationAndPresentationMutationContract();
+    TestSeriesMutationContract();
+    TestMarketDataMutationContract();
+    TestViewportAndOverlayMutationContract();
     TestHistoryContinuation();
     TestPrependHistoryPreservesViewport();
     TestCandlesReturnsAtomicCopyOfCurrentStore();

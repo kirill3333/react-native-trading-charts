@@ -189,11 +189,23 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
   std::lock_guard<std::mutex> lock(mutex_);
   const size_t previous_size = candles_.size();
   for (size_t index = 0; index < value_count; index += kTradeValueCount) {
+    const double timestamp = values[index + internal::kPackedTimestampIndex];
     if (!internal::IsValidTrade(
-            values[index + internal::kPackedTimestampIndex],
-            values[index + internal::kPackedTradePriceIndex],
+            timestamp, values[index + internal::kPackedTradePriceIndex],
             values[index + internal::kPackedTradeSizeIndex])) {
       return UpdateStatus::kInvalidInput;
+    }
+    if (config_.trade_aggregation.calendar.configured &&
+        (!last_trade_timestamp_.has_value() ||
+         timestamp >= *last_trade_timestamp_)) {
+      const internal::BucketLookupResult lookup = internal::BucketForTimestamp(
+          config_, static_cast<std::int64_t>(timestamp));
+      if (lookup.status == internal::BucketLookupStatus::kInvalid ||
+          (lookup.status == internal::BucketLookupStatus::kOutsideSession &&
+           config_.trade_aggregation.outside_session ==
+               OutsideSessionPolicy::kReject)) {
+        return UpdateStatus::kInvalidInput;
+      }
     }
   }
   UpdateStatus result = UpdateStatus::kApplied;
@@ -203,24 +215,22 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
         UpdateTradeLocked(values[index + internal::kPackedTimestampIndex],
                           values[index + internal::kPackedTradePriceIndex],
                           values[index + internal::kPackedTradeSizeIndex]);
-    if (status == UpdateStatus::kInvalidInput) {
-      return status;
-    }
-    if (status == UpdateStatus::kIgnoredOldTimestamp ||
-        status == UpdateStatus::kIgnoredOutsideSession) {
-      result = status;
-    }
-    if (status == UpdateStatus::kApplied) {
-      changed = true;
+    switch (status) {
+      case UpdateStatus::kApplied:
+        changed = true;
+        break;
+      case UpdateStatus::kInvalidInput:
+        return status;
+      case UpdateStatus::kIgnoredOldTimestamp:
+      case UpdateStatus::kIgnoredOutsideSession:
+        result = status;
+        break;
     }
   }
   if (changed) {
     RefreshDerivedDependentsLocked("main",
                                    previous_size == 0 ? 0 : previous_size - 1);
     MarkDirtyLocked();
-    // A mixed batch may contain ignored old trades followed by newer trades
-    // that were applied. Native views use kApplied to decide whether a frame
-    // is needed, so an actual mutation takes precedence over ignored records.
     return UpdateStatus::kApplied;
   }
   return result;

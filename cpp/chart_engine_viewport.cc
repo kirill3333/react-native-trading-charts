@@ -166,7 +166,7 @@ bool ChartEngine::Pan(float delta_pixels) {
   } else if (crosshair_changed) {
     MarkCrosshairDirtyLocked();
   }
-  return viewport_changed;
+  return viewport_changed || crosshair_changed;
 }
 
 bool ChartEngine::Zoom(double scale, float focus_x) {
@@ -202,7 +202,7 @@ bool ChartEngine::Zoom(double scale, float focus_x) {
   } else if (crosshair_changed) {
     MarkCrosshairDirtyLocked();
   }
-  return viewport_changed;
+  return viewport_changed || crosshair_changed;
 }
 
 void ChartEngine::ZoomAtRightEdge(double scale) {
@@ -277,7 +277,7 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
     if (crosshair_changed) {
       MarkCrosshairDirtyLocked();
     }
-    return false;
+    return crosshair_changed;
   }
   panes_[pane_index].y_range_multiplier = next;
   if (pane_index == 0) {
