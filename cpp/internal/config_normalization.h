@@ -8,6 +8,7 @@
 
 namespace trading_charts::internal {
 
+bool HasValidScaleMargins(double top, double bottom);
 ChartConfig NormalizeChartConfig(ChartConfig config);
 TradingCalendarConfig NormalizeTradingCalendar(TradingCalendarConfig calendar);
 SeriesConfig NormalizeSeriesConfig(SeriesConfig config,

@@ -7,6 +7,7 @@
 #include <limits>
 #include <vector>
 
+#include "cpp/chart_engine.h"
 #include "cpp/internal/config_constants.h"
 
 namespace trading_charts::internal {

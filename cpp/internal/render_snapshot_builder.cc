@@ -5,16 +5,20 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <memory>
-#include <numeric>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "cpp/internal/config_constants.h"
+#include "cpp/internal/config_normalization.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -236,6 +240,18 @@ size_t UpperTimestampBound(const std::vector<Timestamped>& values,
                        })));
 }
 
+bool IsSeriesInPane(const SeriesData& series, size_t pane_index) {
+  return series.pane_index.has_value() && *series.pane_index == pane_index;
+}
+
+std::optional<size_t> ValidPaneIndex(const SeriesData& series,
+                                     size_t pane_count) {
+  if (!series.pane_index.has_value() || *series.pane_index >= pane_count) {
+    return std::nullopt;
+  }
+  return series.pane_index;
+}
+
 class RenderSnapshotBuilder {
  public:
   explicit RenderSnapshotBuilder(const SnapshotBuildInput& input)
@@ -325,6 +341,7 @@ class RenderSnapshotBuilder {
   }
 
   void InitializeSnapshot() {
+    assert(!input_.panes.empty());
     snapshot_->revision = input_.revision;
     snapshot_->content_revision = input_.content_revision;
     snapshot_->width = input_.width;
@@ -345,7 +362,7 @@ class RenderSnapshotBuilder {
     const size_t pane_count = pane_rects.size();
     snapshot_->panes.reserve(pane_count);
     for (size_t index = 0; index < pane_count; ++index) {
-      const PaneConfig& pane = PaneConfigAt(input_.panes, index);
+      const PaneConfig& pane = input_.panes[index];
       PaneSnapshot pane_snapshot;
       pane_snapshot.pane_id = pane.pane_id;
       pane_snapshot.price_scale_id = pane.price_scale_id;
@@ -356,7 +373,7 @@ class RenderSnapshotBuilder {
       pane_snapshot.rsi_scale = std::any_of(
           input_.additional_series.begin(), input_.additional_series.end(),
           [&](const SeriesData& series) {
-            return series.pane_index == index &&
+            return IsSeriesInPane(series, index) &&
                    series.config.source == SeriesSource::kOhlcvRsi;
           });
       pane_snapshot.precision = pane.precision;
@@ -485,6 +502,8 @@ class RenderSnapshotBuilder {
     }
 
     const double raw_range = raw_max - raw_min;
+    assert(HasValidScaleMargins(input_.config.y_scale_margin_top,
+                                input_.config.y_scale_margin_bottom));
     const double inner_scale = 1.0 - input_.config.y_scale_margin_top -
                                input_.config.y_scale_margin_bottom;
     const double auto_y_min =
@@ -535,12 +554,20 @@ class RenderSnapshotBuilder {
   }
 
   const std::vector<Candle>* SourceCandles(const SeriesData& series) const {
-    if (series.source_series_index == kMainSeriesStateIndex) {
-      return &input_.candles;
+    switch (series.source_binding.kind) {
+      case SeriesSourceBindingKind::kUnavailable:
+        return nullptr;
+      case SeriesSourceBindingKind::kMain:
+        return &input_.candles;
+      case SeriesSourceBindingKind::kAdditional: {
+        const size_t index = series.source_binding.additional_series_index;
+        assert(index < input_.additional_series.size());
+        return index < input_.additional_series.size()
+                   ? &input_.additional_series[index].candles
+                   : nullptr;
+      }
     }
-    return series.source_series_index < input_.additional_series.size()
-               ? &input_.additional_series[series.source_series_index].candles
-               : nullptr;
+    return nullptr;
   }
 
   // Computes the visible data window of every additional series once per
@@ -687,7 +714,7 @@ class RenderSnapshotBuilder {
                                     double& maximum) const {
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
       const SeriesData& series = input_.additional_series[index];
-      if (!series.config.visible || series.pane_index != pane_index) {
+      if (!series.config.visible || !IsSeriesInPane(series, pane_index)) {
         continue;
       }
       const SeriesWindow& window = series_windows_[index];
@@ -753,7 +780,7 @@ class RenderSnapshotBuilder {
       double raw_max = -std::numeric_limits<double>::infinity();
       for (size_t index = 0; index < input_.additional_series.size(); ++index) {
         const SeriesData& series = input_.additional_series[index];
-        if (!series.config.visible || series.pane_index != pane_index) {
+        if (!series.config.visible || !IsSeriesInPane(series, pane_index)) {
           continue;
         }
         const SeriesWindow& window = series_windows_[index];
@@ -804,7 +831,7 @@ class RenderSnapshotBuilder {
           VisitLineGapAnchors(series, window, include_candle);
         }
       }
-      const PaneConfig& pane = PaneConfigAt(input_.panes, pane_index);
+      const PaneConfig& pane = input_.panes[pane_index];
       if (!has_value) {
         raw_min = 0.0;
         raw_max = pane.volume_format ? kEmptyVolumeMaximum
@@ -815,6 +842,8 @@ class RenderSnapshotBuilder {
             pane.min_move * kAutoscaleMinMoveExpansion, kMinimumPaneRange);
         raw_max = raw_min + minimum_range;
       }
+      assert(HasValidScaleMargins(pane.scale_margin_top,
+                                  pane.scale_margin_bottom));
       const double inner =
           1.0 - pane.scale_margin_top - pane.scale_margin_bottom;
       const double raw_range = raw_max - raw_min;
@@ -948,7 +977,7 @@ class RenderSnapshotBuilder {
          ++pane_index) {
       PaneSnapshot& pane = snapshot_->panes[pane_index];
       pane.y_tick_offset = snapshot_->pane_y_ticks.size();
-      const PaneConfig& config = PaneConfigAt(input_.panes, pane_index);
+      const PaneConfig& config = input_.panes[pane_index];
       const int target = std::max(
           kMinimumAxisTickCount,
           static_cast<int>(pane.plot.Height() /
@@ -986,7 +1015,7 @@ class RenderSnapshotBuilder {
         // extend into neighboring panes, and add each RSI series' configured
         // levels without duplicating their dashed grid geometry.
         for (const SeriesData& series : input_.additional_series) {
-          if (series.pane_index != pane_index ||
+          if (!IsSeriesInPane(series, pane_index) ||
               series.config.source != SeriesSource::kOhlcvRsi) {
             continue;
           }
@@ -1042,13 +1071,15 @@ class RenderSnapshotBuilder {
     }
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
       const SeriesData& series = input_.additional_series[index];
-      if (!series.config.visible ||
-          series.pane_index >= snapshot_->panes.size()) {
+      const std::optional<size_t> pane_index =
+          ValidPaneIndex(series, snapshot_->panes.size());
+      if (!series.config.visible || !pane_index.has_value()) {
         continue;
       }
+      const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
       if (series.config.source == SeriesSource::kOhlcvRsi) {
-        const Rect& pane_plot = snapshot_->panes[series.pane_index].plot;
+        const Rect& pane_plot = snapshot_->panes[resolved_pane_index].plot;
         const float step =
             (kDashLength + kDashGap) * input_.config.display_scale;
         const size_t boundary_segment_count =
@@ -1084,11 +1115,11 @@ class RenderSnapshotBuilder {
             series.signal_candles,
             signal_first,
             signal_last,
-            snapshot_->panes[series.pane_index].plot,
+            snapshot_->panes[resolved_pane_index].plot,
             input_.visible_x_min,
             input_.visible_x_max,
-            pane_y_min_[series.pane_index],
-            pane_y_max_[series.pane_index],
+            pane_y_min_[resolved_pane_index],
+            pane_y_max_[resolved_pane_index],
             input_.config.logical_spacing ? &input_.candles : nullptr,
         });
       }
@@ -1118,11 +1149,11 @@ class RenderSnapshotBuilder {
           series.candles,
           first,
           last,
-          snapshot_->panes[series.pane_index].plot,
+          snapshot_->panes[resolved_pane_index].plot,
           input_.visible_x_min,
           input_.visible_x_max,
-          pane_y_min_[series.pane_index],
-          pane_y_max_[series.pane_index],
+          pane_y_min_[resolved_pane_index],
+          pane_y_max_[resolved_pane_index],
           input_.config.logical_spacing ? &input_.candles : nullptr,
       });
     }
@@ -1170,17 +1201,19 @@ class RenderSnapshotBuilder {
 
   void AddRsiBackgroundGeometry() {
     for (const SeriesData& series : input_.additional_series) {
+      const std::optional<size_t> pane_index =
+          ValidPaneIndex(series, snapshot_->panes.size());
       if (!series.config.visible ||
           series.config.source != SeriesSource::kOhlcvRsi ||
-          series.pane_index >= snapshot_->panes.size()) {
+          !pane_index.has_value()) {
         continue;
       }
-      const size_t pane_index = series.pane_index;
-      const Rect& plot = snapshot_->panes[pane_index].plot;
+      const size_t resolved_pane_index = *pane_index;
+      const Rect& plot = snapshot_->panes[resolved_pane_index].plot;
       const float overbought_y =
-          ProjectPaneY(pane_index, series.config.rsi_overbought);
+          ProjectPaneY(resolved_pane_index, series.config.rsi_overbought);
       const float oversold_y =
-          ProjectPaneY(pane_index, series.config.rsi_oversold);
+          ProjectPaneY(resolved_pane_index, series.config.rsi_oversold);
       AppendClippedQuad(*content_vertices_, plot.left, overbought_y, plot.right,
                         oversold_y, plot, series.config.rsi_band);
       EmitDashedHorizontal(*content_vertices_, overbought_y, plot.left,
@@ -1337,17 +1370,24 @@ class RenderSnapshotBuilder {
     if (last < values.size()) {
       ++last;
     }
+    const std::optional<size_t> pane_index =
+        ValidPaneIndex(series, snapshot_->panes.size());
+    assert(pane_index.has_value());
+    if (!pane_index.has_value()) {
+      return;
+    }
+    const size_t resolved_pane_index = *pane_index;
     AppendSeriesGeometry(
         SeriesGeometryInput{
             config,
             values,
             first,
             last,
-            snapshot_->panes[series.pane_index].plot,
+            snapshot_->panes[resolved_pane_index].plot,
             input_.visible_x_min,
             input_.visible_x_max,
-            pane_y_min_[series.pane_index],
-            pane_y_max_[series.pane_index],
+            pane_y_min_[resolved_pane_index],
+            pane_y_max_[resolved_pane_index],
             input_.config.logical_spacing ? &input_.candles : nullptr,
         },
         *content_vertices_);
@@ -1359,19 +1399,21 @@ class RenderSnapshotBuilder {
       if (!series.config.visible) {
         continue;
       }
-      const size_t pane_index = series.pane_index;
-      if (pane_index >= snapshot_->panes.size()) {
+      const std::optional<size_t> pane_index =
+          ValidPaneIndex(series, snapshot_->panes.size());
+      if (!pane_index.has_value()) {
         continue;
       }
+      const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
       if (series.config.source == SeriesSource::kOhlcvMacd) {
         VisitVisibleHistogram(
             index, [&](double timestamp, double value, const Color& color) {
-              AddHistogramBar(pane_index, timestamp, value, color);
+              AddHistogramBar(resolved_pane_index, timestamp, value, color);
             });
-        const Rect& plot = snapshot_->panes[pane_index].plot;
-        const float zero_y =
-            std::clamp(ProjectPaneY(pane_index, 0.0), plot.top, plot.bottom);
+        const Rect& plot = snapshot_->panes[resolved_pane_index].plot;
+        const float zero_y = std::clamp(ProjectPaneY(resolved_pane_index, 0.0),
+                                        plot.top, plot.bottom);
         const float half_zero_line_width = input_.config.display_scale / 2.0f;
         AppendClippedQuad(*content_vertices_, plot.left,
                           zero_y - half_zero_line_width, plot.right,
@@ -1385,7 +1427,7 @@ class RenderSnapshotBuilder {
       if (series.config.type == SeriesType::kHistogram) {
         VisitVisibleHistogram(
             index, [&](double timestamp, double value, const Color& color) {
-              AddHistogramBar(pane_index, timestamp, value, color);
+              AddHistogramBar(resolved_pane_index, timestamp, value, color);
             });
         continue;
       }
@@ -1424,11 +1466,11 @@ class RenderSnapshotBuilder {
               series.candles,
               first,
               last,
-              snapshot_->panes[pane_index].plot,
+              snapshot_->panes[resolved_pane_index].plot,
               input_.visible_x_min,
               input_.visible_x_max,
-              pane_y_min_[pane_index],
-              pane_y_max_[pane_index],
+              pane_y_min_[resolved_pane_index],
+              pane_y_max_[resolved_pane_index],
               input_.config.logical_spacing ? &input_.candles : nullptr,
           },
           *content_vertices_);
@@ -1533,15 +1575,17 @@ class RenderSnapshotBuilder {
   void BuildIndicatorLegends() {
     snapshot_->indicator_legends.clear();
     for (const SeriesData& series : input_.additional_series) {
+      const std::optional<size_t> pane_index =
+          ValidPaneIndex(series, snapshot_->panes.size());
       if (!series.config.visible ||
           (series.config.source != SeriesSource::kOhlcvRsi &&
            series.config.source != SeriesSource::kOhlcvMacd) ||
-          series.pane_index >= snapshot_->panes.size()) {
+          !pane_index.has_value()) {
         continue;
       }
       IndicatorLegend legend;
       legend.pane_id = series.config.pane_id;
-      legend.pane_index = series.pane_index;
+      legend.pane_index = *pane_index;
       if (series.config.source == SeriesSource::kOhlcvRsi) {
         legend.kind = IndicatorKind::kRsi;
         legend.period = series.config.rsi_period;
@@ -1601,10 +1645,12 @@ class RenderSnapshotBuilder {
   void SelectIndicatorLegendValues(double timestamp) {
     size_t legend_index = 0;
     for (const SeriesData& series : input_.additional_series) {
+      const std::optional<size_t> pane_index =
+          ValidPaneIndex(series, snapshot_->panes.size());
       if (!series.config.visible ||
           (series.config.source != SeriesSource::kOhlcvRsi &&
            series.config.source != SeriesSource::kOhlcvMacd) ||
-          series.pane_index >= snapshot_->panes.size()) {
+          !pane_index.has_value()) {
         continue;
       }
       IndicatorLegend& legend = snapshot_->indicator_legends[legend_index++];

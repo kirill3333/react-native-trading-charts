@@ -4,20 +4,16 @@
 #include "cpp/internal/pane_layout.h"
 
 #include <algorithm>
+#include <cassert>
 #include <vector>
 
 namespace trading_charts::internal {
 
-const PaneConfig& PaneConfigAt(const std::vector<PaneConfig>& panes,
-                               size_t index) {
-  static const PaneConfig k_fallback{};
-  return index < panes.size() ? panes[index] : k_fallback;
-}
-
 std::vector<Rect> ComputePaneRects(const ChartConfig& config,
                                    const std::vector<PaneConfig>& panes,
                                    float width, float height) {
-  const size_t pane_count = std::max<size_t>(panes.size(), 1);
+  assert(!panes.empty());
+  const size_t pane_count = panes.size();
   const float y_lane = config.show_y_axis ? config.y_axis_width : 0.0f;
   const float left =
       config.show_y_axis && !config.y_axis_on_right ? y_lane : 0.0f;
@@ -39,7 +35,7 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
   float remaining_height = available;
   double remaining_weight = 0.0;
   for (size_t index = 0; index < pane_count; ++index) {
-    remaining_weight += std::max(PaneConfigAt(panes, index).height_weight, 0.0);
+    remaining_weight += std::max(panes[index].height_weight, 0.0);
   }
   for (size_t pass = 0; pass < pane_count; ++pass) {
     bool changed = false;
@@ -47,7 +43,7 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
       if (fixed[index]) {
         continue;
       }
-      const PaneConfig& pane = PaneConfigAt(panes, index);
+      const PaneConfig& pane = panes[index];
       const double weight = std::max(pane.height_weight, 0.0);
       const bool has_remaining_weight = remaining_weight > 0.0;
       const float proportional_height =
@@ -75,7 +71,7 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
     if (fixed[index]) {
       continue;
     }
-    const PaneConfig& pane = PaneConfigAt(panes, index);
+    const PaneConfig& pane = panes[index];
     const bool has_remaining_weight = remaining_weight > 0.0;
     const float equal_share_height =
         remaining_height /

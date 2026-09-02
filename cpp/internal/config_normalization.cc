@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "cpp/internal/config_constants.h"
 #include "cpp/internal/trading_time.h"
@@ -25,11 +25,6 @@ bool IsSupportedMainSeriesType(SeriesType type) {
          type == SeriesType::kArea;
 }
 
-bool HasValidScaleMargins(double top, double bottom) {
-  return std::isfinite(top) && top >= 0.0 && std::isfinite(bottom) &&
-         bottom >= 0.0 && top + bottom < kMaximumCombinedScaleMargin;
-}
-
 OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
   switch (source) {
     case OhlcValueSource::kOpen:
@@ -42,6 +37,13 @@ OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
 }
 
 }  // namespace
+
+bool HasValidScaleMargins(double top, double bottom) {
+  return std::isfinite(top) && top >= 0.0 && std::isfinite(bottom) &&
+         bottom >= 0.0 &&
+         top + bottom <=
+             kMaximumCombinedScaleMargin - kMinimumScaleContentFraction;
+}
 
 TradingCalendarConfig NormalizeTradingCalendar(TradingCalendarConfig calendar) {
   std::sort(

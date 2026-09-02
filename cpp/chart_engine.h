@@ -18,8 +18,6 @@ namespace trading_charts {
 // Positional input widths used by the native bridges.
 inline constexpr size_t kCandleValueCount = 6;
 inline constexpr size_t kTradeValueCount = 3;
-inline constexpr size_t kInvalidStateIndex = static_cast<size_t>(-1);
-inline constexpr size_t kMainSeriesStateIndex = static_cast<size_t>(-2);
 
 struct Color {
   float r = 1.0f;
@@ -184,6 +182,17 @@ struct MacdSmoothingState {
   bool signal_ready = false;
 };
 
+enum class SeriesSourceBindingKind : std::uint8_t {
+  kUnavailable = 0,
+  kMain = 1,
+  kAdditional = 2,
+};
+
+struct SeriesSourceBinding {
+  SeriesSourceBindingKind kind = SeriesSourceBindingKind::kUnavailable;
+  size_t additional_series_index = 0;
+};
+
 struct SeriesData {
   SeriesConfig config;
   std::vector<Candle> candles;
@@ -193,8 +202,8 @@ struct SeriesData {
   std::vector<double> moving_average_states;
   std::vector<RsiSmoothingState> rsi_states;
   std::vector<MacdSmoothingState> macd_states;
-  size_t pane_index = kInvalidStateIndex;
-  size_t source_series_index = kInvalidStateIndex;
+  std::optional<size_t> pane_index;
+  SeriesSourceBinding source_binding;
 };
 
 enum class ResolutionUnit : std::uint8_t {
@@ -653,9 +662,13 @@ class ChartEngine {
   size_t PaneIndexAtYLocked(float y) const;
   size_t PaneIndexAtYLocked(float y, const std::vector<Rect>& rects) const;
   std::vector<Rect> PaneRectsLocked() const;
+  // Nullable borrowed lookups. Returned pointers remain valid only while the
+  // caller holds `mutex_` and does not mutate `additional_series_`.
   SeriesData* FindSeriesLocked(const std::string& series_id);
   const SeriesData* FindSeriesLocked(const std::string& series_id) const;
   void RebuildSeriesIndicesLocked(MutationScope& mutation);
+  // A null result is expected while a declarative derived series is waiting
+  // for a later source declaration. Invalid resolved indices assert in debug.
   const std::vector<Candle>* SourceCandlesLocked(
       const SeriesData& series) const;
   void RefreshDerivedDependentsLocked(const std::string& source_series_id,

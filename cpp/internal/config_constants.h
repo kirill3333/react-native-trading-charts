@@ -22,6 +22,7 @@ inline constexpr float kMinimumAxisDimension = 1.0f;
 inline constexpr float kMinimumOpacity = 0.0f;
 inline constexpr float kMaximumOpacity = 1.0f;
 inline constexpr double kMaximumCombinedScaleMargin = 1.0;
+inline constexpr double kMinimumScaleContentFraction = 1e-6;
 inline constexpr size_t kMainPaneIndex = 0;
 inline constexpr size_t kMinimumResizablePaneCount = 2;
 

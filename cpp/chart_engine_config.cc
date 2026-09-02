@@ -3,7 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <mutex>
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -64,7 +64,7 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
                            bool resizable) {
   MutationScope mutation(*this);
   std::vector<PaneConfig> normalized;
-  normalized.reserve(std::max<size_t>(panes.size(), 1));
+  normalized.reserve(std::max<std::size_t>(panes.size(), 1));
   if (panes.empty()) {
     normalized.push_back(PaneConfig{});
   } else {
@@ -79,10 +79,8 @@ void ChartEngine::SetPanes(const std::vector<PaneConfig>& panes,
       if (!has_identifiers || !has_valid_weight || !has_valid_minimum_height) {
         continue;
       }
-      pane.scale_margin_top = std::max(0.0, pane.scale_margin_top);
-      pane.scale_margin_bottom = std::max(0.0, pane.scale_margin_bottom);
-      if (pane.scale_margin_top + pane.scale_margin_bottom >=
-          internal::kMaximumCombinedScaleMargin) {
+      if (!internal::HasValidScaleMargins(pane.scale_margin_top,
+                                          pane.scale_margin_bottom)) {
         pane.scale_margin_top = kFallbackPaneTopScaleMargin;
         pane.scale_margin_bottom = kFallbackPaneBottomScaleMargin;
       }

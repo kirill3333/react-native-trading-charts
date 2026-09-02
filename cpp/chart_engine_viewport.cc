@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "cpp/chart_engine.h"
@@ -159,6 +160,9 @@ bool ChartEngine::Pan(float delta_pixels) {
   double next_x_min = visible_x_min_ + domain_delta;
   double next_x_max = visible_x_max_ + domain_delta;
   ClampViewportValuesLocked(&next_x_min, &next_x_max);
+  // Exact equality is intentional after clamping: these are stored viewport
+  // coordinates, not independently accumulated measurements. A fixed epsilon
+  // would be invalid across logical indices and millisecond timestamps.
   const bool viewport_changed =
       next_x_min != visible_x_min_ || next_x_max != visible_x_max_;
   if (viewport_changed) {

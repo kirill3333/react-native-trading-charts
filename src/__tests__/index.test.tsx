@@ -1436,12 +1436,44 @@ describe('chart config', () => {
   });
 
   it('accepts valid scale margins and rejects invalid ranges', () => {
+    const minimumContentFraction = 1e-6;
     expect(
       resolveChartConfig({
         chartId: 'margins',
-        yAxis: { scaleMargins: { top: 0.25, bottom: 0.15 } },
+        yAxis: {
+          scaleMargins: {
+            top: 1 - minimumContentFraction * 2,
+            bottom: 0,
+          },
+        },
       }).yAxis.scaleMargins
-    ).toEqual({ top: 0.25, bottom: 0.15 });
+    ).toEqual({ top: 1 - minimumContentFraction * 2, bottom: 0 });
+
+    const paneMargins = resolveChartConfig({
+      chartId: 'pane-margins',
+      panes: [
+        {
+          paneId: 'main',
+          heightWeight: 3,
+          priceScale: { priceScaleId: 'main' },
+        },
+        {
+          paneId: 'secondary',
+          heightWeight: 1,
+          priceScale: {
+            priceScaleId: 'secondary',
+            scaleMargins: {
+              top: 1 - minimumContentFraction * 2,
+              bottom: 0,
+            },
+          },
+        },
+      ],
+    }).panes[1]?.priceScale.scaleMargins;
+    expect(paneMargins).toEqual({
+      top: 1 - minimumContentFraction * 2,
+      bottom: 0,
+    });
 
     expect(() =>
       resolveChartConfig({
@@ -1451,10 +1483,50 @@ describe('chart config', () => {
     ).toThrow('yAxis.scaleMargins');
     expect(() =>
       resolveChartConfig({
+        chartId: 'near-full-margin',
+        yAxis: {
+          scaleMargins: {
+            top: 1 - minimumContentFraction * 0.5,
+            bottom: 0,
+          },
+        },
+      })
+    ).toThrow('leave at least 0.000001');
+    expect(() =>
+      resolveChartConfig({
         chartId: 'full-margin',
         yAxis: { scaleMargins: { top: 0.5, bottom: 0.5 } },
       })
+    ).toThrow('leave at least 0.000001');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'non-finite-margin',
+        yAxis: { scaleMargins: { top: Number.POSITIVE_INFINITY, bottom: 0 } },
+      })
     ).toThrow('yAxis.scaleMargins');
+    expect(() =>
+      resolveChartConfig({
+        chartId: 'near-full-pane-margin',
+        panes: [
+          {
+            paneId: 'main',
+            heightWeight: 3,
+            priceScale: { priceScaleId: 'main' },
+          },
+          {
+            paneId: 'secondary',
+            heightWeight: 1,
+            priceScale: {
+              priceScaleId: 'secondary',
+              scaleMargins: {
+                top: 1 - minimumContentFraction * 0.5,
+                bottom: 0,
+              },
+            },
+          },
+        ],
+      })
+    ).toThrow('panes[1].priceScale.scaleMargins');
   });
 
   it('validates and serializes the default horizontal scale', () => {

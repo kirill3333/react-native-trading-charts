@@ -4,6 +4,7 @@ Checks: >
   bugprone-*,
   clang-analyzer-*,
   google-*,
+  modernize-use-nullptr,
   performance-*,
   portability-*,
   readability-braces-around-statements,

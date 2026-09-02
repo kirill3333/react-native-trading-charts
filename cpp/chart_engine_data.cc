@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "cpp/chart_engine.h"
 #include "cpp/internal/packed_data.h"

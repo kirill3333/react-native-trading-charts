@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <iterator>
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -84,17 +84,18 @@ void ChartEngine::RebuildSeriesIndicesLocked(MutationScope& mutation) {
           return item.pane_id == series.config.pane_id &&
                  item.price_scale_id == series.config.price_scale_id;
         });
-    series.pane_index =
-        pane == panes_.end()
-            ? kInvalidStateIndex
-            : static_cast<size_t>(std::distance(panes_.begin(), pane));
-    series.source_series_index = kInvalidStateIndex;
+    series.pane_index.reset();
+    if (pane != panes_.end()) {
+      series.pane_index =
+          static_cast<size_t>(std::distance(panes_.begin(), pane));
+    }
+    series.source_binding = SeriesSourceBinding{};
     if (!IsDerivedOhlcvSource(series.config.source)) {
       continue;
     }
     if (series.config.source_series_id.empty() ||
         series.config.source_series_id == "main") {
-      series.source_series_index = kMainSeriesStateIndex;
+      series.source_binding.kind = SeriesSourceBindingKind::kMain;
       continue;
     }
     const auto source = std::find_if(
@@ -106,7 +107,8 @@ void ChartEngine::RebuildSeriesIndicesLocked(MutationScope& mutation) {
                   candidate.config.source == SeriesSource::kData);
         });
     if (source != additional_series_.end()) {
-      series.source_series_index = static_cast<size_t>(
+      series.source_binding.kind = SeriesSourceBindingKind::kAdditional;
+      series.source_binding.additional_series_index = static_cast<size_t>(
           std::distance(additional_series_.begin(), source));
     }
   }
@@ -114,12 +116,20 @@ void ChartEngine::RebuildSeriesIndicesLocked(MutationScope& mutation) {
 
 const std::vector<Candle>* ChartEngine::SourceCandlesLocked(
     const SeriesData& series) const {
-  if (series.source_series_index == kMainSeriesStateIndex) {
-    return &candles_;
+  switch (series.source_binding.kind) {
+    case SeriesSourceBindingKind::kUnavailable:
+      return nullptr;
+    case SeriesSourceBindingKind::kMain:
+      return &candles_;
+    case SeriesSourceBindingKind::kAdditional: {
+      const size_t index = series.source_binding.additional_series_index;
+      assert(index < additional_series_.size());
+      return index < additional_series_.size()
+                 ? &additional_series_[index].candles
+                 : nullptr;
+    }
   }
-  return series.source_series_index < additional_series_.size()
-             ? &additional_series_[series.source_series_index].candles
-             : nullptr;
+  return nullptr;
 }
 
 void ChartEngine::RefreshDerivedDependentsLocked(
@@ -141,6 +151,9 @@ void ChartEngine::RefreshDerivedDependentsLocked(
 
 void ChartEngine::RebuildAllDerivedSeriesLocked(MutationScope& mutation) {
   for (SeriesData& series : additional_series_) {
+    if (!IsDerivedOhlcvSource(series.config.source)) {
+      continue;
+    }
     mutation.ContentChanged();
     internal::RebuildDerivedSeries(series, SourceCandlesLocked(series), 0);
   }
@@ -149,7 +162,8 @@ void ChartEngine::RebuildAllDerivedSeriesLocked(MutationScope& mutation) {
 bool ChartEngine::PaneHasRsiLocked(size_t pane_index) const {
   return std::any_of(additional_series_.begin(), additional_series_.end(),
                      [&](const SeriesData& series) {
-                       return series.pane_index == pane_index &&
+                       return series.pane_index.has_value() &&
+                              *series.pane_index == pane_index &&
                               series.config.source == SeriesSource::kOhlcvRsi;
                      });
 }
@@ -157,7 +171,8 @@ bool ChartEngine::PaneHasRsiLocked(size_t pane_index) const {
 bool ChartEngine::PaneHasMacdLocked(size_t pane_index) const {
   return std::any_of(additional_series_.begin(), additional_series_.end(),
                      [&](const SeriesData& series) {
-                       return series.pane_index == pane_index &&
+                       return series.pane_index.has_value() &&
+                              *series.pane_index == pane_index &&
                               series.config.source == SeriesSource::kOhlcvMacd;
                      });
 }

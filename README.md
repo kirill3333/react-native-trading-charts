@@ -543,7 +543,7 @@ const panes = [
 | `minHeight` | Positive number | `48` | Minimum height in native view units. |
 | `priceScale.priceScaleId` | Unique non-empty string | Required | Scale ID; the main pane must use `main`. |
 | `priceScale.visible` | `boolean` | `true` | Shows the pane price scale. |
-| `priceScale.scaleMargins` | `{ top, bottom }` | Main: `{ 0.2, 0.1 }`; others: `{ 0.1, 0 }` | Pane-specific autoscale margins. |
+| `priceScale.scaleMargins` | `{ top, bottom }` | Main: `{ 0.2, 0.1 }`; others: `{ 0.1, 0 }` | Pane-specific autoscale margins; their sum must leave at least `1e-6` of the plot area. |
 | `priceScale.valueFormat` | Price, compact, significant, or volume format | Main Y format | Pane scale number format. |
 
 ### Additional-series properties
@@ -878,8 +878,9 @@ labels only and can be configured independently.
 | `scaleMargins.bottom` | Non-negative fraction | `0.1` | Reserved space below visible values. |
 | `valueFormat` | `YAxisValueFormat` | Price format | Legacy/main Y-axis formatter; `formatters.price.yAxis` wins. |
 
-Scale margins must sum to less than `1`. When visible values are equal,
-autoscale expands the range using `minMove`.
+Scale margins must leave at least `1e-6` of the plot area, so their sum must be
+at most `1 - 1e-6`. When visible values are equal, autoscale expands the range
+using `minMove`.
 
 ### Price formats
 

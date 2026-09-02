@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <vector>
 

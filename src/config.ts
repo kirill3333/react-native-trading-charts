@@ -95,6 +95,7 @@ const DEFAULT_CROSSHAIR_TOOLTIP_FIELDS: ReadonlyArray<CrosshairTooltipField> = [
 ];
 
 const UINT32_MAX = 0xffff_ffff;
+const MINIMUM_SCALE_CONTENT_FRACTION = 1e-6;
 
 const CROSSHAIR_TOOLTIP_FIELD_SET = new Set<string>(
   DEFAULT_CROSSHAIR_TOOLTIP_FIELDS
@@ -220,7 +221,7 @@ function hasValidScaleMargins(value: { top: number; bottom: number }): boolean {
   if (!Number.isFinite(value.bottom) || value.bottom < 0) {
     return false;
   }
-  return value.top + value.bottom < 1;
+  return value.top + value.bottom <= 1 - MINIMUM_SCALE_CONTENT_FRACTION;
 }
 
 function hasValidRsiLevels(oversold: number, overbought: number): boolean {
@@ -479,7 +480,7 @@ function resolveScaleMargins(
   const result = value ?? fallback;
   if (!hasValidScaleMargins(result)) {
     throw new TypeError(
-      `${name} must be finite, non-negative and sum to less than 1`
+      `${name} must be finite, non-negative and leave at least ${MINIMUM_SCALE_CONTENT_FRACTION} of the price scale`
     );
   }
   return { top: result.top, bottom: result.bottom };
@@ -1809,7 +1810,7 @@ export function resolveChartConfig(
   };
   if (!hasValidScaleMargins(scaleMargins)) {
     throw new TypeError(
-      'yAxis.scaleMargins must be finite, non-negative and sum to less than 1'
+      `yAxis.scaleMargins must be finite, non-negative and leave at least ${MINIMUM_SCALE_CONTENT_FRACTION} of the price scale`
     );
   }
 

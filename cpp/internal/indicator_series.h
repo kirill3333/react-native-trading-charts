@@ -7,7 +7,12 @@
 #include <cstddef>
 #include <vector>
 
-#include "cpp/chart_engine.h"
+namespace trading_charts {
+
+struct Candle;
+struct SeriesData;
+
+}  // namespace trading_charts
 
 namespace trading_charts::internal {
 

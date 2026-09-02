@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -17,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "cpp/internal/config_constants.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -106,6 +108,12 @@ class ChartEngineTestAccess {
     std::lock_guard<std::mutex> lock(engine.mutex_);
     const SeriesData* series = engine.FindSeriesLocked(series_id);
     return series == nullptr ? 0 : series->macd_states.size();
+  }
+
+  static PaneConfig PaneAt(ChartEngine& engine, size_t index) {
+    std::lock_guard<std::mutex> lock(engine.mutex_);
+    assert(index < engine.panes_.size());
+    return engine.panes_[index];
   }
 };
 
@@ -790,6 +798,7 @@ void TestViewportAndOverlayMutationContract() {
   assert(engine.SetHistory(history, std::size(history)) ==
          UpdateStatus::kApplied);
 
+  ExpectNoRenderMutation(engine, [&] { assert(!engine.Pan(0.0F)); });
   ExpectContentMutation(engine, [&] { assert(engine.Pan(80.0F)); });
   ExpectContentMutation(engine, [&] { assert(engine.Zoom(1.5, 200.0F)); });
   ExpectContentMutation(engine, [&] { engine.ZoomAtRightEdge(1.2); });
@@ -803,7 +812,7 @@ void TestViewportAndOverlayMutationContract() {
                         [&] { engine.SetCrosshair(true, 120.0F, 100.0F); });
   ExpectNoRenderMutation(engine,
                          [&] { engine.SetCrosshair(true, 120.0F, 100.0F); });
-  ExpectOverlayMutation(engine, [&] { assert(engine.Pan(80.0F)); });
+  ExpectOverlayMutation(engine, [&] { assert(engine.Pan(0.0F)); });
 
   engine.SetCrosshair(true, 120.0F, 100.0F);
   ExpectOverlayMutation(engine, [&] { assert(engine.Zoom(1.0, 200.0F)); });
@@ -1051,6 +1060,80 @@ void TestCustomScaleMargins() {
   const auto snapshot = engine.Snapshot();
   ExpectNear(snapshot->visible_y_min, 10.0 - 10.0 * 0.15 / 0.6);
   ExpectNear(snapshot->visible_y_max, 20.0 + 10.0 * 0.25 / 0.6);
+}
+
+void TestScaleMarginContentFractionBoundary() {
+  constexpr double kAcceptedContentFraction =
+      trading_charts::internal::kMinimumScaleContentFraction * 2.0;
+  constexpr double kRejectedContentFraction =
+      trading_charts::internal::kMinimumScaleContentFraction * 0.5;
+
+  ChartEngine engine;
+  ChartConfig config;
+  config.y_scale_margin_top = 1.0 - kAcceptedContentFraction;
+  config.y_scale_margin_bottom = 0.0;
+  engine.SetConfig(config);
+  auto snapshot = engine.Snapshot();
+  ExpectNear(snapshot->config.y_scale_margin_top, config.y_scale_margin_top);
+  ExpectNear(snapshot->config.y_scale_margin_bottom, 0.0);
+
+  config.y_scale_margin_top = 1.0 - kRejectedContentFraction;
+  engine.SetConfig(config);
+  snapshot = engine.Snapshot();
+  const ChartConfig defaults;
+  ExpectNear(snapshot->config.y_scale_margin_top, defaults.y_scale_margin_top);
+  ExpectNear(snapshot->config.y_scale_margin_bottom,
+             defaults.y_scale_margin_bottom);
+
+  config.y_scale_margin_top = std::numeric_limits<double>::quiet_NaN();
+  config.y_scale_margin_bottom = 0.0;
+  engine.SetConfig(config);
+  snapshot = engine.Snapshot();
+  ExpectNear(snapshot->config.y_scale_margin_top, defaults.y_scale_margin_top);
+  ExpectNear(snapshot->config.y_scale_margin_bottom,
+             defaults.y_scale_margin_bottom);
+
+  PaneConfig main;
+  PaneConfig accepted;
+  accepted.pane_id = "accepted";
+  accepted.price_scale_id = "accepted";
+  accepted.scale_margin_top = 1.0 - kAcceptedContentFraction;
+  accepted.scale_margin_bottom = 0.0;
+  PaneConfig rejected;
+  rejected.pane_id = "rejected";
+  rejected.price_scale_id = "rejected";
+  rejected.scale_margin_top = 1.0 - kRejectedContentFraction;
+  rejected.scale_margin_bottom = 0.0;
+  engine.SetPanes({main, accepted, rejected}, false);
+  const PaneConfig accepted_result =
+      trading_charts::ChartEngineTestAccess::PaneAt(engine, 1);
+  const PaneConfig rejected_result =
+      trading_charts::ChartEngineTestAccess::PaneAt(engine, 2);
+  ExpectNear(accepted_result.scale_margin_top, accepted.scale_margin_top);
+  ExpectNear(accepted_result.scale_margin_bottom, 0.0);
+  ExpectNear(rejected_result.scale_margin_top, 0.1);
+  ExpectNear(rejected_result.scale_margin_bottom, 0.0);
+
+  engine.SetSize(800.0F, 500.0F);
+  const double history[] = {0.0, 10.0, 20.0, 10.0, 15.0, 1.0};
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  snapshot = engine.Snapshot();
+  assert(std::isfinite(snapshot->visible_y_min));
+  assert(std::isfinite(snapshot->visible_y_max));
+}
+
+void TestPaneInvariantWithEmptyConfiguration() {
+  ChartEngine engine;
+  engine.SetSize(400.0F, 240.0F);
+  auto snapshot = engine.Snapshot();
+  assert(snapshot->panes.size() == 1);
+  assert(snapshot->panes.front().pane_id == "main");
+
+  engine.SetPanes({}, true);
+  snapshot = engine.Snapshot();
+  assert(snapshot->panes.size() == 1);
+  assert(snapshot->panes.front().pane_id == "main");
 }
 
 void TestVisiblePriceExtremes() {
@@ -2931,6 +3014,47 @@ void TestMovingAverageSourcesValidationAndCascadeRemoval() {
   assert(!engine.RemoveSeries("source-ema"));
 }
 
+void TestDeclarativeDerivedSeriesResolvesForwardSource() {
+  ChartEngine engine;
+
+  SeriesConfig average;
+  average.series_id = "average";
+  average.type = SeriesType::kLine;
+  average.source = SeriesSource::kOhlcvSma;
+  average.source_series_id = "source";
+  average.moving_average_period = 2;
+  average.declarative = true;
+  assert(engine.AddSeries(average) == UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "average")
+             .empty());
+
+  SeriesConfig imperative = average;
+  imperative.series_id = "imperative";
+  imperative.source_series_id = "missing";
+  imperative.declarative = false;
+  assert(engine.AddSeries(imperative) == UpdateStatus::kInvalidInput);
+
+  SeriesConfig source;
+  source.series_id = "source";
+  source.type = SeriesType::kLine;
+  source.declarative = true;
+  assert(engine.AddSeries(source) == UpdateStatus::kApplied);
+
+  const double values[] = {
+      0.0, 10.0, 10.0, 10.0, 10.0, 1.0, 60'000.0, 14.0, 14.0, 14.0, 14.0, 1.0,
+  };
+  assert(engine.SetSeriesData("source", values, std::size(values), false) ==
+         UpdateStatus::kApplied);
+  const auto derived =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "average");
+  assert(derived.size() == 1);
+  ExpectNear(derived.front().timestamp, 60'000.0);
+  ExpectNear(derived.front().close, 12.0);
+
+  assert(engine.RemoveSeries("source"));
+  assert(!engine.RemoveSeries("average"));
+}
+
 void TestMovingAverageAllValueSourcesAndTradeBatch() {
   ChartEngine engine;
   ChartConfig config;
@@ -3973,6 +4097,8 @@ int main() noexcept {
     TestOneTickRangeUsesScaleMargins();
     TestFlatRangeUsesMinMove();
     TestCustomScaleMargins();
+    TestScaleMarginContentFractionBoundary();
+    TestPaneInvariantWithEmptyConfiguration();
     TestVisiblePriceExtremes();
     TestAutoscaleSupportsDifferentMagnitudesAndNegativeValues();
     TestCrosshairUsesAutoscaleInverse();
@@ -4015,6 +4141,7 @@ int main() noexcept {
     TestRsiFlatAndCascadeRemoval();
     TestMovingAverageValuesWarmupAndIncrementalUpdates();
     TestMovingAverageSourcesValidationAndCascadeRemoval();
+    TestDeclarativeDerivedSeriesResolvesForwardSource();
     TestMovingAverageAllValueSourcesAndTradeBatch();
     TestMacdWarmupIncrementalLegendAndAutoscale();
     TestMacdValidationSourcesAndRsiPaneExclusion();

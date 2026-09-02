@@ -13,11 +13,6 @@ namespace trading_charts::internal {
 
 inline constexpr float kTopInset = 8.0f;
 
-// Returns the pane config at `index`, or a shared fallback when the engine
-// state carries fewer pane configs than pane slots.
-const PaneConfig& PaneConfigAt(const std::vector<PaneConfig>& panes,
-                               size_t index);
-
 // Computes the plot rect of every pane from the config and pane weights.
 // This is the single source of truth shared by gesture hit-testing
 // (ChartEngine) and the snapshot builder so both always agree on pane
