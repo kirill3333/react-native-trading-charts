@@ -484,7 +484,7 @@ final class ChartOverlayView: UIView {
     let showTooltip = configuration.native.show_tooltip && (showTooltipHeader || !tooltipFields.isEmpty)
     if showTooltip {
       let candle = frame.selectedCandle
-      var labels: [String] = []; var values: [String] = []
+      var fields: [String] = []; var labels: [String] = []; var values: [String] = []
       for field in tooltipFields {
         let value: String?
         switch field {
@@ -505,11 +505,12 @@ final class ChartOverlayView: UIView {
         default: value = nil
         }
         guard let value else { continue }
+        fields.append(field)
         labels.append(tooltipLabel(field, config: configuration.native)); values.append(value)
       }
       applyTooltip(
         frame: frame, style: style, timeIndex: timeIndex,
-        labels: labels, values: values, metrics: &metrics
+        fields: fields, labels: labels, values: values, metrics: &metrics
       )
       visible += values.count * 2 + (showTooltipHeader ? 1 : 0)
     } else { setHidden(true, on: tooltipContainer) }
@@ -521,20 +522,16 @@ final class ChartOverlayView: UIView {
 
   private func applyTooltip(
     frame: ChartRenderFrame, style: OverlayStyle, timeIndex: Int,
-    labels: [String], values: [String], metrics: inout OverlayUpdateMetrics
+    fields: [String], labels: [String], values: [String], metrics: inout OverlayUpdateMetrics
   ) {
     let labelText = labels.joined(separator: "\n")
-    let valueText = values.joined(separator: "\n")
     let labelsLayout = cachedLayout(
       labelText, attributes: multilineAttributes(style.tooltipLabel),
       cache: tooltipLabelLayoutCache, metrics: &metrics)
     let direction = frame.selectedChange > 0 ? 1 : (frame.selectedChange < 0 ? -1 : 0)
-    let valueAttributes = direction > 0 ? style.tooltipUp : (direction < 0 ? style.tooltipDown : style.tooltipValue)
-    let valueCache = direction > 0
-      ? tooltipUpLayoutCache : (direction < 0 ? tooltipDownLayoutCache : tooltipValueLayoutCache)
-    let valuesLayout = cachedLayout(
-      valueText, attributes: multilineAttributes(valueAttributes), cache: valueCache,
-      metrics: &metrics)
+    let valuesLayout = tooltipValuesLayout(
+      fields: fields, values: values, direction: direction, style: style, metrics: &metrics
+    )
     let headerText = formatters.formatTime(
       frame.selectedCandle.timestamp, index: timeIndex, full: true, tooltip: true
     )
@@ -628,6 +625,37 @@ final class ChartOverlayView: UIView {
 }
 
 extension ChartOverlayView {
+  private func tooltipValuesLayout(
+    fields: [String], values: [String], direction: Int, style: OverlayStyle,
+    metrics: inout OverlayUpdateMetrics
+  ) -> ChartTextLayout {
+    let cache = direction > 0
+      ? tooltipUpLayoutCache : (direction < 0 ? tooltipDownLayoutCache : tooltipValueLayoutCache)
+    let key = "\(direction)\u{1f}\(fields.joined(separator: ","))\u{1f}\(values.joined(separator: "\n"))" as NSString
+    if let layout = cache.object(forKey: key) {
+      metrics.layoutCacheHits += 1
+      return layout
+    }
+
+    metrics.layoutCacheMisses += 1
+    let valueAttributes = multilineAttributes(style.tooltipValue)
+    let changeAttributes = multilineAttributes(
+      direction > 0 ? style.tooltipUp : (direction < 0 ? style.tooltipDown : style.tooltipValue)
+    )
+    let attributedString = NSMutableAttributedString(string: "")
+    for index in values.indices {
+      let isChange = fields[index] == "changePercent" || fields[index] == "change"
+      let line = index == 0 ? values[index] : "\n\(values[index])"
+      attributedString.append(NSAttributedString(
+        string: line,
+        attributes: isChange ? changeAttributes : valueAttributes
+      ))
+    }
+    let layout = ChartTextLayout(attributedString: attributedString)
+    cache.setObject(layout, forKey: key)
+    return layout
+  }
+
   func applyBadgeFrames(
     _ badge: BadgeLayerGroup, layout: ChartTextLayout, backgroundFrame: CGRect,
     color: UIColor, border: BorderStyle, metrics: inout OverlayUpdateMetrics
