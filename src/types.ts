@@ -31,6 +31,41 @@ export type PriceLineOptions = Readonly<{
   color: string;
 }>;
 
+type CrosshairSeriesIdentity = Readonly<{
+  seriesId: string;
+  paneId: string;
+  priceScaleId: string;
+}>;
+
+export type CrosshairSeriesValue =
+  | (CrosshairSeriesIdentity &
+      Readonly<{
+        kind: 'ohlc';
+        seriesType: 'candlestick' | 'hollowCandlestick' | 'bar';
+        candle: OhlcCandle | null;
+      }>)
+  | (CrosshairSeriesIdentity &
+      Readonly<{
+        kind: 'scalar';
+        seriesType: 'line' | 'area' | 'histogram';
+        sourceType:
+          | 'data'
+          | 'ohlcvVolume'
+          | 'ohlcvRsi'
+          | 'ohlcvSma'
+          | 'ohlcvEma';
+        value: number | null;
+      }>)
+  | (CrosshairSeriesIdentity &
+      Readonly<{
+        kind: 'macd';
+        seriesType: 'macd';
+        sourceType: 'ohlcvMacd';
+        macd: number | null;
+        signal: number | null;
+        histogram: number | null;
+      }>);
+
 export type ResolutionUnit =
   'second' | 'minute' | 'hour' | 'day' | 'week' | 'month';
 
@@ -401,6 +436,11 @@ export type ChartAppearance = {
     };
     label?: ChartDirectionalBadgeStyle;
   };
+  priceLines?: {
+    label?: {
+      border?: Pick<ChartBorderStyle, 'radius'>;
+    };
+  };
   crosshair?: {
     line?: {
       color?: string;
@@ -595,7 +635,10 @@ export type TradingChartsViewProps = ViewProps & {
   onPaneResize?: (event: PaneResizeEvent) => void;
   onPriceScaleChange?: (event: PriceScaleChangeEvent) => void;
   onYAxisPress?: (event: YAxisPressEvent) => void;
-  onSelectedCandleChange?: (candle: OhlcCandle | null) => void;
+  onSelectedCandleChange?: (
+    candle: OhlcCandle | null,
+    seriesValues: ReadonlyArray<CrosshairSeriesValue>
+  ) => void;
 };
 
 export type ResolvedChartConfig = {
@@ -740,6 +783,11 @@ export type ResolvedChartAppearance = {
       downBackgroundColor: string;
       text: ResolvedChartTextStyle;
       border: ResolvedChartBorderStyle;
+    };
+  };
+  priceLines: {
+    label: {
+      border: Pick<ResolvedChartBorderStyle, 'radius'>;
     };
   };
   crosshair: {

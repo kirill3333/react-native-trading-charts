@@ -221,6 +221,12 @@ class RenderSnapshotHandle {
                                                size_t value_index) const {
     return snapshot_->indicator_legends.at(legend_index).values.at(value_index);
   }
+  size_t CrosshairSeriesValueCount() const {
+    return snapshot_->crosshair_series_values.size();
+  }
+  CrosshairSeriesValue CrosshairSeriesValueAt(size_t index) const {
+    return snapshot_->crosshair_series_values.at(index);
+  }
   size_t PriceLineCount() const { return snapshot_->price_lines.size(); }
   PriceLineSnapshot PriceLineAt(size_t index) const {
     return snapshot_->price_lines.at(index);

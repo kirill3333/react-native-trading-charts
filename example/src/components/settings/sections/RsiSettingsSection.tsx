@@ -29,7 +29,7 @@ export function RsiSettingsSection() {
         value={settings.rsiLineColorOverride ?? theme.rsiColor}
       />
       <HexColorSetting
-        description="Color of the RSI title and value"
+        description="Color of the RSI title"
         label="Text color"
         onValueChange={(rsiTextColorOverride) =>
           updateSettings({ rsiTextColorOverride })

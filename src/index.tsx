@@ -35,6 +35,7 @@ export type {
   ChartTextStyle,
   CompactValueFormat,
   CrosshairLineStyle,
+  CrosshairSeriesValue,
   CrosshairOptions,
   CrosshairTooltipField,
   CrosshairTooltipLabels,

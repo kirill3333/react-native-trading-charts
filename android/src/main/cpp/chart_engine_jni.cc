@@ -24,6 +24,7 @@ using trading_charts::CandleTimestampPolicy;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
+using trading_charts::CrosshairSeriesValue;
 using trading_charts::OhlcValueSource;
 using trading_charts::OutsideSessionPolicy;
 using trading_charts::PaneConfig;
@@ -305,6 +306,7 @@ inline constexpr size_t kPaneSnapshotRecordWidth = 14;
 inline constexpr size_t kIndicatorLegendValueRecordWidth = 6;
 inline constexpr size_t kIndicatorLegendValueCapacity = 3;
 inline constexpr size_t kIndicatorLegendRecordWidth = 31;
+inline constexpr size_t kCrosshairSeriesValueRecordWidth = 17;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 46);
@@ -317,6 +319,7 @@ static_assert(kTickRecordWidth == 2);
 static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
               kPaneSnapshotRecordWidth);
 static_assert(kIndicatorLegendRecordWidth == 31);
+static_assert(kCrosshairSeriesValueRecordWidth == 17);
 static_assert(kIndicatorLegendRecordWidth ==
               ToIndex(IndicatorLegendRecordIndex::kValues) +
                   kIndicatorLegendValueRecordWidth *
@@ -540,7 +543,7 @@ extern "C" {
 JNIEXPORT jintArray JNICALL
 Java_com_tradingcharts_ChartEngineNative_nativeTransportAbi(JNIEnv* env,
                                                             jclass) {
-  const std::array<jint, 8> descriptor{
+  const std::array<jint, 9> descriptor{
       static_cast<jint>(kChartEngineTransportAbiVersion),
       static_cast<jint>(kSeriesNumberCount),
       static_cast<jint>(kSeriesColorCount),
@@ -549,6 +552,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeTransportAbi(JNIEnv* env,
       static_cast<jint>(kTickRecordWidth),
       static_cast<jint>(kPaneSnapshotRecordWidth),
       static_cast<jint>(kIndicatorLegendRecordWidth),
+      static_cast<jint>(kCrosshairSeriesValueRecordWidth),
   };
   jintArray result = env->NewIntArray(static_cast<jsize>(descriptor.size()));
   env->SetIntArrayRegion(result, 0, static_cast<jsize>(descriptor.size()),
@@ -1607,6 +1611,59 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotIndicatorLegends(
     }
   }
   return NewDoubleArray(env, packed);
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotCrosshairSeriesValues(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* snapshot = holder && *holder ? holder->get() : nullptr;
+  const size_t count = snapshot ? snapshot->crosshair_series_values.size() : 0;
+  auto packed = VersionedRecordPayload(kCrosshairSeriesValueRecordWidth, count);
+  if (snapshot) {
+    for (size_t index = 0; index < count; ++index) {
+      const CrosshairSeriesValue& value =
+          snapshot->crosshair_series_values[index];
+      const size_t offset =
+          RecordOffset(kCrosshairSeriesValueRecordWidth, index);
+      packed[offset] = static_cast<double>(value.kind);
+      packed[offset + 1] = static_cast<double>(value.series_type);
+      packed[offset + 2] = static_cast<double>(value.source_type);
+      packed[offset + 3] = value.has_value ? 1.0 : 0.0;
+      packed[offset + 4] = value.candle.timestamp;
+      packed[offset + 5] = value.candle.open;
+      packed[offset + 6] = value.candle.high;
+      packed[offset + 7] = value.candle.low;
+      packed[offset + 8] = value.candle.close;
+      packed[offset + 9] = value.candle.volume;
+      packed[offset + 10] = value.value;
+      packed[offset + 11] = value.has_macd ? 1.0 : 0.0;
+      packed[offset + 12] = value.macd;
+      packed[offset + 13] = value.has_signal ? 1.0 : 0.0;
+      packed[offset + 14] = value.signal;
+      packed[offset + 15] = value.has_histogram ? 1.0 : 0.0;
+      packed[offset + 16] = value.histogram;
+    }
+  }
+  return NewDoubleArray(env, packed);
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotCrosshairSeriesStrings(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* snapshot = holder && *holder ? holder->get() : nullptr;
+  std::vector<std::string> strings;
+  if (snapshot) {
+    strings.reserve(snapshot->crosshair_series_values.size() * 3);
+    for (const CrosshairSeriesValue& value :
+         snapshot->crosshair_series_values) {
+      strings.push_back(value.series_id);
+      strings.push_back(value.pane_id);
+      strings.push_back(value.price_scale_id);
+    }
+  }
+  return NewStringArray(env, strings);
 }
 
 JNIEXPORT jdoubleArray JNICALL

@@ -242,6 +242,7 @@ class ChartEngineTransportAbiTest {
             2,
             14,
             31,
+            17,
         )
     )
     val expectedRoundTrip =
@@ -262,7 +263,7 @@ class ChartEngineTransportAbiTest {
     validateSeriesRoundTrip(expectedRoundTrip)
 
     assertThrows(IllegalStateException::class.java) {
-      validateTransportDescriptor(intArrayOf(1, 25, 80, 5, 3, 2, 14, 31))
+      validateTransportDescriptor(intArrayOf(1, 25, 80, 5, 3, 2, 14, 31, 17))
     }
     assertThrows(IllegalStateException::class.java) {
       validateSeriesRoundTrip(expectedRoundTrip.copyOf().also { it[27] = -1.0 })

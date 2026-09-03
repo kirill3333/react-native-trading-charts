@@ -261,7 +261,7 @@ export const APP_THEMES = {
     volumeUpColor: '#38D98A80',
     volumeDownColor: '#FF3B6480',
     rsiColor: '#8C7CFF',
-    rsiTextColor: '#8C7CFF',
+    rsiTextColor: '#9791A5',
     rsiLevelLineColor: '#8C7CFF80',
     rsiBandColor: '#8C7CFF14',
     macd: {
@@ -289,7 +289,7 @@ export const APP_THEMES = {
     volumeUpColor: '#08998166',
     volumeDownColor: '#F2364566',
     rsiColor: '#2962FF',
-    rsiTextColor: '#2962FF',
+    rsiTextColor: '#2A2E39',
     rsiLevelLineColor: '#2962FF80',
     rsiBandColor: '#2962FF14',
     macd: {

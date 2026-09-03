@@ -9,6 +9,7 @@ internal class SelectedCandleChangeEvent(
     viewId: Int,
     private val active: Boolean,
     private val candle: DoubleArray,
+    private val seriesValuesJson: String,
 ) : Event<SelectedCandleChangeEvent>(surfaceId, viewId) {
   override fun getEventName(): String = EVENT_NAME
 
@@ -25,6 +26,7 @@ internal class SelectedCandleChangeEvent(
         putDouble("low", candle.getOrElse(3) { 0.0 })
         putDouble("close", candle.getOrElse(4) { 0.0 })
         putDouble("volume", candle.getOrElse(5) { 0.0 })
+        putString("seriesValuesJson", seriesValuesJson)
       }
 
   companion object {

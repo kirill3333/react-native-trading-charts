@@ -10,12 +10,15 @@ typealias NativeCandle = trading_charts.Candle
 typealias NativeAxisTick = trading_charts.AxisTick
 typealias NativePaneSnapshot = trading_charts.PaneSnapshot
 typealias NativeIndicatorLegend = trading_charts.IndicatorLegend
+typealias NativeCrosshairSeriesValue = trading_charts.CrosshairSeriesValue
 typealias NativePriceExtremum = trading_charts.PriceExtremum
 typealias NativePriceLine = trading_charts.PriceLine
 typealias NativePriceLineSnapshot = trading_charts.PriceLineSnapshot
 typealias NativeChartConfig = trading_charts.ChartConfig
 typealias NativePaneConfig = trading_charts.PaneConfig
 typealias NativeSeriesConfig = trading_charts.SeriesConfig
+typealias NativeSeriesType = trading_charts.SeriesType
+typealias NativeSeriesSource = trading_charts.SeriesSource
 typealias NativeUpdateStatus = trading_charts.UpdateStatus
 typealias NativePaneVector = trading_charts.swift_interop.PaneVector
 typealias NativeTradingCalendarConfig = trading_charts.TradingCalendarConfig
@@ -103,6 +106,7 @@ struct ChartRenderFrame {
   var paneYTickCount: Int { Int(handle.PaneYTickCount()) }
   var paneCount: Int { Int(handle.PaneCount()) }
   var indicatorLegendCount: Int { Int(handle.IndicatorLegendCount()) }
+  var crosshairSeriesValueCount: Int { Int(handle.CrosshairSeriesValueCount()) }
   var priceLineCount: Int { Int(handle.PriceLineCount()) }
 
   func xTick(at index: Int) -> NativeAxisTick { handle.XTickAt(index) }
@@ -114,6 +118,9 @@ struct ChartRenderFrame {
   }
   func indicatorLegendValue(legendIndex: Int, valueIndex: Int) -> trading_charts.IndicatorLegendValue {
     handle.IndicatorLegendValueAt(legendIndex, valueIndex)
+  }
+  func crosshairSeriesValue(at index: Int) -> NativeCrosshairSeriesValue {
+    handle.CrosshairSeriesValueAt(index)
   }
   func priceLine(at index: Int) -> NativePriceLineSnapshot { handle.PriceLineAt(index) }
 

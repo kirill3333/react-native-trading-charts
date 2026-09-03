@@ -1,5 +1,5 @@
 import { type SelectedCandleChangeNativeEvent } from './TradingChartsViewNativeComponent';
-import { type OhlcCandle } from './types';
+import { type CrosshairSeriesValue, type OhlcCandle } from './types';
 
 export function selectedCandleFromNativeEvent(
   event: SelectedCandleChangeNativeEvent
@@ -13,4 +13,12 @@ export function selectedCandleFromNativeEvent(
     close: event.close,
     volume: event.volume,
   };
+}
+
+export function selectedSeriesValuesFromNativeEvent(
+  event: SelectedCandleChangeNativeEvent
+): ReadonlyArray<CrosshairSeriesValue> {
+  if (!event.active) return [];
+  // SAFETY: both native emitters serialize the closed CrosshairSeriesValue union.
+  return JSON.parse(event.seriesValuesJson) as CrosshairSeriesValue[];
 }

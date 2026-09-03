@@ -236,6 +236,7 @@ internal object SnapshotTransportAbi {
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
   const val INDICATOR_LEGEND_RECORD_WIDTH = 31
+  const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 17
   const val PRICE_LINE_RECORD_WIDTH = 6
 
   object PaneIndex {
@@ -442,6 +443,7 @@ internal fun validateTransportDescriptor(descriptor: IntArray) {
           SnapshotTransportAbi.TICK_RECORD_WIDTH,
           SnapshotTransportAbi.PANE_RECORD_WIDTH,
           SnapshotTransportAbi.INDICATOR_LEGEND_RECORD_WIDTH,
+          SnapshotTransportAbi.CROSSHAIR_SERIES_VALUE_RECORD_WIDTH,
       )
   check(descriptor.contentEquals(expected)) {
     "Incompatible ChartEngine JNI ABI: native=${descriptor.contentToString()}, " +

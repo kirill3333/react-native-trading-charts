@@ -61,6 +61,24 @@ internal data class PriceLineSnapshot(
     val y: Float,
 )
 
+internal data class CrosshairSeriesValueSnapshot(
+    val seriesId: String,
+    val paneId: String,
+    val priceScaleId: String,
+    val kind: Int,
+    val seriesType: Int,
+    val sourceType: Int,
+    val hasValue: Boolean,
+    val candle: DoubleArray,
+    val value: Double,
+    val hasMacd: Boolean,
+    val macd: Double,
+    val hasSignal: Boolean,
+    val signal: Double,
+    val hasHistogram: Boolean,
+    val histogram: Double,
+)
+
 internal data class PriceLineValue(
     val id: String,
     val price: Double,
@@ -373,6 +391,10 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotIndicatorLegends(handle: Long): DoubleArray
 
+  @JvmStatic private external fun nativeSnapshotCrosshairSeriesValues(handle: Long): DoubleArray
+
+  @JvmStatic private external fun nativeSnapshotCrosshairSeriesStrings(handle: Long): Array<String>
+
   @JvmStatic private external fun nativeSnapshotPriceLineValues(handle: Long): DoubleArray
 
   @JvmStatic private external fun nativeSnapshotPriceLineStrings(handle: Long): Array<String>
@@ -680,6 +702,50 @@ internal object ChartEngineNative {
               ),
           y = payload.values[offset + 1].toFloat(),
       )
+    }
+  }
+
+  private fun snapshotCrosshairSeriesValues(snapshot: Long): List<CrosshairSeriesValueSnapshot> {
+    val payload =
+        decodeSnapshotRecordPayload(
+            nativeSnapshotCrosshairSeriesValues(snapshot),
+            SnapshotTransportAbi.CROSSHAIR_SERIES_VALUE_RECORD_WIDTH,
+            "crosshair series values",
+        )
+    val strings = nativeSnapshotCrosshairSeriesStrings(snapshot)
+    check(strings.size == payload.recordCount * 3) {
+      "Invalid native crosshair-series snapshot strings"
+    }
+    return List(payload.recordCount) { index ->
+      val offset = payload.offset(index)
+      fun number(field: Int) = payload.values[offset + field]
+      CrosshairSeriesValueSnapshot(
+          seriesId = strings[index * 3],
+          paneId = strings[index * 3 + 1],
+          priceScaleId = strings[index * 3 + 2],
+          kind = number(0).toInt(),
+          seriesType = number(1).toInt(),
+          sourceType = number(2).toInt(),
+          hasValue = number(3) != 0.0,
+          candle = DoubleArray(6) { candleIndex -> number(4 + candleIndex) },
+          value = number(10),
+          hasMacd = number(11) != 0.0,
+          macd = number(12),
+          hasSignal = number(13) != 0.0,
+          signal = number(14),
+          hasHistogram = number(15) != 0.0,
+          histogram = number(16),
+      )
+    }
+  }
+
+  fun crosshairSeriesValues(handle: Long): List<CrosshairSeriesValueSnapshot> {
+    val snapshot = nativeAcquireSnapshot(handle)
+    check(snapshot != 0L) { "Unable to acquire native snapshot" }
+    return try {
+      snapshotCrosshairSeriesValues(snapshot)
+    } finally {
+      nativeReleaseSnapshot(snapshot)
     }
   }
 }

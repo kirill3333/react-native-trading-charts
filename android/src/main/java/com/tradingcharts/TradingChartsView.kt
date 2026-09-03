@@ -50,6 +50,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var pastEdgeWaitStartedAtMs = 0L
   private var lastVisibleRangeKey: Triple<Int, Int, Int>? = null
   private var lastSelectedCandle: DoubleArray? = null
+  private var lastSelectedContentRevision = -1L
+  private var lastSelectedSeriesValuesJson = "[]"
   private var pendingScaleChange = false
   private var pendingYAxisScaleChange = false
   private val declarativeSeriesIds = mutableSetOf<String>()
@@ -579,18 +581,32 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private fun emitSelectedCandleChange(snapshot: ChartSnapshot) {
     if (id == NO_ID) return
     val selected = snapshot.selectedCandle.takeIf { snapshot.crosshairVisible }
-    if (lastSelectedCandle.hasSameContentAs(selected)) return
-    lastSelectedCandle = selected?.copyOf()
-    val reactContext = context as? ReactContext ?: return
-    eventDispatcher(reactContext)
-        ?.dispatchEvent(
-            SelectedCandleChangeEvent(
-                UIManagerHelper.getSurfaceId(this),
-                id,
-                selected != null,
-                selected ?: DoubleArray(6),
+    val candleChanged = !lastSelectedCandle.hasSameContentAs(selected)
+    if (!candleChanged && lastSelectedContentRevision == snapshot.contentRevision) return
+    val seriesValuesJson =
+        if (selected == null) {
+          "[]"
+        } else {
+          crosshairSeriesValuesJson(ChartEngineNative.crosshairSeriesValues(engineHandle))
+        }
+    lastSelectedContentRevision = snapshot.contentRevision
+    if (candleChanged || seriesValuesJson != lastSelectedSeriesValuesJson) {
+      lastSelectedCandle = selected?.copyOf()
+      lastSelectedSeriesValuesJson = seriesValuesJson
+      val reactContext = context as? ReactContext
+      if (reactContext != null) {
+        eventDispatcher(reactContext)
+            ?.dispatchEvent(
+                SelectedCandleChangeEvent(
+                    UIManagerHelper.getSurfaceId(this),
+                    id,
+                    selected != null,
+                    selected ?: DoubleArray(6),
+                    seriesValuesJson,
+                )
             )
-        )
+      }
+    }
   }
 
   private fun emitScaleChanges(snapshot: ChartSnapshot) {

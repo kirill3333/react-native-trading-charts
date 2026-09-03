@@ -22,6 +22,7 @@ export type SelectedCandleChangeNativeEvent = Readonly<{
   low: CodegenTypes.Double;
   close: CodegenTypes.Double;
   volume: CodegenTypes.Double;
+  seriesValuesJson: string;
 }>;
 
 export type ScaleChangeNativeEvent = Readonly<{

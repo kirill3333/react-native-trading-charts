@@ -31,6 +31,8 @@ internal class ChartConfigJsonDecoder(
   private val currentAppearance = appearance.getJSONObject("currentPrice")
   private val currentLineAppearance = currentAppearance.getJSONObject("line")
   private val currentLabelAppearance = currentAppearance.getJSONObject("label")
+  private val priceLineLabelAppearance =
+      appearance.getJSONObject("priceLines").getJSONObject("label")
   private val crosshairAppearance = appearance.getJSONObject("crosshair")
   private val crosshairLineAppearance = crosshairAppearance.getJSONObject("line")
   private val crosshairPriceAppearance = crosshairAppearance.getJSONObject("priceLabel")
@@ -286,6 +288,11 @@ internal class ChartConfigJsonDecoder(
               border(
                   currentLabelAppearance.getJSONObject("border"),
                   defaultRadius = 4f,
+              ),
+          priceLineBorder =
+              border(
+                  priceLineLabelAppearance.getJSONObject("border"),
+                  defaultRadius = 0f,
               ),
       )
 

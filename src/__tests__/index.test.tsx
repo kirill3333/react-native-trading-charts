@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { createTradingCharts } from '../TradingCharts';
 import { resolveAdditionalSeriesOptions, resolveChartConfig } from '../config';
-import { selectedCandleFromNativeEvent } from '../events';
+import {
+  selectedCandleFromNativeEvent,
+  selectedSeriesValuesFromNativeEvent,
+} from '../events';
 import { type Spec as NativeTradingChartsSpec } from '../NativeTradingCharts';
 import { createTradeBatcherWithNativeModule } from '../tradeBatcher';
 
@@ -1679,6 +1682,7 @@ describe('chart config', () => {
             border: { color: '#654321', width: 2, radius: 6 },
           },
         },
+        priceLines: { label: { border: { radius: 7 } } },
         crosshair: {
           priceLabel: { backgroundColor: '#ABCDEF' },
         },
@@ -1704,6 +1708,7 @@ describe('chart config', () => {
           border: { color: '#654321', width: 2, radius: 6 },
         },
       },
+      priceLines: { label: { border: { radius: 7 } } },
       crosshair: { priceLabel: { backgroundColor: '#ABCDEF' } },
       tooltip: { backgroundOpacity: 0.75 },
     });
@@ -1972,6 +1977,12 @@ describe('chart config', () => {
     ).toThrow('appearance.candles.radius');
     expect(() =>
       resolveChartConfig({
+        chartId: 'bad-price-line-radius',
+        appearance: { priceLines: { label: { border: { radius: -1 } } } },
+      })
+    ).toThrow('appearance.priceLines.label.border.radius');
+    expect(() =>
+      resolveChartConfig({
         chartId: 'bad-color',
         appearance: { backgroundColor: 'red' },
       })
@@ -2018,6 +2029,7 @@ describe('selected candle events', () => {
         low: 9,
         close: 12,
         volume: 4,
+        seriesValuesJson: '[]',
       })
     ).toEqual({
       timestamp: 60_000,
@@ -2039,7 +2051,49 @@ describe('selected candle events', () => {
         low: 0,
         close: 0,
         volume: 0,
+        seriesValuesJson: '[]',
       })
     ).toBeNull();
+  });
+
+  it('maps active native series values and clears them with the crosshair', () => {
+    const active = {
+      active: true,
+      timestamp: 60_000,
+      open: 10,
+      high: 13,
+      low: 9,
+      close: 12,
+      volume: 4,
+      seriesValuesJson: JSON.stringify([
+        {
+          seriesId: 'rsi',
+          paneId: 'rsi',
+          priceScaleId: 'rsi',
+          kind: 'scalar',
+          seriesType: 'line',
+          sourceType: 'ohlcvRsi',
+          value: 54.2,
+        },
+      ]),
+    } as const;
+    expect(selectedSeriesValuesFromNativeEvent(active)).toEqual([
+      {
+        seriesId: 'rsi',
+        paneId: 'rsi',
+        priceScaleId: 'rsi',
+        kind: 'scalar',
+        seriesType: 'line',
+        sourceType: 'ohlcvRsi',
+        value: 54.2,
+      },
+    ]);
+    expect(
+      selectedSeriesValuesFromNativeEvent({
+        ...active,
+        active: false,
+        seriesValuesJson: 'invalid but ignored',
+      })
+    ).toEqual([]);
   });
 });

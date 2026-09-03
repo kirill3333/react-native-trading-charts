@@ -2,7 +2,10 @@ import { memo, useCallback, useMemo } from 'react';
 import { type NativeSyntheticEvent } from 'react-native';
 
 import { resolveChartConfig } from './config';
-import { selectedCandleFromNativeEvent } from './events';
+import {
+  selectedCandleFromNativeEvent,
+  selectedSeriesValuesFromNativeEvent,
+} from './events';
 import NativeTradingChartsView, {
   type PaneResizeNativeEvent,
   type PriceScaleChangeNativeEvent,
@@ -124,7 +127,8 @@ export const TradingChartsView = memo(function TradingChartsView({
   const handleSelectedCandleChange = useCallback(
     (event: NativeSyntheticEvent<SelectedCandleChangeNativeEvent>) => {
       onSelectedCandleChange?.(
-        selectedCandleFromNativeEvent(event.nativeEvent)
+        selectedCandleFromNativeEvent(event.nativeEvent),
+        selectedSeriesValuesFromNativeEvent(event.nativeEvent)
       );
     },
     [onSelectedCandleChange]

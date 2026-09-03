@@ -21,6 +21,7 @@ struct OverlayStyle {
   var crosshairTimeBackground: UIColor
   var tooltipBackground: NativeColor
   var currentPriceBorder: BorderStyle
+  var priceLineBorder: BorderStyle
   var crosshairPriceBorder: BorderStyle
   var crosshairTimeBorder: BorderStyle
   var tooltipBorder: BorderStyle
@@ -32,6 +33,7 @@ struct OverlayStyle {
     let yAxis = appearance.dictionary("yAxis")
     let extrema = appearance.dictionary("priceExtremes")
     let currentLabel = appearance.dictionary("currentPrice").dictionary("label")
+    let priceLineLabel = appearance.dictionary("priceLines").dictionary("label")
     let crosshair = appearance.dictionary("crosshair")
     let crosshairPrice = crosshair.dictionary("priceLabel")
     let crosshairTime = crosshair.dictionary("timeLabel")
@@ -77,6 +79,7 @@ struct OverlayStyle {
       )),
       tooltipBackground: colorFromHex(tooltip.stringOrNil("backgroundColor"), fallback: config.tooltip_background),
       currentPriceBorder: border(currentLabel.dictionary("border"), fallbackRadius: 4),
+      priceLineBorder: border(priceLineLabel.dictionary("border"), fallbackRadius: 0),
       crosshairPriceBorder: border(crosshairPrice.dictionary("border"), fallbackRadius: 4),
       crosshairTimeBorder: border(crosshairTime.dictionary("border"), fallbackRadius: 4),
       tooltipBorder: border(tooltip.dictionary("border"), fallbackRadius: 8)

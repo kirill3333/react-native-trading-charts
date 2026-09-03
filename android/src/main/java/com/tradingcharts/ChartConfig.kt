@@ -205,6 +205,7 @@ internal data class ChartConfig(
     val extremaBackgroundColor: Int = Color.rgb(16, 12, 24),
     val currentPriceTextStyle: TextStyleConfig = TextStyleConfig(Color.BLACK),
     val currentPriceBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 4f),
+    val priceLineBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 0f),
     val crosshairPriceBackgroundColor: Int = Color.rgb(168, 162, 179),
     val crosshairPriceTextStyle: TextStyleConfig = TextStyleConfig(Color.BLACK),
     val crosshairPriceBorder: BorderStyleConfig = BorderStyleConfig(radiusPx = 4f),

@@ -405,10 +405,9 @@ final class ChartOverlayView: UIView {
         cacheKey.append(contentsOf: "\u{1f}\(text)")
         cacheKey.append(contentsOf: "\u{1f}\(value.color.r)\u{1f}\(value.color.g)")
         cacheKey.append(contentsOf: "\u{1f}\(value.color.b)\u{1f}\(value.color.a)")
-        let color = legend.kind == .rsi && legend.text_color_set ? legend.text_color : value.color
         attributed.append(NSAttributedString(
           string: " " + text,
-          attributes: replacingColor(style.yAxis, color: uiColor(color))
+          attributes: replacingColor(style.yAxis, color: uiColor(value.color))
         ))
       }
       let layout: ChartTextLayout

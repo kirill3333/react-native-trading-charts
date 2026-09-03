@@ -28,6 +28,7 @@ using trading_charts::Candle;
 using trading_charts::ChartConfig;
 using trading_charts::ChartEngine;
 using trading_charts::Color;
+using trading_charts::CrosshairSeriesValueKind;
 using trading_charts::IndicatorKind;
 using trading_charts::OhlcValueSource;
 using trading_charts::PaneConfig;
@@ -3296,6 +3297,112 @@ void TestMacdValidationSourcesAndRsiPaneExclusion() {
   assert(!engine.RemoveSeries("custom-macd"));
 }
 
+void TestCrosshairSelectsEveryVisibleAdditionalSeries() {
+  ChartEngine engine;
+  engine.SetSize(600.0f, 420.0f);
+  PaneConfig main;
+  PaneConfig rsi_pane;
+  rsi_pane.pane_id = "rsi";
+  rsi_pane.price_scale_id = "rsi";
+  PaneConfig macd_pane;
+  macd_pane.pane_id = "macd";
+  macd_pane.price_scale_id = "macd";
+  engine.SetPanes({main, rsi_pane, macd_pane}, true);
+
+  SeriesConfig candles;
+  candles.series_id = "comparison";
+  candles.type = SeriesType::kCandlestick;
+  assert(engine.AddSeries(candles) == UpdateStatus::kApplied);
+  const double comparison[] = {
+      0.0, 5.0, 7.0, 4.0, 6.0, 10.0, 180'000.0, 8.0, 10.0, 7.0, 9.0, 11.0,
+  };
+  assert(engine.SetSeriesData("comparison", comparison, std::size(comparison),
+                              false) == UpdateStatus::kApplied);
+
+  SeriesConfig line;
+  line.series_id = "missing-line";
+  line.type = SeriesType::kLine;
+  assert(engine.AddSeries(line) == UpdateStatus::kApplied);
+  const double line_values[] = {0.0, 1.0, 2.0, 0.0, 1.5, 0.0};
+  assert(engine.SetSeriesData("missing-line", line_values,
+                              std::size(line_values),
+                              false) == UpdateStatus::kApplied);
+
+  SeriesConfig volume;
+  volume.series_id = "volume";
+  volume.type = SeriesType::kHistogram;
+  volume.source = SeriesSource::kOhlcvVolume;
+  volume.source_series_id = "main";
+  assert(engine.AddSeries(volume) == UpdateStatus::kApplied);
+
+  SeriesConfig rsi;
+  rsi.series_id = "rsi";
+  rsi.pane_id = "rsi";
+  rsi.price_scale_id = "rsi";
+  rsi.type = SeriesType::kLine;
+  rsi.source = SeriesSource::kOhlcvRsi;
+  rsi.source_series_id = "main";
+  rsi.rsi_period = 1;
+  assert(engine.AddSeries(rsi) == UpdateStatus::kApplied);
+
+  SeriesConfig macd;
+  macd.series_id = "macd";
+  macd.pane_id = "macd";
+  macd.price_scale_id = "macd";
+  macd.type = SeriesType::kLine;
+  macd.source = SeriesSource::kOhlcvMacd;
+  macd.source_series_id = "main";
+  macd.macd_fast_period = 1;
+  macd.macd_slow_period = 2;
+  macd.macd_signal_period = 1;
+  assert(engine.AddSeries(macd) == UpdateStatus::kApplied);
+
+  SeriesConfig hidden = line;
+  hidden.series_id = "hidden";
+  hidden.visible = false;
+  assert(engine.AddSeries(hidden) == UpdateStatus::kApplied);
+
+  const double history[] = {
+      0.0,       1.0, 1.0, 1.0, 1.0, 10.0, 60'000.0,  2.0, 2.0, 2.0, 2.0, 20.0,
+      120'000.0, 3.0, 3.0, 3.0, 3.0, 30.0, 180'000.0, 4.0, 4.0, 4.0, 4.0, 40.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  const auto content = engine.Snapshot();
+  engine.SetCrosshair(true, content->plot.right, content->plot.top);
+  const auto selected = engine.Snapshot();
+  assert(selected->selected_candle.timestamp == 180'000.0);
+  assert(selected->crosshair_series_values.size() == 5);
+
+  const auto& selected_candles = selected->crosshair_series_values[0];
+  assert(selected_candles.series_id == "comparison");
+  assert(selected_candles.kind == CrosshairSeriesValueKind::kOhlc);
+  assert(selected_candles.has_value);
+  ExpectNear(selected_candles.candle.close, 9.0);
+
+  const auto& selected_line = selected->crosshair_series_values[1];
+  assert(selected_line.series_id == "missing-line");
+  assert(selected_line.kind == CrosshairSeriesValueKind::kScalar);
+  assert(!selected_line.has_value);
+
+  const auto& selected_volume = selected->crosshair_series_values[2];
+  assert(selected_volume.source_type == SeriesSource::kOhlcvVolume);
+  assert(selected_volume.has_value);
+  ExpectNear(selected_volume.value, 40.0);
+
+  const auto& selected_rsi = selected->crosshair_series_values[3];
+  assert(selected_rsi.source_type == SeriesSource::kOhlcvRsi);
+  assert(selected_rsi.has_value);
+
+  const auto& selected_macd = selected->crosshair_series_values[4];
+  assert(selected_macd.kind == CrosshairSeriesValueKind::kMacd);
+  assert(selected_macd.has_macd);
+  assert(selected_macd.has_signal);
+  assert(selected_macd.has_histogram);
+  assert(selected->content_revision == content->content_revision);
+  assert(selected->content_vertices == content->content_vertices);
+}
+
 void TestMacdAllOhlcSourcesAndFlatHistory() {
   ChartEngine engine;
   engine.SetSize(600.0f, 360.0f);
@@ -4145,6 +4252,7 @@ int main() noexcept {
     TestMovingAverageAllValueSourcesAndTradeBatch();
     TestMacdWarmupIncrementalLegendAndAutoscale();
     TestMacdValidationSourcesAndRsiPaneExclusion();
+    TestCrosshairSelectsEveryVisibleAdditionalSeries();
     TestMacdAllOhlcSourcesAndFlatHistory();
     TestCustomHistogramAndRuntimePaneWeights();
     TestLargeHistoryAndTradeBurst();

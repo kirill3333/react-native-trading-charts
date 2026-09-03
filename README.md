@@ -195,7 +195,7 @@ The component also accepts standard React Native `ViewProps`, including
 | `onYAxisPress` | `(event: YAxisPressEvent) => void` | `undefined` | Receives taps on any visible pane Y-axis with local coordinates and the mapped price. |
 | `onPaneResize` | `(event) => void` | `undefined` | Receives interactive pane size changes. |
 | `onPriceScaleChange` | `(event) => void` | `undefined` | Receives per-pane price-scale changes. |
-| `onSelectedCandleChange` | `(candle: OhlcCandle \| null) => void` | `undefined` | Receives crosshair selection changes. |
+| `onSelectedCandleChange` | `(candle: OhlcCandle \| null, seriesValues: CrosshairSeriesValue[]) => void` | `undefined` | Receives crosshair selection changes and visible additional-series values. |
 
 ## Data and Streaming
 
@@ -482,6 +482,7 @@ roles and takes precedence over the corresponding theme value. Colors accept
 | `priceExtremes.backgroundColor` | Color | Chart background | Label backing color. |
 | `currentPrice.line.upColor` / `downColor` | Color | Active-series colors | Current-price line colors. |
 | `currentPrice.label` | `ChartDirectionalBadgeStyle` | Active-series backgrounds | Current-price badge. |
+| `priceLines.label.border.radius` | Non-negative number | `0` | Corner radius of custom price-line axis badges. |
 | `crosshair.line.color` | Color | `theme.crosshairColor` | Crosshair line color. |
 | `crosshair.line.opacity` | Number from `0` to `1` | `0.85` | Crosshair line opacity. |
 | `crosshair.priceLabel` / `timeLabel` | `ChartBadgeStyle` | Crosshair-colored background | Crosshair axis badges. |
@@ -658,7 +659,7 @@ const panes = [
       appearance: {
         width: 1.5,
         color: '#6C8CFF',
-        textColor: '#6C8CFF',
+        textColor: '#9791A5',
         levelLineColor: '#6C8CFF80',
         bandColor: '#6C8CFF14',
       },
@@ -676,10 +677,10 @@ share a pane, with one header row per visible series. Derived-to-derived source
 chains are intentionally rejected.
 
 RSI appearance accepts `width` and `color` for the curve, `textColor` for the
-entire native `RSI <period> <value>` legend, `levelLineColor` for the dashed
-oversold/overbought levels, and `bandColor` for the area between those levels.
-When `textColor` is omitted, the legend keeps the backwards-compatible style:
-the title uses the Y-axis text color and the value uses the RSI curve color.
+native `RSI <period>` title, `levelLineColor` for the dashed oversold/overbought
+levels, and `bandColor` for the area between those levels. The value always uses
+the RSI curve color. When `textColor` is omitted, the title uses the Y-axis text
+color, matching the MACD legend treatment.
 
 ### Moving Average Convergence Divergence (MACD)
 
@@ -1010,7 +1011,7 @@ An extremum outside a manually scaled viewport remains hidden.
 | `onYAxisScaleChange` | `{ scale }` | User main-axis drag, at most once per frame | Absolute main Y scale. |
 | `onPaneResize` | `PaneResizeEvent` | Separator drag | Reports both adjacent pane weights. |
 | `onPriceScaleChange` | `PriceScaleChangeEvent` | User pane-axis drag | Reports the affected pane and scale. |
-| `onSelectedCandleChange` | `OhlcCandle \| null` | Selected candle/value changed or selection cleared | Full OHLCV selection. |
+| `onSelectedCandleChange` | `(OhlcCandle \| null, CrosshairSeriesValue[])` | Selected candle or visible additional-series value changed, or selection cleared | Full OHLCV selection plus exact-timestamp series values. |
 | `onYAxisPress` | `YAxisPressEvent` | Tap inside a visible pane Y-axis | Reports local layout coordinates, pane/scale IDs, and the exact price at the tap. |
 
 ### Event payloads
@@ -1068,6 +1069,9 @@ price range and the main Y-axis is visible. The application owns stable IDs;
 calling `setPriceLine` again with the same ID updates the marker without
 changing its insertion order. `clear(chartId)` clears market data but preserves
 markers, while destroying the native view does not persist them.
+Their axis-badge radius is configured globally with
+`appearance.priceLines.label.border.radius`; the current-price badge remains
+independently configurable with `appearance.currentPrice.label.border.radius`.
 
 ```tsx
 const chartId = 'btc-1m';

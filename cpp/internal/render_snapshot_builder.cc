@@ -321,6 +321,7 @@ class RenderSnapshotBuilder {
     snapshot_->selected_amplitude_percent = 0.0;
     snapshot_->selected_percentages_valid = false;
     snapshot_->active_pane_index = 0;
+    snapshot_->crosshair_series_values.clear();
     for (IndicatorLegend& legend : snapshot_->indicator_legends) {
       for (size_t index = 0; index < legend.value_count; ++index) {
         IndicatorLegendValue& value = legend.values[index];
@@ -1690,6 +1691,114 @@ class RenderSnapshotBuilder {
     }
   }
 
+  void SelectCrosshairSeriesValues(double timestamp) {
+    snapshot_->crosshair_series_values.clear();
+    snapshot_->crosshair_series_values.reserve(input_.additional_series.size());
+    for (const SeriesData& series : input_.additional_series) {
+      if (!series.config.visible ||
+          !ValidPaneIndex(series, snapshot_->panes.size()).has_value()) {
+        continue;
+      }
+      CrosshairSeriesValue selected;
+      selected.series_id = series.config.series_id;
+      selected.pane_id = series.config.pane_id;
+      selected.price_scale_id = series.config.price_scale_id;
+      selected.series_type = series.config.type;
+      selected.source_type = series.config.source;
+
+      if (series.config.source == SeriesSource::kOhlcvMacd) {
+        selected.kind = CrosshairSeriesValueKind::kMacd;
+        const auto macd =
+            std::lower_bound(series.candles.begin(), series.candles.end(),
+                             timestamp, [](const Candle& candle, double value) {
+                               return candle.timestamp < value;
+                             });
+        selected.has_macd =
+            macd != series.candles.end() && macd->timestamp == timestamp;
+        selected.macd = selected.has_macd ? macd->close : 0.0;
+        const auto signal = std::lower_bound(
+            series.signal_candles.begin(), series.signal_candles.end(),
+            timestamp, [](const Candle& candle, double value) {
+              return candle.timestamp < value;
+            });
+        selected.has_signal = signal != series.signal_candles.end() &&
+                              signal->timestamp == timestamp;
+        selected.signal = selected.has_signal ? signal->close : 0.0;
+        const auto histogram = std::lower_bound(
+            series.histogram.begin(), series.histogram.end(), timestamp,
+            [](const HistogramPoint& point, double value) {
+              return point.timestamp < value;
+            });
+        selected.has_histogram = histogram != series.histogram.end() &&
+                                 histogram->timestamp == timestamp;
+        selected.histogram = selected.has_histogram ? histogram->value : 0.0;
+        snapshot_->crosshair_series_values.push_back(std::move(selected));
+        continue;
+      }
+
+      if (series.config.source == SeriesSource::kOhlcvVolume) {
+        selected.kind = CrosshairSeriesValueKind::kScalar;
+        const std::vector<Candle>* source = nullptr;
+        if (series.source_binding.kind == SeriesSourceBindingKind::kMain) {
+          source = &input_.candles;
+        } else if (series.source_binding.kind ==
+                       SeriesSourceBindingKind::kAdditional &&
+                   series.source_binding.additional_series_index <
+                       input_.additional_series.size()) {
+          source = &input_
+                        .additional_series[series.source_binding
+                                               .additional_series_index]
+                        .candles;
+        }
+        if (source != nullptr) {
+          const auto point =
+              std::lower_bound(source->begin(), source->end(), timestamp,
+                               [](const Candle& item, double value) {
+                                 return item.timestamp < value;
+                               });
+          selected.has_value =
+              point != source->end() && point->timestamp == timestamp;
+          selected.value = selected.has_value ? point->volume : 0.0;
+        }
+        snapshot_->crosshair_series_values.push_back(std::move(selected));
+        continue;
+      }
+
+      if (series.config.type == SeriesType::kHistogram) {
+        selected.kind = CrosshairSeriesValueKind::kScalar;
+        const auto point = std::lower_bound(
+            series.histogram.begin(), series.histogram.end(), timestamp,
+            [](const HistogramPoint& item, double value) {
+              return item.timestamp < value;
+            });
+        selected.has_value =
+            point != series.histogram.end() && point->timestamp == timestamp;
+        selected.value = selected.has_value ? point->value : 0.0;
+        snapshot_->crosshair_series_values.push_back(std::move(selected));
+        continue;
+      }
+
+      const auto candle =
+          std::lower_bound(series.candles.begin(), series.candles.end(),
+                           timestamp, [](const Candle& item, double value) {
+                             return item.timestamp < value;
+                           });
+      selected.has_value =
+          candle != series.candles.end() && candle->timestamp == timestamp;
+      if (series.config.source == SeriesSource::kData &&
+          !IsLineLikeSeries(series.config.type)) {
+        selected.kind = CrosshairSeriesValueKind::kOhlc;
+        selected.candle = selected.has_value ? *candle : Candle{};
+      } else {
+        selected.kind = CrosshairSeriesValueKind::kScalar;
+        selected.value = selected.has_value
+                             ? CandleValue(*candle, series.config.line_source)
+                             : 0.0;
+      }
+      snapshot_->crosshair_series_values.push_back(std::move(selected));
+    }
+  }
+
   void AddCrosshair() {
     if (!input_.crosshair_active || !input_.config.crosshair_enabled) {
       return;
@@ -1744,6 +1853,7 @@ class RenderSnapshotBuilder {
     snapshot_->crosshair_visible = true;
     snapshot_->selected_candle = *nearest;
     SelectIndicatorLegendValues(nearest->timestamp);
+    SelectCrosshairSeriesValues(nearest->timestamp);
     snapshot_->crosshair_x =
         std::clamp(ProjectX(CandleX(nearest_index)), snapshot_->plot.left,
                    snapshot_->plot.right);

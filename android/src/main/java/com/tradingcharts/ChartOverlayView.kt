@@ -499,7 +499,12 @@ internal class ChartOverlayView(context: Context) : View(context) {
           badgeY + badgeHeight / 2f,
       )
       fillPaint.color = line.color
-      canvas.drawRect(scratchRect, fillPaint)
+      canvas.drawRoundRect(
+          scratchRect,
+          frame.config.priceLineBorder.radiusPx,
+          frame.config.priceLineBorder.radiusPx,
+          fillPaint,
+      )
       canvas.drawText(
           content.price.text,
           scratchRect.centerX() - content.price.width / 2f,
@@ -665,12 +670,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
       canvas.drawText(label.title, left, baseline, rsiTitlePaint)
       var valueLeft = left + label.titleWidth + 6f * density
       legend.values.forEachIndexed { valueIndex, value ->
-        rsiValuePaint.color =
-            if (legend.kind == INDICATOR_KIND_RSI && legend.textColorSet) {
-              legend.textColor
-            } else {
-              value.color
-            }
+        rsiValuePaint.color = value.color
         canvas.drawText(label.values[valueIndex], valueLeft, baseline, rsiValuePaint)
         valueLeft += label.valueWidths[valueIndex] + 6f * density
       }

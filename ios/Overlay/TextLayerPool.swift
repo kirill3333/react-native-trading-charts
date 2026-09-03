@@ -270,7 +270,7 @@ extension ChartOverlayView {
           height: badgeHeight
         ),
         color: color,
-        border: BorderStyle(color: .clear, width: 0, radius: 0),
+        border: style.priceLineBorder,
         metrics: &metrics
       )
       visible += 2

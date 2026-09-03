@@ -880,6 +880,16 @@ function resolveAppearance(
         ),
       },
     },
+    priceLines: {
+      label: {
+        border: {
+          radius: finiteNonNegative(
+            input?.priceLines?.label?.border?.radius ?? 0,
+            'appearance.priceLines.label.border.radius'
+          ),
+        },
+      },
+    },
     crosshair: {
       line: {
         color: crosshairColor,

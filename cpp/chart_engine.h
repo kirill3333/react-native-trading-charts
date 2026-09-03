@@ -457,6 +457,30 @@ struct IndicatorLegend {
   std::array<IndicatorLegendValue, 3> values;
 };
 
+enum class CrosshairSeriesValueKind : std::uint8_t {
+  kOhlc = 0,
+  kScalar = 1,
+  kMacd = 2,
+};
+
+struct CrosshairSeriesValue {
+  std::string series_id;
+  std::string pane_id;
+  std::string price_scale_id;
+  CrosshairSeriesValueKind kind = CrosshairSeriesValueKind::kScalar;
+  SeriesType series_type = SeriesType::kLine;
+  SeriesSource source_type = SeriesSource::kData;
+  Candle candle;
+  double value = 0.0;
+  double macd = 0.0;
+  double signal = 0.0;
+  double histogram = 0.0;
+  bool has_value = false;
+  bool has_macd = false;
+  bool has_signal = false;
+  bool has_histogram = false;
+};
+
 // Immutable render state published to the platform GPU and text overlays.
 // All coordinates are expressed in native view coordinates.
 struct RenderSnapshot {
@@ -487,6 +511,7 @@ struct RenderSnapshot {
   std::vector<AxisTick> pane_y_ticks;
   std::vector<PaneSnapshot> panes;
   std::vector<IndicatorLegend> indicator_legends;
+  std::vector<CrosshairSeriesValue> crosshair_series_values;
   std::vector<PriceLineSnapshot> price_lines;
   PriceExtremum visible_maximum;
   PriceExtremum visible_minimum;

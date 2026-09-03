@@ -126,10 +126,11 @@ using namespace facebook::react;
     selectedCandleActive:(BOOL)active
               timestamp:(double)timestamp
                    open:(double)open
-                   high:(double)high
-                    low:(double)low
-                  close:(double)close
-                 volume:(double)volume {
+                  high:(double)high
+                   low:(double)low
+                 close:(double)close
+                 volume:(double)volume
+       seriesValuesJson:(NSString *)seriesValuesJson {
   if (!_eventEmitter) return;
   auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(
       _eventEmitter);
@@ -141,6 +142,7 @@ using namespace facebook::react;
       low,
       close,
       volume,
+      seriesValuesJson.UTF8String ?: "",
   });
 }
 
