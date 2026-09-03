@@ -869,10 +869,11 @@ labels only and can be configured independently.
 
 ### Y axis
 
+The price axis is always placed on the right side of the chart.
+
 | Property | Type / values | Default | Description |
 | --- | --- | --- | --- |
 | `visible` | `boolean` | `true` | Shows the main price axis. |
-| `position` | `'left'`, `'right'` | `'right'` | Places the main price axis. |
 | `width` | Positive number | `64` | Axis width in native view units. |
 | `defaultScale` | Number from `0.1` to `10` | `1` | Baseline vertical scale restored by history loads and `fitContent`. |
 | `scaleMargins.top` | Non-negative fraction | `0.2` | Reserved space above visible values. |
@@ -940,8 +941,11 @@ starts in the Y-axis lane scales that pane's visible price range.
 
 `TradingCharts.zoom(chartId, scale)` applies programmatic horizontal scaling
 anchored to the right edge. `TradingCharts.fitContent(chartId)` shows all loaded
-history and restores automatic Y scaling. These commands work even when touch
-zoom is disabled. Only user gestures emit scale events.
+history and restores automatic Y scaling.
+`TradingCharts.scrollToRealTime(chartId)` smoothly returns the current viewport
+to the latest loaded data on the right while preserving horizontal and price
+scales. These commands work even when touch pan or zoom is disabled. Only user
+gestures emit scale events.
 
 ## Crosshair and Price Overlays
 
@@ -1034,8 +1038,8 @@ An extremum outside a manually scaled viewport remains hidden.
 | Y-axis press | `paneId`, `priceScaleId` | `string` | Pane and price scale under the tap. |
 
 Moving within the same unchanged candle does not emit another selection. A
-cleared selection emits `null` once. Programmatic `zoom`, `fitContent`, and
-`setHistory` do not emit gesture scale events.
+cleared selection emits `null` once. Programmatic `zoom`, `scrollToRealTime`,
+`fitContent`, and `setHistory` do not emit gesture scale events.
 
 ## Imperative API
 
@@ -1060,6 +1064,7 @@ All commands use the stable `chartId` of a `TradingChartsView`.
 | `clearPriceLines` | `chartId` | `void` | Removes every custom marker. |
 | `getPriceLines` | `chartId` | `Promise<ReadonlyArray<PriceLineOptions>>` | Reads all native markers in insertion order, including off-screen markers. |
 | `zoom` | `chartId, positive scale` | `void` | Scales the horizontal viewport from its right edge. |
+| `scrollToRealTime` | `chartId` | `void` | Smoothly returns to the latest data without changing scale. |
 | `fitContent` | `chartId` | `void` | Fits loaded history and resets automatic Y scaling. |
 | `clear` | `chartId` | `void` | Clears chart data. |
 

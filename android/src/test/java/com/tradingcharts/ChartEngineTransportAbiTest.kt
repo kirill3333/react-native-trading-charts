@@ -7,6 +7,22 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun configPayloadOmitsYAxisPosition() {
+    val payload =
+        ChartConfig(
+                showYAxis = false,
+                yAxisWidth = 123f,
+                allowPan = false,
+            )
+            .nativeNumbers()
+
+    assertEquals(45, payload.size)
+    assertEquals(0.0, payload[5], 0.0)
+    assertEquals(123.0, payload[6], 0.0)
+    assertEquals(0.0, payload[11], 0.0)
+  }
+
+  @Test
   fun smaSourceUsesAppendedTransportFields() {
     val payload =
         SeriesConfig(

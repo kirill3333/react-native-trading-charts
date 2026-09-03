@@ -542,7 +542,6 @@ export type PriceScaleMargins = {
 
 export type YAxisOptions = {
   visible?: boolean;
-  position?: 'left' | 'right';
   width?: number;
   defaultScale?: number;
   scaleMargins?: PriceScaleMargins;

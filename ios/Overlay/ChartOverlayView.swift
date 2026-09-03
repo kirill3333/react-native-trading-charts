@@ -273,9 +273,7 @@ final class ChartOverlayView: UIView {
             ? formatters.formatVolume(tick.value, using: volumeFormatter)
             : formatters.formatValue(tick.value, using: valueFormatter)
           let layout = cachedLayout(text, attributes: style.yAxis, cache: yAxisLayoutCache, metrics: &metrics)
-          let rawX = configuration.native.y_axis_on_right
-            ? CGFloat(pane.plot.right) + 6
-            : CGFloat(pane.plot.left) - layout.size.width - 6
+          let rawX = CGFloat(pane.plot.right) + 6
           presentations.append(TextPresentation(layout: layout, frame: CGRect(
             x: max(2, rawX), y: CGFloat(tick.position) - layout.size.height / 2,
             width: layout.size.width, height: layout.size.height)))
@@ -609,7 +607,7 @@ final class ChartOverlayView: UIView {
   ) {
     let layout = cachedLayout(text, attributes: attributes, cache: cache, metrics: &metrics)
     let width = min(CGFloat(configuration.native.y_axis_width), layout.size.width + 12)
-    let x = configuration.native.y_axis_on_right ? CGFloat(frame.plot.right) : max(0, CGFloat(frame.plot.left) - width)
+    let x = CGFloat(frame.plot.right)
     let height = max(20, layout.size.height + 6); let half = height / 2
     let clampedY = max(half, min(max(half, CGFloat(frame.height) - half), y))
     applyBadgeFrames(

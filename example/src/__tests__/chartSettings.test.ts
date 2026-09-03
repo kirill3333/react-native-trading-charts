@@ -71,7 +71,6 @@ describe('chart settings', () => {
       macdZeroLineColor: null,
       themeMode: 'dark',
       xAxisSpacing: 'time',
-      yAxisPosition: 'right',
       yAxisScaleMargins: 'default',
       allTimeExtremesVisible: false,
       crosshairLineStyle: 'dashed',
@@ -358,7 +357,6 @@ describe('chart settings', () => {
       volumeDownColorOverride: '#65432180',
       allTimeExtremesVisible: true,
       panEnabled: false,
-      yAxisPosition: 'left',
     });
     const updated = useChartSettingsStore.getState().settings;
 
@@ -369,7 +367,6 @@ describe('chart settings', () => {
       volumeDownColorOverride: '#65432180',
       allTimeExtremesVisible: true,
       panEnabled: false,
-      yAxisPosition: 'left',
       zoomEnabled: true,
     });
     resetSettings();
@@ -393,7 +390,6 @@ describe('chart settings', () => {
     });
     expect(config.series).toEqual({ type: 'candlestick' });
     expect(config.yAxis).toMatchObject({
-      position: 'right',
       scaleMargins: { top: 0.2, bottom: 0.1 },
       valueFormat: {
         type: 'price',

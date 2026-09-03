@@ -8,7 +8,6 @@ import { create } from 'zustand';
 import { type AppThemeMode } from '../theme';
 
 export type AxisSpacing = 'time' | 'logical';
-export type AxisPosition = 'left' | 'right';
 export type PriceFormat = 'auto' | 'price' | 'compact';
 export type ScaleMarginPreset = 'tight' | 'default' | 'loose';
 export type CrosshairLineStyleSetting = 'solid' | 'dashed';
@@ -86,7 +85,6 @@ export type ChartSettings = {
   xAxisShowSeconds: boolean;
   xAxisSpacing: AxisSpacing;
   yAxisVisible: boolean;
-  yAxisPosition: AxisPosition;
   yAxisFormat: PriceFormat;
   yAxisUseGrouping: boolean;
   yAxisScaleMargins: ScaleMarginPreset;
@@ -170,7 +168,6 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   xAxisShowSeconds: false,
   xAxisSpacing: 'time',
   yAxisVisible: true,
-  yAxisPosition: 'right',
   yAxisFormat: 'auto',
   yAxisUseGrouping: true,
   yAxisScaleMargins: 'default',

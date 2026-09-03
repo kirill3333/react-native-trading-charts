@@ -5,7 +5,6 @@ import { SettingSwitch } from '../SettingSwitch';
 import {
   FORMAT_OPTIONS,
   MARGIN_OPTIONS,
-  POSITION_OPTIONS,
 } from './settingsOptions';
 
 export function YAxisSettingsSection() {
@@ -20,13 +19,6 @@ export function YAxisSettingsSection() {
         label="Visible"
         onValueChange={(yAxisVisible) => updateSettings({ yAxisVisible })}
         value={settings.yAxisVisible}
-      />
-      <SettingSegments
-        disabled={!settings.yAxisVisible}
-        label="Position"
-        onValueChange={(yAxisPosition) => updateSettings({ yAxisPosition })}
-        options={POSITION_OPTIONS}
-        value={settings.yAxisPosition}
       />
       <SettingSegments
         description="Uses zero-count formatting for prices below 0.1"

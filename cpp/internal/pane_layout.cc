@@ -15,10 +15,8 @@ std::vector<Rect> ComputePaneRects(const ChartConfig& config,
   assert(!panes.empty());
   const size_t pane_count = panes.size();
   const float y_lane = config.show_y_axis ? config.y_axis_width : 0.0f;
-  const float left =
-      config.show_y_axis && !config.y_axis_on_right ? y_lane : 0.0f;
-  const float right =
-      width - (config.show_y_axis && config.y_axis_on_right ? y_lane : 0.0f);
+  const float left = 0.0f;
+  const float right = width - y_lane;
   const float bottom =
       height - (config.show_x_axis ? config.x_axis_height : 0.0f);
   const float separator = config.display_scale;

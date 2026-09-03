@@ -24,6 +24,7 @@ import Foundation
   func clearPriceLines()
   func priceLinesJson() -> String
   func zoomByScale(_ scale: Double)
+  func scrollChartToRealTime()
   func fitChartContent()
   func clearChartData()
   func candleData() -> [NSNumber]
@@ -43,6 +44,7 @@ private enum PendingCommand {
   case removePriceLine(String)
   case clearPriceLines
   case zoom(Double)
+  case scrollToRealTime
   case fitContent
 
   var name: String {
@@ -60,6 +62,7 @@ private enum PendingCommand {
     case .removePriceLine: return "removePriceLine"
     case .clearPriceLines: return "clearPriceLines"
     case .zoom: return "zoom"
+    case .scrollToRealTime: return "scrollToRealTime"
     case .fitContent: return "fitContent"
     }
   }
@@ -94,6 +97,7 @@ private enum PendingCommand {
     case .removePriceLine(let id): target.removePriceLine(id)
     case .clearPriceLines: target.clearPriceLines()
     case .zoom(let scale): target.zoomByScale(scale)
+    case .scrollToRealTime: target.scrollChartToRealTime()
     case .fitContent: target.fitChartContent()
     }
   }
@@ -293,6 +297,23 @@ public final class TradingChartsRegistry: NSObject {
   @objc(zoomChart:scale:)
   public func zoomChart(_ chartId: String, scale: Double) {
     enqueue(.zoom(scale), chartId: chartId)
+  }
+
+  @objc(scrollToRealTimeForChart:)
+  public func scrollToRealTime(forChart chartId: String) {
+    guard !chartId.isEmpty else { return }
+    onMain { [self] in
+      let entry = entry(for: chartId, create: true)!
+      if let view = entry.view {
+        view.scrollChartToRealTime()
+        return
+      }
+      entry.pending.removeAll {
+        if case .scrollToRealTime = $0 { return true }
+        return false
+      }
+      append(.scrollToRealTime, to: entry, chartId: chartId)
+    }
   }
 
   @objc(fitContentForChart:)

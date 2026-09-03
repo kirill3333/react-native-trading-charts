@@ -185,12 +185,9 @@ bool ChartEngine::Zoom(double scale, float focus_x) {
     return false;
   }
   const bool crosshair_changed = crosshair_active_;
-  const float left = config_.show_y_axis && !config_.y_axis_on_right
-                         ? config_.y_axis_width
-                         : 0.0F;
-  const float right = width_ - (config_.show_y_axis && config_.y_axis_on_right
-                                    ? config_.y_axis_width
-                                    : 0.0F);
+  const float left = 0.0F;
+  const float right =
+      width_ - (config_.show_y_axis ? config_.y_axis_width : 0.0F);
   const float plot_width =
       std::max(right - left, static_cast<float>(kMinimumPlotLength));
   const double focus_fraction =
@@ -239,6 +236,38 @@ void ChartEngine::ZoomAtRightEdge(double scale) {
   if (viewport_changed || crosshair_active_) {
     crosshair_active_ = false;
   }
+}
+
+bool ChartEngine::ScrollToRealTime(double progress) {
+  MutationScope mutation(*this);
+  if (!viewport_initialized_ || candles_.empty() || !(progress > 0.0) ||
+      !std::isfinite(progress)) {
+    return false;
+  }
+  const double bounded_progress = std::min(progress, 1.0);
+  const double span = visible_x_max_ - visible_x_min_;
+  const double target_x_max = DataXMaxLocked();
+  double next_x_max =
+      visible_x_max_ + (target_x_max - visible_x_max_) * bounded_progress;
+  if (bounded_progress == 1.0) {
+    next_x_max = target_x_max;
+  }
+  double next_x_min = next_x_max - span;
+  ClampViewportValuesLocked(&next_x_min, &next_x_max);
+  const bool viewport_changed =
+      next_x_min != visible_x_min_ || next_x_max != visible_x_max_;
+  const bool crosshair_changed = crosshair_active_;
+  if (viewport_changed) {
+    mutation.ContentChanged();
+    visible_x_min_ = next_x_min;
+    visible_x_max_ = next_x_max;
+  } else if (crosshair_changed) {
+    mutation.OverlayChanged();
+  }
+  if (viewport_changed || crosshair_changed) {
+    crosshair_active_ = false;
+  }
+  return viewport_changed || crosshair_changed;
 }
 
 bool ChartEngine::ScaleY(float delta_pixels) {

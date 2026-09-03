@@ -103,6 +103,9 @@ class ChartEngineHandle {
     return engine_->Zoom(scale, focus_x);
   }
   void ZoomAtRightEdge(double scale) { engine_->ZoomAtRightEdge(scale); }
+  bool ScrollToRealTime(double progress) {
+    return engine_->ScrollToRealTime(progress);
+  }
   bool ScaleY(float delta_pixels) { return engine_->ScaleY(delta_pixels); }
   bool ScaleYAt(float delta_pixels, float y) {
     return engine_->ScaleYAt(delta_pixels, y);

@@ -1770,11 +1770,86 @@ void TestViewportCommandsHandleEmptyHistory() {
   ChartEngine engine;
   engine.SetSize(800.0f, 500.0f);
   engine.ZoomAtRightEdge(2.0);
+  assert(!engine.ScrollToRealTime(1.0));
   engine.FitContent();
   const auto snapshot = engine.Snapshot();
   ExpectNear(snapshot->visible_x_min, 0.0);
   ExpectNear(snapshot->visible_x_max, 1.0);
   assert(!snapshot->crosshair_visible);
+}
+
+void TestScrollToRealTimePreservesScaleAndTracksLiveEdge() {
+  for (bool logical_spacing : {false, true}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.initial_visible_count = 3;
+    config.logical_spacing = logical_spacing;
+    engine.SetConfig(config);
+    engine.SetSize(800.0f, 500.0f);
+    const double history[] = {
+        0.0,      10.0, 12.0, 9.0,      11.0, 1.0,  60000.0,  11.0, 13.0,
+        10.0,     12.0, 1.0,  120000.0, 12.0, 14.0, 11.0,     13.0, 1.0,
+        180000.0, 13.0, 15.0, 12.0,     14.0, 1.0,  240000.0, 14.0, 16.0,
+        13.0,     15.0, 1.0,  300000.0, 15.0, 17.0, 14.0,     16.0, 1.0,
+    };
+    assert(engine.SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+    assert(engine.Pan(250.0f));
+    assert(engine.ScaleY(50.0f));
+    const auto historical = engine.Snapshot();
+    const double span = historical->visible_x_max - historical->visible_x_min;
+    const double horizontal_scale = historical->horizontal_scale;
+    const double y_axis_scale = historical->y_axis_scale;
+
+    config.allow_pan = false;
+    engine.SetConfig(config);
+    assert(engine.ScrollToRealTime(0.25));
+    const auto halfway = engine.Snapshot();
+    if (logical_spacing) {
+      assert(halfway->first_visible_index > historical->first_visible_index);
+      ExpectNear(halfway->horizontal_scale, horizontal_scale);
+    } else {
+      ExpectNear(halfway->visible_x_max,
+                 historical->visible_x_max +
+                     (450000.0 - historical->visible_x_max) * 0.25);
+      ExpectNear(halfway->visible_x_max - halfway->visible_x_min, span);
+    }
+    ExpectNear(halfway->y_axis_scale, y_axis_scale);
+
+    const double next[] = {360000.0, 16.0, 18.0, 15.0, 17.0, 1.0};
+    assert(engine.UpdateCandle(next, std::size(next)) ==
+           UpdateStatus::kApplied);
+    const auto appended = engine.Snapshot();
+    if (!logical_spacing) {
+      ExpectNear(appended->visible_x_max, halfway->visible_x_max);
+    }
+
+    engine.SetCrosshair(true, 120.0f, 100.0f);
+    assert(engine.ScrollToRealTime(1.0));
+    const auto live = engine.Snapshot();
+    if (logical_spacing) {
+      assert(live->last_visible_index + 1 == live->total_candle_count);
+      ExpectNear(live->horizontal_scale, horizontal_scale);
+    } else {
+      ExpectNear(live->visible_x_max, 510000.0);
+      ExpectNear(live->visible_x_max - live->visible_x_min, span);
+    }
+    ExpectNear(live->y_axis_scale, y_axis_scale);
+    assert(!live->crosshair_visible);
+    assert(!engine.ScrollToRealTime(1.0));
+    assert(!engine.ScrollToRealTime(0.0));
+    assert(!engine.ScrollToRealTime(std::numeric_limits<double>::quiet_NaN()));
+
+    const double following[] = {420000.0, 17.0, 19.0, 16.0, 18.0, 1.0};
+    assert(engine.UpdateCandle(following, std::size(following)) ==
+           UpdateStatus::kApplied);
+    const auto followed = engine.Snapshot();
+    if (logical_spacing) {
+      assert(followed->last_visible_index + 1 == followed->total_candle_count);
+    } else {
+      ExpectNear(followed->visible_x_max, 570000.0);
+    }
+  }
 }
 
 void TestCrosshairStatisticsAndLineStyles() {
@@ -4227,6 +4302,7 @@ int main() noexcept {
     TestProgrammaticZoomUsesRightEdgeAndClampsToHistory();
     TestFitContentShowsHistoryAndResetsYScale();
     TestViewportCommandsHandleEmptyHistory();
+    TestScrollToRealTimePreservesScaleAndTracksLiveEdge();
     TestCrosshairStatisticsAndLineStyles();
     TestCrosshairHitTesting();
     TestCrosshairRevisionKeepsStaticContentRevision();

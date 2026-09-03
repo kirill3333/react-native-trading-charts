@@ -23,7 +23,7 @@ private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
   return this?.contentEquals(other) == true
 }
 
-@Suppress("TooManyFunctions")
+@Suppress("LargeClass", "TooManyFunctions")
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
   private val contentBuffers = ContentVertexBufferPool()
@@ -39,6 +39,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private val overlay = ChartOverlayView(context)
   private val frameScheduled = AtomicBoolean(false)
   private val flingScroller = OverScroller(context)
+  private val realTimeScroll = ChartRealTimeScrollController()
   private var config = ChartConfig()
   private var registeredChartId: String? = null
   private var pendingChartId: String? = null
@@ -66,10 +67,16 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private val frameCallback = Runnable {
     frameScheduled.set(false)
     if (disposed || !isAttachedToWindow) return@Runnable
+    realTimeScroll.step { progress ->
+      ChartEngineNative.nativeScrollToRealTime(engineHandle, progress)
+    }
     // Pending event flags accompany engine mutations; skip the whole
     // snapshot marshal only when neither happened since the last frame.
     val hasPendingEvents =
-        pendingPaneResizeIndex >= 0 || pendingScaleChange || pendingYAxisScaleChange
+        pendingPaneResizeIndex >= 0 ||
+            pendingScaleChange ||
+            pendingYAxisScaleChange ||
+            realTimeScroll.isActive
     if (
         !hasPendingEvents &&
             lastSnapshot != null &&
@@ -96,6 +103,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     emitSelectedCandleChange(snapshot)
     emitScaleChanges(snapshot)
     emitPaneResize(snapshot)
+    if (realTimeScroll.isActive) scheduleFrame()
   }
 
   private val flingFrame =
@@ -262,11 +270,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun isPointInYAxis(first: MotionEvent?): Boolean {
     if (first == null || !config.showYAxis) return false
-    return if (config.yAxisOnRight) {
-      first.x >= width - config.yAxisWidth
-    } else {
-      first.x <= config.yAxisWidth
-    }
+    return first.x >= width - config.yAxisWidth
   }
 
   private fun isPointInPlot(x: Float, y: Float): Boolean {
@@ -321,6 +325,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   fun setConfigJson(value: String?) {
     if (value.isNullOrBlank()) return
+    realTimeScroll.stop()
     try {
       config =
           ChartConfig.fromJson(
@@ -354,6 +359,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   fun applyHistory(values: DoubleArray) {
+    realTimeScroll.stop()
     crosshairPinned = false
     crosshairGestureActive = false
     pendingScaleChange = false
@@ -488,6 +494,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   fun zoom(scale: Double) {
+    realTimeScroll.stop()
     stopFling()
     crosshairPinned = false
     crosshairGestureActive = false
@@ -496,7 +503,18 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     scheduleFrame()
   }
 
+  fun scrollToRealTime() {
+    stopFling()
+    crosshairPinned = false
+    crosshairGestureActive = false
+    pendingScaleChange = false
+    ChartEngineNative.nativeSetCrosshair(engineHandle, false, 0f, 0f)
+    realTimeScroll.start()
+    scheduleFrame()
+  }
+
   fun fitContent() {
+    realTimeScroll.stop()
     stopFling()
     crosshairPinned = false
     crosshairGestureActive = false
@@ -507,6 +525,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   fun clearData() {
+    realTimeScroll.stop()
     stopFling()
     crosshairPinned = false
     crosshairGestureActive = false
@@ -689,6 +708,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      realTimeScroll.stop()
       suppressFlingForTouch = false
       crosshairGestureActive = false
       stopFling()
@@ -772,10 +792,14 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   override fun onWindowVisibilityChanged(visibility: Int) {
     super.onWindowVisibilityChanged(visibility)
-    if (visibility != VISIBLE) stopFling()
+    if (visibility != VISIBLE) {
+      stopFling()
+      realTimeScroll.stop()
+    }
   }
 
   override fun onDetachedFromWindow() {
+    realTimeScroll.stop()
     stopFling()
     removeCallbacks(frameCallback)
     frameScheduled.set(false)
@@ -788,6 +812,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   fun dispose() {
     if (disposed) return
+    realTimeScroll.stop()
     stopFling()
     disposed = true
     renderer.clearPending()
@@ -806,6 +831,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
         override fun onHostPause() {
           stopFling()
+          realTimeScroll.stop()
           plotView.onPause()
         }
 

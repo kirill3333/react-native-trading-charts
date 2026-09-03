@@ -264,6 +264,7 @@ final class ChartEngineClient {
   func pan(_ delta: Float) -> Bool { handle.Pan(delta) }
   func zoom(_ scale: Double, focusX: Float) -> Bool { handle.Zoom(scale, focusX) }
   func zoomAtRightEdge(_ scale: Double) { handle.ZoomAtRightEdge(scale) }
+  func scrollToRealTime(_ progress: Double) -> Bool { handle.ScrollToRealTime(progress) }
   func scaleY(_ delta: Float) -> Bool { handle.ScaleY(delta) }
   func scaleY(_ delta: Float, at y: Float) -> Bool { handle.ScaleYAt(delta, y) }
   func fitContent() { handle.FitContent() }

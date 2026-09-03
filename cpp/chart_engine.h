@@ -334,7 +334,6 @@ struct ChartConfig {
   bool logical_spacing = false;
 
   bool show_y_axis = true;
-  bool y_axis_on_right = true;
   float y_axis_width = 64.0f;
   double y_scale_margin_top = 0.2;
   double y_scale_margin_bottom = 0.1;
@@ -596,6 +595,9 @@ class ChartEngine {
   // Programmatic zoom anchored at the live edge. Intentionally not gated by
   // `allow_zoom`, which only restricts the pinch gesture.
   void ZoomAtRightEdge(double scale);
+  // Moves a fraction of the remaining horizontal distance to the live edge.
+  // Programmatic scrolling is intentionally not gated by `allow_pan`.
+  bool ScrollToRealTime(double progress);
   bool ScaleY(float delta_pixels);
   bool ScaleYAt(float delta_pixels, float y);
   void ResetViewport();

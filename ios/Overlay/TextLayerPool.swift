@@ -216,9 +216,7 @@ extension ChartOverlayView {
         metrics: &metrics
       )
       let labelSize = CGSize(width: labelLayout.size.width + 8, height: labelLayout.size.height + 4)
-      let labelX = configuration.native.y_axis_on_right
-        ? CGFloat(frame.plot.right) - labelSize.width - 8
-        : CGFloat(frame.plot.left) + 8
+      let labelX = CGFloat(frame.plot.right) - labelSize.width - 8
       let labelFrame = CGRect(
         x: max(CGFloat(frame.plot.left), labelX),
         y: CGFloat(priceLine.y) - labelSize.height / 2,
@@ -257,9 +255,7 @@ extension ChartOverlayView {
       )
       let badgeWidth = min(CGFloat(configuration.native.y_axis_width), badgeLayout.size.width + 12)
       let badgeHeight = max(20, badgeLayout.size.height + 6)
-      let badgeX = configuration.native.y_axis_on_right
-        ? CGFloat(frame.plot.right)
-        : max(0, CGFloat(frame.plot.left) - badgeWidth)
+      let badgeX = CGFloat(frame.plot.right)
       applyBadgeFrames(
         group.badge,
         layout: badgeLayout,

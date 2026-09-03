@@ -458,12 +458,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
               18f * density,
               priceLineLabelPaint.descent() - priceLineLabelPaint.ascent() + 4f * density,
           )
-      val labelLeft =
-          if (frame.config.yAxisOnRight) {
-            max(frame.plotLeft, frame.plotRight - labelWidth - 8f * density)
-          } else {
-            frame.plotLeft + 8f * density
-          }
+      val labelLeft = max(frame.plotLeft, frame.plotRight - labelWidth - 8f * density)
       val labelTop =
           (line.y - labelHeight / 2f).coerceIn(
               frame.plotTop,
@@ -490,8 +485,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
               badgeHeight / 2f,
               max(badgeHeight / 2f, frame.height - badgeHeight / 2f),
           )
-      val badgeLeft =
-          if (frame.config.yAxisOnRight) frame.plotRight else max(0f, frame.plotLeft - badgeWidth)
+      val badgeLeft = frame.plotRight
       scratchRect.set(
           badgeLeft,
           badgeY - badgeHeight / 2f,
@@ -614,9 +608,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
                   }
               AxisLabel(text, yAxisPaint.measureText(text))
             }
-        val x =
-            if (frame.config.yAxisOnRight) pane.plotRight + 6f * density
-            else max(2f, pane.plotLeft - label.width - 6f * density)
+        val x = pane.plotRight + 6f * density
         canvas.drawText(label.text, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
       }
     }
@@ -704,7 +696,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
     val halfHeight = height / 2f
     val badgeY = badge.y.coerceIn(halfHeight, max(halfHeight, frame.height - halfHeight))
     val width = min(config.yAxisWidth, badge.label.width + 12f * density)
-    val x = if (config.yAxisOnRight) frame.plotRight else max(0f, frame.plotLeft - width)
+    val x = frame.plotRight
     val rect = scratchRect
     rect.set(x, badgeY - halfHeight, x + width, badgeY + halfHeight)
     drawBackground(canvas, rect, badge.backgroundColor, border)

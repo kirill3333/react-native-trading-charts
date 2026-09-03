@@ -493,7 +493,6 @@ export function buildChartViewConfig(
     },
     yAxis: {
       visible: settings.yAxisVisible,
-      position: settings.yAxisPosition,
       scaleMargins: SCALE_MARGIN_PRESETS[settings.yAxisScaleMargins],
       valueFormat: yAxisValueFormat,
     },

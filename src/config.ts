@@ -1946,7 +1946,6 @@ export function resolveChartConfig(
     },
     yAxis: {
       visible: props.yAxis?.visible ?? true,
-      position: props.yAxis?.position ?? 'right',
       width: axisWidth,
       defaultScale: yAxisDefaultScale,
       scaleMargins: { ...scaleMargins },

@@ -353,6 +353,8 @@ internal object ChartEngineNative {
 
   @JvmStatic external fun nativeZoomAtRightEdge(handle: Long, scale: Double)
 
+  @JvmStatic external fun nativeScrollToRealTime(handle: Long, progress: Double): Boolean
+
   @JvmStatic external fun nativeScaleY(handle: Long, delta: Float): Boolean
 
   @JvmStatic external fun nativeCandles(handle: Long): DoubleArray

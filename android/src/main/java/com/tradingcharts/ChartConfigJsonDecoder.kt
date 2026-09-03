@@ -361,7 +361,6 @@ internal class ChartConfigJsonDecoder(
           showSeconds = xAxis.getBoolean("showSeconds"),
           logicalSpacing = xAxis.getString("spacing") == "logical",
           showYAxis = yAxis.getBoolean("visible"),
-          yAxisOnRight = yAxis.getString("position") != "left",
           yAxisWidth = yAxis.getDouble("width").toFloat() * density,
           yScaleMarginTop = scaleMargins.getDouble("top"),
           yScaleMarginBottom = scaleMargins.getDouble("bottom"),

@@ -264,6 +264,10 @@ using namespace facebook::react;
   [_host zoomByScale:scale];
 }
 
+- (void)scrollChartToRealTime {
+  [_host scrollToRealTime];
+}
+
 - (void)fitChartContent {
   [_host fitContent];
 }

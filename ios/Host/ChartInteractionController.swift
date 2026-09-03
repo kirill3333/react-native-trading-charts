@@ -234,16 +234,13 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
 
   private func isPointInYAxis(_ point: CGPoint, bounds: CGRect) -> Bool {
     guard config.show_y_axis else { return false }
-    if config.y_axis_on_right {
-      return point.x >= bounds.width - CGFloat(config.y_axis_width)
-    }
-    return point.x <= CGFloat(config.y_axis_width)
+    return point.x >= bounds.width - CGFloat(config.y_axis_width)
   }
 
   private func isPointInPlot(_ point: CGPoint, bounds: CGRect) -> Bool {
-    let left = config.show_y_axis && !config.y_axis_on_right ? CGFloat(config.y_axis_width) : 0
+    let left: CGFloat = 0
     let right = bounds.width
-      - (config.show_y_axis && config.y_axis_on_right ? CGFloat(config.y_axis_width) : 0)
+      - (config.show_y_axis ? CGFloat(config.y_axis_width) : 0)
     let bottom = bounds.height - (config.show_x_axis ? CGFloat(config.x_axis_height) : 0)
     return point.x >= left && point.x <= right && point.y >= 8 && point.y <= bottom
   }

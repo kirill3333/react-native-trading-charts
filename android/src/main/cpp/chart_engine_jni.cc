@@ -48,14 +48,13 @@ constexpr size_t ToIndex(Enum value) {
 }
 
 enum class ConfigNumberIndex : std::uint8_t {
-  // Positional ABI placeholder. Keep all following indices stable.
+  // Positional ABI placeholder for future version metadata.
   kReservedConfig0,
   kInitialVisibleCount,
   kShowXAxis,
   kXAxisHeight,
   kShowSeconds,
   kShowYAxis,
-  kYAxisOnRight,
   kYAxisWidth,
   kCompactValues,
   kPrecision,
@@ -288,7 +287,7 @@ enum class SnapshotMetaIndex : std::uint8_t {
   kCount,
 };
 
-inline constexpr jsize kLegacyConfigNumberCount = 22;
+inline constexpr jsize kLegacyConfigNumberCount = 21;
 inline constexpr jsize kLegacyConfigColorCount = 32;
 inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
@@ -309,7 +308,7 @@ inline constexpr size_t kIndicatorLegendRecordWidth = 31;
 inline constexpr size_t kCrosshairSeriesValueRecordWidth = 17;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 46);
+static_assert(kConfigNumberCount == 45);
 static_assert(kSeriesNumberCount == 25);
 static_assert(kSeriesColorCount == 80);
 static_assert(kSeriesStringCount == 5);
@@ -645,7 +644,6 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       static_cast<float>(number_at(ConfigNumberIndex::kXAxisHeight));
   config.show_seconds = number_at(ConfigNumberIndex::kShowSeconds) != 0;
   config.show_y_axis = number_at(ConfigNumberIndex::kShowYAxis) != 0;
-  config.y_axis_on_right = number_at(ConfigNumberIndex::kYAxisOnRight) != 0;
   config.y_axis_width =
       static_cast<float>(number_at(ConfigNumberIndex::kYAxisWidth));
   config.compact_values = number_at(ConfigNumberIndex::kCompactValues) != 0;
@@ -668,34 +666,34 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       static_cast<float>(number_at(ConfigNumberIndex::kDisplayScale));
   config.logical_spacing = number_at(ConfigNumberIndex::kLogicalSpacing) != 0;
   config.pin_current_price_to_edge =
-      number_count < 23 ||
+      number_count < 22 ||
       number_at(ConfigNumberIndex::kPinCurrentPriceToEdge) != 0;
   config.show_price_extremes =
-      number_count < 24 ||
+      number_count < 23 ||
       number_at(ConfigNumberIndex::kShowPriceExtremes) != 0;
   config.default_scale =
-      number_count < 25 ? 1.0 : number_at(ConfigNumberIndex::kDefaultScale);
+      number_count < 24 ? 1.0 : number_at(ConfigNumberIndex::kDefaultScale);
   config.crosshair_dashed =
-      number_count >= 26 && number_at(ConfigNumberIndex::kCrosshairDashed) != 0;
+      number_count >= 25 && number_at(ConfigNumberIndex::kCrosshairDashed) != 0;
   config.tooltip_background_opacity =
-      number_count < 27 ? 1.0f
+      number_count < 26 ? 1.0f
                         : static_cast<float>(number_at(
                               ConfigNumberIndex::kTooltipBackgroundOpacity));
   config.grid_opacity =
-      number_count < 29
+      number_count < 28
           ? 0.75f
           : static_cast<float>(number_at(ConfigNumberIndex::kGridOpacity));
   config.crosshair_opacity =
-      number_count < 29
+      number_count < 28
           ? 0.85f
           : static_cast<float>(number_at(ConfigNumberIndex::kCrosshairOpacity));
   config.default_y_scale =
-      number_count < 30 ? 1.0 : number_at(ConfigNumberIndex::kDefaultYScale);
+      number_count < 29 ? 1.0 : number_at(ConfigNumberIndex::kDefaultYScale);
   config.allow_y_axis_scale =
-      number_count < 31 ? config.allow_zoom
+      number_count < 30 ? config.allow_zoom
                         : number_at(ConfigNumberIndex::kAllowYAxisScale) != 0;
   config.series_type = SeriesType::kCandlestick;
-  if (number_count >= 32) {
+  if (number_count >= 31) {
     const double series_type = number_at(ConfigNumberIndex::kSeriesType);
     if (series_type == 1.0) {
       config.series_type = SeriesType::kBar;
@@ -708,10 +706,10 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
     }
   }
   config.bar_line_width =
-      number_count < 33
+      number_count < 32
           ? config.display_scale
           : static_cast<float>(number_at(ConfigNumberIndex::kBarLineWidth));
-  if (number_count >= 37) {
+  if (number_count >= 36) {
     const int source =
         static_cast<int>(number_at(ConfigNumberIndex::kLineSource));
     config.line_source = source == 0   ? OhlcValueSource::kOpen
@@ -1270,6 +1268,15 @@ Java_com_tradingcharts_ChartEngineNative_nativeZoomAtRightEdge(JNIEnv*, jclass,
   if (auto* instance = EngineFromHandle(handle)) {
     instance->ZoomAtRightEdge(scale);
   }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeScrollToRealTime(
+    JNIEnv*, jclass, jlong handle, jdouble progress) {
+  if (auto* instance = EngineFromHandle(handle)) {
+    return instance->ScrollToRealTime(progress) ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL

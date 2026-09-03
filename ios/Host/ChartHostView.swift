@@ -15,6 +15,7 @@ public final class ChartHostView: UIView {
   private let overlay = ChartOverlayView(frame: .zero)
   private let scheduler = ChartFrameScheduler()
   private let momentum = ChartMomentumController()
+  private let realTimeScroll = ChartRealTimeScrollController()
   private let events = ChartEventCoordinator()
   private var interaction: ChartInteractionController!
   private var configuration: ResolvedChartConfiguration?
@@ -93,7 +94,10 @@ public final class ChartHostView: UIView {
     super.didMoveToWindow()
     interaction.cancelInteraction()
     scheduler.suspend()
-    guard window != nil else { return }
+    guard window != nil else {
+      realTimeScroll.stop()
+      return
+    }
     scheduler.resume()
     forceNextDraw = true
     requestFrame()
@@ -101,12 +105,14 @@ public final class ChartHostView: UIView {
 
   public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
     momentum.stop()
+    realTimeScroll.stop()
     super.touchesBegan(touches, with: event)
   }
 
   @objc(applyConfigJson:)
   public func applyConfigJson(_ json: String) {
     guard let next = ChartConfigurationDecoder.decode(json) else { return }
+    realTimeScroll.stop()
     configuration = next
     overlay.apply(configuration: next)
     engine.setConfig(next.native)
@@ -141,6 +147,7 @@ public final class ChartHostView: UIView {
 
   @objc(applyHistory:)
   public func applyHistory(_ data: [NSNumber]) {
+    realTimeScroll.stop()
     interaction.resetCrosshair()
     events.pendingHorizontalScale = false
     events.pendingYAxisScale = false
@@ -245,6 +252,7 @@ public final class ChartHostView: UIView {
 
   @objc(zoomByScale:)
   public func zoomByScale(_ scale: Double) {
+    realTimeScroll.stop()
     interaction.cancelInteraction()
     interaction.resetCrosshair()
     events.pendingHorizontalScale = false
@@ -252,7 +260,17 @@ public final class ChartHostView: UIView {
     requestFrame()
   }
 
+  @objc public func scrollToRealTime() {
+    interaction.cancelInteraction()
+    interaction.resetCrosshair()
+    events.pendingHorizontalScale = false
+    engine.setCrosshair(active: false, x: 0, y: 0)
+    realTimeScroll.start()
+    requestFrame()
+  }
+
   @objc public func fitContent() {
+    realTimeScroll.stop()
     interaction.cancelInteraction()
     interaction.resetCrosshair()
     events.pendingHorizontalScale = false
@@ -262,6 +280,7 @@ public final class ChartHostView: UIView {
   }
 
   @objc public func clearData() {
+    realTimeScroll.stop()
     interaction.cancelInteraction()
     interaction.resetCrosshair()
     engine.clear()
@@ -297,6 +316,11 @@ public final class ChartHostView: UIView {
     if momentum.isActive {
       _ = momentum.step(displayLink: displayLink) { [engine] delta in engine.pan(delta) }
     }
+    if realTimeScroll.isActive {
+      _ = realTimeScroll.step(timestamp: displayLink.timestamp) { [engine] progress in
+        engine.scrollToRealTime(progress)
+      }
+    }
 
     let snapshotId = OSSignpostID(log: ChartPerformance.log)
     os_signpost(.begin, log: ChartPerformance.log, name: "ChartEngine Snapshot", signpostID: snapshotId)
@@ -318,7 +342,7 @@ public final class ChartHostView: UIView {
       forceNextDraw = false
     }
     events.emit(frame: frame, host: self, delegate: delegate)
-    if momentum.isActive { requestFrame() }
+    if momentum.isActive || realTimeScroll.isActive { requestFrame() }
     os_signpost(
       .end,
       log: ChartPerformance.log,
@@ -339,6 +363,7 @@ public final class ChartHostView: UIView {
 
   @objc private func applicationWillResignActive() {
     interaction.cancelInteraction()
+    realTimeScroll.stop()
     scheduler.suspend()
   }
 }

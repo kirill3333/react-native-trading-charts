@@ -193,7 +193,6 @@ enum ChartConfigurationDecoder {
     config.show_seconds = xAxis.bool("showSeconds")
     config.logical_spacing = xAxis.string("spacing") == "logical"
     config.show_y_axis = yAxis.bool("visible")
-    config.y_axis_on_right = yAxis.string("position") != "left"
     config.y_axis_width = yAxis.float("width")
     let scaleMargins = yAxis.dictionary("scaleMargins")
     config.y_scale_margin_top = scaleMargins.double("top")

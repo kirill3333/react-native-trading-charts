@@ -44,6 +44,8 @@ internal object TradingChartsRegistry {
 
     data class Zoom(val scale: Double) : Command
 
+    data object ScrollToRealTime : Command
+
     data object FitContent : Command
   }
 
@@ -132,6 +134,8 @@ internal object TradingChartsRegistry {
 
   fun zoom(chartId: String, scale: Double) = enqueue(chartId, Command.Zoom(scale))
 
+  fun scrollToRealTime(chartId: String) = enqueue(chartId, Command.ScrollToRealTime)
+
   fun fitContent(chartId: String) = enqueue(chartId, Command.FitContent)
 
   fun getCandles(
@@ -183,6 +187,7 @@ internal object TradingChartsRegistry {
       }
       is Command.PaneHeight ->
           pending.removeAll { it is Command.PaneHeight && it.paneId == command.paneId }
+      is Command.ScrollToRealTime -> pending.removeAll { it is Command.ScrollToRealTime }
       is Command.FitContent -> pending.removeAll { it is Command.FitContent }
       is Command.SetPriceLine -> removePendingPriceLine(pending, command.id)
       is Command.RemovePriceLine -> removePendingPriceLine(pending, command.id)
@@ -249,6 +254,7 @@ internal object TradingChartsRegistry {
       is Command.RemovePriceLine -> view.removePriceLine(command.id)
       is Command.ClearPriceLines -> view.clearPriceLines()
       is Command.Zoom -> view.zoom(command.scale)
+      is Command.ScrollToRealTime -> view.scrollToRealTime()
       is Command.FitContent -> view.fitContent()
     }
   }

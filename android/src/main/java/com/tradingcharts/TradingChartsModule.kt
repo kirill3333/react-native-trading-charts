@@ -132,6 +132,10 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.zoom(chartId, scale)
   }
 
+  override fun scrollToRealTime(chartId: String) {
+    TradingChartsRegistry.scrollToRealTime(chartId)
+  }
+
   override fun fitContent(chartId: String) {
     TradingChartsRegistry.fitContent(chartId)
   }

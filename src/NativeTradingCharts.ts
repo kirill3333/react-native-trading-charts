@@ -40,6 +40,7 @@ export interface Spec extends TurboModule {
   getPriceLines(chartId: string): Promise<string>;
   getCandles(chartId: string): Promise<ReadonlyArray<number>>;
   zoom(chartId: string, scale: number): void;
+  scrollToRealTime(chartId: string): void;
   fitContent(chartId: string): void;
   clear(chartId: string): void;
 }

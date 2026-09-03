@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)removeSeries:(NSString *)seriesId;
 - (void)setPaneHeight:(NSString *)paneId weight:(double)weight;
 - (void)zoomByScale:(double)scale;
+- (void)scrollChartToRealTime;
 - (void)fitChartContent;
 - (void)clearChartData;
 - (NSArray<NSNumber *> *)candleData;

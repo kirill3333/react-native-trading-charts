@@ -49,3 +49,41 @@ final class ChartMomentumController {
     return moved
   }
 }
+
+final class ChartRealTimeScrollController {
+  private static let duration: CFTimeInterval = 0.3
+
+  private(set) var isActive = false
+  private var startedAt: CFTimeInterval = 0
+  private var previousProgress = 0.0
+
+  func start(at timestamp: CFTimeInterval = CACurrentMediaTime()) {
+    isActive = true
+    startedAt = timestamp
+    previousProgress = 0
+  }
+
+  func stop() {
+    isActive = false
+    startedAt = 0
+    previousProgress = 0
+  }
+
+  @discardableResult
+  func step(timestamp: CFTimeInterval, move: (Double) -> Bool) -> Bool {
+    guard isActive else { return false }
+    let elapsed = max(0, timestamp - startedAt)
+    let linear = min(elapsed / Self.duration, 1)
+    let remaining = 1 - linear
+    let eased = 1 - remaining * remaining * remaining
+    let unconsumed = 1 - previousProgress
+    if eased <= previousProgress, linear < 1 { return false }
+    let relativeProgress = linear >= 1 || unconsumed <= 0
+      ? 1
+      : (eased - previousProgress) / unconsumed
+    let moved = move(relativeProgress)
+    previousProgress = eased
+    if !moved || linear >= 1 { stop() }
+    return moved
+  }
+}

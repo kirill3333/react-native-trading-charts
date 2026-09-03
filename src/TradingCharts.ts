@@ -388,6 +388,11 @@ export function createTradingCharts(
       nativeTradingCharts.zoom(chartId, scale);
     },
 
+    scrollToRealTime(chartId: string) {
+      assertChartId(chartId);
+      nativeTradingCharts.scrollToRealTime(chartId);
+    },
+
     fitContent(chartId: string) {
       assertChartId(chartId);
       nativeTradingCharts.fitContent(chartId);

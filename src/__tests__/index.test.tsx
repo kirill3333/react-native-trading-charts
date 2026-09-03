@@ -26,6 +26,7 @@ const mockNativeModule = {
   getPriceLines: jest.fn<NativeTradingChartsSpec['getPriceLines']>(),
   getCandles: jest.fn<NativeTradingChartsSpec['getCandles']>(),
   zoom: jest.fn<NativeTradingChartsSpec['zoom']>(),
+  scrollToRealTime: jest.fn<NativeTradingChartsSpec['scrollToRealTime']>(),
   fitContent: jest.fn<NativeTradingChartsSpec['fitContent']>(),
   clear: jest.fn<NativeTradingChartsSpec['clear']>(),
 } satisfies NativeTradingChartsSpec;
@@ -711,9 +712,11 @@ describe('TradingCharts data API', () => {
 
   it('forwards viewport commands to the native module', () => {
     TradingCharts.zoom('main', 1.25);
+    TradingCharts.scrollToRealTime('main');
     TradingCharts.fitContent('main');
 
     expect(mockNativeModule.zoom).toHaveBeenCalledWith('main', 1.25);
+    expect(mockNativeModule.scrollToRealTime).toHaveBeenCalledWith('main');
     expect(mockNativeModule.fitContent).toHaveBeenCalledWith('main');
   });
 
@@ -722,6 +725,9 @@ describe('TradingCharts data API', () => {
       'chartId must be a non-empty string'
     );
     expect(() => TradingCharts.fitContent('')).toThrow(
+      'chartId must be a non-empty string'
+    );
+    expect(() => TradingCharts.scrollToRealTime('')).toThrow(
       'chartId must be a non-empty string'
     );
     expect(() => TradingCharts.zoom('main', 0)).toThrow(
@@ -779,6 +785,7 @@ describe('chart config', () => {
     });
     expect(resolved.panes[1]?.priceScale.visible).toBe(true);
     expect(resolved.panesResizable).toBe(true);
+    expect(resolved.yAxis).not.toHaveProperty('position');
     expect(resolved.additionalSeries[0]).toMatchObject({
       seriesId: 'volume',
       visible: true,

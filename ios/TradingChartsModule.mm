@@ -147,6 +147,10 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] zoomChart:chartId scale:scale];
 }
 
+- (void)scrollToRealTime:(NSString *)chartId {
+  [[TradingChartsRegistry shared] scrollToRealTimeForChart:chartId];
+}
+
 - (void)fitContent:(NSString *)chartId {
   [[TradingChartsRegistry shared] fitContentForChart:chartId];
 }

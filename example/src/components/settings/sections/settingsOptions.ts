@@ -5,7 +5,6 @@ import {
 } from 'react-native-trading-charts';
 
 import {
-  type AxisPosition,
   type AxisSpacing,
   type ChartLocale,
   type ChartSettings,
@@ -89,11 +88,6 @@ export const PANE_HEIGHT_WEIGHT_OPTIONS = [
   { label: '2×', value: 2 },
   { label: '3×', value: 3 },
 ] satisfies ReadonlyArray<SettingSegmentOption<PaneHeightWeight>>;
-
-export const POSITION_OPTIONS = [
-  { label: 'Left', value: 'left' },
-  { label: 'Right', value: 'right' },
-] satisfies ReadonlyArray<SettingSegmentOption<AxisPosition>>;
 
 export const FORMAT_OPTIONS = [
   { label: 'Auto', value: 'auto' },
