@@ -40,6 +40,13 @@ public final class ChartHostView: UIView {
     scheduler.onFrame = { [weak self] displayLink in
       self?.renderFrame(displayLink)
     }
+    renderer.onNeedsFrame = { [weak self] in self?.requestFrame() }
+    renderer.onDidCommit = { [weak self] frame in
+      guard let self else { return }
+      self.overlay.apply(frame: frame)
+      self.lastDrawnRevision = frame.revision
+      self.forceNextDraw = false
+    }
     interaction = ChartInteractionController(
       view: self,
       engine: engine,
@@ -99,6 +106,7 @@ public final class ChartHostView: UIView {
       return
     }
     scheduler.resume()
+    renderer.resetDrawableRetry()
     forceNextDraw = true
     requestFrame()
   }
@@ -335,11 +343,8 @@ public final class ChartHostView: UIView {
       (frame.contentVertexCount + frame.overlayVertexCount) / 6
     )
     renderer.submit(frame, background: configuration?.native.background ?? NativeColor())
-    overlay.apply(frame: frame)
     if forceNextDraw || frame.revision != lastDrawnRevision {
       metalView.draw()
-      lastDrawnRevision = frame.revision
-      forceNextDraw = false
     }
     events.emit(frame: frame, host: self, delegate: delegate)
     if momentum.isActive || realTimeScroll.isActive { requestFrame() }
@@ -357,6 +362,7 @@ public final class ChartHostView: UIView {
     interaction.cancelInteraction()
     scheduler.suspend()
     scheduler.resume()
+    renderer.resetDrawableRetry()
     forceNextDraw = true
     requestFrame()
   }

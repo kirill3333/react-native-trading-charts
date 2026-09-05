@@ -13,31 +13,56 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue?
   private var pipeline: MTLRenderPipelineState?
-  private var contentBuffer: MTLBuffer?
-  private var contentCapacity = 0
-  private var overlayBuffer: MTLBuffer?
-  private var overlayCapacity = 0
+  private let contentPool: ChartVertexBufferPool<MTLBuffer>
+  private let overlayPool: ChartVertexBufferPool<MTLBuffer>
+  private let flightState = ChartFrameFlightState()
   private var frame: ChartRenderFrame?
   private var background = NativeColor()
-  private var uploadedContentRevision: UInt64 = 0
-  private var uploadedRevision: UInt64 = 0
+  var onDidCommit: ((ChartRenderFrame) -> Void)?
+  var onNeedsFrame: (() -> Void)? {
+    didSet { flightState.onNeedsFrame = onNeedsFrame }
+  }
 
   init(view: MTKView) {
-    device = view.device!
+    let device = view.device!
+    self.device = device
     commandQueue = device.makeCommandQueue()
+    contentPool = ChartVertexBufferPool {
+      device.makeBuffer(length: $0, options: .storageModeShared)
+    }
+    overlayPool = ChartVertexBufferPool {
+      device.makeBuffer(length: $0, options: .storageModeShared)
+    }
     super.init()
     pipeline = makePipeline(view: view)
   }
 
   func submit(_ frame: ChartRenderFrame, background: NativeColor) {
+    precondition(Thread.isMainThread)
     self.frame = frame
     self.background = background
+    flightState.submit(revision: frame.revision)
+  }
+
+  func resetDrawableRetry() {
+    flightState.resetDrawableRetry()
   }
 
   func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
   func draw(in view: MTKView) {
-    guard let frame else { return }
+    precondition(Thread.isMainThread)
+    guard let frame, let pipeline, let commandQueue, flightState.beginFrame() else { return }
+    var committed = false
+    var contentSlot: ChartVertexBufferPool<MTLBuffer>.Slot?
+    var overlaySlot: ChartVertexBufferPool<MTLBuffer>.Slot?
+    defer {
+      if !committed {
+        if let contentSlot { contentPool.release(contentSlot) }
+        if let overlaySlot { overlayPool.release(overlaySlot) }
+        flightState.finishFrame()
+      }
+    }
     view.clearColor = MTLClearColor(
       red: Double(background.r),
       green: Double(background.g),
@@ -62,30 +87,27 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
       name: "Metal Acquire Drawable",
       signpostID: acquireId
     )
-    guard let drawable, let pass, let pipeline else { return }
+    guard let drawable, let pass else {
+      flightState.retryDrawable()
+      return
+    }
 
     let contentBytes = frame.contentVertexCount * MemoryLayout<Float>.stride
     let overlayBytes = frame.overlayVertexCount * MemoryLayout<Float>.stride
-    if frame.contentRevision != uploadedContentRevision {
-      if contentBytes > contentCapacity {
-        contentCapacity = max(contentBytes + 4_096, 4_096)
-        contentBuffer = device.makeBuffer(length: contentCapacity, options: .storageModeShared)
-      }
-      if contentBytes > 0, let contentBuffer {
-        let uploadId = OSSignpostID(log: ChartPerformance.log)
-        os_signpost(
-          .begin,
-          log: ChartPerformance.log,
-          name: "Metal Vertex Memcpy",
-          signpostID: uploadId,
-          "bytes=%{public}lu",
-          contentBytes
-        )
-        frame.withContentVertices { vertices in
-          if let source = vertices.baseAddress {
-            memcpy(contentBuffer.contents(), source, contentBytes)
-          }
-        }
+    contentSlot = contentPool.acquire(
+      revision: frame.contentRevision,
+      byteCount: contentBytes
+    ) { contentBuffer in
+      let uploadId = OSSignpostID(log: ChartPerformance.log)
+      os_signpost(
+        .begin,
+        log: ChartPerformance.log,
+        name: "Metal Vertex Memcpy",
+        signpostID: uploadId,
+        "bytes=%{public}lu",
+        contentBytes
+      )
+      defer {
         os_signpost(
           .end,
           log: ChartPerformance.log,
@@ -93,56 +115,82 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
           signpostID: uploadId
         )
       }
-      uploadedContentRevision = frame.contentRevision
-    }
-    if frame.revision != uploadedRevision {
-      if overlayBytes > overlayCapacity {
-        overlayCapacity = max(overlayBytes + 4_096, 4_096)
-        overlayBuffer = device.makeBuffer(length: overlayCapacity, options: .storageModeShared)
+      return frame.withContentVertices { vertices in
+        guard let source = vertices.baseAddress else { return false }
+        memcpy(contentBuffer.contents(), source, contentBytes)
+        return true
       }
-      if overlayBytes > 0, let overlayBuffer {
-        frame.withOverlayVertices { vertices in
-          if let source = vertices.baseAddress {
-            memcpy(overlayBuffer.contents(), source, overlayBytes)
+    }
+    guard contentSlot != nil else {
+      NSLog("[TradingCharts] Could not prepare Metal content buffer")
+      return
+    }
+    overlaySlot = overlayPool.acquire(revision: frame.revision, byteCount: overlayBytes) { overlayBuffer in
+      frame.withOverlayVertices { vertices in
+        guard let source = vertices.baseAddress else { return false }
+        memcpy(overlayBuffer.contents(), source, overlayBytes)
+        return true
+      }
+    }
+    guard let contentSlot, let overlaySlot else {
+      NSLog("[TradingCharts] Could not prepare Metal overlay buffer")
+      return
+    }
+
+    do {
+      let encodeId = OSSignpostID(log: ChartPerformance.log)
+      os_signpost(
+        .begin,
+        log: ChartPerformance.log,
+        name: "Metal Encode Commit",
+        signpostID: encodeId,
+        "vertices=%{public}lu",
+        (contentBytes + overlayBytes) / MemoryLayout<Float>.stride / 6
+      )
+      defer {
+        os_signpost(
+          .end,
+          log: ChartPerformance.log,
+          name: "Metal Encode Commit",
+          signpostID: encodeId
+        )
+      }
+      guard
+        let command = commandQueue.makeCommandBuffer(),
+        let encoder = command.makeRenderCommandEncoder(descriptor: pass)
+      else {
+        NSLog("[TradingCharts] Could not create Metal command buffer or encoder")
+        return
+      }
+      encoder.setRenderPipelineState(pipeline)
+      var uniforms = MetalUniforms(viewportSize: SIMD2(frame.width, frame.height))
+      encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 1)
+      if contentBytes > 0, let contentBuffer = contentSlot.buffer {
+        encoder.setVertexBuffer(contentBuffer, offset: 0, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.contentVertexCount / 6)
+      }
+      if overlayBytes > 0, let overlayBuffer = overlaySlot.buffer {
+        encoder.setVertexBuffer(overlayBuffer, offset: 0, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.overlayVertexCount / 6)
+      }
+      encoder.endEncoding()
+      command.present(drawable)
+      command.addCompletedHandler { [contentPool, overlayPool, flightState, frame] command in
+        if command.status == .error {
+          NSLog("[TradingCharts] Metal command failed: %@", String(describing: command.error))
+        }
+        DispatchQueue.main.async {
+          withExtendedLifetime(frame) {
+            contentPool.release(contentSlot)
+            overlayPool.release(overlaySlot)
+            flightState.finishFrame()
           }
         }
       }
-      uploadedRevision = frame.revision
+      committed = true
+      command.commit()
     }
-
-    let encodeId = OSSignpostID(log: ChartPerformance.log)
-    os_signpost(
-      .begin,
-      log: ChartPerformance.log,
-      name: "Metal Encode Commit",
-      signpostID: encodeId,
-      "vertices=%{public}lu",
-      (contentBytes + overlayBytes) / MemoryLayout<Float>.stride / 6
-    )
-    guard
-      let command = commandQueue?.makeCommandBuffer(),
-      let encoder = command.makeRenderCommandEncoder(descriptor: pass)
-    else { return }
-    encoder.setRenderPipelineState(pipeline)
-    var uniforms = MetalUniforms(viewportSize: SIMD2(frame.width, frame.height))
-    encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 1)
-    if contentBytes > 0, let contentBuffer {
-      encoder.setVertexBuffer(contentBuffer, offset: 0, index: 0)
-      encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.contentVertexCount / 6)
-    }
-    if overlayBytes > 0, let overlayBuffer {
-      encoder.setVertexBuffer(overlayBuffer, offset: 0, index: 0)
-      encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.overlayVertexCount / 6)
-    }
-    encoder.endEncoding()
-    command.present(drawable)
-    command.commit()
-    os_signpost(
-      .end,
-      log: ChartPerformance.log,
-      name: "Metal Encode Commit",
-      signpostID: encodeId
-    )
+    onDidCommit?(frame)
   }
 
   private func makePipeline(view: MTKView) -> MTLRenderPipelineState? {

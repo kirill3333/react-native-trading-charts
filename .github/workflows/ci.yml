@@ -80,6 +80,9 @@ jobs:
       - name: Validate Swift
         run: swiftlint lint --strict --no-cache
 
+      - name: Test Swift buffer ownership and frame scheduling
+        run: bash tools/swift/test.sh
+
   kotlin:
     runs-on: ubuntu-latest
 

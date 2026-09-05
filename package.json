@@ -43,6 +43,7 @@
     "typecheck": "tsc",
     "test": "jest",
     "test:cpp": "bash tools/cpp/test.sh",
+    "test:swift": "bash tools/swift/test.sh",
     "benchmark:cpp": "bash tools/cpp/benchmark.sh",
     "lint:swift": "swiftlint lint --strict --no-cache",
     "format:swift": "swiftlint lint --fix --no-cache",

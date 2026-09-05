@@ -50,7 +50,7 @@ formatting, and React Native integration in the iOS and Android layers.
 - `ios/Host/`: Swift composition root, one-shot frame scheduler, gestures,
   momentum, lifecycle, and event deduplication.
 - `ios/Rendering/ChartMetalRenderer.swift`: revision-based Metal renderer with
-  two grow-only buffers.
+  independent three-slot content/overlay pools and at most three in-flight commands.
 - `ios/Overlay/`: Core Animation overlay, format/layout caches, and two-pass
   identity-based text-layer pools.
 - `ios/Registry/TradingChartsRegistry.swift`: typed main-thread command routing
@@ -151,10 +151,20 @@ formatting, and React Native integration in the iOS and Android layers.
   to Metal and the overlay, and calls `MTKView.draw` only when the snapshot
   revision differs from the last drawn one (forced after window re-attach and
   `applicationDidBecomeActive`).
-- `ChartMetalRenderer` keeps two grow-only shared vertex buffers. Content is
-  copied only when `content_revision` changes; the small crosshair overlay
-  buffer follows every revision. Preserve revision-based uploads and capacity
-  reuse.
+- `ChartMetalRenderer` keeps independent three-slot pools of grow-only shared
+  content/overlay buffers and permits at most three in-flight commands. A slot
+  with the requested revision can be shared by multiple GPU readers; writing or
+  growing a slot requires zero readers. Completion handlers retain the snapshot
+  and pools, then release each command's readers on the main queue. Never infer
+  buffer availability from drawable acquisition or command submission.
+- Preserve revision-based uploads: crosshair-only frames reuse the uploaded
+  content slot even while earlier commands read it. When all command permits are
+  occupied, defer the latest state without blocking the main thread; completion
+  requests one coalesced scheduler frame. Only successful command submission
+  updates the host's drawn revision and applies the matching text overlay.
+- A missing drawable permits one automatic retry per revision or lifecycle
+  resume. Resource/encoding failures release reservations without an automatic
+  retry loop. Keep forced redraw pending until a command is actually submitted.
 - `ChartRenderFrame.withContentVertices` and `withOverlayVertices` are the only
   allowed raw-pointer boundary. Keep access scoped, retain the snapshot handle
   with `withExtendedLifetime`, and never store those pointers in a renderer,
@@ -312,6 +322,13 @@ run the strict SwiftLint validation:
 
 ```sh
 yarn lint:swift
+```
+
+For Metal buffer ownership or frame scheduling changes, also run the deterministic
+Swift regression harness (no physical GPU required):
+
+```sh
+yarn test:swift
 ```
 
 SwiftLint is installed through Homebrew with `brew install swiftlint`. If
