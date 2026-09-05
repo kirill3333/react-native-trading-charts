@@ -405,6 +405,16 @@ struct PriceLineSnapshot {
   float y = 0.0f;
 };
 
+// A scale mutation can hide the crosshair without changing any price scale.
+struct ScaleYResult {
+  bool state_changed = false;
+  bool scale_changed = false;
+  std::string pane_id;
+  std::string price_scale_id;
+  double scale = 1.0;
+  bool is_main_pane = false;
+};
+
 struct YAxisValue {
   std::string pane_id;
   std::string price_scale_id;
@@ -600,6 +610,7 @@ class ChartEngine {
   bool ScrollToRealTime(double progress);
   bool ScaleY(float delta_pixels);
   bool ScaleYAt(float delta_pixels, float y);
+  ScaleYResult ScaleYAtWithResult(float delta_pixels, float y);
   void ResetViewport();
   void FitContent();
   void SetCrosshair(bool active, float x, float y);

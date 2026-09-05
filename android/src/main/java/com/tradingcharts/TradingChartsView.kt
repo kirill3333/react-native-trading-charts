@@ -54,7 +54,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var lastSelectedContentRevision = -1L
   private var lastSelectedSeriesValuesJson = "[]"
   private var pendingScaleChange = false
-  private var pendingYAxisScaleChange = false
+  private val priceScaleChanges = ChartPriceScaleChanges()
+  private val scaleYResult = ChartScaleYResult()
   private val declarativeSeriesIds = mutableSetOf<String>()
   private var activeSeparatorIndex = -1
   private var separatorLastY = 0f
@@ -75,7 +76,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     val hasPendingEvents =
         pendingPaneResizeIndex >= 0 ||
             pendingScaleChange ||
-            pendingYAxisScaleChange ||
+            priceScaleChanges.isPending ||
             realTimeScroll.isActive
     if (
         !hasPendingEvents &&
@@ -194,16 +195,16 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
                     shouldScheduleFrame = true
                   } else if (!scaleDetector.isInProgress) {
                     if (isPointInYAxis(first)) {
-                      if (
-                          config.allowYAxisScale &&
-                              ChartEngineNative.nativeScaleYAt(
-                                  engineHandle,
-                                  -distanceY,
-                                  current.y,
-                              )
-                      ) {
-                        pendingYAxisScaleChange = true
-                        shouldScheduleFrame = true
+                      if (config.allowYAxisScale) {
+                        shouldScheduleFrame =
+                            ChartEngineNative.nativeScaleYAt(
+                                engineHandle,
+                                -distanceY,
+                                current.y,
+                                scaleYResult.numbers,
+                                scaleYResult.strings,
+                            )
+                        priceScaleChanges.record(scaleYResult.priceScaleChange())
                       }
                     } else if (config.allowPan) {
                       shouldScheduleFrame = ChartEngineNative.nativePan(engineHandle, -distanceX)
@@ -339,7 +340,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         crosshairGestureActive = false
       }
       pendingScaleChange = false
-      pendingYAxisScaleChange = false
+      priceScaleChanges.clear()
       ChartEngineNative.setConfig(engineHandle, config)
       reconcileDeclarativeSeries()
       scheduleFrame()
@@ -363,7 +364,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     crosshairPinned = false
     crosshairGestureActive = false
     pendingScaleChange = false
-    pendingYAxisScaleChange = false
+    priceScaleChanges.clear()
     val status = ChartEngineNative.nativeSetHistory(engineHandle, values)
     logStatus("setHistory", status)
     if (status == STATUS_APPLIED) scheduleFrame()
@@ -519,7 +520,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     crosshairPinned = false
     crosshairGestureActive = false
     pendingScaleChange = false
-    pendingYAxisScaleChange = false
+    priceScaleChanges.clear()
     ChartEngineNative.nativeFitContent(engineHandle)
     scheduleFrame()
   }
@@ -530,7 +531,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     crosshairPinned = false
     crosshairGestureActive = false
     pendingScaleChange = false
-    pendingYAxisScaleChange = false
+    priceScaleChanges.clear()
     ChartEngineNative.nativeClear(engineHandle)
     lastVisibleRangeKey = null
     scheduleFrame()
@@ -630,12 +631,15 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun emitScaleChanges(snapshot: ChartSnapshot) {
     val emitHorizontal = pendingScaleChange
-    val emitYAxis = pendingYAxisScaleChange
+    val emitYAxis = priceScaleChanges.isPending
     pendingScaleChange = false
-    pendingYAxisScaleChange = false
-    if ((!emitHorizontal && !emitYAxis) || id == NO_ID) return
-    val reactContext = context as? ReactContext ?: return
-    val dispatcher = eventDispatcher(reactContext) ?: return
+    if (!emitHorizontal && !emitYAxis) return
+    val reactContext = context as? ReactContext
+    val dispatcher = reactContext?.let { eventDispatcher(it) }
+    if (id == NO_ID || dispatcher == null) {
+      priceScaleChanges.clear()
+      return
+    }
     val surfaceId = UIManagerHelper.getSurfaceId(this)
     if (emitHorizontal) {
       dispatcher.dispatchEvent(
@@ -647,28 +651,24 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
           )
       )
     }
-    if (emitYAxis) {
-      dispatcher.dispatchEvent(
-          ScaleChangeEvent(
-              surfaceId,
-              id,
-              ScaleChangeEvent.Y_AXIS_EVENT_NAME,
-              snapshot.yAxisScale,
+    priceScaleChanges.emit(
+        mainScale = { scale ->
+          dispatcher.dispatchEvent(
+              ScaleChangeEvent(surfaceId, id, ScaleChangeEvent.Y_AXIS_EVENT_NAME, scale)
           )
-      )
-      val pane = snapshot.panes.getOrNull(snapshot.activePaneIndex) ?: snapshot.panes.firstOrNull()
-      if (pane != null) {
-        dispatcher.dispatchEvent(
-            PriceScaleChangeEvent(
-                surfaceId,
-                id,
-                pane.paneId,
-                pane.priceScaleId,
-                pane.yAxisScale,
-            )
-        )
-      }
-    }
+        },
+        priceScale = { change ->
+          dispatcher.dispatchEvent(
+              PriceScaleChangeEvent(
+                  surfaceId,
+                  id,
+                  change.paneId,
+                  change.priceScaleId,
+                  change.scale,
+              )
+          )
+        },
+    )
   }
 
   private fun emitPaneResize(snapshot: ChartSnapshot) {
@@ -799,6 +799,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   override fun onDetachedFromWindow() {
+    priceScaleChanges.clear()
     realTimeScroll.stop()
     stopFling()
     removeCallbacks(frameCallback)
@@ -814,6 +815,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     if (disposed) return
     realTimeScroll.stop()
     stopFling()
+    priceScaleChanges.clear()
     disposed = true
     renderer.clearPending()
     (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)

@@ -326,7 +326,14 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeYAxisValueAt(handle: Long, y: Float): DoubleArray
 
-  @JvmStatic external fun nativeScaleYAt(handle: Long, delta: Float, y: Float): Boolean
+  @JvmStatic
+  external fun nativeScaleYAt(
+      handle: Long,
+      delta: Float,
+      y: Float,
+      numbers: DoubleArray,
+      strings: Array<String>,
+  ): Boolean
 
   @JvmStatic external fun nativeSeparatorAt(handle: Long, y: Float, hitSlop: Float): Int
 

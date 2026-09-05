@@ -13,9 +13,9 @@ internal class PriceScaleChangeEvent(
 ) : Event<PriceScaleChangeEvent>(surfaceId, viewId) {
   override fun getEventName(): String = EVENT_NAME
 
-  override fun canCoalesce(): Boolean = true
-
-  override fun getCoalescingKey(): Short = 0
+  // Already coalesced per scale by the view. React's shared event key would
+  // otherwise merge changes belonging to different panes.
+  override fun canCoalesce(): Boolean = false
 
   override fun getEventData(): WritableMap =
       Arguments.createMap().apply {

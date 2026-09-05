@@ -302,19 +302,23 @@ size_t ChartEngine::PaneIndexAtYLocked(float y,
 }
 
 bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
+  return ScaleYAtWithResult(delta_pixels, y).state_changed;
+}
+
+ScaleYResult ChartEngine::ScaleYAtWithResult(float delta_pixels, float y) {
   MutationScope mutation(*this);
   if (!config_.allow_y_axis_scale || !config_.show_y_axis ||
       !viewport_initialized_ || height_ <= 0.0F || candles_.empty() ||
       !std::isfinite(delta_pixels)) {
-    return false;
+    return {};
   }
   const std::vector<Rect> rects = PaneRectsLocked();
   const size_t pane_index = PaneIndexAtYLocked(y, rects);
   if (pane_index >= panes_.size()) {
-    return false;
+    return {};
   }
   if (PaneHasRsiLocked(pane_index)) {
-    return false;
+    return {};
   }
   const double plot_height = std::max(
       static_cast<double>(rects[pane_index].Height()), kMinimumPlotLength);
@@ -328,7 +332,9 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
       mutation.OverlayChanged();
       crosshair_active_ = false;
     }
-    return crosshair_changed;
+    ScaleYResult result;
+    result.state_changed = crosshair_changed;
+    return result;
   }
   mutation.ContentChanged();
   crosshair_active_ = false;
@@ -336,7 +342,12 @@ bool ChartEngine::ScaleYAt(float delta_pixels, float y) {
   if (pane_index == 0) {
     y_range_multiplier_ = next;
   }
-  return true;
+  return {true,
+          true,
+          panes_[pane_index].pane_id,
+          panes_[pane_index].price_scale_id,
+          1.0 / next,
+          pane_index == 0};
 }
 
 std::optional<size_t> ChartEngine::SeparatorAt(float y, float hit_slop) const {

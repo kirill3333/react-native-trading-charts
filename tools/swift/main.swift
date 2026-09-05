@@ -276,11 +276,62 @@ final class FrameSchedulingTests: XCTestCase {
   }
 }
 
+final class PriceScaleChangeTests: XCTestCase {
+  func testCoalescesEachScaleAndEmitsLegacyOnlyForMain() {
+    var changes = ChartPriceScaleChanges()
+    let input = [
+      ChartPriceScaleChange(paneId: "volume", priceScaleId: "v", scale: 0.9, isMainPane: false),
+      ChartPriceScaleChange(paneId: "main", priceScaleId: "m", scale: 1.1, isMainPane: true),
+      ChartPriceScaleChange(paneId: "volume", priceScaleId: "v", scale: 0.8, isMainPane: false),
+      ChartPriceScaleChange(paneId: "main", priceScaleId: "m", scale: 1.2, isMainPane: true)
+    ]
+    for change in input {
+      changes.record(ChartScaleYResult(stateChanged: true, priceScaleChange: change))
+    }
+    var main: [Double] = []
+    var emitted: [ChartPriceScaleChange] = []
+    changes.emit(mainScale: { main.append($0) }, priceScale: { emitted.append($0) })
+    XCTAssertEqual(main, [1.2])
+    XCTAssertEqual(emitted.map { $0.paneId }, ["volume", "main"])
+    XCTAssertEqual(emitted.map { $0.priceScaleId }, ["v", "m"])
+    XCTAssertEqual(emitted.map { $0.scale }, [0.8, 1.2])
+    changes.emit(mainScale: { _ in XCTFail("Already drained") },
+                 priceScale: { _ in XCTFail("Already drained") })
+  }
+
+  func testOverlayOnlyAndUnchangedResultsEmitNothing() {
+    var changes = ChartPriceScaleChanges()
+    changes.record(ChartScaleYResult(stateChanged: true, priceScaleChange: nil))
+    changes.record(ChartScaleYResult(stateChanged: false, priceScaleChange: nil))
+    changes.emit(mainScale: { _ in XCTFail("No scale mutation") },
+                 priceScale: { _ in XCTFail("No scale mutation") })
+    changes.record(ChartScaleYResult(stateChanged: true, priceScaleChange:
+      ChartPriceScaleChange(paneId: "volume", priceScaleId: "v", scale: 0.9, isMainPane: false)))
+    changes.emit(mainScale: { _ in XCTFail("Secondary pane") }, priceScale: {
+      XCTAssertEqual($0.scale, 0.9)
+    })
+  }
+
+  func testClearDiscardsPendingChangesAndAllowsNewEvents() {
+    var changes = ChartPriceScaleChanges()
+    let change = ChartPriceScaleChange(
+      paneId: "main", priceScaleId: "main", scale: 0.9, isMainPane: true)
+    changes.record(ChartScaleYResult(stateChanged: true, priceScaleChange: change))
+    changes.clear()
+    changes.emit(mainScale: { _ in XCTFail("Cleared") }, priceScale: { _ in XCTFail("Cleared") })
+    changes.record(ChartScaleYResult(stateChanged: true, priceScaleChange: change))
+    var count = 0
+    changes.emit(mainScale: { XCTAssertEqual($0, 0.9) }, priceScale: { _ in count += 1 })
+    XCTAssertEqual(count, 1)
+  }
+}
+
 let suite = XCTestSuite(name: "Metal buffer ownership and scheduling")
 suite.addTest(BufferOwnershipTests.defaultTestSuite)
 suite.addTest(FrameSchedulingTests.defaultTestSuite)
+suite.addTest(PriceScaleChangeTests.defaultTestSuite)
 suite.run()
-guard let result = suite.testRun, result.executionCount == 9 else {
-  fatalError("Expected all nine regression tests to run")
+guard let result = suite.testRun, result.executionCount == 12 else {
+  fatalError("Expected all twelve regression tests to run")
 }
 exit(result.hasSucceeded ? 0 : 1)

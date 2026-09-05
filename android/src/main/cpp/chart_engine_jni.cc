@@ -1289,15 +1289,45 @@ Java_com_tradingcharts_ChartEngineNative_nativeScaleY(JNIEnv*, jclass,
   return JNI_FALSE;
 }
 
+// Output ABI shared with ChartScaleYResult: changed, scale, main; pane, scale
+// ID.
 JNIEXPORT jboolean JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeScaleYAt(JNIEnv*, jclass,
+Java_com_tradingcharts_ChartEngineNative_nativeScaleYAt(JNIEnv* env, jclass,
                                                         jlong handle,
-                                                        jfloat delta,
-                                                        jfloat y) {
-  if (auto* instance = EngineFromHandle(handle)) {
-    return instance->ScaleYAt(delta, y) ? JNI_TRUE : JNI_FALSE;
+                                                        jfloat delta, jfloat y,
+                                                        jdoubleArray numbers,
+                                                        jobjectArray strings) {
+  constexpr jsize kNumberCount = 3;
+  constexpr jsize kStringCount = 2;
+  if (numbers == nullptr || strings == nullptr ||
+      env->GetArrayLength(numbers) != kNumberCount ||
+      env->GetArrayLength(strings) != kStringCount) {
+    return JNI_FALSE;
   }
-  return JNI_FALSE;
+  auto* instance = EngineFromHandle(handle);
+  const auto result = instance ? instance->ScaleYAtWithResult(delta, y)
+                               : trading_charts::ScaleYResult{};
+  const std::array<jdouble, kNumberCount> values{
+      result.scale_changed ? 1.0 : 0.0, result.scale,
+      result.is_main_pane ? 1.0 : 0.0};
+  env->SetDoubleArrayRegion(numbers, 0, kNumberCount, values.data());
+  if (result.scale_changed && !env->ExceptionCheck()) {
+    const std::array<const std::string*, kStringCount> ids{
+        &result.pane_id, &result.price_scale_id};
+    for (jsize index = 0; index < kStringCount; ++index) {
+      jstring value =
+          env->NewStringUTF(ids[static_cast<size_t>(index)]->c_str());
+      if (value == nullptr) {
+        return JNI_FALSE;
+      }
+      env->SetObjectArrayElement(strings, index, value);
+      env->DeleteLocalRef(value);
+      if (env->ExceptionCheck()) {
+        return JNI_FALSE;
+      }
+    }
+  }
+  return result.state_changed ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL

@@ -123,10 +123,10 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
       recognizer.setTranslation(.zero, in: view)
       if scalingYAxis {
         let point = recognizer.location(in: view)
-        if config.allow_y_axis_scale,
-          engine.scaleY(Float(translation.y), at: Float(point.y)) {
-          events.pendingYAxisScale = true
-          requestFrame()
+        if config.allow_y_axis_scale {
+          let result = engine.scaleY(Float(translation.y), at: Float(point.y))
+          events.priceScaleChanges.record(result)
+          if result.stateChanged { requestFrame() }
         }
       } else if config.allow_pan, engine.pan(Float(translation.x)) {
         requestFrame()

@@ -58,7 +58,7 @@ final class ChartEventCoordinator {
   private var lastSelectionContentRevision: UInt64?
   private var lastSeriesValuesJson = "[]"
   var pendingHorizontalScale = false
-  var pendingYAxisScale = false
+  var priceScaleChanges = ChartPriceScaleChanges()
   var pendingPaneResize: (separator: Int, finished: Bool)?
 
   func reset() {
@@ -68,7 +68,7 @@ final class ChartEventCoordinator {
     lastSelectionContentRevision = nil
     lastSeriesValuesJson = "[]"
     pendingHorizontalScale = false
-    pendingYAxisScale = false
+    priceScaleChanges.clear()
     pendingPaneResize = nil
   }
 
@@ -125,19 +125,17 @@ final class ChartEventCoordinator {
       pendingHorizontalScale = false
       delegate?.chartHostView(host, horizontalScale: frame.horizontalScale)
     }
-    if pendingYAxisScale {
-      pendingYAxisScale = false
-      delegate?.chartHostView(host, yAxisScale: frame.yAxisScale)
-      if frame.paneCount > 0 {
-        let pane = frame.pane(at: min(frame.activePaneIndex, frame.paneCount - 1))
+    priceScaleChanges.emit(
+      mainScale: { delegate?.chartHostView(host, yAxisScale: $0) },
+      priceScale: { change in
         delegate?.chartHostView(
           host,
-          paneId: String(pane.pane_id),
-          priceScaleId: String(pane.price_scale_id),
-          priceScale: pane.y_axis_scale
+          paneId: change.paneId,
+          priceScaleId: change.priceScaleId,
+          priceScale: change.scale
         )
       }
-    }
+    )
     if let pendingPaneResize {
       self.pendingPaneResize = nil
       if pendingPaneResize.separator >= 0, pendingPaneResize.separator + 1 < frame.paneCount {

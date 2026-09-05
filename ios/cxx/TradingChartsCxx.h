@@ -107,8 +107,8 @@ class ChartEngineHandle {
     return engine_->ScrollToRealTime(progress);
   }
   bool ScaleY(float delta_pixels) { return engine_->ScaleY(delta_pixels); }
-  bool ScaleYAt(float delta_pixels, float y) {
-    return engine_->ScaleYAt(delta_pixels, y);
+  ScaleYResult ScaleYAtWithResult(float delta_pixels, float y) {
+    return engine_->ScaleYAtWithResult(delta_pixels, y);
   }
   void FitContent() { engine_->FitContent(); }
   void SetCrosshair(bool active, float x, float y) {

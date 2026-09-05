@@ -2649,6 +2649,94 @@ void TestMultiPaneSeriesAndDerivedVolume() {
   assert(!engine.RemoveSeries("volume"));
 }
 
+void TestScaleYResultIdentifiesChangedPane() {
+  for (int crosshair_pane = -1; crosshair_pane < 2; ++crosshair_pane) {
+    for (size_t target = 0; target < 2; ++target) {
+      ChartEngine engine;
+      engine.SetSize(600.0F, 360.0F);
+      PaneConfig main;
+      PaneConfig volume;
+      volume.pane_id = "volume";
+      volume.price_scale_id = "volume-scale";
+      engine.SetPanes({main, volume}, false);
+      const double history[] = {0.0, 10.0, 12.0, 9.0, 11.0, 5.0};
+      assert(engine.SetHistory(history, std::size(history)) ==
+             UpdateStatus::kApplied);
+      const auto before = engine.Snapshot();
+      if (crosshair_pane >= 0) {
+        const auto& plot =
+            before->panes[static_cast<size_t>(crosshair_pane)].plot;
+        engine.SetCrosshair(true, plot.left + 10.0F,
+                            (plot.top + plot.bottom) * 0.5F);
+      }
+      const auto& pane = before->panes[target];
+      const auto result = engine.ScaleYAtWithResult(
+          20.0F, (pane.plot.top + pane.plot.bottom) * 0.5F);
+      const auto after = engine.Snapshot();
+      assert(result.state_changed && result.scale_changed);
+      assert(result.pane_id == pane.pane_id);
+      assert(result.price_scale_id == pane.price_scale_id);
+      assert(result.is_main_pane == (target == 0));
+      ExpectNear(result.scale, after->panes[target].y_axis_scale);
+      assert(result.scale != pane.y_axis_scale);
+      ExpectNear(after->panes[1 - target].y_axis_scale,
+                 before->panes[1 - target].y_axis_scale);
+      assert(!after->crosshair_visible);
+      assert(after->active_pane_index == 0);
+    }
+  }
+}
+
+void TestScaleYResultDistinguishesOverlayAndNoChange() {
+  ChartEngine engine;
+  engine.SetSize(600.0F, 360.0F);
+  const auto empty = engine.ScaleYAtWithResult(20.0F, 100.0F);
+  assert(!empty.state_changed && !empty.scale_changed);
+  const double history[] = {0.0, 10.0, 12.0, 9.0, 11.0, 5.0};
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  const auto zero = engine.ScaleYAtWithResult(0.0F, 100.0F);
+  assert(!zero.state_changed && !zero.scale_changed);
+  engine.SetCrosshair(true, 100.0F, 100.0F);
+  ExpectOverlayMutation(engine, [&] {
+    const auto result = engine.ScaleYAtWithResult(0.0F, 100.0F);
+    assert(result.state_changed && !result.scale_changed);
+    assert(result.pane_id.empty() && result.price_scale_id.empty());
+  });
+  for (float delta : {-100000.0F, 100000.0F}) {
+    assert(engine.ScaleYAtWithResult(delta, 100.0F).scale_changed);
+    ExpectNoRenderMutation(engine, [&] {
+      const auto result = engine.ScaleYAtWithResult(delta, 100.0F);
+      assert(!result.state_changed && !result.scale_changed);
+    });
+    engine.SetCrosshair(true, 100.0F, 100.0F);
+    ExpectOverlayMutation(engine, [&] {
+      const auto result = engine.ScaleYAtWithResult(delta, 100.0F);
+      assert(result.state_changed && !result.scale_changed);
+    });
+  }
+  ExpectNoRenderMutation(engine, [&] {
+    const auto result = engine.ScaleYAtWithResult(
+        std::numeric_limits<float>::quiet_NaN(), 100.0F);
+    assert(!result.state_changed && !result.scale_changed);
+  });
+  ChartConfig config;
+  config.allow_y_axis_scale = false;
+  engine.SetConfig(config);
+  engine.SetCrosshair(true, 100.0F, 100.0F);
+  ExpectNoRenderMutation(engine, [&] {
+    const auto result = engine.ScaleYAtWithResult(20.0F, 100.0F);
+    assert(!result.state_changed && !result.scale_changed);
+  });
+  config.allow_y_axis_scale = true;
+  config.show_y_axis = false;
+  engine.SetConfig(config);
+  ExpectNoRenderMutation(engine, [&] {
+    const auto result = engine.ScaleYAtWithResult(20.0F, 100.0F);
+    assert(!result.state_changed && !result.scale_changed);
+  });
+}
+
 void TestPaneSeparatorUsesStrongerGridAlpha() {
   ChartEngine engine;
   ChartConfig config;
@@ -2824,6 +2912,9 @@ void TestDerivedRsiPaneAndIncrementalUpdates() {
   assert(has_boundary_tick);
   assert(oversold_count == 1 && overbought_count == 1);
   assert(!engine.ScaleYAt(20.0f, (pane.plot.top + pane.plot.bottom) * 0.5f));
+  const auto scale_result = engine.ScaleYAtWithResult(
+      20.0F, (pane.plot.top + pane.plot.bottom) * 0.5F);
+  assert(!scale_result.state_changed && !scale_result.scale_changed);
 
   const double replacement[] = {5.0 * 60'000.0, 3.0, 3.0, 3.0, 3.0, 1.0};
   assert(engine.UpdateCandle(replacement, trading_charts::kCandleValueCount) ==
@@ -4317,6 +4408,8 @@ int main() noexcept {
     TestBarSpacingAndClipping();
     TestCurrentPriceLineAndLabelColorsAreIndependent();
     TestMultiPaneSeriesAndDerivedVolume();
+    TestScaleYResultIdentifiesChangedPane();
+    TestScaleYResultDistinguishesOverlayAndNoChange();
     TestPaneSeparatorUsesStrongerGridAlpha();
     TestVolumePaneTickMinimumDependsOnHeight();
     TestDerivedRsiPaneAndIncrementalUpdates();

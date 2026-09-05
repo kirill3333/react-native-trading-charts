@@ -102,6 +102,7 @@ public final class ChartHostView: UIView {
     interaction.cancelInteraction()
     scheduler.suspend()
     guard window != nil else {
+      events.priceScaleChanges.clear()
       realTimeScroll.stop()
       return
     }
@@ -121,6 +122,7 @@ public final class ChartHostView: UIView {
   public func applyConfigJson(_ json: String) {
     guard let next = ChartConfigurationDecoder.decode(json) else { return }
     realTimeScroll.stop()
+    events.priceScaleChanges.clear()
     configuration = next
     overlay.apply(configuration: next)
     engine.setConfig(next.native)
@@ -158,7 +160,7 @@ public final class ChartHostView: UIView {
     realTimeScroll.stop()
     interaction.resetCrosshair()
     events.pendingHorizontalScale = false
-    events.pendingYAxisScale = false
+    events.priceScaleChanges.clear()
     apply(engine.setHistory(data), operation: "setHistory")
   }
 
@@ -282,7 +284,7 @@ public final class ChartHostView: UIView {
     interaction.cancelInteraction()
     interaction.resetCrosshair()
     events.pendingHorizontalScale = false
-    events.pendingYAxisScale = false
+    events.priceScaleChanges.clear()
     engine.fitContent()
     requestFrame()
   }

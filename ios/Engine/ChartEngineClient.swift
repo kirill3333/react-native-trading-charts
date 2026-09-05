@@ -266,7 +266,16 @@ final class ChartEngineClient {
   func zoomAtRightEdge(_ scale: Double) { handle.ZoomAtRightEdge(scale) }
   func scrollToRealTime(_ progress: Double) -> Bool { handle.ScrollToRealTime(progress) }
   func scaleY(_ delta: Float) -> Bool { handle.ScaleY(delta) }
-  func scaleY(_ delta: Float, at y: Float) -> Bool { handle.ScaleYAt(delta, y) }
+  func scaleY(_ delta: Float, at y: Float) -> ChartScaleYResult {
+    let result = handle.ScaleYAtWithResult(delta, y)
+    let change = result.scale_changed ? ChartPriceScaleChange(
+      paneId: String(result.pane_id),
+      priceScaleId: String(result.price_scale_id),
+      scale: result.scale,
+      isMainPane: result.is_main_pane
+    ) : nil
+    return ChartScaleYResult(stateChanged: result.state_changed, priceScaleChange: change)
+  }
   func fitContent() { handle.FitContent() }
   func setCrosshair(active: Bool, x: Float, y: Float) {
     handle.SetCrosshair(active, x, y)
