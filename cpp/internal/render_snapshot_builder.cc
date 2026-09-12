@@ -1012,9 +1012,9 @@ class RenderSnapshotBuilder {
         snapshot_->pane_y_ticks.push_back(AxisTick{value, position});
       }
       if (pane.rsi_scale) {
-        // Keep the generated 0...100 ticks, including boundary labels that
-        // extend into neighboring panes, and add each RSI series' configured
-        // levels without duplicating their dashed grid geometry.
+        // Keep the generated 0...100 ticks; native overlays clip boundary
+        // labels to their pane. Add each RSI series' configured levels without
+        // duplicating their dashed grid geometry.
         for (const SeriesData& series : input_.additional_series) {
           if (!IsSeriesInPane(series, pane_index) ||
               series.config.source != SeriesSource::kOhlcvRsi) {

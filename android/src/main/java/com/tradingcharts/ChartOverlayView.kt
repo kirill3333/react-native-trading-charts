@@ -590,28 +590,44 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private fun drawYAxes(canvas: Canvas, frame: ChartSnapshot) {
     frame.panes.forEach { pane ->
-      if (!pane.scaleVisible) return@forEach
+      if (!pane.scaleVisible || pane.plotBottom <= pane.plotTop) return@forEach
       val valueFormatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
       val volumeFormatter = paneVolumeFormats[pane.priceScaleId]
       val paneCache =
           yLabelCache.getOrPut(pane.priceScaleId) {
             BoundedCache(MAX_Y_LABEL_CACHE_SIZE)
           }
-      pane.yTicks.forEach { tick ->
-        val label =
-            paneCache.getOrPut(tick.value.toBits()) {
-              val text =
-                  if (pane.volumeFormat) {
-                    formatVolume(tick.value, volumeFormatter ?: volumeFormat)
-                  } else {
-                    formatValue(tick.value, valueFormatter)
-                  }
-              AxisLabel(text, yAxisPaint.measureText(text))
-            }
-        val x = pane.plotRight + 6f * density
-        canvas.drawText(label.text, x, centeredBaseline(tick.position, yAxisPaint), yAxisPaint)
+      val saveCount = canvas.save()
+      try {
+        canvas.clipRect(0f, pane.plotTop, frame.width, pane.plotBottom)
+        pane.yTicks.forEach { tick ->
+          val label =
+              paneCache.getOrPut(tick.value.toBits()) {
+                val text =
+                    if (pane.volumeFormat) {
+                      formatVolume(tick.value, volumeFormatter ?: volumeFormat)
+                    } else {
+                      formatValue(tick.value, valueFormatter)
+                    }
+                AxisLabel(text, yAxisPaint.measureText(text))
+              }
+          val x = pane.plotRight + 6f * density
+          canvas.drawText(label.text, x, yAxisBaseline(tick, pane), yAxisPaint)
+        }
+      } finally {
+        canvas.restoreToCount(saveCount)
       }
     }
+  }
+
+  private fun yAxisBaseline(tick: AxisTick, pane: PaneSnapshot): Float {
+    val centered = centeredBaseline(tick.position, yAxisPaint)
+    if (!pane.rsiScale || (tick.value != 0.0 && tick.value != 100.0)) return centered
+    // Fixed RSI endpoints stay readable inside the clipped pane.
+    return max(
+        pane.plotTop - yAxisPaint.ascent(),
+        min(pane.plotBottom - yAxisPaint.descent(), centered),
+    )
   }
 
   private fun drawIndicatorLegends(canvas: Canvas, frame: ChartSnapshot) {

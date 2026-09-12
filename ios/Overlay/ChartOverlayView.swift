@@ -12,7 +12,7 @@ final class ChartOverlayView: UIView {
   private let extremaContainer = CALayer()
   let priceLineContainer = CALayer()
   lazy var xAxisPool = TextLayerPool(parentLayer: axisContainer)
-  private var yAxisPools: [String: TextLayerPool] = [:]
+  private var yAxisGroups: [String: PaneAxisLayerGroup] = [:]
   private lazy var extremaPool = TextLayerPool(parentLayer: extremaContainer)
   private lazy var tooltipLinePool = TextLayerPool(parentLayer: tooltipContainer)
   private lazy var tooltipValuePool = TextLayerPool(parentLayer: tooltipContainer)
@@ -257,13 +257,19 @@ final class ChartOverlayView: UIView {
     if configuration.native.show_y_axis {
       for paneIndex in 0..<frame.paneCount {
         let pane = frame.pane(at: paneIndex)
-        guard pane.scale_visible else { continue }
+        guard pane.scale_visible, pane.plot.bottom > pane.plot.top else { continue }
         let paneId = String(pane.pane_id)
         let scaleId = String(pane.price_scale_id)
         let key = paneId + "\u{1f}" + scaleId
         activeKeys.insert(key)
-        let pool = yAxisPools[key] ?? TextLayerPool(parentLayer: axisContainer)
-        yAxisPools[key] = pool
+        let group = yAxisGroups[key] ?? PaneAxisLayerGroup(parentLayer: axisContainer)
+        yAxisGroups[key] = group
+        let paneTop = CGFloat(pane.plot.top)
+        let clipFrame = CGRect(
+          x: 0, y: paneTop, width: CGFloat(frame.width),
+          height: CGFloat(pane.plot.bottom) - paneTop)
+        if group.container.frame != clipFrame { group.container.frame = clipFrame }
+        setHidden(false, on: group.container)
         let valueFormatter = formatters.valueFormatterToken(scaleId: scaleId)
         let volumeFormatter = formatters.volumeFormatterToken(scaleId: scaleId)
         var presentations: [TextPresentation] = []
@@ -274,17 +280,19 @@ final class ChartOverlayView: UIView {
             : formatters.formatValue(tick.value, using: valueFormatter)
           let layout = cachedLayout(text, attributes: style.yAxis, cache: yAxisLayoutCache, metrics: &metrics)
           let rawX = CGFloat(pane.plot.right) + 6
+          let labelY = group.labelY(at: CGFloat(tick.position), height: layout.size.height,
+            keepInside: pane.rsi_scale && (tick.value == 0 || tick.value == 100))
           presentations.append(TextPresentation(layout: layout, frame: CGRect(
-            x: max(2, rawX), y: CGFloat(tick.position) - layout.size.height / 2,
+            x: max(2, rawX), y: labelY,
             width: layout.size.width, height: layout.size.height)))
           visible += 1
         }
         let yFrameUpdatesBefore = metrics.frameUpdates
-        metrics.yTextUpdates += pool.reconcile(presentations, metrics: &metrics)
+        metrics.yTextUpdates += group.pool.reconcile(presentations, metrics: &metrics)
         metrics.yFrameUpdates += metrics.frameUpdates - yFrameUpdatesBefore
       }
     }
-    for (key, pool) in yAxisPools where !activeKeys.contains(key) { pool.hide(from: 0) }
+    for (key, group) in yAxisGroups where !activeKeys.contains(key) { setHidden(true, on: group.container) }
     applyPriceLines(
       frame: frame,
       configuration: configuration,

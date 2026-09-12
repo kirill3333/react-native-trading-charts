@@ -78,6 +78,24 @@ struct TextPresentation {
   let frame: CGRect
 }
 
+final class PaneAxisLayerGroup {
+  let container = CALayer()
+  let pool: TextLayerPool
+
+  init(parentLayer: CALayer) {
+    container.masksToBounds = true
+    container.isHidden = true
+    pool = TextLayerPool(parentLayer: container)
+    parentLayer.addSublayer(container)
+  }
+
+  func labelY(at position: CGFloat, height: CGFloat, keepInside: Bool) -> CGFloat {
+    let centered = position - container.frame.minY - height / 2
+    // Fixed RSI endpoints stay readable inside the clipped pane.
+    return keepInside ? max(0, min(container.bounds.height - height, centered)) : centered
+  }
+}
+
 final class TextLayerPool {
   private(set) var items: [ChartTextLayerItem] = []
   private let parentLayer: CALayer
