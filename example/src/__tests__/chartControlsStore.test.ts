@@ -21,24 +21,9 @@ describe('chart controls store', () => {
     });
   });
 
-  it('enables height toggling only after the chart is measured', () => {
-    useChartControlsStore.getState().toggleChartHeight();
-    expect(useChartControlsStore.getState().isChartHalfHeight).toBe(false);
-
-    useChartControlsStore.getState().setFullChartHeight(400);
-    useChartControlsStore.getState().toggleChartHeight();
-
-    expect(useChartControlsStore.getState()).toMatchObject({
-      fullChartHeight: 400,
-      isChartHalfHeight: true,
-    });
-  });
-
   it('resets controls when another chart becomes active', () => {
     const controls = useChartControlsStore.getState();
     controls.toggleMacd();
-    controls.setFullChartHeight(400);
-    controls.toggleChartHeight();
 
     controls.activateChart('chart-b');
 
@@ -47,8 +32,6 @@ describe('chart controls store', () => {
       showMacd: false,
       showRsi: true,
       showVolume: true,
-      isChartHalfHeight: false,
-      fullChartHeight: null,
     });
   });
 });

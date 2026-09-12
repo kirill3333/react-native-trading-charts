@@ -1,15 +1,10 @@
 import { useCallback, useLayoutEffect } from 'react';
 import {
-  type NavigationProp,
   type StaticScreenProps,
   useNavigation,
 } from '@react-navigation/native';
-import {
-  ActivityIndicator,
-  StyleSheet,
-  View,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   type ChartResolution,
@@ -45,6 +40,7 @@ import {
   TimeIntervalSelector,
   type TimeIntervalOption,
 } from '../components/TimeIntervalSelector';
+import { useChartOrientation } from '../hooks/useChartOrientation';
 import { useChartControlsStore } from '../stores/chartControlsStore';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
@@ -63,7 +59,7 @@ export type ChartRouteParams =
 
 type ChartScreenProps = StaticScreenProps<ChartRouteParams>;
 type ChartInterval = ChartRouteParams['interval'];
-type ChartNavigation = NavigationProp<
+type ChartNavigation = NativeStackNavigationProp<
   { Chart: ChartRouteParams },
   'Chart'
 >;
@@ -123,6 +119,8 @@ type ChartContentProps<
   baseAsset: string;
   quoteAsset: string;
   venueLabel: string;
+  isLandscape: boolean;
+  onToggleOrientation: () => void;
 };
 
 function ChartContent<
@@ -138,6 +136,8 @@ function ChartContent<
   baseAsset,
   quoteAsset,
   venueLabel,
+  isLandscape,
+  onToggleOrientation,
 }: ChartContentProps<TTicker, TInterval, TMessage>) {
   const navigation = useNavigation<ChartNavigation>();
   const theme = useAppTheme();
@@ -145,16 +145,7 @@ function ChartContent<
   const showVolume = useChartControlsStore((state) => state.showVolume);
   const showRsi = useChartControlsStore((state) => state.showRsi);
   const showMacd = useChartControlsStore((state) => state.showMacd);
-  const isChartHalfHeight = useChartControlsStore(
-    (state) => state.isChartHalfHeight
-  );
-  const fullChartHeight = useChartControlsStore(
-    (state) => state.fullChartHeight
-  );
   const activateChart = useChartControlsStore((state) => state.activateChart);
-  const setFullChartHeight = useChartControlsStore(
-    (state) => state.setFullChartHeight
-  );
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? DEFAULT_RESOLUTION;
@@ -166,14 +157,6 @@ function ChartContent<
   useLayoutEffect(() => {
     activateChart(chartId);
   }, [activateChart, chartId]);
-
-  const handleChartViewportLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const nextHeight = event.nativeEvent.layout.height;
-      setFullChartHeight(nextHeight);
-    },
-    [setFullChartHeight]
-  );
 
   const changeInterval = useCallback(
     (nextInterval: TInterval) => {
@@ -203,63 +186,71 @@ function ChartContent<
       ? `${venueLabel} returned no data for this market and interval`
       : `Could not connect to ${venueLabel}`;
 
-  const chartHeight =
-    isChartHalfHeight && fullChartHeight != null
-      ? [styles.chartContainer, { height: Math.max(1, fullChartHeight / 2) }]
-      : styles.chartContainerExpanded;
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
-        <ChartHeader
-          baseAsset={baseAsset}
-          change24hPercent={ticker.change24hPercent}
-          onBack={() => navigation.goBack()}
-          price={displayedPrice}
-          pricePrecision={ticker.precision}
-          quoteAsset={quoteAsset}
-          venueLabel={venueLabel}
-        />
-
-        <TimeIntervalSelector
-          intervals={intervals}
-          onSelect={changeInterval}
-          selectedInterval={interval}
-        />
-
-        {hasError ? (
-          <ChartErrorBanner message={error ?? errorStatus} onRetry={retry} />
-        ) : null}
-
-        <View onLayout={handleChartViewportLayout} style={styles.chartViewport}>
-          <View style={chartHeight}>
-            <InteractiveChart
-              allTimeExtremes={allTimeExtremes}
-              chartId={chartId}
-              key={chartId}
-              lastPrice={ticker.lastPrice}
-              minMove={ticker.minMove}
-              onVisibleRangeChange={handleVisibleRangeChange}
-              precision={ticker.precision}
-              showVolume={showVolume}
-              showRsi={showRsi}
-              showMacd={showMacd}
-              resolution={resolution}
+        {!isLandscape && (
+          <ChartHeader
+            baseAsset={baseAsset}
+            change24hPercent={ticker.change24hPercent}
+            onBack={() => navigation.goBack()}
+            price={displayedPrice}
+            pricePrecision={ticker.precision}
+            quoteAsset={quoteAsset}
+            venueLabel={venueLabel}
+          />
+        )}
+        <View
+          style={[styles.workspace, isLandscape && styles.workspaceLandscape]}
+        >
+          <ChartControls
+            isLandscape={isLandscape}
+            onToggleOrientation={onToggleOrientation}
+          />
+          <View style={styles.chartColumn}>
+            <TimeIntervalSelector
+              intervals={intervals}
+              onSelect={changeInterval}
+              selectedInterval={interval}
             />
-            <ConnectionBadge status={status} />
+            {hasError ? (
+              <ChartErrorBanner
+                message={error ?? errorStatus}
+                onRetry={retry}
+              />
+            ) : null}
+            <View style={styles.chartContainer}>
+              <InteractiveChart
+                allTimeExtremes={allTimeExtremes}
+                chartId={chartId}
+                key={chartId}
+                lastPrice={ticker.lastPrice}
+                minMove={ticker.minMove}
+                onVisibleRangeChange={handleVisibleRangeChange}
+                precision={ticker.precision}
+                showVolume={showVolume}
+                showRsi={showRsi}
+                showMacd={showMacd}
+                resolution={resolution}
+              />
+              <ConnectionBadge status={status} />
+            </View>
           </View>
         </View>
-        <ChartControls />
       </View>
     </SafeAreaView>
   );
 }
 
 export function ChartScreen({ route }: ChartScreenProps) {
+  const navigation = useNavigation<ChartNavigation>();
+  const { isLandscape, toggleOrientation } = useChartOrientation(navigation);
   const params = route.params;
   if (params.provider === 'hyperliquid') {
     return (
       <ChartContent
+        isLandscape={isLandscape}
+        onToggleOrientation={toggleOrientation}
         adapter={hyperliquidMarketData}
         baseAsset={params.ticker.baseAsset}
         chartId={hyperliquidChartIdFor(params.ticker.symbol, params.interval)}
@@ -273,6 +264,8 @@ export function ChartScreen({ route }: ChartScreenProps) {
   }
   return (
     <ChartContent
+      isLandscape={isLandscape}
+      onToggleOrientation={toggleOrientation}
       adapter={binanceMarketData}
       baseAsset={params.ticker.symbol.slice(0, -4)}
       chartId={chartIdFor(params.ticker.symbol, params.interval)}
@@ -289,9 +282,10 @@ function createStyles(colors: AppThemeColors) {
   return StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: colors.background },
     screen: { flex: 1, backgroundColor: colors.background },
-    chartViewport: { flex: 1 },
-    chartContainer: { position: 'relative' },
-    chartContainerExpanded: { flex: 1, position: 'relative' },
+    workspace: { flex: 1, flexDirection: 'column-reverse' },
+    workspaceLandscape: { flexDirection: 'row' },
+    chartColumn: { flex: 1, minWidth: 0, minHeight: 0 },
+    chartContainer: { flex: 1, position: 'relative' },
     liveBadge: {
       alignItems: 'center',
       backgroundColor: colors.liveSurface,

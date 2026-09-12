@@ -14,6 +14,7 @@ const RootStack = createNativeStackNavigator({
   screenOptions: {
     animation: 'default',
     headerShown: false,
+    orientation: 'portrait_up',
   },
   groups: {
     Main: {
@@ -25,7 +26,17 @@ const RootStack = createNativeStackNavigator({
     Modals: {
       screenOptions: { presentation: 'modal' },
       screens: {
-        ChartSettings: SettingsScreen,
+        ChartSettings: {
+          screen: SettingsScreen,
+          options: ({ route }) => ({
+            orientation:
+              route.params &&
+              'orientation' in route.params &&
+              route.params.orientation === 'landscape'
+                ? 'landscape'
+                : 'portrait_up',
+          }),
+        },
       },
     },
   },

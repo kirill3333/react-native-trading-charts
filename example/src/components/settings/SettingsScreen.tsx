@@ -1,6 +1,9 @@
-import { useNavigation } from '@react-navigation/native';
+import {
+  type StaticScreenProps,
+  useNavigation,
+} from '@react-navigation/native';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { useChartSettingsStore } from '../../stores/chartSettingsStore';
 import { APP_THEMES, type AppThemeColors } from '../../theme';
@@ -22,7 +25,21 @@ import {
   YAxisSettingsSection,
 } from './sections';
 
-export function SettingsScreen() {
+type SettingsRouteParams = {
+  orientation: 'portrait_up' | 'landscape';
+};
+
+type SettingsScreenProps = StaticScreenProps<SettingsRouteParams>;
+
+export function SettingsScreen(_props: SettingsScreenProps) {
+  return (
+    <SafeAreaProvider>
+      <SettingsContent />
+    </SafeAreaProvider>
+  );
+}
+
+function SettingsContent() {
   const navigation = useNavigation();
   const resetSettings = useChartSettingsStore((state) => state.resetSettings);
   const theme = useAppTheme();

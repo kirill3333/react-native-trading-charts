@@ -5,24 +5,15 @@ type ChartControlsState = {
   showMacd: boolean;
   showRsi: boolean;
   showVolume: boolean;
-  isChartHalfHeight: boolean;
-  fullChartHeight: number | null;
   activateChart: (chartId: string) => void;
-  setFullChartHeight: (height: number) => void;
   toggleMacd: () => void;
   toggleRsi: () => void;
   toggleVolume: () => void;
-  toggleChartHeight: () => void;
 };
 
 type ChartControlValues = Pick<
   ChartControlsState,
-  | 'activeChartId'
-  | 'showMacd'
-  | 'showRsi'
-  | 'showVolume'
-  | 'isChartHalfHeight'
-  | 'fullChartHeight'
+  'activeChartId' | 'showMacd' | 'showRsi' | 'showVolume'
 >;
 
 const INITIAL_CONTROLS = {
@@ -30,24 +21,12 @@ const INITIAL_CONTROLS = {
   showMacd: false,
   showRsi: true,
   showVolume: true,
-  isChartHalfHeight: false,
-  fullChartHeight: null,
 } satisfies ChartControlValues;
 
 export const useChartControlsStore = create<ChartControlsState>((set) => ({
   ...INITIAL_CONTROLS,
   activateChart: (activeChartId) => set({ ...INITIAL_CONTROLS, activeChartId }),
-  setFullChartHeight: (fullChartHeight) =>
-    set((state) =>
-      state.fullChartHeight === fullChartHeight ? state : { fullChartHeight }
-    ),
   toggleMacd: () => set((state) => ({ showMacd: !state.showMacd })),
   toggleRsi: () => set((state) => ({ showRsi: !state.showRsi })),
   toggleVolume: () => set((state) => ({ showVolume: !state.showVolume })),
-  toggleChartHeight: () =>
-    set((state) =>
-      state.fullChartHeight == null
-        ? state
-        : { isChartHalfHeight: !state.isChartHalfHeight }
-    ),
 }));
