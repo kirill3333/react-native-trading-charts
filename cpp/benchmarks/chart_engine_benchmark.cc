@@ -379,6 +379,64 @@ void BM_MacdLiveUpdateAndSnapshot(benchmark::State& state) {
   state.counters["candles"] = static_cast<double>(candle_count);
 }
 
+void IndicatorAppendAndSnapshot(benchmark::State& state,
+                                bool (*add_indicators)(benchmark::State&,
+                                                       ChartEngine&),
+                                size_t indicator_count) {
+  constexpr size_t kAppendsPerBatch = 64;
+  const size_t candle_count = static_cast<size_t>(state.range(0));
+  const std::vector<double> history = MakeHistory(candle_count);
+  std::shared_ptr<const RenderSnapshot> snapshot;
+  for (auto iteration : state) {
+    benchmark::DoNotOptimize(iteration);
+    state.PauseTiming();
+    // A fresh engine keeps history length bounded and includes the first growth
+    // after SetHistory in every batch. Setup and teardown are not timed.
+    auto engine = MakeEngine(50);
+    if (!add_indicators(state, *engine) ||
+        !LoadHistory(state, *engine, history)) {
+      return;
+    }
+    snapshot = engine->Snapshot();
+    state.ResumeTiming();
+    for (size_t index = 0; index < kAppendsPerBatch; ++index) {
+      const double timestamp =
+          static_cast<double>(candle_count + index) * kMinuteMilliseconds;
+      const double close = index % 2 == 0 ? 110.0 : 109.5;
+      const double candle[] = {timestamp, 109.0, 111.0, 108.0, close, 20.0};
+      if (engine->UpdateCandle(candle, trading_charts::kCandleValueCount) !=
+          UpdateStatus::kApplied) {
+        state.SkipWithError("Indicator append was not applied");
+        return;
+      }
+      snapshot = engine->Snapshot();
+      benchmark::DoNotOptimize(snapshot.get());
+      benchmark::ClobberMemory();
+    }
+    state.PauseTiming();
+    engine.reset();
+    state.ResumeTiming();
+  }
+  if (snapshot != nullptr) SetSnapshotCounters(state, *snapshot);
+  state.SetItemsProcessed(state.iterations() *
+                          static_cast<int64_t>(kAppendsPerBatch));
+  state.counters["candles"] = static_cast<double>(candle_count);
+  state.counters["appends_per_batch"] = static_cast<double>(kAppendsPerBatch);
+  state.counters["indicators"] = static_cast<double>(indicator_count);
+}
+
+void BM_RsiAppendAndSnapshot(benchmark::State& state) {
+  IndicatorAppendAndSnapshot(state, AddRsi, 1);
+}
+
+void BM_MovingAverageAppendAndSnapshot(benchmark::State& state) {
+  IndicatorAppendAndSnapshot(state, AddMovingAverages, 4);
+}
+
+void BM_MacdAppendAndSnapshot(benchmark::State& state) {
+  IndicatorAppendAndSnapshot(state, AddMacd, 1);
+}
+
 void BM_SnapshotCold(benchmark::State& state) {
   const size_t total_count = static_cast<size_t>(state.range(0));
   const size_t visible_count = static_cast<size_t>(state.range(1));
@@ -568,6 +626,9 @@ BENCHMARK(BM_MovingAverageLiveUpdateAndSnapshot)->Apply(MovingAverageArguments);
 BENCHMARK(BM_MovingAverageCrosshairOnly)->Apply(MovingAverageArguments);
 BENCHMARK(BM_MacdSetHistory)->Apply(MovingAverageArguments);
 BENCHMARK(BM_MacdLiveUpdateAndSnapshot)->Apply(MovingAverageArguments);
+BENCHMARK(BM_RsiAppendAndSnapshot)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MovingAverageAppendAndSnapshot)->Apply(MovingAverageArguments);
+BENCHMARK(BM_MacdAppendAndSnapshot)->Apply(MovingAverageArguments);
 BENCHMARK(BM_SnapshotCold)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCached)->Apply(SnapshotArguments);
 BENCHMARK(BM_SnapshotCrosshairOnly)->Apply(InteractionArguments);

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "cpp/internal/config_constants.h"
+#include "cpp/internal/indicator_series.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -2822,6 +2823,90 @@ void TestVolumePaneTickMinimumDependsOnHeight() {
              10.0);
 }
 
+std::array<size_t, 6> IndicatorBufferCapacities(
+    const trading_charts::SeriesData& series) {
+  return {series.candles.capacity(),
+          series.rsi_states.capacity(),
+          series.moving_average_states.capacity(),
+          series.macd_states.capacity(),
+          series.signal_candles.capacity(),
+          series.histogram.capacity()};
+}
+
+void TestIndicatorAppendBufferGrowth() {
+  for (const SeriesSource kind :
+       {SeriesSource::kOhlcvRsi, SeriesSource::kOhlcvSma,
+        SeriesSource::kOhlcvEma, SeriesSource::kOhlcvMacd}) {
+    // Exercise both streaming through warmup and appending to loaded history.
+    for (const size_t history_size : {size_t{0}, size_t{1000}}) {
+      trading_charts::SeriesData series;
+      series.config.source = kind;
+      std::vector<Candle> source;
+      const auto append = [&]() {
+        const double value = 100.0 + static_cast<double>(source.size() % 31);
+        source.push_back({static_cast<double>(source.size()) * 60'000.0, value,
+                          value, value, value, 1.0});
+      };
+      for (size_t index = 0; index < history_size; ++index) {
+        append();
+      }
+      trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
+      auto capacities = IndicatorBufferCapacities(series);
+      std::array<size_t, 6> reallocations{};
+      for (size_t index = 0; index < 2048; ++index) {
+        append();
+        trading_charts::internal::RebuildDerivedSeries(series, &source,
+                                                       source.size() - 1);
+        const auto next_capacities = IndicatorBufferCapacities(series);
+        for (size_t buffer = 0; buffer < capacities.size(); ++buffer) {
+          reallocations[buffer] +=
+              next_capacities[buffer] != capacities[buffer];
+          // Ten live appends must not copy the entire loaded history each time.
+          if (history_size > 0 && index == 9) {
+            assert(reallocations[buffer] <= 2);
+          }
+        }
+        capacities = next_capacities;
+
+        source.back().close += 0.5;
+        source.back().high += 0.5;
+        trading_charts::internal::RebuildDerivedSeries(series, &source,
+                                                       source.size() - 1);
+        assert(IndicatorBufferCapacities(series) == capacities);
+      }
+      for (const size_t count : reallocations) {
+        // Allow different library growth factors, but reject linear growth.
+        assert(count <= 32);
+      }
+
+      trading_charts::SeriesData rebuilt;
+      rebuilt.config = series.config;
+      trading_charts::internal::RebuildDerivedSeries(rebuilt, &source, 0);
+      const auto expect_candles = [](const std::vector<Candle>& actual,
+                                     const std::vector<Candle>& expected) {
+        assert(actual.size() == expected.size());
+        for (size_t index = 0; index < actual.size(); ++index) {
+          ExpectNear(actual[index].timestamp, expected[index].timestamp);
+          ExpectNear(actual[index].close, expected[index].close);
+        }
+      };
+      expect_candles(series.candles, rebuilt.candles);
+      expect_candles(series.signal_candles, rebuilt.signal_candles);
+      assert(series.histogram.size() == rebuilt.histogram.size());
+      for (size_t index = 0; index < series.histogram.size(); ++index) {
+        ExpectNear(series.histogram[index].timestamp,
+                   rebuilt.histogram[index].timestamp);
+        ExpectNear(series.histogram[index].value,
+                   rebuilt.histogram[index].value);
+      }
+      assert(series.rsi_states.size() == rebuilt.rsi_states.size());
+      assert(series.moving_average_states.size() ==
+             rebuilt.moving_average_states.size());
+      assert(series.macd_states.size() == rebuilt.macd_states.size());
+    }
+  }
+}
+
 void TestDerivedRsiPaneAndIncrementalUpdates() {
   ChartEngine engine;
   ChartConfig config;
@@ -4546,6 +4631,7 @@ int main() noexcept {
     TestScaleYResultDistinguishesOverlayAndNoChange();
     TestPaneSeparatorUsesStrongerGridAlpha();
     TestVolumePaneTickMinimumDependsOnHeight();
+    TestIndicatorAppendBufferGrowth();
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();
     TestRsiFlatAndCascadeRemoval();

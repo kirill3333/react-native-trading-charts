@@ -80,8 +80,12 @@ void RebuildRsiSeries(SeriesData& series, const std::vector<Candle>& source,
     average_loss = previous.average_loss;
   }
 
-  series.candles.reserve(source.size() - period);
-  series.rsi_states.reserve(source.size() - period);
+  // Reserve full rebuilds only, so incremental push_back can grow
+  // geometrically.
+  if (start == period) {
+    series.candles.reserve(source.size() - period);
+    series.rsi_states.reserve(source.size() - period);
+  }
   for (size_t index = start; index < source.size(); ++index) {
     if (index > period) {
       const double delta = source[index].close - source[index - 1].close;
@@ -148,9 +152,11 @@ void RebuildMovingAverageSeries(SeriesData& series,
     state = series.moving_average_states.back();
   }
 
-  const size_t output_size = source.size() - first_output_source_index;
-  series.candles.reserve(output_size);
-  series.moving_average_states.reserve(output_size);
+  if (start == first_output_source_index) {
+    const size_t output_size = source.size() - first_output_source_index;
+    series.candles.reserve(output_size);
+    series.moving_average_states.reserve(output_size);
+  }
   const double alpha = ExponentialSmoothingAlpha(period);
   for (size_t index = start; index < source.size(); ++index) {
     if (index > first_output_source_index) {
@@ -228,9 +234,11 @@ void RebuildMacdSeries(SeriesData& series, const std::vector<Candle>& source,
   const double fast_alpha = ExponentialSmoothingAlpha(fast_period);
   const double slow_alpha = ExponentialSmoothingAlpha(slow_period);
   const double signal_alpha = ExponentialSmoothingAlpha(signal_period);
-  series.macd_states.reserve(source.size());
-  series.candles.reserve(source.size() -
-                         std::min(source.size(), slow_period - 1));
+  if (start == 0) {
+    series.macd_states.reserve(source.size());
+    series.candles.reserve(source.size() -
+                           std::min(source.size(), slow_period - 1));
+  }
   for (size_t index = start; index < source.size(); ++index) {
     const double value = CandleValue(source[index], series.config.line_source);
     if (!state.fast_ready) {
