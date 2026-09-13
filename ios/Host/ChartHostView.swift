@@ -298,6 +298,25 @@ public final class ChartHostView: UIView {
     requestFrame()
   }
 
+  @objc public func prepareForRecycle() {
+    realTimeScroll.stop()
+    interaction.cancelInteraction()
+    interaction.resetCrosshair()
+    interaction.apply(config: NativeChartConfig(), panesResizable: false)
+    interaction.setYAxisPressEnabled(false)
+    engine.resetForReuse()
+    configuration = nil
+    declarativeSeriesIds.removeAll()
+    events.reset()
+    scheduler.suspend()
+    forceNextDraw = true
+
+    // Replace retained presentation state without disturbing in-flight readers.
+    let frame = engine.snapshot()
+    renderer.submit(frame, background: NativeColor())
+    overlay.apply(frame: frame)
+  }
+
   @objc public func candleData() -> [NSNumber] {
     engine.candleData()
   }

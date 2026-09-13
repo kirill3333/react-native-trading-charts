@@ -598,7 +598,12 @@ class ChartEngine {
 
   // Aggregates packed trade records in their supplied order.
   UpdateStatus UpdateTrades(const double* values, size_t value_count);
+  // Clears market data while retaining configuration, series, and price lines.
   void Clear();
+  // Starts a new chart lifetime. Retains view size and advances render
+  // revisions so platform buffer caches and previously published snapshots
+  // remain valid.
+  void ResetForReuse();
 
   bool Pan(float delta_pixels);
   bool Zoom(double scale, float focus_x);
@@ -691,6 +696,7 @@ class ChartEngine {
   // Methods suffixed with Locked require `mutex_` to be held by the caller.
   void MarkDirtyLocked();
   void MarkCrosshairDirtyLocked();
+  void ClearLocked(MutationScope& mutation);
   double XDomainUnitLocked() const;
   double CandleXLocked(size_t index) const;
   double DataXMinLocked() const;

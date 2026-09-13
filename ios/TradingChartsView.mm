@@ -45,11 +45,14 @@ using namespace facebook::react;
       *std::static_pointer_cast<TradingChartsViewProps const>(_props);
   const auto &newViewProps =
       *std::static_pointer_cast<TradingChartsViewProps const>(props);
-  if (oldViewProps.configJson != newViewProps.configJson) {
+  // Fabric retains _props across recycling, but the host starts a new chart.
+  const bool needsInitialProps = _chartId == nil;
+  if (needsInitialProps || oldViewProps.configJson != newViewProps.configJson) {
     [_host applyConfigJson:
                [NSString stringWithUTF8String:newViewProps.configJson.c_str()]];
   }
-  if (oldViewProps.yAxisPressEnabled != newViewProps.yAxisPressEnabled) {
+  if (needsInitialProps ||
+      oldViewProps.yAxisPressEnabled != newViewProps.yAxisPressEnabled) {
     [_host setYAxisPressEnabled:newViewProps.yAxisPressEnabled];
   }
   NSString *newChartId =
@@ -71,7 +74,7 @@ using namespace facebook::react;
     [TradingChartsRegistry.shared unregisterView:self chartId:_chartId];
   }
   _chartId = nil;
-  [_host clearData];
+  [_host prepareForRecycle];
   [super prepareForRecycle];
 }
 

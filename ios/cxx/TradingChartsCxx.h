@@ -97,6 +97,7 @@ class ChartEngineHandle {
     return engine_->UpdateTrades(values, value_count);
   }
   void Clear() { engine_->Clear(); }
+  void ResetForReuse() { engine_->ResetForReuse(); }
 
   bool Pan(float delta_pixels) { return engine_->Pan(delta_pixels); }
   bool Zoom(double scale, float focus_x) {

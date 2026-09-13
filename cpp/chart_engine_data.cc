@@ -271,6 +271,22 @@ UpdateStatus ChartEngine::UpdateTrades(const double* values,
 
 void ChartEngine::Clear() {
   MutationScope mutation(*this);
+  ClearLocked(mutation);
+}
+
+void ChartEngine::ResetForReuse() {
+  MutationScope mutation(*this);
+  mutation.ContentChanged();
+  config_ = ChartConfig{};
+  panes_ = {PaneConfig{}};
+  panes_resizable_ = false;
+  additional_series_.clear();
+  price_lines_.clear();
+  ClearLocked(mutation);
+  snapshot_.reset();
+}
+
+void ChartEngine::ClearLocked(MutationScope& mutation) {
   mutation.ContentChanged();
   candles_.clear();
   for (SeriesData& series : additional_series_) {
@@ -283,6 +299,8 @@ void ChartEngine::Clear() {
   }
   last_trade_timestamp_.reset();
   crosshair_active_ = false;
+  crosshair_touch_x_ = 0.0f;
+  crosshair_touch_y_ = 0.0f;
   viewport_initialized_ = false;
   y_range_multiplier_ = 1.0 / config_.default_y_scale;
   for (size_t index = 0; index < panes_.size(); ++index) {

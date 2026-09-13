@@ -4337,6 +4337,140 @@ void TestPriceLinesAndYAxisValueMapping() {
   assert(!engine.YAxisValueAt(100.0f).has_value());
 }
 
+void TestClearPreservesChartDefinitions() {
+  ChartEngine engine;
+  engine.SetSize(400.0f, 300.0f);
+  const double history[] = {
+      0.0,     100.0, 110.0, 90.0,  105.0, 1.0,
+      60000.0, 105.0, 115.0, 100.0, 110.0, 2.0,
+  };
+  SeriesConfig runtime;
+  runtime.series_id = "runtime";
+  runtime.type = SeriesType::kLine;
+  assert(engine.AddSeries(runtime) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData(runtime.series_id, history, std::size(history),
+                              false) == UpdateStatus::kApplied);
+  PriceLine line;
+  line.id = "marker";
+  line.label = "Marker";
+  line.price = 105.0;
+  assert(engine.SetPriceLine(line));
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+
+  ExpectContentMutation(engine, [&] { engine.Clear(); });
+  assert(engine.CandleCount() == 0);
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "runtime")
+             .empty());
+  assert(engine.PriceLineCount() == 1);
+  assert(engine.Snapshot()->price_lines.empty());
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  assert(engine.Snapshot()->price_lines.size() == 1);
+  // The public data-only clear must leave the runtime definition usable.
+  assert(engine.SetSeriesData(runtime.series_id, history, std::size(history),
+                              false) == UpdateStatus::kApplied);
+}
+
+void TestResetForReuseStartsNewChart() {
+  ChartEngine engine;
+  engine.SetSize(400.0f, 300.0f);
+  ChartConfig config;
+  config.logical_spacing = true;
+  config.default_scale = 2.0;
+  config.default_y_scale = 2.0;
+  engine.SetConfig(config);
+  PaneConfig extra;
+  extra.pane_id = "extra";
+  extra.price_scale_id = "extra";
+  engine.SetPanes({PaneConfig{}, extra}, true);
+  assert(engine.SetPaneHeight("extra", 3.0));
+  SeriesConfig runtime;
+  runtime.series_id = "runtime";
+  runtime.type = SeriesType::kLine;
+  assert(engine.AddSeries(runtime) == UpdateStatus::kApplied);
+  SeriesConfig derived = runtime;
+  derived.series_id = "derived";
+  derived.source = SeriesSource::kOhlcvSma;
+  derived.source_series_id = "main";
+  derived.declarative = true;
+  assert(engine.AddSeries(derived) == UpdateStatus::kApplied);
+  const double history[] = {
+      0.0,     100.0, 110.0, 90.0,  105.0, 1.0,
+      60000.0, 105.0, 115.0, 100.0, 110.0, 2.0,
+  };
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  assert(engine.SetSeriesData(runtime.series_id, history, std::size(history),
+                              false) == UpdateStatus::kApplied);
+  PriceLine line;
+  line.id = "old-chart";
+  line.label = "Old chart";
+  line.price = 110.0;
+  assert(engine.SetPriceLine(line));
+  engine.SetCrosshair(true, 200.0f, 50.0f);
+  const auto old_snapshot = engine.Snapshot();
+  assert(old_snapshot->crosshair_visible);
+  assert(old_snapshot->price_lines.size() == 1);
+  const auto old_vertices = *old_snapshot->content_vertices;
+
+  ExpectContentMutation(engine, [&] { engine.ResetForReuse(); });
+  const auto empty = engine.Snapshot();
+  assert(engine.Candles().empty());
+  assert(engine.PriceLines().empty());
+  assert(!empty->has_visible_candles && !empty->crosshair_visible);
+  assert(empty->price_lines.empty() && empty->overlay_vertices.empty());
+  assert(empty->width == 400.0f && empty->height == 300.0f);
+  assert(!empty->config.logical_spacing);
+  ExpectNear(empty->config.default_scale, 1.0);
+  ExpectNear(empty->config.default_y_scale, 1.0);
+  ExpectNoRenderMutation(engine, [&] {
+    assert(!engine.RemoveSeries("runtime"));
+    assert(!engine.RemoveSeries("derived"));
+    assert(!engine.SetPaneHeight("extra", 2.0));
+    assert(!engine.ResizePaneSeparator(0, 10.0f));
+    assert(engine.SetSeriesData("runtime", history, std::size(history),
+                                false) == UpdateStatus::kInvalidInput);
+  });
+
+  // Reapply identical props and new history, as Fabric does for another chart.
+  ChartEngine fresh;
+  fresh.SetSize(400.0f, 300.0f);
+  for (ChartEngine* chart : {&engine, &fresh}) {
+    chart->SetConfig(config);
+    chart->SetPanes({PaneConfig{}, extra}, true);
+    assert(chart->AddSeries(derived) == UpdateStatus::kApplied);
+    assert(chart->SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+    chart->SetCrosshair(true, 200.0f, 50.0f);
+  }
+  const auto reused = engine.Snapshot();
+  const auto expected = fresh.Snapshot();
+  assert(reused->price_lines.empty());
+  assert(reused->crosshair_series_values.size() == 1);
+  assert(reused->crosshair_series_values.front().series_id == "derived");
+  ExpectNear(reused->panes[1].height_weight, 1.0);
+  ExpectNear(reused->visible_x_min, expected->visible_x_min);
+  ExpectNear(reused->visible_x_max, expected->visible_x_max);
+  assert(*reused->content_vertices == *expected->content_vertices);
+  assert(reused->overlay_vertices == expected->overlay_vertices);
+  assert(old_snapshot->price_lines.front().id == "old-chart");
+  assert(*old_snapshot->content_vertices == old_vertices);
+
+  // Reusing the same IDs and receiving older trades must work in a new
+  // lifetime.
+  assert(engine.AddSeries(runtime) == UpdateStatus::kApplied);
+  const double newer_trade[] = {120000.0, 111.0, 1.0};
+  assert(engine.UpdateTrade(newer_trade, std::size(newer_trade)) ==
+         UpdateStatus::kApplied);
+  ExpectContentMutation(engine, [&] { engine.ResetForReuse(); });
+  const double older_trade[] = {0.0, 50.0, 1.0};
+  assert(engine.UpdateTrade(older_trade, std::size(older_trade)) ==
+         UpdateStatus::kApplied);
+  assert(engine.CandleCount() == 1);
+  ExpectNear(engine.CandleAt(0).close, 50.0);
+}
+
 }  // namespace
 
 int main() noexcept {
@@ -4436,6 +4570,8 @@ int main() noexcept {
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
     TestPriceLinesAndYAxisValueMapping();
+    TestClearPreservesChartDefinitions();
+    TestResetForReuseStartsNewChart();
     TestDashedLineGeometryUsesSharedTriangleContract();
     std::cout << "ChartEngineTests passed\n";
     return 0;

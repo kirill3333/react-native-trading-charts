@@ -261,6 +261,7 @@ final class ChartEngineClient {
   }
 
   func clear() { handle.Clear() }
+  func resetForReuse() { handle.ResetForReuse() }
   func pan(_ delta: Float) -> Bool { handle.Pan(delta) }
   func zoom(_ scale: Double, focusX: Float) -> Bool { handle.Zoom(scale, focusX) }
   func zoomAtRightEdge(_ scale: Double) { handle.ZoomAtRightEdge(scale) }
