@@ -1,6 +1,6 @@
 {
   "name": "react-native-trading-charts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "GPU accelerated trading charts for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
