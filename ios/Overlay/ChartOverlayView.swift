@@ -281,7 +281,7 @@ final class ChartOverlayView: UIView {
           let layout = cachedLayout(text, attributes: style.yAxis, cache: yAxisLayoutCache, metrics: &metrics)
           let rawX = CGFloat(pane.plot.right) + 6
           let labelY = group.labelY(at: CGFloat(tick.position), height: layout.size.height,
-            keepInside: pane.rsi_scale && (tick.value == 0 || tick.value == 100))
+            keepInside: pane.volume_format || (pane.rsi_scale && (tick.value == 0 || tick.value == 100)))
           presentations.append(TextPresentation(layout: layout, frame: CGRect(
             x: max(2, rawX), y: labelY,
             width: layout.size.width, height: layout.size.height)))

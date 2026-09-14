@@ -622,8 +622,10 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private fun yAxisBaseline(tick: AxisTick, pane: PaneSnapshot): Float {
     val centered = centeredBaseline(tick.position, yAxisPaint)
-    if (!pane.rsiScale || (tick.value != 0.0 && tick.value != 100.0)) return centered
-    // Fixed RSI endpoints stay readable inside the clipped pane.
+    val keepInside =
+        pane.volumeFormat || (pane.rsiScale && (tick.value == 0.0 || tick.value == 100.0))
+    if (!keepInside) return centered
+    // Volume labels and fixed RSI endpoints stay readable inside the clipped pane.
     return max(
         pane.plotTop - yAxisPaint.ascent(),
         min(pane.plotBottom - yAxisPaint.descent(), centered),

@@ -23,6 +23,16 @@ private fun DoubleArray?.hasSameContentAs(other: DoubleArray?): Boolean {
   return this?.contentEquals(other) == true
 }
 
+internal fun isPointInPanePlots(panes: List<PaneSnapshot>, x: Float, y: Float): Boolean =
+    panes.any { pane ->
+      pane.plotRight > pane.plotLeft &&
+          pane.plotBottom > pane.plotTop &&
+          x >= pane.plotLeft &&
+          x <= pane.plotRight &&
+          y >= pane.plotTop &&
+          y <= pane.plotBottom
+    }
+
 @Suppress("LargeClass", "TooManyFunctions")
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
@@ -276,10 +286,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   private fun isPointInPlot(x: Float, y: Float): Boolean {
     val frame = overlay.snapshot ?: return false
-    return x >= frame.plotLeft &&
-        x <= frame.plotRight &&
-        y >= frame.plotTop &&
-        y <= frame.plotBottom
+    // The frame's plot bounds describe only the main pane.
+    return isPointInPanePlots(frame.panes, x, y)
   }
 
   private fun startFling(velocityX: Float) {

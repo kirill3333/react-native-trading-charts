@@ -91,7 +91,7 @@ final class PaneAxisLayerGroup {
 
   func labelY(at position: CGFloat, height: CGFloat, keepInside: Bool) -> CGFloat {
     let centered = position - container.frame.minY - height / 2
-    // Fixed RSI endpoints stay readable inside the clipped pane.
+    // Volume labels and fixed RSI endpoints stay readable inside the clipped pane.
     return keepInside ? max(0, min(container.bounds.height - height, centered)) : centered
   }
 }
