@@ -16,6 +16,8 @@ final class ChartFrameScheduler {
   private let target = Target()
   private lazy var displayLink: CADisplayLink = {
     let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
+    // Request ProMotion rates. Falls back to 60 Hz if ProMotion is not available.
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
     link.isPaused = true
     link.add(to: .main, forMode: .common)
     return link
