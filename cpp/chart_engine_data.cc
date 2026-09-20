@@ -282,6 +282,7 @@ void ChartEngine::ResetForReuse() {
   panes_resizable_ = false;
   additional_series_.clear();
   price_lines_.clear();
+  markers_.Clear();
   ClearLocked(mutation);
   snapshot_.reset();
 }

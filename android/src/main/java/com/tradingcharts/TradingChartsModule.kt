@@ -98,6 +98,22 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.removePriceLine(chartId, priceLineId)
   }
 
+  override fun setMarker(chartId: String, markerJson: String) {
+    TradingChartsRegistry.setMarkers(chartId, markerJson, false)
+  }
+
+  override fun setMarkers(chartId: String, markersJson: String) {
+    TradingChartsRegistry.setMarkers(chartId, markersJson, true)
+  }
+
+  override fun removeMarker(chartId: String, markerId: String) {
+    TradingChartsRegistry.removeMarker(chartId, markerId)
+  }
+
+  override fun clearMarkers(chartId: String) {
+    TradingChartsRegistry.setMarkers(chartId, "[]", true)
+  }
+
   override fun clearPriceLines(chartId: String) {
     TradingChartsRegistry.clearPriceLines(chartId)
   }

@@ -1,3 +1,4 @@
+import { resolveMarker, resolveMarkers, type ChartMarker } from './markers';
 import NativeTradingCharts, {
   type Spec as NativeTradingChartsSpec,
 } from './NativeTradingCharts';
@@ -222,6 +223,23 @@ export function createTradingCharts(
   nativeTradingCharts: NativeTradingChartsSpec
 ) {
   return {
+    setMarker(chartId: string, marker: ChartMarker) {
+      assertChartId(chartId);
+      nativeTradingCharts.setMarker(chartId, JSON.stringify(resolveMarker(marker)));
+    },
+    setMarkers(chartId: string, markers: ReadonlyArray<ChartMarker>) {
+      assertChartId(chartId);
+      nativeTradingCharts.setMarkers(chartId, JSON.stringify(resolveMarkers(markers)));
+    },
+    removeMarker(chartId: string, markerId: string) {
+      assertChartId(chartId);
+      assertIdentifier(markerId, 'markerId');
+      nativeTradingCharts.removeMarker(chartId, markerId);
+    },
+    clearMarkers(chartId: string) {
+      assertChartId(chartId);
+      nativeTradingCharts.clearMarkers(chartId);
+    },
     addSeries(chartId: string, options: AdditionalChartSeriesOptions) {
       assertChartId(chartId);
       nativeTradingCharts.addSeries(

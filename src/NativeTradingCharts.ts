@@ -2,6 +2,10 @@ import { type TurboModule } from 'react-native';
 import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
+  setMarker(chartId: string, markerJson: string): void;
+  setMarkers(chartId: string, markersJson: string): void;
+  removeMarker(chartId: string, markerId: string): void;
+  clearMarkers(chartId: string): void;
   setHistory(chartId: string, data: ReadonlyArray<number>): void;
   prependHistory(chartId: string, data: ReadonlyArray<number>): void;
   updateCandle(chartId: string, candle: ReadonlyArray<number>): void;

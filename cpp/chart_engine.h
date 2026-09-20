@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "cpp/marker_types.h"
+
 namespace trading_charts {
 
 // Positional input widths used by the native bridges.
@@ -493,6 +495,8 @@ struct CrosshairSeriesValue {
 // Immutable render state published to the platform GPU and text overlays.
 // All coordinates are expressed in native view coordinates.
 struct RenderSnapshot {
+  uint64_t marker_revision = 0;
+  std::shared_ptr<const MarkerSnapshot> markers;
   uint64_t revision = 0;
   uint64_t content_revision = 0;
   double visible_x_min = 0.0;
@@ -570,6 +574,9 @@ class ChartEngine {
                                 const double* values, size_t value_count,
                                 bool histogram);
   bool SetPaneHeight(const std::string& pane_id, double height_weight);
+  bool SetMarkers(const std::vector<Marker>& markers, bool replace);
+  bool RemoveMarker(const std::string& id);
+  bool ClearMarkers();
   bool SetPriceLine(const PriceLine& price_line);
   bool RemovePriceLine(const std::string& price_line_id);
   bool ClearPriceLines();
@@ -663,11 +670,13 @@ class ChartEngine {
 
     void ContentChanged() noexcept;
     void OverlayChanged() noexcept;
+    void MarkersChanged() noexcept;
 
    private:
     ChartEngine& engine_;
     std::unique_lock<std::mutex> lock_;
     MutationKind kind_ = MutationKind::kNone;
+    bool markers_changed_ = false;
   };
 
   mutable std::mutex mutex_;
@@ -676,6 +685,8 @@ class ChartEngine {
   std::vector<PaneConfig> panes_{PaneConfig{}};
   std::vector<SeriesData> additional_series_;
   std::vector<PriceLine> price_lines_;
+  MarkerStore markers_;
+  uint64_t marker_revision_ = 0;
   bool panes_resizable_ = false;
   float width_ = 0.0f;
   float height_ = 0.0f;

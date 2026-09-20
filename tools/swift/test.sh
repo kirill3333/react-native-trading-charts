@@ -16,6 +16,9 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -g \
   -Xlinker -rpath -Xlinker "$xctest_developer/Library/PrivateFrameworks" \
   "$repo_root/ios/Rendering/ChartVertexBufferPool.swift" \
   "$repo_root/ios/Host/ChartPriceScaleChanges.swift" \
+  "$repo_root/ios/Host/ChartMarkerPressState.swift" \
+  "$repo_root/ios/Registry/TradingChartsRegistry.swift" \
+  "$repo_root/tools/swift/MarkerTests.swift" \
   "$repo_root/tools/swift/main.swift" \
   -o "$test_dir/buffer-tests"
 "$test_dir/buffer-tests"

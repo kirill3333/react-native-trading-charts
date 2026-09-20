@@ -5,6 +5,8 @@ import android.os.Looper
 import android.util.Log
 import java.lang.ref.WeakReference
 
+// The registry mirrors the public imperative command API.
+@Suppress("TooManyFunctions")
 internal object TradingChartsRegistry {
   private sealed interface Command {
     data class History(val values: DoubleArray) : Command
@@ -39,6 +41,10 @@ internal object TradingChartsRegistry {
     ) : Command
 
     data class RemovePriceLine(val id: String) : Command
+
+    data class Markers(val json: String, val replace: Boolean, val id: String) : Command
+
+    data class RemoveMarker(val id: String) : Command
 
     data object ClearPriceLines : Command
 
@@ -125,6 +131,13 @@ internal object TradingChartsRegistry {
 
   fun removePriceLine(chartId: String, id: String) = enqueue(chartId, Command.RemovePriceLine(id))
 
+  fun setMarkers(chartId: String, json: String, replace: Boolean) {
+    val id = if (replace) "" else org.json.JSONObject(json).getString("id")
+    enqueue(chartId, Command.Markers(json, replace, id))
+  }
+
+  fun removeMarker(chartId: String, id: String) = enqueue(chartId, Command.RemoveMarker(id))
+
   fun clearPriceLines(chartId: String) = enqueue(chartId, Command.ClearPriceLines)
 
   fun getPriceLines(chartId: String, onSuccess: (String) -> Unit, onError: () -> Unit) = onMain {
@@ -171,6 +184,20 @@ internal object TradingChartsRegistry {
     if (view != null) {
       apply(view, command)
     } else {
+      if (command is Command.Markers && !command.replace) {
+        val index =
+            entry.pending.indexOfLast {
+              (it is Command.Markers && !it.replace && it.id == command.id) ||
+                  (it is Command.RemoveMarker && it.id == command.id)
+            }
+        if (index >= 0 && entry.pending[index] is Command.Markers) {
+          entry.pending[index] = command
+          return@onMain
+        }
+      }
+      if (command is Command.Markers && command.replace) {
+        entry.pending.removeAll { it is Command.Markers || it is Command.RemoveMarker }
+      }
       coalescePending(entry.pending, command)
       entry.pending += command
       trimPending(chartId, entry.pending)
@@ -252,6 +279,8 @@ internal object TradingChartsRegistry {
       is Command.SetPriceLine ->
           view.setPriceLine(command.id, command.price, command.label, command.color)
       is Command.RemovePriceLine -> view.removePriceLine(command.id)
+      is Command.Markers -> view.setMarkers(command.json, command.replace)
+      is Command.RemoveMarker -> view.removeMarker(command.id)
       is Command.ClearPriceLines -> view.clearPriceLines()
       is Command.Zoom -> view.zoom(command.scale)
       is Command.ScrollToRealTime -> view.scrollToRealTime()

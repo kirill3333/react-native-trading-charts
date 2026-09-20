@@ -21,6 +21,9 @@ import Foundation
   func setPaneHeight(_ paneId: String, weight: Double)
   func setPriceLine(_ id: String, price: Double, label: String, color: String)
   func removePriceLine(_ id: String)
+  func setMarkerJson(_ json: String, replace: Bool)
+  func removeMarker(_ id: String)
+  func clearMarkers()
   func clearPriceLines()
   func priceLinesJson() -> String
   func zoomByScale(_ scale: Double)
@@ -42,6 +45,8 @@ private enum PendingCommand {
   case paneHeight(String, Double)
   case setPriceLine(String, Double, String, String)
   case removePriceLine(String)
+  case markers(String, Bool, String)
+  case removeMarker(String)
   case clearPriceLines
   case zoom(Double)
   case scrollToRealTime
@@ -60,6 +65,8 @@ private enum PendingCommand {
     case .paneHeight: return "paneHeight"
     case .setPriceLine: return "setPriceLine"
     case .removePriceLine: return "removePriceLine"
+    case .markers: return "markers"
+    case .removeMarker: return "removeMarker"
     case .clearPriceLines: return "clearPriceLines"
     case .zoom: return "zoom"
     case .scrollToRealTime: return "scrollToRealTime"
@@ -95,6 +102,8 @@ private enum PendingCommand {
     case .setPriceLine(let id, let price, let label, let color):
       target.setPriceLine(id, price: price, label: label, color: color)
     case .removePriceLine(let id): target.removePriceLine(id)
+    case .markers(let json, let replace, _): target.setMarkerJson(json, replace: replace)
+    case .removeMarker(let id): target.removeMarker(id)
     case .clearPriceLines: target.clearPriceLines()
     case .zoom(let scale): target.zoomByScale(scale)
     case .scrollToRealTime: target.scrollChartToRealTime()
@@ -224,6 +233,44 @@ public final class TradingChartsRegistry: NSObject {
       entry.pending.removeAll {
         if case .paneHeight(let pendingId, _) = $0 { return pendingId == paneId }
         return false
+      }
+      append(command, to: entry, chartId: chartId)
+    }
+  }
+
+  @objc(setMarker:chartId:replace:)
+  public func setMarker(_ json: String, chartId: String, replace: Bool) {
+    let object = json.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }
+    let id = (object as? [String: Any])?["id"] as? String ?? ""
+    enqueueMarker(.markers(json, replace, id), chartId: chartId, id: id, replace: replace)
+  }
+
+  @objc(removeMarker:chartId:)
+  public func removeMarker(_ id: String, chartId: String) {
+    enqueueMarker(.removeMarker(id), chartId: chartId, id: id, replace: false)
+  }
+
+  private func enqueueMarker(_ command: PendingCommand, chartId: String, id: String, replace: Bool) {
+    guard !chartId.isEmpty else { return }
+    onMain { [self] in
+      let entry = entry(for: chartId, create: true)!
+      if let view = entry.view { command.replay(on: view); return }
+      if replace {
+        entry.pending.removeAll {
+          switch $0 {
+          case .markers, .removeMarker: return true
+          default: return false
+          }
+        }
+      } else if case .markers = command,
+                let index = entry.pending.lastIndex(where: {
+                  if case .markers(_, false, let previousId) = $0 { return previousId == id }
+                  if case .removeMarker(let previousId) = $0 { return previousId == id }
+                  return false
+                }), case .markers = entry.pending[index] {
+        // Replace in place: moving the command would change stack order.
+        entry.pending[index] = command
+        return
       }
       append(command, to: entry, chartId: chartId)
     }

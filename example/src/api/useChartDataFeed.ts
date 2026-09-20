@@ -53,6 +53,8 @@ const EMPTY_CONNECTION: ChartConnectionSnapshot = {
   lastPrice: null,
 };
 
+const EMPTY_CANDLES: ReadonlyArray<OhlcCandle> = [];
+
 function messageFromError(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Unknown network error';
 }
@@ -366,8 +368,9 @@ export function useChartDataFeed<
     websocketRef.current?.retry();
   }, [historyQuery]);
 
+  const recentCandles = historyQuery.data?.pages[0] ?? EMPTY_CANDLES;
   return useMemo(
-    () => ({ ...connection, allTimeExtremes, loadOlder, retry }),
-    [allTimeExtremes, connection, loadOlder, retry]
+    () => ({ ...connection, allTimeExtremes, recentCandles, loadOlder, retry }),
+    [allTimeExtremes, connection, recentCandles, loadOlder, retry]
   );
 }

@@ -37,6 +37,8 @@ internal fun isPointInPanePlots(panes: List<PaneSnapshot>, x: Float, y: Float): 
 class TradingChartsView(context: Context) : FrameLayout(context) {
   private val engineHandle = ChartEngineNative.nativeCreate()
   private val contentBuffers = ContentVertexBufferPool()
+  private val markerBuffers = ContentVertexBufferPool()
+  private val markerDecoder = ChartMarkerDecoder()
   private val renderer = ChartRenderer()
   private val plotView =
       GLSurfaceView(context).apply {
@@ -71,6 +73,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var separatorLastY = 0f
   private var pendingPaneResizeIndex = -1
   private var pendingPaneResizeFinished = false
+  private var markerPressEnabled = false
   private var lastSnapshot: ChartSnapshot? = null
   private var lastAppliedRevision = -1L
   private var yAxisPressEnabled = false
@@ -96,7 +99,13 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       return@Runnable
     }
     val frame =
-        ChartEngineNative.snapshot(engineHandle, config, lastSnapshot, contentBuffers)
+        ChartEngineNative.snapshot(
+            engineHandle,
+            config,
+            lastSnapshot,
+            contentBuffers,
+            markerBuffers,
+        )
             ?: run {
               // All bounded direct-buffer slots are temporarily owned by the
               // GL thread. Retry on the next vsync without blocking the UI or
@@ -240,7 +249,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
                 override fun onSingleTapUp(event: MotionEvent): Boolean {
                   performClick()
-                  if (tryEmitYAxisPress(event)) {
+                  if (tryEmitMarkerPress(event) || tryEmitYAxisPress(event)) {
                     // Axis presses never alter crosshair state.
                   } else if (crosshairPinned) {
                     crosshairPinned = false
@@ -321,6 +330,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   fun setChartId(value: String?) {
+    if (value != registeredChartId) {
+      renderer.clearPending()
+      lastSnapshot = null
+      scheduleFrame()
+    }
     pendingChartId = value?.takeIf { it.isNotBlank() }
     post {
       if (disposed) return@post
@@ -357,6 +371,10 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     } catch (error: IllegalArgumentException) {
       logInvalidConfig(error)
     }
+  }
+
+  fun setMarkerPressEnabled(enabled: Boolean) {
+    markerPressEnabled = enabled
   }
 
   fun setYAxisPressEnabled(enabled: Boolean) {
@@ -484,6 +502,25 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     if (ChartEngineNative.nativeRemovePriceLine(engineHandle, id)) scheduleFrame()
   }
 
+  fun setMarkers(json: String, replace: Boolean) {
+    val payload =
+        try {
+          markerDecoder.decode(json, replace)
+        } catch (error: org.json.JSONException) {
+          android.util.Log.w("TradingCharts", "Invalid marker JSON", error)
+          return
+        } catch (error: IllegalArgumentException) {
+          android.util.Log.w("TradingCharts", "Invalid marker values", error)
+          return
+        }
+    if (ChartEngineNative.nativeSetMarkers(engineHandle, payload.strings, payload.numbers, replace))
+        scheduleFrame()
+  }
+
+  fun removeMarker(id: String) {
+    if (ChartEngineNative.nativeRemoveMarker(engineHandle, id)) scheduleFrame()
+  }
+
   fun clearPriceLines() {
     if (ChartEngineNative.nativeClearPriceLines(engineHandle)) scheduleFrame()
   }
@@ -563,6 +600,27 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   @Suppress("DEPRECATION")
   private fun eventDispatcher(reactContext: ReactContext) =
       UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
+
+  private fun tryEmitMarkerPress(event: MotionEvent): Boolean {
+    val chartId = registeredChartId
+    val reactContext = context as? ReactContext
+    val acceptsPress = markerPressEnabled && !disposed && id != NO_ID
+    if (!acceptsPress || chartId == null || reactContext == null) return false
+    val json = renderer.hitMarker(event.x, event.y) ?: return false
+    val density = resources.displayMetrics.density.toDouble()
+    eventDispatcher(reactContext)
+        ?.dispatchEvent(
+            MarkerPressEvent(
+                UIManagerHelper.getSurfaceId(this),
+                id,
+                chartId,
+                json,
+                event.x / density,
+                event.y / density,
+            )
+        )
+    return true
+  }
 
   private fun tryEmitYAxisPress(event: MotionEvent): Boolean {
     if (!yAxisPressEnabled || !isPointInYAxis(event)) return false
@@ -807,6 +865,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   override fun onDetachedFromWindow() {
+    renderer.clearPending()
+    lastSnapshot = null
     priceScaleChanges.clear()
     realTimeScroll.stop()
     stopFling()
@@ -826,6 +886,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     priceScaleChanges.clear()
     disposed = true
     renderer.clearPending()
+    plotView.queueEvent { renderer.disposeMarkers() }
     (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)
     registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
     registeredChartId = null

@@ -102,12 +102,12 @@ formatting, and React Native integration in the iOS and Android layers.
   both the GPU and overlay have finished consuming it.
 - `revision` identifies all render-relevant state. Public engine mutators must
   hold a `ChartEngine::MutationScope` and record `ContentChanged()` or
-  `OverlayChanged()` before their first render-relevant write. Mutating locked
+  `OverlayChanged()` or `MarkersChanged()` before their first render-relevant write. Mutating locked
   helpers accept that scope explicitly. Only the scope destructor may call the
   low-level dirty-marking methods; do not publish revisions manually.
 - Geometry is interleaved as six floats per vertex: `x, y, r, g, b, a`, and is
   rendered as triangles. iOS and Android must keep this contract identical.
-- A snapshot carries two vertex buffers. `content_vertices` (grid, series,
+- A snapshot carries two chart vertex buffers and a separate marker block. `content_vertices` (grid, series,
   pane separators, current price) changes only with `content_revision` and is
   shared between consecutive snapshots; `overlay_vertices` (crosshair) is
   rebuilt with every revision. Renderers upload and draw the two buffers
@@ -135,6 +135,57 @@ formatting, and React Native integration in the iOS and Android layers.
   types/config resolver, iOS JSON decoding, Android `ChartConfig`, JNI array
   indices, and Android `ChartSnapshot`. JNI numeric arrays are positional ABI
   contracts; never reorder them casually.
+
+## Candle markers
+
+- `cpp/marker_types.h` and `cpp/internal/marker_store.cc` own validated records,
+  stable insertion order, and an ordered timestamp index. Markers attach only to
+  exact main-series candle timestamps; absent candles retain their marker records.
+- `cpp/internal/marker_geometry.cc` owns sizing, above-high/below-low anchors,
+  stacking, rounded border tessellation, glyph quads, and clipping to the main
+  pane. Markers do not participate in autoscale or gesture hit testing.
+- Pass the internal viewport domain to marker geometry explicitly: public snapshot
+  X bounds become timestamps in logical spacing and cannot project candle indices.
+- `marker_revision` identifies the immutable shared `MarkerSnapshot`. Marker-only
+  mutations preserve `content_revision`; crosshair-only frames share the marker
+  block. Content mutations invalidate marker placement. `MutationScope` publishes
+  the combined revision exactly once; no-op commands do not request a frame.
+- Marker vertices have their own eight-float ABI: `x, y, u, v, r, g, b, a`.
+  The existing six-float chart vertex format must remain unchanged. Marker command
+  transport is separately versioned (version 2: 26 numeric fields, three strings
+  per record: ID, text, normalized description JSON).
+- Each platform supplies font metrics in points/dp. Immutable 16x6 ASCII atlases
+  contain glyphs 32–126 in cells 0–94 and white in cell 95. Color/style changes
+  never rasterize glyphs. Cache by font size and raster density; prune unused
+  sizes without destroying resources retained by submitted frames.
+- JS scales omitted marker padding, minimum dimensions and radius by
+  `fontSize / 14` before transport. Explicit dimensions remain in points/dp;
+  native decoders must not scale them a second time (apart from Android density).
+- On iOS, convert the atlas to explicit RGBA8 pixels and upload with
+  `MTLTexture.replace`. UIKit can return grayscale/alpha images that
+  `MTKTextureLoader` rejects, preventing the entire frame from being submitted.
+- Marker hit regions share immutable description JSON (including metadata) and
+  use the same tessellated contour and main-plot clip as the GPU pass. Hit testing
+  runs in C++, in reverse drawing order, with no enlarged touch area.
+- `onMarkerPress` is enabled by a separate Fabric flag. A hit consumes a short
+  tap without changing crosshair or requesting a frame. Events carry their chart
+  ID, and JS rejects callbacks for a previous chart ID; long press/pan/pinch keep
+  existing semantics. Do not look up metadata from newer mutable marker state.
+- iOS publishes the hit frame only from Metal's successful submission callback.
+  Android transfers independent native hit-snapshot leases through the frame
+  mailbox and publishes them only after drawing. Hit tests and releases are
+  synchronized; an epoch rejects late frames after disposal or chart reuse.
+  Context loss disables hits until redraw. Release replaced pending leases.
+- Draw content, markers, then crosshair. iOS has an independent three-slot marker
+  pool retained with its atlas references through Metal completion. Android uses
+  a separate three-slot direct-buffer pool and VBO; mailbox replacements inherit
+  matching marker leases independently of content leases. Retain the latest lease
+  and CPU atlas for EGL restoration and reset upload revisions on context loss.
+- Registry coalescing must preserve marker insertion order, and must not merge
+  an upsert across a removal. Replacement/clear discards older marker commands;
+  market history replacement and market-data clearing preserve markers.
+- Reset markers when recycling a native view. Keep the offline marker demo and
+  C++/Swift/Android ownership, transport, and pre-mount replay tests up to date.
 
 ## iOS rendering
 
@@ -165,7 +216,7 @@ formatting, and React Native integration in the iOS and Android layers.
 - A missing drawable permits one automatic retry per revision or lifecycle
   resume. Resource/encoding failures release reservations without an automatic
   retry loop. Keep forced redraw pending until a command is actually submitted.
-- `ChartRenderFrame.withContentVertices` and `withOverlayVertices` are the only
+- `ChartRenderFrame.withContentVertices` and `withOverlayVertices`, plus `withMarkerVertices`, are the only
   allowed raw-pointer boundary. Keep access scoped, retain the snapshot handle
   with `withExtendedLifetime`, and never store those pointers in a renderer,
   overlay, or GPU command buffer.

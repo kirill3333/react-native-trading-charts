@@ -21,6 +21,8 @@ struct SnapshotBuildInput {
   const std::vector<PaneConfig>& panes;
   const std::vector<SeriesData>& additional_series;
   const std::vector<PriceLine>& price_lines;
+  const MarkerStore* markers = nullptr;
+  std::uint64_t marker_revision = 0;
   float width = 0.0f;
   float height = 0.0f;
   double visible_x_min = 0.0;

@@ -22,6 +22,11 @@ ChartEngine::MutationScope::MutationScope(ChartEngine& engine)
       lock_(engine.mutex_) {}  // NOLINT(whitespace/indent_namespace)
 
 ChartEngine::MutationScope::~MutationScope() noexcept {
+  if (markers_changed_ && kind_ != MutationKind::kContent) {
+    ++engine_.marker_revision_;
+    engine_.MarkCrosshairDirtyLocked();
+    return;
+  }
   switch (kind_) {
     case MutationKind::kNone:
       break;
@@ -32,6 +37,10 @@ ChartEngine::MutationScope::~MutationScope() noexcept {
       engine_.MarkDirtyLocked();
       break;
   }
+}
+
+void ChartEngine::MutationScope::MarkersChanged() noexcept {
+  markers_changed_ = true;
 }
 
 void ChartEngine::MutationScope::ContentChanged() noexcept {
@@ -47,12 +56,37 @@ void ChartEngine::MutationScope::OverlayChanged() noexcept {
 void ChartEngine::MarkDirtyLocked() {
   ++revision_;
   ++content_revision_;
+  ++marker_revision_;
   dirty_ = true;
 }
 
 void ChartEngine::MarkCrosshairDirtyLocked() {
   ++revision_;
   dirty_ = true;
+}
+
+bool ChartEngine::SetMarkers(const std::vector<Marker>& markers, bool replace) {
+  MutationScope mutation(*this);
+  return markers_.Set(markers, replace,
+                      [&mutation] { mutation.MarkersChanged(); });
+}
+
+bool ChartEngine::RemoveMarker(const std::string& id) {
+  MutationScope mutation(*this);
+  if (!markers_.Contains(id)) {
+    return false;
+  }
+  mutation.MarkersChanged();
+  return markers_.Remove(id);
+}
+
+bool ChartEngine::ClearMarkers() {
+  MutationScope mutation(*this);
+  if (markers_.Size() == 0) {
+    return false;
+  }
+  mutation.MarkersChanged();
+  return markers_.Clear();
 }
 
 bool ChartEngine::SetPriceLine(const PriceLine& price_line) {
@@ -149,6 +183,8 @@ std::shared_ptr<const RenderSnapshot> ChartEngine::Snapshot() {
   }
   internal::SnapshotBuildInput input{config_, candles_, panes_,
                                      additional_series_, price_lines_};
+  input.markers = &markers_;
+  input.marker_revision = marker_revision_;
   input.width = width_;
   input.height = height_;
   input.visible_x_min = visible_x_min_;

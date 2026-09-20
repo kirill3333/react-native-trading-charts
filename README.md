@@ -193,6 +193,7 @@ The component also accepts standard React Native `ViewProps`, including
 | `onScaleChange` | `(event) => void` | `undefined` | Receives user-driven horizontal scale changes. |
 | `onYAxisScaleChange` | `(event) => void` | `undefined` | Receives user-driven main Y-scale changes. |
 | `onYAxisPress` | `(event: YAxisPressEvent) => void` | `undefined` | Receives taps on any visible pane Y-axis with local coordinates and the mapped price. |
+| `onMarkerPress` | `(event: MarkerPressEvent) => void` | `undefined` | Receives the displayed marker description, metadata and local press coordinates. |
 | `onPaneResize` | `(event) => void` | `undefined` | Receives interactive pane size changes. |
 | `onPriceScaleChange` | `(event) => void` | `undefined` | Receives per-pane price-scale changes. |
 | `onSelectedCandleChange` | `(candle: OhlcCandle \| null, seriesValues: CrosshairSeriesValue[]) => void` | `undefined` | Receives crosshair selection changes and visible additional-series values. |
@@ -1006,6 +1007,96 @@ When a pinned current price is outside the visible Y range, its line is hidden
 and its label remains at the edge. Set `pinToEdge: false` to hide the label too.
 An extremum outside a manually scaled viewport remains hidden.
 
+## Candle Markers
+
+`ChartMarker` badges attach to exact timestamps in the **main OHLC series**.
+They are drawn with Metal on iOS and GLES3 on Android, including their text.
+They do not change autoscale or appear in indicator panes.
+
+```tsx
+import { TradingCharts, type ChartMarker } from 'react-native-trading-charts';
+
+const marker: ChartMarker = {
+  id: 'entry',
+  timestamp: candles[10].timestamp, // exact candle timestamp, milliseconds
+  text: 'DB',                     // 1–5 printable ASCII characters
+  position: 'above',              // above high, or below low
+  backgroundColor: '#40B783',
+  textColor: '#FFFFFF',
+  borderColor: '#237A51',
+  borderWidth: 2,
+  fontSize: 18,                  // controls text and default badge dimensions
+  metadata: { orderId: '123', category: 'entry' },
+};
+TradingCharts.setMarker(chartId, marker);
+TradingCharts.setMarker(chartId, { ...marker, fontSize: 11 }); // smaller badge
+TradingCharts.setMarker(chartId, { ...marker, text: 'NEW', position: 'below' });
+TradingCharts.setMarkers(chartId, [marker]); // atomically replaces the entire set
+TradingCharts.removeMarker(chartId, 'entry');
+TradingCharts.clearMarkers(chartId);
+```
+
+`setMarker` creates or fully replaces a marker by ID; omitted options reset to
+these defaults. `setMarkers` rejects duplicate IDs and validates the whole array
+before sending a command. An empty array clears the set.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `textColor` | `#FFFFFF` | Text color; the font is system bold monospace. |
+| `borderColor` | `backgroundColor` | Border color. |
+| `borderWidth` | `0` | Inset border thickness. |
+| `borderRadius` | `6` | Corner radius, clamped to half the smaller dimension. |
+| `fontSize` | `14` | Positive text size; also scales default badge dimensions. |
+| `paddingHorizontal`, `paddingVertical` | `6`, `4` | Padding around the text. |
+| `minWidth`, `minHeight` | `24`, `24` | Minimum badge dimensions; text and padding can enlarge them. |
+| `offset` | `6` | Minimum distance from the candle high/low. |
+
+All dimensions use points/dp. Colors accept `#RRGGBB` and `#RRGGBBAA`.
+The table's padding, minimum dimensions and radius defaults are for `fontSize: 14`.
+If omitted, they scale by `fontSize / 14`, so setting only `fontSize` makes the
+entire badge smaller or larger. Explicit padding, minimum dimensions and radius
+remain fixed in points/dp; border width and candle offset also remain fixed.
+Use equal minimum dimensions large enough for the text and a large radius for
+a circle, radius `0` for a square/rectangle, or an intermediate radius for a
+rounded rectangle. Text cannot be blank, contain controls, or exceed five characters.
+
+Markers on the same side of a candle stack outward with a four-point gap,
+respecting each marker's minimum candle offset. Updates preserve insertion order;
+replacement arrays define a new order. Markers on neighboring candles may overlap.
+The main plot clips badges and text, including at indicator-pane boundaries.
+
+A marker with no matching loaded candle remains stored and appears when its
+candle is loaded. `setHistory` and `clear` preserve markers; call `clearMarkers`
+when changing datasets if you reuse a chart ID. Native view recycling resets them.
+Register a component callback to handle a short press on a marker:
+
+```tsx
+<TradingChartsView
+  chartId={chartId}
+  onMarkerPress={({ marker, x, y }) => {
+    console.log(marker.id, marker.metadata, x, y);
+  }}
+/>
+```
+
+`MarkerPressEvent.marker` contains the normalized description and optional
+`metadata` from the displayed frame. Coordinates `x` and `y` are relative to the
+component in points/dp. Metadata is a JSON-compatible object (nested objects,
+arrays, strings, finite numbers, booleans and null); unsupported values and cycles
+are rejected before the native command. Updating a marker without metadata removes
+its previous metadata. Mutating the original object after sending it has no effect.
+
+Presses follow the rendered outline, including rounded corners and plot clipping.
+Overlapping badges select the last drawn marker. A handled press leaves crosshair
+state unchanged; without `onMarkerPress`, the chart keeps its normal tap behavior.
+Pan, pinch and long press keep their existing behavior; markers cannot be dragged.
+
+The example adds badges directly to loaded Binance and Hyperliquid charts:
+`DB` above a candle with `fontSize: 18`, and `M` below another with `fontSize: 11`.
+Four small 16×16 circular badges (`1`–`4`, `fontSize: 8`) stack above one candle.
+Pressing a badge shows its ID and metadata in a standard Alert.
+They use actual candle timestamps and require no separate demo screen.
+
 ## Events
 
 | Property | Payload | Emission behavior | Description |
@@ -1017,6 +1108,7 @@ An extremum outside a manually scaled viewport remains hidden.
 | `onPriceScaleChange` | `PriceScaleChangeEvent` | User pane-axis drag | Reports the affected pane and scale. |
 | `onSelectedCandleChange` | `(OhlcCandle \| null, CrosshairSeriesValue[])` | Selected candle or visible additional-series value changed, or selection cleared | Full OHLCV selection plus exact-timestamp series values. |
 | `onYAxisPress` | `YAxisPressEvent` | Tap inside a visible pane Y-axis | Reports local layout coordinates, pane/scale IDs, and the exact price at the tap. |
+| `onMarkerPress` | `{ marker, x, y }` | Short press inside a visible marker | Returns the displayed description and metadata; leaves crosshair unchanged. |
 
 ### Event payloads
 
@@ -1059,6 +1151,10 @@ All commands use the stable `chartId` of a `TradingChartsView`.
 | `updateTrade` | `chartId, TradeEvent` | `void` | Aggregates one trade. |
 | `updateTrades` | `chartId, TradeEvent[]` | `void` | Aggregates a trade batch. |
 | `getCandles` | `chartId` | `Promise<OhlcCandle[]>` | Reads an atomic copy of native main history. |
+| `setMarker` | `chartId, ChartMarker` | `void` | Creates or completely replaces a candle badge by ID. |
+| `setMarkers` | `chartId, ChartMarker[]` | `void` | Atomically replaces all candle badges. |
+| `removeMarker` | `chartId, markerId` | `void` | Removes a candle badge. |
+| `clearMarkers` | `chartId` | `void` | Removes all candle badges. |
 | `setPriceLine` | `chartId, PriceLineOptions` | `void` | Creates or updates a custom main-pane marker by application-owned ID. |
 | `removePriceLine` | `chartId, priceLineId` | `void` | Removes one custom marker. |
 | `clearPriceLines` | `chartId` | `void` | Removes every custom marker. |

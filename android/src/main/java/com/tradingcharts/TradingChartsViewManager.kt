@@ -30,6 +30,11 @@ class TradingChartsViewManager :
     view.setConfigJson(value)
   }
 
+  @ReactProp(name = "markerPressEnabled")
+  override fun setMarkerPressEnabled(view: TradingChartsView, value: Boolean) {
+    view.setMarkerPressEnabled(value)
+  }
+
   @ReactProp(name = "yAxisPressEnabled")
   override fun setYAxisPressEnabled(view: TradingChartsView, value: Boolean) {
     view.setYAxisPressEnabled(value)

@@ -1,10 +1,12 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { StyleSheet } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import {
   TradingChartsView,
   TradingCharts,
   type AdditionalChartSeriesOptions,
   type ChartResolution,
+  type OhlcCandle,
+  type MarkerPressEvent,
   type VisibleRangeChangeEvent,
   type YAxisPressEvent,
 } from 'react-native-trading-charts';
@@ -24,6 +26,7 @@ import {
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
+import { buildExampleMarkers } from '../chartMarkers';
 import { APP_THEMES } from '../theme';
 
 type InteractiveChartProps = {
@@ -36,6 +39,7 @@ type InteractiveChartProps = {
   showRsi: boolean;
   showMacd: boolean;
   allTimeExtremes: AllTimeExtremes | null;
+  recentCandles: ReadonlyArray<OhlcCandle>;
   onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
 };
 
@@ -49,10 +53,14 @@ export const InteractiveChart = memo(function InteractiveChart({
   showRsi,
   showMacd,
   allTimeExtremes,
+  recentCandles,
   onVisibleRangeChange,
 }: InteractiveChartProps) {
   const settings = useChartSettingsStore((state) => state.settings);
   const themeColors = APP_THEMES[settings.themeMode].colors;
+  const handleMarkerPress = useCallback(({ marker }: MarkerPressEvent) => {
+    Alert.alert(marker.id, JSON.stringify(marker.metadata ?? {}, null, 2));
+  }, []);
   const handleYAxisPress = useCallback(
     (event: YAxisPressEvent) => {
       TradingCharts.setPriceLine(chartId, {
@@ -134,8 +142,15 @@ export const InteractiveChart = memo(function InteractiveChart({
     themeColors.positive,
   ]);
 
+  useEffect(() => {
+    TradingCharts.setMarkers(chartId, buildExampleMarkers(recentCandles));
+  }, [chartId, recentCandles]);
+
   useEffect(
-    () => () => removeAllTimePriceLines(TradingCharts, chartId),
+    () => () => {
+      removeAllTimePriceLines(TradingCharts, chartId);
+      TradingCharts.clearMarkers(chartId);
+    },
     [chartId]
   );
 
@@ -154,6 +169,7 @@ export const InteractiveChart = memo(function InteractiveChart({
       defaultScale={1.25}
       onVisibleRangeChange={onVisibleRangeChange}
       onYAxisPress={handleYAxisPress}
+      onMarkerPress={handleMarkerPress}
       panes={panes}
       panesResizable
       style={styles.chart}

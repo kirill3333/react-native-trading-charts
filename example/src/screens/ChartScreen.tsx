@@ -150,8 +150,15 @@ function ChartContent<
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? DEFAULT_RESOLUTION;
 
-  const { status, error, lastPrice, allTimeExtremes, loadOlder, retry } =
-    useChartDataFeed(adapter, ticker, interval, chartId);
+  const {
+    status,
+    error,
+    lastPrice,
+    allTimeExtremes,
+    recentCandles,
+    loadOlder,
+    retry,
+  } = useChartDataFeed(adapter, ticker, interval, chartId);
   const displayedPrice = lastPrice ?? ticker.lastPrice;
 
   useLayoutEffect(() => {
@@ -222,6 +229,7 @@ function ChartContent<
             <View style={styles.chartContainer}>
               <InteractiveChart
                 allTimeExtremes={allTimeExtremes}
+                recentCandles={recentCandles}
                 chartId={chartId}
                 key={chartId}
                 lastPrice={ticker.lastPrice}

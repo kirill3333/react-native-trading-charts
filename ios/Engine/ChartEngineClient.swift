@@ -63,10 +63,37 @@ func appendNativeTransition(
   trading_charts.swift_interop.AppendTransition(&vector, value)
 }
 
+struct ChartMarkerBatch {
+  let fontSize: Double
+  let firstVertex: Int
+  let vertexCount: Int
+}
+
 struct ChartRenderFrame {
   fileprivate let handle: trading_charts.swift_interop.RenderSnapshotHandle
 
   var revision: UInt64 { handle.Revision() }
+  func hitMarker(at point: CGPoint) -> String? {
+    let json = String(handle.HitMarker(Float(point.x), Float(point.y)))
+    return json.isEmpty ? nil : json
+  }
+  var markerRevision: UInt64 { handle.MarkerRevision() }
+  var markerVertexCount: Int { Int(handle.MarkerVertexCount()) }
+  var markerBatchCount: Int { Int(handle.MarkerBatchCount()) }
+  func markerBatch(at index: Int) -> ChartMarkerBatch {
+    let batch = handle.MarkerBatchAt(index)
+    return ChartMarkerBatch(
+      fontSize: Double(batch.font_size),
+      firstVertex: Int(batch.first_vertex),
+      vertexCount: Int(batch.vertex_count)
+    )
+  }
+  func withMarkerVertices<Result>(_ body: (UnsafeBufferPointer<Float>) throws -> Result) rethrows -> Result {
+    try withExtendedLifetime(handle) {
+      let pointer = trading_charts.swift_interop.MarkerVerticesData(handle)
+      return try body(UnsafeBufferPointer(start: pointer, count: markerVertexCount))
+    }
+  }
   var contentRevision: UInt64 { handle.ContentRevision() }
   var visibleXMin: Double { handle.VisibleXMin() }
   var visibleXMax: Double { handle.VisibleXMax() }
@@ -190,6 +217,21 @@ final class ChartEngineClient {
   func setPaneHeight(_ paneId: String, weight: Double) -> Bool {
     handle.SetPaneHeight(std.string(paneId), weight)
   }
+
+  func setMarkers(_ markers: [ChartMarkerPayload], replace: Bool) -> Bool {
+    var packed = trading_charts.swift_interop.MarkerVector()
+    for marker in markers {
+      marker.values.withUnsafeBufferPointer { values in
+        trading_charts.swift_interop.AppendMarker(
+          &packed, nativeString(marker.id), nativeString(marker.text), values.baseAddress, values.count,
+          nativeString(marker.descriptor)
+        )
+      }
+    }
+    return handle.SetMarkers(packed, replace)
+  }
+  func removeMarker(_ id: String) -> Bool { handle.RemoveMarker(nativeString(id)) }
+  func clearMarkers() -> Bool { handle.ClearMarkers() }
 
   @discardableResult
   func setPriceLine(id: String, price: Double, label: String, colorHex: String) -> Bool {

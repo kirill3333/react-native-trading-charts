@@ -4,6 +4,7 @@
 #ifndef REACT_NATIVE_TRADING_CHARTS_IOS_CXX_TRADINGCHARTSCXX_H_
 #define REACT_NATIVE_TRADING_CHARTS_IOS_CXX_TRADINGCHARTSCXX_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -15,6 +16,7 @@
 
 namespace trading_charts::swift_interop {
 
+using MarkerVector = std::vector<Marker>;
 using PaneVector = std::vector<PaneConfig>;
 using SessionVector = std::vector<TradingSessionConfig>;
 using TransitionVector = std::vector<TimeZoneTransition>;
@@ -61,6 +63,11 @@ class ChartEngineHandle {
   bool SetPaneHeight(const std::string& pane_id, double height_weight) {
     return engine_->SetPaneHeight(pane_id, height_weight);
   }
+  bool SetMarkers(const MarkerVector& markers, bool replace) {
+    return engine_->SetMarkers(markers, replace);
+  }
+  bool RemoveMarker(const std::string& id) { return engine_->RemoveMarker(id); }
+  bool ClearMarkers() { return engine_->ClearMarkers(); }
   bool SetPriceLine(const PriceLine& price_line) {
     return engine_->SetPriceLine(price_line);
   }
@@ -142,6 +149,27 @@ class RenderSnapshotHandle {
 
   bool IsValid() const { return static_cast<bool>(snapshot_); }
   uint64_t Revision() const { return snapshot_ ? snapshot_->revision : 0; }
+  std::string HitMarker(float x, float y) const {
+    return snapshot_ && snapshot_->markers
+        ? HitTestMarker(*snapshot_->markers, x, y) : std::string();
+  }
+  uint64_t MarkerRevision() const {
+    return snapshot_ ? snapshot_->marker_revision : 0;
+  }
+  size_t MarkerVertexCount() const {
+    return snapshot_ && snapshot_->markers
+        ? snapshot_->markers->vertices.size() : 0;
+  }
+  const float* MarkerVerticesData() const {
+    return MarkerVertexCount() ? snapshot_->markers->vertices.data() : nullptr;
+  }
+  size_t MarkerBatchCount() const {
+    return snapshot_ && snapshot_->markers
+        ? snapshot_->markers->batches.size() : 0;
+  }
+  MarkerDrawBatch MarkerBatchAt(size_t index) const {
+    return snapshot_->markers->batches.at(index);
+  }
   uint64_t ContentRevision() const {
     return snapshot_ ? snapshot_->content_revision : 0;
   }
@@ -247,6 +275,23 @@ inline RenderSnapshotHandle Snapshot(ChartEngineHandle& engine) {
 // Top-level pointer accessors remain available to Swift as explicitly unsafe
 // functions. Swift wraps them in non-escaping closures and keeps the handle
 // alive for the entire call.
+inline void AppendMarker(MarkerVector* markers, const std::string& id,
+                         const std::string& text, const double* values,
+                         size_t count, const std::string& descriptor) {
+  Marker marker;
+  marker.id = id;
+  marker.text = text;
+  marker.descriptor = std::make_shared<const std::string>(descriptor);
+  if (values && count == kMarkerValueCount) {
+    std::copy_n(values, count, marker.values.begin());
+  }
+  markers->push_back(marker);
+}
+
+inline const float* MarkerVerticesData(const RenderSnapshotHandle& snapshot) {
+  return snapshot.MarkerVerticesData();
+}
+
 inline const float* ContentVerticesData(const RenderSnapshotHandle& snapshot) {
   return snapshot.ContentVerticesData();
 }

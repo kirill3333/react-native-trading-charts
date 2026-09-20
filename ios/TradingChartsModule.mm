@@ -107,6 +107,19 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] removePriceLine:priceLineId chartId:chartId];
 }
 
+- (void)setMarker:(NSString *)chartId markerJson:(NSString *)json {
+  [[TradingChartsRegistry shared] setMarker:json chartId:chartId replace:NO];
+}
+- (void)setMarkers:(NSString *)chartId markersJson:(NSString *)json {
+  [[TradingChartsRegistry shared] setMarker:json chartId:chartId replace:YES];
+}
+- (void)removeMarker:(NSString *)chartId markerId:(NSString *)markerId {
+  [[TradingChartsRegistry shared] removeMarker:markerId chartId:chartId];
+}
+- (void)clearMarkers:(NSString *)chartId {
+  [[TradingChartsRegistry shared] setMarker:@"[]" chartId:chartId replace:YES];
+}
+
 - (void)clearPriceLines:(NSString *)chartId {
   [[TradingChartsRegistry shared] clearPriceLinesForChart:chartId];
 }

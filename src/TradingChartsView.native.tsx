@@ -3,10 +3,12 @@ import { type NativeSyntheticEvent } from 'react-native';
 
 import { resolveChartConfig } from './config';
 import {
+  markerPressFromNativeEvent,
   selectedCandleFromNativeEvent,
   selectedSeriesValuesFromNativeEvent,
 } from './events';
 import NativeTradingChartsView, {
+  type MarkerPressNativeEvent,
   type PaneResizeNativeEvent,
   type PriceScaleChangeNativeEvent,
   type ScaleChangeNativeEvent,
@@ -41,6 +43,7 @@ export const TradingChartsView = memo(function TradingChartsView({
   onPaneResize,
   onPriceScaleChange,
   onYAxisPress,
+  onMarkerPress,
   onSelectedCandleChange,
   ...viewProps
 }: TradingChartsViewProps) {
@@ -133,6 +136,13 @@ export const TradingChartsView = memo(function TradingChartsView({
     },
     [onSelectedCandleChange]
   );
+  const handleMarkerPress = useCallback(
+    (event: NativeSyntheticEvent<MarkerPressNativeEvent>) => {
+      const payload = markerPressFromNativeEvent(event.nativeEvent, chartId);
+      if (payload) onMarkerPress?.(payload);
+    },
+    [chartId, onMarkerPress]
+  );
   const handleYAxisPress = useCallback(
     (event: NativeSyntheticEvent<YAxisPressNativeEvent>) => {
       onYAxisPress?.(event.nativeEvent);
@@ -145,6 +155,8 @@ export const TradingChartsView = memo(function TradingChartsView({
       {...viewProps}
       chartId={chartId}
       configJson={configJson}
+      markerPressEnabled={onMarkerPress != null}
+      onMarkerPress={onMarkerPress ? handleMarkerPress : undefined}
       yAxisPressEnabled={onYAxisPress != null}
       onVisibleRangeChange={
         onVisibleRangeChange ? handleVisibleRangeChange : undefined

@@ -9,7 +9,9 @@ import os
 public final class ChartHostView: UIView {
   @objc public weak var delegate: ChartHostViewDelegate?
 
+  private let markerPress = ChartMarkerPressState<ChartRenderFrame> { $0.hitMarker(at: $1) }
   private let engine = ChartEngineClient()
+  private let markerDecoder = ChartMarkerDecoder()
   private let metalView: MTKView
   private let renderer: ChartMetalRenderer
   private let overlay = ChartOverlayView(frame: .zero)
@@ -43,6 +45,7 @@ public final class ChartHostView: UIView {
     renderer.onNeedsFrame = { [weak self] in self?.requestFrame() }
     renderer.onDidCommit = { [weak self] frame in
       guard let self else { return }
+      self.markerPress.didSubmit(frame)
       self.overlay.apply(frame: frame)
       self.lastDrawnRevision = frame.revision
       self.forceNextDraw = false
@@ -65,6 +68,12 @@ public final class ChartHostView: UIView {
         )
       }
     )
+    interaction.onMarkerPress = { [weak self] point in
+      guard let self else { return false }
+      return self.markerPress.press(at: point) { json in
+        self.delegate?.chartHostView(self, markerPressJson: json, x: point.x, y: point.y)
+      }
+    }
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(applicationDidBecomeActive),
@@ -231,9 +240,26 @@ public final class ChartHostView: UIView {
     if engine.setPaneHeight(paneId, weight: weight) { requestFrame() }
   }
 
+  @objc(setMarkerPressEnabled:)
+  public func setMarkerPressEnabled(_ enabled: Bool) { markerPress.enabled = enabled }
+  @objc public func clearMarkerHitFrame() { markerPress.clear() }
+
   @objc(setYAxisPressEnabled:)
   public func setYAxisPressEnabled(_ enabled: Bool) {
     interaction.setYAxisPressEnabled(enabled)
+  }
+
+  @objc(setMarkerJson:replace:)
+  public func setMarkerJson(_ json: String, replace: Bool) {
+    guard let markers = markerDecoder.decode(json, replace: replace) else { return }
+    if engine.setMarkers(markers, replace: replace) { requestFrame() }
+  }
+  @objc(removeMarker:)
+  public func removeMarker(_ id: String) {
+    if engine.removeMarker(id) { requestFrame() }
+  }
+  @objc public func clearMarkers() {
+    if engine.clearMarkers() { requestFrame() }
   }
 
   @objc(setPriceLine:price:label:color:)
@@ -303,6 +329,8 @@ public final class ChartHostView: UIView {
     interaction.cancelInteraction()
     interaction.resetCrosshair()
     interaction.apply(config: NativeChartConfig(), panesResizable: false)
+    markerPress.enabled = false
+    markerPress.clear()
     interaction.setYAxisPressEnabled(false)
     engine.resetForReuse()
     configuration = nil

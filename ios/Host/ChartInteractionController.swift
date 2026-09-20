@@ -4,6 +4,7 @@
 import UIKit
 
 final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
+  var onMarkerPress: ((CGPoint) -> Bool)?
   private weak var view: UIView?
   private let engine: ChartEngineClient
   private let momentum: ChartMomentumController
@@ -204,6 +205,7 @@ final class ChartInteractionController: NSObject, UIGestureRecognizerDelegate {
   @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
     guard let view else { return }
     let point = recognizer.location(in: view)
+    if onMarkerPress?(point) == true { return }
     if yAxisPressEnabled, isPointInYAxis(point, bounds: view.bounds),
       let value = engine.yAxisValue(at: Float(point.y)) {
       onYAxisPress(point, value.paneId, value.priceScaleId, value.price)

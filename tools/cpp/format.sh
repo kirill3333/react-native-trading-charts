@@ -9,6 +9,11 @@ tool_dir="$(bash "$script_dir/bootstrap.sh")"
 readonly tool_dir
 readonly cpp_files=(
   cpp/benchmarks/chart_engine_benchmark.cc
+  cpp/marker_types.h
+  cpp/internal/marker_store.cc
+  cpp/internal/marker_geometry.h
+  cpp/internal/marker_geometry.cc
+  cpp/tests/marker_test.cc
   cpp/chart_engine.h
   cpp/chart_engine.cc
   cpp/chart_engine_config.cc

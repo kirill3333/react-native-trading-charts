@@ -19,6 +19,7 @@
 
 #include "cpp/internal/config_constants.h"
 #include "cpp/internal/config_normalization.h"
+#include "cpp/internal/marker_geometry.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -265,10 +266,12 @@ class RenderSnapshotBuilder {
 
   std::shared_ptr<const RenderSnapshot> Build() {
     if (ReuseContent()) {
+      BuildMarkerLayer();
       return snapshot_;
     }
     InitializeSnapshot();
     if (!HasDrawableContent()) {
+      BuildMarkerLayer();
       return snapshot_;
     }
 
@@ -291,11 +294,24 @@ class RenderSnapshotBuilder {
     AddCurrentPriceGeometry();
     snapshot_->content_vertices = std::move(content_vertices_);
     AddCrosshair();
+    BuildMarkerLayer();
     return snapshot_;
   }
 
  private:
   using CandleIterator = std::vector<Candle>::const_iterator;
+
+  void BuildMarkerLayer() {
+    snapshot_->marker_revision = input_.marker_revision;
+    if (input_.previous &&
+        input_.previous->marker_revision == input_.marker_revision) {
+      snapshot_->markers = input_.previous->markers;
+    } else if (input_.markers) {
+      snapshot_->markers =
+          BuildMarkers(*input_.markers, input_.candles, *snapshot_,
+                       input_.visible_x_min, input_.visible_x_max);
+    }
+  }
 
   // Content geometry changes only with content_revision. When the previous
   // snapshot was built from the same content, copy it (the vertex buffer

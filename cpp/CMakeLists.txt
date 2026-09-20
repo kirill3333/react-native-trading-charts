@@ -97,3 +97,12 @@ if(TRADING_CHARTS_BUILD_BENCHMARKS)
     trading_charts_engine
   )
 endif()
+
+add_executable(marker_test tests/marker_test.cc)
+target_link_libraries(marker_test PRIVATE trading_charts_engine)
+if(MSVC)
+  target_compile_options(marker_test PRIVATE /UNDEBUG)
+else()
+  target_compile_options(marker_test PRIVATE -UNDEBUG)
+endif()
+add_test(NAME marker_test COMMAND marker_test)

@@ -12,12 +12,18 @@ import javax.microedition.khronos.opengles.GL10
 
 internal class ChartRenderer : GLSurfaceView.Renderer {
   private val pendingLock = Any()
+  private val markerHitState = MarkerHitState()
+  private var renderedHitEpoch = 0L
+
+  fun hitMarker(x: Float, y: Float): String? = markerHitState.hit(x, y)
+
   private var pendingFrame: ChartFrame? = null
   private var renderedSnapshot: ChartSnapshot? = null
   private var currentContent: ContentVertexBufferLease? = null
   private var program = 0
   private var uniformViewport = 0
   private val contentSlot = VertexSlot()
+  private val markers = ChartMarkerRenderer()
   private val overlaySlot = VertexSlot()
   private var uploadedContentRevision = -1L
   private var uploadedRevision = -1L
@@ -83,35 +89,48 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
    * crosshair update cannot discard geometry that the GL thread has not uploaded yet.
    */
   fun submit(frame: ChartFrame) {
-    var discardedContent: ContentVertexBufferLease? = null
     synchronized(pendingLock) {
       val previous = pendingFrame
       val content =
-          frame.contentVertices
-              ?: previous?.contentVertices?.takeIf {
-                previous.snapshot.contentRevision == frame.snapshot.contentRevision
-              }
+          replacePendingVertices(
+              previous?.contentVertices,
+              frame.contentVertices,
+              frame.snapshot.contentRevision,
+          )
+      val marker =
+          replacePendingVertices(
+              previous?.markerVertices,
+              frame.markerVertices,
+              frame.snapshot.markerRevision,
+          )
+      val hits =
+          replacePendingMarkerHits(
+              previous?.markerHits,
+              frame.markerHits,
+              frame.snapshot.markerRevision,
+          )
       pendingFrame =
-          if (content === frame.contentVertices) {
-            frame
-          } else {
-            frame.copy(contentVertices = content)
-          }
-      if (previous?.contentVertices != null && previous.contentVertices !== content) {
-        discardedContent = previous.contentVertices
-      }
+          frame.copy(
+              contentVertices = content,
+              markerVertices = marker,
+              markerHits = hits,
+              markerHitEpoch = markerHitState.epoch(),
+          )
     }
-    discardedContent?.release()
   }
 
   fun clearPending() {
-    val discarded =
-        synchronized(pendingLock) {
-          val frame = pendingFrame
-          pendingFrame = null
-          frame?.contentVertices
-        }
-    discarded?.release()
+    synchronized(pendingLock) {
+      pendingFrame?.contentVertices?.release()
+      pendingFrame?.markerVertices?.release()
+      pendingFrame?.markerHits?.release()
+      markerHitState.reset()
+      pendingFrame = null
+    }
+  }
+
+  fun disposeMarkers() {
+    markers.dispose()
   }
 
   private fun takePending(): ChartFrame? =
@@ -122,6 +141,7 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
       }
 
   override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    markerHitState.hide()
     val vertexShader =
         compile(
             GLES30.GL_VERTEX_SHADER,
@@ -174,6 +194,7 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
     overlaySlot.reset()
     contentSlot.buffer = buffers[0]
     overlaySlot.buffer = buffers[1]
+    markers.surfaceCreated()
     uploadedContentRevision = -1L
     uploadedRevision = -1L
     GLES30.glEnable(GLES30.GL_BLEND)
@@ -187,25 +208,42 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
   override fun onDrawFrame(gl: GL10?) {
     val pending = takePending()
     val frame = pending?.snapshot ?: renderedSnapshot
-    if (pending != null) {
-      renderedSnapshot = pending.snapshot
-    }
-    val bg = frame?.config?.backgroundColor ?: 0xFF100C18.toInt()
-    GLES30.glClearColor(
-        android.graphics.Color.red(bg) / 255f,
-        android.graphics.Color.green(bg) / 255f,
-        android.graphics.Color.blue(bg) / 255f,
-        android.graphics.Color.alpha(bg) / 255f,
-    )
-    GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-    if (frame == null || program == 0) {
-      pending?.contentVertices?.release()
-      return
-    }
+    val frameEpoch = pending?.markerHitEpoch ?: renderedHitEpoch
+    var hitLease =
+        markerHitState.prepare(frameEpoch, frame?.markerRevision ?: -1, pending?.markerHits)
+    var drawn = false
+    try {
+      if (pending != null) {
+        renderedSnapshot = pending.snapshot
+        renderedHitEpoch = pending.markerHitEpoch
+      }
+      val bg = frame?.config?.backgroundColor ?: 0xFF100C18.toInt()
+      GLES30.glClearColor(
+          android.graphics.Color.red(bg) / 255f,
+          android.graphics.Color.green(bg) / 255f,
+          android.graphics.Color.blue(bg) / 255f,
+          android.graphics.Color.alpha(bg) / 255f,
+      )
+      GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+      if (frame == null || program == 0) {
+        pending?.contentVertices?.release()
+        pending?.markerVertices?.release()
+        return
+      }
 
-    if (!updateContent(frame, pending?.contentVertices)) return
-    updateOverlay(frame)
-    drawFrame(frame)
+      if (!updateContent(frame, pending?.contentVertices)) {
+        pending?.markerVertices?.release()
+        return
+      }
+      if (!markers.update(frame, pending?.markerVertices)) return
+      updateOverlay(frame)
+      drawFrame(frame)
+      markerHitState.commit(renderedHitEpoch, frame.markerRevision, hitLease)
+      hitLease = null
+      drawn = true
+    } finally {
+      if (!drawn) markerHitState.failed(frameEpoch, hitLease)
+    }
   }
 
   /**
@@ -255,10 +293,18 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
   }
 
   private fun drawFrame(frame: ChartSnapshot) {
-    if (contentSlot.vertexCount == 0 && overlaySlot.vertexCount == 0) return
+    if (
+        contentSlot.vertexCount == 0 &&
+            overlaySlot.vertexCount == 0 &&
+            frame.markerBatches.isEmpty()
+    )
+        return
     GLES30.glUseProgram(program)
     GLES30.glUniform2f(uniformViewport, frame.width, frame.height)
     drawSlot(contentSlot)
+    markers.draw(frame)
+    GLES30.glUseProgram(program)
+    GLES30.glUniform2f(uniformViewport, frame.width, frame.height)
     drawSlot(overlaySlot)
     GLES30.glDisableVertexAttribArray(0)
     GLES30.glDisableVertexAttribArray(1)

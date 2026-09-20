@@ -345,6 +345,14 @@ std::shared_ptr<const RenderSnapshot>* SnapshotFromHandle(jlong handle) {
   return reinterpret_cast<std::shared_ptr<const RenderSnapshot>*>(handle);
 }
 
+std::shared_ptr<const trading_charts::MarkerSnapshot>* MarkerHitsFromHandle(
+    jlong handle) {
+  // JNI opaque holder; ownership is scoped by MarkerHitLease on the JVM side.
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  return reinterpret_cast<
+      std::shared_ptr<const trading_charts::MarkerSnapshot>*>(handle);
+}
+
 int StatusValue(UpdateStatus status) {
   switch (status) {
     case UpdateStatus::kApplied:
@@ -1435,6 +1443,168 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotContentRevision(
   auto* holder = SnapshotFromHandle(handle);
   return holder && *holder ? static_cast<jlong>((*holder)->content_revision)
                            : 0;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeMarkerTransportAbi(JNIEnv* env,
+                                                                  jclass) {
+  const std::array<jint, 6> values{
+      2,
+      static_cast<jint>(trading_charts::kMarkerValueCount),
+      static_cast<jint>(trading_charts::kMarkerFloatsPerVertex),
+      3,
+      trading_charts::kMarkerAtlasColumns,
+      trading_charts::kMarkerAtlasRows};
+  jintArray result = env->NewIntArray(static_cast<jsize>(values.size()));
+  if (result) {
+    env->SetIntArrayRegion(result, 0, static_cast<jsize>(values.size()),
+                           values.data());
+  }
+  return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetMarkers(JNIEnv* env, jclass,
+                                                          jlong handle,
+                                                          jobjectArray strings,
+                                                          jdoubleArray numbers,
+                                                          jboolean replace) {
+  auto* instance = EngineFromHandle(handle);
+  if (!instance || !strings || !numbers) {
+    return JNI_FALSE;
+  }
+  const jsize count = env->GetArrayLength(strings);
+  if (count % 3 != 0 ||
+      static_cast<size_t>(env->GetArrayLength(numbers)) !=
+          static_cast<size_t>(count / 3) * trading_charts::kMarkerValueCount) {
+    return JNI_FALSE;
+  }
+  std::vector<trading_charts::Marker> markers;
+  markers.reserve(static_cast<size_t>(count / 3));
+  for (jsize index = 0; index < count / 3; ++index) {
+    trading_charts::Marker marker;
+    marker.id = StringAt(env, strings, index * 3, "");
+    marker.text = StringAt(env, strings, index * 3 + 1, "");
+    marker.descriptor = std::make_shared<const std::string>(
+        StringAt(env, strings, index * 3 + 2, ""));
+    env->GetDoubleArrayRegion(
+        numbers, index * static_cast<jsize>(trading_charts::kMarkerValueCount),
+        static_cast<jsize>(trading_charts::kMarkerValueCount),
+        marker.values.data());
+    if (env->ExceptionCheck()) {
+      return JNI_FALSE;
+    }
+    markers.push_back(std::move(marker));
+  }
+  return instance->SetMarkers(markers, replace == JNI_TRUE) ? JNI_TRUE
+                                                            : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeRemoveMarker(JNIEnv* env, jclass,
+                                                            jlong handle,
+                                                            jstring id) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->RemoveMarker(CopyString(env, id)) ? JNI_TRUE
+                                                                 : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMarkerRevision(
+    JNIEnv*, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  return holder && *holder ? static_cast<jlong>((*holder)->marker_revision) : 0;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeAcquireMarkerHits(JNIEnv*,
+                                                                 jclass,
+                                                                 jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  if (!holder || !*holder) {
+    return 0;
+  }
+  return reinterpret_cast<jlong>(
+      new std::shared_ptr<const trading_charts::MarkerSnapshot>(
+          (*holder)->markers));
+}
+
+JNIEXPORT void JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeReleaseMarkerHits(JNIEnv*,
+                                                                 jclass,
+                                                                 jlong handle) {
+  delete MarkerHitsFromHandle(handle);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeHitMarker(JNIEnv* env, jclass,
+                                                         jlong handle, jfloat x,
+                                                         jfloat y) {
+  auto* holder = MarkerHitsFromHandle(handle);
+  if (!holder || !*holder) {
+    return nullptr;
+  }
+  const auto json = trading_charts::HitTestMarker(**holder, x, y);
+  return json.empty() ? nullptr : env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jdoubleArray JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMarkerBatches(
+    JNIEnv* env, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  std::vector<double> result;
+  if (holder && *holder && (*holder)->markers) {
+    for (const auto& batch : (*holder)->markers->batches) {
+      result.insert(result.end(), {static_cast<double>(batch.font_size),
+                                   static_cast<double>(batch.first_vertex),
+                                   static_cast<double>(batch.vertex_count)});
+    }
+  }
+  return NewDoubleArray(env, result);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMarkerVertexCount(
+    JNIEnv*, jclass, jlong handle) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  const std::vector<float>* vertices =
+      value && value->markers ? &value->markers->vertices : nullptr;
+  const size_t count = vertices ? vertices->size() : 0;
+  if (count >
+      static_cast<size_t>(std::numeric_limits<jint>::max()) / sizeof(float)) {
+    return -1;
+  }
+  return static_cast<jint>(count);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeCopySnapshotMarkerVertices(
+    JNIEnv* env, jclass, jlong handle, jobject target) {
+  auto* holder = SnapshotFromHandle(handle);
+  const auto* value = holder && *holder ? holder->get() : nullptr;
+  const std::vector<float>* vertices =
+      value && value->markers ? &value->markers->vertices : nullptr;
+  const size_t count = vertices ? vertices->size() : 0;
+  if (count >
+      static_cast<size_t>(std::numeric_limits<jint>::max()) / sizeof(float)) {
+    return -1;
+  }
+  if (count == 0) {
+    return 0;
+  }
+  if (!target) {
+    return -1;
+  }
+  void* destination = env->GetDirectBufferAddress(target);
+  const jlong capacity = env->GetDirectBufferCapacity(target);
+  const size_t byte_count = count * sizeof(float);
+  if (!destination || capacity < 0 ||
+      static_cast<size_t>(capacity) < byte_count) {
+    return -1;
+  }
+  std::memcpy(destination, vertices->data(), byte_count);
+  return static_cast<jint>(count);
 }
 
 JNIEXPORT jint JNICALL

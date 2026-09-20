@@ -55,6 +55,8 @@ export interface NativeProps extends ViewProps {
   chartId: string;
   configJson: string;
   yAxisPressEnabled: boolean;
+  markerPressEnabled: boolean;
+  onMarkerPress?: CodegenTypes.DirectEventHandler<MarkerPressNativeEvent>;
   onVisibleRangeChange?: CodegenTypes.DirectEventHandler<VisibleRangeChangeNativeEvent>;
   onScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
   onYAxisScaleChange?: CodegenTypes.DirectEventHandler<ScaleChangeNativeEvent>;
@@ -63,5 +65,12 @@ export interface NativeProps extends ViewProps {
   onYAxisPress?: CodegenTypes.DirectEventHandler<YAxisPressNativeEvent>;
   onSelectedCandleChange?: CodegenTypes.DirectEventHandler<SelectedCandleChangeNativeEvent>;
 }
+
+export type MarkerPressNativeEvent = Readonly<{
+  chartId: string;
+  markerJson: string;
+  x: CodegenTypes.Double;
+  y: CodegenTypes.Double;
+}>;
 
 export default codegenNativeComponent<NativeProps>('TradingChartsView');

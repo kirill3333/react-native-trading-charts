@@ -55,12 +55,16 @@ using namespace facebook::react;
       oldViewProps.yAxisPressEnabled != newViewProps.yAxisPressEnabled) {
     [_host setYAxisPressEnabled:newViewProps.yAxisPressEnabled];
   }
+  if (needsInitialProps || oldViewProps.markerPressEnabled != newViewProps.markerPressEnabled) {
+    [_host setMarkerPressEnabled:newViewProps.markerPressEnabled];
+  }
   NSString *newChartId =
       [NSString stringWithUTF8String:newViewProps.chartId.c_str()];
   if (!((_chartId == newChartId) || [_chartId isEqualToString:newChartId])) {
     if (_chartId.length > 0) {
       [TradingChartsRegistry.shared unregisterView:self chartId:_chartId];
     }
+    [_host clearMarkerHitFrame];
     _chartId = newChartId;
     if (_chartId.length > 0) {
       [TradingChartsRegistry.shared registerView:self chartId:_chartId];
@@ -83,6 +87,13 @@ using namespace facebook::react;
   if (_chartId.length > 0) {
     [TradingChartsRegistry.shared unregisterView:self chartId:_chartId];
   }
+}
+
+- (void)chartHostView:(TCChartHostView *)host
+     markerPressJson:(NSString *)json x:(double)x y:(double)y {
+  if (!_eventEmitter || !_chartId) return;
+  auto emitter = std::static_pointer_cast<const TradingChartsViewEventEmitter>(_eventEmitter);
+  emitter->onMarkerPress({_chartId.UTF8String ?: "", json.UTF8String ?: "", x, y});
 }
 
 - (void)chartHostView:(TCChartHostView *)host
@@ -254,6 +265,12 @@ using namespace facebook::react;
 - (void)removePriceLine:(NSString *)priceLineId {
   [_host removePriceLine:priceLineId ?: @""];
 }
+
+- (void)setMarkerJson:(NSString *)json replace:(BOOL)replace {
+  [_host setMarkerJson:json replace:replace];
+}
+- (void)removeMarker:(NSString *)markerId { [_host removeMarker:markerId]; }
+- (void)clearMarkers { [_host clearMarkers]; }
 
 - (void)clearPriceLines {
   [_host clearPriceLines];

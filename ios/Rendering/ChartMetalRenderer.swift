@@ -14,6 +14,7 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
   private let commandQueue: MTLCommandQueue?
   private var pipeline: MTLRenderPipelineState?
   private let contentPool: ChartVertexBufferPool<MTLBuffer>
+  private let markerRenderer: ChartMarkerRenderer
   private let overlayPool: ChartVertexBufferPool<MTLBuffer>
   private let flightState = ChartFrameFlightState()
   private var frame: ChartRenderFrame?
@@ -27,6 +28,7 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
     let device = view.device!
     self.device = device
     commandQueue = device.makeCommandQueue()
+    markerRenderer = ChartMarkerRenderer(view: view)
     contentPool = ChartVertexBufferPool {
       device.makeBuffer(length: $0, options: .storageModeShared)
     }
@@ -54,10 +56,12 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
     precondition(Thread.isMainThread)
     guard let frame, let pipeline, let commandQueue, flightState.beginFrame() else { return }
     var committed = false
+    var markerFrame: ChartMarkerRenderer.Prepared?
     var contentSlot: ChartVertexBufferPool<MTLBuffer>.Slot?
     var overlaySlot: ChartVertexBufferPool<MTLBuffer>.Slot?
     defer {
       if !committed {
+        if let markerFrame { markerRenderer.release(markerFrame) }
         if let contentSlot { contentPool.release(contentSlot) }
         if let overlaySlot { overlayPool.release(overlaySlot) }
         flightState.finishFrame()
@@ -137,6 +141,9 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
       return
     }
 
+    markerFrame = markerRenderer.prepare(frame, scale: view.contentScaleFactor)
+    guard let markerFrame else { return }
+
     do {
       let encodeId = OSSignpostID(log: ChartPerformance.log)
       os_signpost(
@@ -169,13 +176,16 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
         encoder.setVertexBuffer(contentBuffer, offset: 0, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.contentVertexCount / 6)
       }
+      markerRenderer.encode(markerFrame, encoder: encoder, frame: frame)
+      encoder.setRenderPipelineState(pipeline)
       if overlayBytes > 0, let overlayBuffer = overlaySlot.buffer {
         encoder.setVertexBuffer(overlayBuffer, offset: 0, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.overlayVertexCount / 6)
       }
       encoder.endEncoding()
       command.present(drawable)
-      command.addCompletedHandler { [contentPool, overlayPool, flightState, frame] command in
+      let releaseMarkers = { [markerRenderer] in markerRenderer.release(markerFrame) }
+      command.addCompletedHandler { [contentPool, overlayPool, releaseMarkers, flightState, frame] command in
         if command.status == .error {
           NSLog("[TradingCharts] Metal command failed: %@", String(describing: command.error))
         }
@@ -183,6 +193,7 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
           withExtendedLifetime(frame) {
             contentPool.release(contentSlot)
             overlayPool.release(overlaySlot)
+            releaseMarkers()
             flightState.finishFrame()
           }
         }

@@ -1,3 +1,10 @@
+export type {
+  ChartMarker,
+  ResolvedChartMarker,
+  MarkerMetadata,
+  MarkerJsonValue,
+  MarkerPressEvent,
+} from './markers';
 export { TradingCharts } from './TradingCharts';
 export { TradingChartsView } from './TradingChartsView';
 export { createTradeBatcher } from './tradeBatcher';

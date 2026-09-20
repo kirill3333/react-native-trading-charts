@@ -10,6 +10,8 @@ set(
   ${CMAKE_CURRENT_LIST_DIR}/chart_engine_viewport.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/config_normalization.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/indicator_series.cc
+  ${CMAKE_CURRENT_LIST_DIR}/internal/marker_store.cc
+  ${CMAKE_CURRENT_LIST_DIR}/internal/marker_geometry.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/packed_data.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/pane_layout.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/render_snapshot_builder.cc

@@ -4,6 +4,7 @@
 import Foundation
 
 @objc public protocol ChartHostViewDelegate: AnyObject {
+  func chartHostView(_ host: ChartHostView, markerPressJson: String, x: Double, y: Double)
   func chartHostView(
     _ host: ChartHostView,
     visibleXMin: Double,

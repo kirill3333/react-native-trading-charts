@@ -1,4 +1,5 @@
 import { type ViewProps } from 'react-native';
+import { type MarkerPressEvent } from './markers';
 import {
   type PaneResizeNativeEvent,
   type PriceScaleChangeNativeEvent,
@@ -634,6 +635,7 @@ export type TradingChartsViewProps = ViewProps & {
   onPaneResize?: (event: PaneResizeEvent) => void;
   onPriceScaleChange?: (event: PriceScaleChangeEvent) => void;
   onYAxisPress?: (event: YAxisPressEvent) => void;
+  onMarkerPress?: (event: MarkerPressEvent) => void;
   onSelectedCandleChange?: (
     candle: OhlcCandle | null,
     seriesValues: ReadonlyArray<CrosshairSeriesValue>

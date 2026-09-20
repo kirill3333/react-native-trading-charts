@@ -330,8 +330,10 @@ let suite = XCTestSuite(name: "Metal buffer ownership and scheduling")
 suite.addTest(BufferOwnershipTests.defaultTestSuite)
 suite.addTest(FrameSchedulingTests.defaultTestSuite)
 suite.addTest(PriceScaleChangeTests.defaultTestSuite)
+suite.addTest(MarkerRegistryTests.defaultTestSuite)
+suite.addTest(MarkerPressTests.defaultTestSuite)
 suite.run()
-guard let result = suite.testRun, result.executionCount == 12 else {
-  fatalError("Expected all twelve regression tests to run")
+guard let result = suite.testRun, result.executionCount == 18 else {
+  fatalError("Expected all eighteen regression tests to run")
 }
 exit(result.hasSucceeded ? 0 : 1)

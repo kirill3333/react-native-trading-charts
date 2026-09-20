@@ -91,6 +91,9 @@ internal data class YAxisValue(val price: Double, val paneIndex: Int)
 internal data class ChartFrame(
     val snapshot: ChartSnapshot,
     val contentVertices: ContentVertexBufferLease?,
+    val markerVertices: ContentVertexBufferLease? = null,
+    val markerHits: MarkerHitLease? = null,
+    val markerHitEpoch: Long = 0,
 )
 
 internal data class ChartSnapshot(
@@ -138,6 +141,8 @@ internal data class ChartSnapshot(
     val selectedChangePercent: Double,
     val selectedAmplitudePercent: Double,
     val selectedPercentagesValid: Boolean,
+    val markerRevision: Long = 0,
+    val markerBatches: DoubleArray = DoubleArray(0),
 )
 
 private object SnapshotMetaIndex {
@@ -216,6 +221,7 @@ internal object ChartEngineNative {
   init {
     System.loadLibrary("tradingcharts")
     validateTransportDescriptor(nativeTransportAbi())
+    validateMarkerTransport(nativeMarkerTransportAbi())
     val sentinel = seriesRoundTripSentinel()
     validateSeriesRoundTrip(
         nativeRoundTripSeriesPayload(sentinel.strings, sentinel.numbers, sentinel.colors)
@@ -223,6 +229,8 @@ internal object ChartEngineNative {
   }
 
   @JvmStatic private external fun nativeTransportAbi(): IntArray
+
+  @JvmStatic private external fun nativeMarkerTransportAbi(): IntArray
 
   @JvmStatic
   private external fun nativeRoundTripSeriesPayload(
@@ -352,6 +360,31 @@ internal object ChartEngineNative {
 
   @JvmStatic external fun nativeUpdateTrades(handle: Long, values: DoubleArray): Int
 
+  @JvmStatic
+  external fun nativeSetMarkers(
+      handle: Long,
+      strings: Array<String>,
+      numbers: DoubleArray,
+      replace: Boolean,
+  ): Boolean
+
+  @JvmStatic external fun nativeRemoveMarker(handle: Long, id: String): Boolean
+
+  @JvmStatic private external fun nativeAcquireMarkerHits(handle: Long): Long
+
+  @JvmStatic external fun nativeReleaseMarkerHits(handle: Long)
+
+  @JvmStatic external fun nativeHitMarker(handle: Long, x: Float, y: Float): String?
+
+  @JvmStatic private external fun nativeSnapshotMarkerRevision(handle: Long): Long
+
+  @JvmStatic private external fun nativeSnapshotMarkerVertexCount(handle: Long): Int
+
+  @JvmStatic
+  private external fun nativeCopySnapshotMarkerVertices(handle: Long, target: ByteBuffer): Int
+
+  @JvmStatic private external fun nativeSnapshotMarkerBatches(handle: Long): DoubleArray
+
   @JvmStatic external fun nativeClear(handle: Long)
 
   @JvmStatic external fun nativePan(handle: Long, delta: Float): Boolean
@@ -477,25 +510,53 @@ internal object ChartEngineNative {
       config: ChartConfig,
       previous: ChartSnapshot?,
       contentBuffers: ContentVertexBufferPool,
+      markerBuffers: ContentVertexBufferPool,
   ): ChartFrame? {
     val snapshot = nativeAcquireSnapshot(handle)
     check(snapshot != 0L) { "Unable to acquire chart snapshot" }
     var contentVertices: ContentVertexBufferLease? = null
+    var markerVertices: ContentVertexBufferLease? = null
+    var markerHits: MarkerHitLease? = null
     try {
       val contentRevision = nativeSnapshotContentRevision(snapshot)
       if (previous == null || previous.contentRevision != contentRevision) {
         contentVertices =
             copyContentVertices(snapshot, contentRevision, contentBuffers) ?: return null
       }
+      val markerRevision = nativeSnapshotMarkerRevision(snapshot)
+      val markersChanged = previous == null || previous.markerRevision != markerRevision
+      if (markersChanged) {
+        val count = nativeSnapshotMarkerVertexCount(snapshot)
+        check(count >= 0 && count % 8 == 0) { "Invalid marker vertex layout" }
+        markerVertices = markerBuffers.acquire(count, markerRevision) ?: return null
+        check(nativeCopySnapshotMarkerVertices(snapshot, markerVertices.writableBuffer()) == count)
+      }
+      val batches =
+          if (markersChanged) nativeSnapshotMarkerBatches(snapshot) else previous!!.markerBatches
+      check(batches.size % 3 == 0) { "Invalid marker batch layout" }
+      if (markersChanged) {
+        val hitHandle = nativeAcquireMarkerHits(snapshot)
+        check(hitHandle != 0L) { "Unable to retain marker hit snapshot" }
+        markerHits =
+            MarkerHitLease(hitHandle, markerRevision, ::nativeReleaseMarkerHits, ::nativeHitMarker)
+      }
       val frame =
           ChartFrame(
-              snapshot = buildSnapshot(snapshot, contentRevision, config),
+              snapshot =
+                  buildSnapshot(snapshot, contentRevision, config)
+                      .copy(markerRevision = markerRevision, markerBatches = batches),
+              markerVertices = markerVertices,
+              markerHits = markerHits,
               contentVertices = contentVertices,
           )
       contentVertices = null
+      markerVertices = null
+      markerHits = null
       return frame
     } finally {
       contentVertices?.release()
+      markerVertices?.release()
+      markerHits?.release()
       nativeReleaseSnapshot(snapshot)
     }
   }
