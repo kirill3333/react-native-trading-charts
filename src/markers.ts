@@ -11,7 +11,8 @@ export type MarkerMetadata = { readonly [key: string]: MarkerJsonValue };
 export type ChartMarker = {
   id: string;
   timestamp: number;
-  text: string;
+  text?: string;
+  variant?: string;
   position: 'above' | 'below';
   backgroundColor: string;
   textColor?: string;
@@ -102,6 +103,25 @@ const defaults = {
   offset: 6,
 } as const;
 
+export const MARKER_VARIANTS_ENABLED = true;
+
+function hasEnabledVariant(variant: string | undefined): boolean {
+  if (variant === undefined) return false;
+  if (variant.trim().length === 0) {
+    throw new TypeError('marker.variant must be a non-empty string');
+  }
+  return MARKER_VARIANTS_ENABLED;
+}
+
+function validateMarkerText(text: string | undefined, required: boolean): void {
+  if (!required) return;
+  if (!/^[\x20-\x7e]{1,5}$/.test(text ?? '') || !text?.trim()) {
+    throw new TypeError(
+      'marker.text must contain 1–5 printable ASCII characters and not be blank'
+    );
+  }
+}
+
 export function resolveMarker(marker: ChartMarker): ResolvedChartMarker {
   if (marker.id.trim().length === 0) {
     throw new TypeError('marker.id must be a non-empty string');
@@ -111,11 +131,8 @@ export function resolveMarker(marker: ChartMarker): ResolvedChartMarker {
       'marker.timestamp must be a non-negative integer in milliseconds'
     );
   }
-  if (!/^[\x20-\x7e]{1,5}$/.test(marker.text) || !marker.text.trim()) {
-    throw new TypeError(
-      'marker.text must contain 1–5 printable ASCII characters and not be blank'
-    );
-  }
+  const hasVariant = hasEnabledVariant(marker.variant);
+  validateMarkerText(marker.text, !hasVariant);
   if (marker.position !== 'above' && marker.position !== 'below') {
     throw new TypeError('marker.position must be above or below');
   }
@@ -124,7 +141,8 @@ export function resolveMarker(marker: ChartMarker): ResolvedChartMarker {
   const result: ResolvedChartMarker = {
     id: marker.id,
     timestamp: marker.timestamp,
-    text: marker.text,
+    text: marker.text ?? '',
+    variant: marker.variant ?? '',
     position: marker.position,
     backgroundColor: marker.backgroundColor,
     textColor: marker.textColor ?? '#FFFFFF',

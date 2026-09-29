@@ -27,10 +27,23 @@ describe('markers on market charts', () => {
         fontSize: 11,
       },
     ]);
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(6);
-    const stack = markers.slice(2);
-    expect(stack.map((marker) => marker.text)).toEqual(['1', '2', '3', '4']);
-    for (const marker of stack) {
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(11);
+    const stack = markers.slice(2, 7);
+    expect(stack[0]).toMatchObject({
+      id: 'example-buy',
+      timestamp: candles[24]!.timestamp,
+      variant: 'buy',
+      position: 'above',
+      backgroundColor: '#16A34A',
+    });
+    const glyphStack = stack.slice(1);
+    expect(glyphStack.map((marker) => marker.text)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    for (const marker of glyphStack) {
       expect(marker).toMatchObject({
         timestamp: candles[24]!.timestamp,
         position: 'above',
@@ -40,6 +53,36 @@ describe('markers on market charts', () => {
         borderRadius: 8,
       });
     }
+    expect(markers.slice(7)).toMatchObject([
+      {
+        id: 'example-sell',
+        timestamp: candles[26]!.timestamp,
+        variant: 'sell',
+        position: 'below',
+        backgroundColor: '#DC2626',
+      },
+      {
+        id: 'example-signal',
+        timestamp: candles[31]!.timestamp,
+        variant: 'signal',
+        position: 'above',
+        backgroundColor: '#4F46E5',
+      },
+      {
+        id: 'example-arrow',
+        timestamp: candles[37]!.timestamp,
+        variant: 'arrow',
+        position: 'above',
+        backgroundColor: '#0EA5E9',
+      },
+      {
+        id: 'example-image',
+        timestamp: candles[41]!.timestamp,
+        variant: 'image',
+        position: 'below',
+        backgroundColor: '#F59E0B',
+      },
+    ]);
   });
 
   it('handles empty or short history without inventing timestamps', () => {

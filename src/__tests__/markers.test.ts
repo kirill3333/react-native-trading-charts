@@ -1,7 +1,13 @@
 import { describe, expect, it } from '@jest/globals';
-import { resolveMarker, resolveMarkers, type ChartMarker } from '../markers';
+import {
+  resolveMarker,
+  resolveMarkers,
+  type ChartMarker,
+  type MarkerJsonValue,
+  type MarkerMetadata,
+} from '../markers';
 import { markerPressFromNativeEvent } from '../events';
-import { type MarkerMetadata, type MarkerJsonValue } from '../markers';
+import { MarkerVariant } from '../MarkerVariant';
 import { createTradingCharts } from '../TradingCharts';
 import { createMockNativeModule } from '../__fixtures__/nativeModule';
 
@@ -13,10 +19,45 @@ const marker: ChartMarker = {
   backgroundColor: '#40B783',
 };
 
+describe('MarkerVariant', () => {
+  it('marks an absolute non-collapsable native view with its variant name', () => {
+    expect(MarkerVariant({ name: 'buy', children: 'B' })).toMatchObject({
+      props: {
+        nativeID: 'marker-variant:buy',
+        collapsable: false,
+        style: [undefined, { position: 'absolute' }],
+        children: 'B',
+      },
+    });
+  });
+
+  it('applies view styles without allowing chart-layout participation', () => {
+    expect(
+      MarkerVariant({
+        name: 'buy',
+        children: 'B',
+        style: { backgroundColor: '#40B783', height: 24, width: 24 },
+      })
+    ).toMatchObject({
+      props: {
+        style: [
+          { backgroundColor: '#40B783', height: 24, width: 24 },
+          { position: 'absolute' },
+        ],
+      },
+    });
+  });
+
+  it.each(['', '   '])('rejects invalid name %j', (name) => {
+    expect(() => MarkerVariant({ name, children: null })).toThrow('non-empty');
+  });
+});
+
 describe('markers', () => {
   it('resolves complete immutable defaults', () => {
     expect(resolveMarker(marker)).toEqual({
       ...marker,
+      variant: '',
       textColor: '#FFFFFF',
       borderColor: '#40B783',
       borderWidth: 0,
@@ -40,6 +81,38 @@ describe('markers', () => {
       expect(() => resolveMarker({ ...marker, text })).toThrow();
     }
   );
+  it('resolves a named variant without text and preserves marker defaults', () => {
+    const resolved = resolveMarker({
+      id: 'variant',
+      timestamp: 60_000,
+      variant: 'buy',
+      position: 'below',
+      backgroundColor: '#40B783',
+    });
+    expect(resolved).toEqual({
+      id: 'variant',
+      timestamp: 60_000,
+      text: '',
+      variant: 'buy',
+      position: 'below',
+      backgroundColor: '#40B783',
+      textColor: '#FFFFFF',
+      borderColor: '#40B783',
+      borderWidth: 0,
+      borderRadius: 6,
+      fontSize: 14,
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+      minWidth: 24,
+      minHeight: 24,
+      offset: 6,
+    });
+  });
+  it.each(['', '   '])('rejects invalid variant %j', (variant) => {
+    expect(() => resolveMarker({ ...marker, variant })).toThrow(
+      'marker.variant'
+    );
+  });
   it.each([7, 28])(
     'scales default badge dimensions with font size %i',
     (fontSize) => {

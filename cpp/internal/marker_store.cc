@@ -13,13 +13,20 @@
 namespace trading_charts {
 
 bool IsValidMarker(const Marker& marker) {
-  if (marker.id.empty() || marker.text.empty() || marker.text.size() > 5 ||
-      marker.text.find_first_not_of(' ') == std::string::npos) {
+  const bool variant = kMarkerVariantsEnabled && marker.variant_id >= 0;
+  if (marker.id.empty() || marker.variant_id < -1 ||
+      marker.variant_id >= kMarkerVariantCapacity) {
     return false;
   }
-  for (char character : marker.text) {
-    if (character < 32 || character > 126) {
+  if (!variant) {
+    if (marker.text.empty() || marker.text.size() > 5 ||
+        marker.text.find_first_not_of(' ') == std::string::npos) {
       return false;
+    }
+    for (char character : marker.text) {
+      if (character < 32 || character > 126) {
+        return false;
+      }
     }
   }
   for (double value : marker.values) {

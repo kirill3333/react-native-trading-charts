@@ -217,6 +217,53 @@ std::shared_ptr<const MarkerSnapshot> BuildMarkers(
     const float x = plot.left + static_cast<float>((domain - domain_min) /
                                                    (domain_max - domain_min)) *
                                     plot.Width();
+    if constexpr (kMarkerVariantsEnabled) {
+      if (marker.variant_id >= 0) {
+        const bool below = marker.Get(MarkerField::kBelow) != 0.0;
+        const size_t side = below ? 1 : 0;
+        const float distance = std::max(stack[side], dim(MarkerField::kOffset));
+        const float size = kMarkerVariantCell * scale;
+        const float top = below ? project_y(candle->low) + distance
+                                : project_y(candle->high) - distance - size;
+        stack[side] = distance + size + 4.0f * scale;
+        const Rect box{x - size / 2.0f, top, x + size / 2.0f, top + size};
+        if (box.right <= plot.left || box.left >= plot.right ||
+            box.bottom <= plot.top || box.top >= plot.bottom) {
+          continue;
+        }
+        if (!std::isfinite(size) || !std::isfinite(top)) {
+          continue;
+        }
+        const float left = std::max(box.left, plot.left);
+        const float clipped_top = std::max(box.top, plot.top);
+        const float right = std::min(box.right, plot.right);
+        const float bottom = std::min(box.bottom, plot.bottom);
+        const float inset = 0.5f / kMarkerVariantCell;
+        const float atlas_u0 = (static_cast<float>(marker.variant_id) + inset) /
+                               static_cast<float>(kMarkerVariantCapacity);
+        const float atlas_u1 =
+            (static_cast<float>(marker.variant_id) + 1.0f - inset) /
+            static_cast<float>(kMarkerVariantCapacity);
+        const float atlas_v0 = inset;
+        const float atlas_v1 = 1.0f - inset;
+        const float u0 =
+            atlas_u0 + (left - box.left) / size * (atlas_u1 - atlas_u0);
+        const float u1 =
+            atlas_u0 + (right - box.left) / size * (atlas_u1 - atlas_u0);
+        const float v0 =
+            atlas_v0 + (clipped_top - box.top) / size * (atlas_v1 - atlas_v0);
+        const float v1 =
+            atlas_v0 + (bottom - box.top) / size * (atlas_v1 - atlas_v0);
+        const std::array<float, 6 * kMarkerVariantFloatsPerVertex> vertices{
+            left,  clipped_top, u0, v0, right, clipped_top, u1, v0,
+            right, bottom,      u1, v1, left,  clipped_top, u0, v0,
+            right, bottom,      u1, v1, left,  bottom,      u0, v1};
+        out->variant_vertices.insert(out->variant_vertices.end(),
+                                     vertices.begin(), vertices.end());
+        ++out->visible_count;
+        continue;
+      }
+    }
     const float width = std::max(
         dim(MarkerField::kMinWidth),
         dim(MarkerField::kAdvance) * static_cast<float>(marker.text.size()) +

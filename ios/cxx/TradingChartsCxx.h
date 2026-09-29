@@ -163,6 +163,15 @@ class RenderSnapshotHandle {
   const float* MarkerVerticesData() const {
     return MarkerVertexCount() ? snapshot_->markers->vertices.data() : nullptr;
   }
+  size_t VariantVertexCount() const {
+    return snapshot_ && snapshot_->markers
+        ? snapshot_->markers->variant_vertices.size()
+        : 0;
+  }
+  const float* VariantVerticesData() const {
+    return VariantVertexCount() ? snapshot_->markers->variant_vertices.data()
+                                : nullptr;
+  }
   size_t MarkerBatchCount() const {
     return snapshot_ && snapshot_->markers
         ? snapshot_->markers->batches.size() : 0;
@@ -276,11 +285,13 @@ inline RenderSnapshotHandle Snapshot(ChartEngineHandle& engine) {
 // functions. Swift wraps them in non-escaping closures and keeps the handle
 // alive for the entire call.
 inline void AppendMarker(MarkerVector* markers, const std::string& id,
-                         const std::string& text, const double* values,
-                         size_t count, const std::string& descriptor) {
+                         const std::string& text, int variant_id,
+                         const double* values, size_t count,
+                         const std::string& descriptor) {
   Marker marker;
   marker.id = id;
   marker.text = text;
+  marker.variant_id = variant_id;
   marker.descriptor = std::make_shared<const std::string>(descriptor);
   if (values && count == kMarkerValueCount) {
     std::copy_n(values, count, marker.values.begin());
@@ -290,6 +301,18 @@ inline void AppendMarker(MarkerVector* markers, const std::string& id,
 
 inline const float* MarkerVerticesData(const RenderSnapshotHandle& snapshot) {
   return snapshot.MarkerVerticesData();
+}
+
+inline const float* VariantVerticesData(const RenderSnapshotHandle& snapshot) {
+  return snapshot.VariantVerticesData();
+}
+
+inline int MarkerVariantCapacity() { return kMarkerVariantCapacity; }
+
+inline float MarkerVariantCell() { return kMarkerVariantCell; }
+
+inline size_t MarkerVariantFloatsPerVertex() {
+  return kMarkerVariantFloatsPerVertex;
 }
 
 inline const float* ContentVerticesData(const RenderSnapshotHandle& snapshot) {

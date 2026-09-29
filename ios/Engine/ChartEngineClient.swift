@@ -79,6 +79,7 @@ struct ChartRenderFrame {
   }
   var markerRevision: UInt64 { handle.MarkerRevision() }
   var markerVertexCount: Int { Int(handle.MarkerVertexCount()) }
+  var variantVertexCount: Int { Int(handle.VariantVertexCount()) }
   var markerBatchCount: Int { Int(handle.MarkerBatchCount()) }
   func markerBatch(at index: Int) -> ChartMarkerBatch {
     let batch = handle.MarkerBatchAt(index)
@@ -92,6 +93,14 @@ struct ChartRenderFrame {
     try withExtendedLifetime(handle) {
       let pointer = trading_charts.swift_interop.MarkerVerticesData(handle)
       return try body(UnsafeBufferPointer(start: pointer, count: markerVertexCount))
+    }
+  }
+  func withVariantVertices<Result>(
+    _ body: (UnsafeBufferPointer<Float>) throws -> Result
+  ) rethrows -> Result {
+    try withExtendedLifetime(handle) {
+      let pointer = trading_charts.swift_interop.VariantVerticesData(handle)
+      return try body(UnsafeBufferPointer(start: pointer, count: variantVertexCount))
     }
   }
   var contentRevision: UInt64 { handle.ContentRevision() }
@@ -171,6 +180,12 @@ struct ChartRenderFrame {
 }
 
 final class ChartEngineClient {
+  static let markerVariantCapacity = Int(trading_charts.swift_interop.MarkerVariantCapacity())
+  static let markerVariantCell = trading_charts.swift_interop.MarkerVariantCell()
+  static let markerVariantFloatsPerVertex = Int(
+    trading_charts.swift_interop.MarkerVariantFloatsPerVertex()
+  )
+
   private var handle = trading_charts.swift_interop.ChartEngineHandle()
 
   func setConfig(_ config: NativeChartConfig) {
@@ -223,8 +238,8 @@ final class ChartEngineClient {
     for marker in markers {
       marker.values.withUnsafeBufferPointer { values in
         trading_charts.swift_interop.AppendMarker(
-          &packed, nativeString(marker.id), nativeString(marker.text), values.baseAddress, values.count,
-          nativeString(marker.descriptor)
+          &packed, nativeString(marker.id), nativeString(marker.text), Int32(marker.variantId),
+          values.baseAddress, values.count, nativeString(marker.descriptor)
         )
       }
     }

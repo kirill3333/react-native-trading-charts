@@ -39,6 +39,35 @@ using namespace facebook::react;
   return self;
 }
 
+#if MARKER_VARIANTS
+  static NSString *const kMarkerVariantPrefix = @"marker-variant:";
+
+  - (void)mountChildComponentView:
+              (UIView<RCTComponentViewProtocol> *)childComponentView
+                            index:(NSInteger)index {
+    if ([childComponentView isKindOfClass:[RCTViewComponentView class]]) {
+      NSString *nativeId =
+          ((RCTViewComponentView *)childComponentView).nativeId;
+      if ([nativeId hasPrefix:kMarkerVariantPrefix]) {
+        NSString *name =
+            [nativeId substringFromIndex:kMarkerVariantPrefix.length];
+        [_host mountVariantTemplate:childComponentView name:name];
+        return;
+      }
+    }
+    [super mountChildComponentView:childComponentView index:index];
+  }
+
+  - (void)unmountChildComponentView:
+              (UIView<RCTComponentViewProtocol> *)childComponentView
+                              index:(NSInteger)index {
+    if ([_host unmountVariantTemplate:childComponentView]) {
+      return;
+    }
+    [super unmountChildComponentView:childComponentView index:index];
+  }
+#endif
+
 - (void)updateProps:(Props::Shared const &)props
            oldProps:(Props::Shared const &)oldProps {
   const auto &oldViewProps =
