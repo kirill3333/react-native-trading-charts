@@ -11,10 +11,17 @@ public final class ChartHostView: UIView {
 
   private let markerPress = ChartMarkerPressState<ChartRenderFrame> { $0.hitMarker(at: $1) }
   private let engine = ChartEngineClient()
-  private let markerDecoder = ChartMarkerDecoder()
+  private let markerDecoder: ChartMarkerDecoder
   private let metalView: MTKView
   private let renderer: ChartMetalRenderer
   private let overlay = ChartOverlayView(frame: .zero)
+  #if MARKER_VARIANTS
+    private let markerVariantAtlas: ChartMarkerVariantAtlas
+    private let templateContainer = UIView(frame: .zero)
+    private var pendingVariantTemplates: [String: UIView] = [:]
+    private var markerVariantTemplateProcessingScheduled = false
+    private var markerVariantTemplateGeneration: UInt64 = 0
+  #endif
   private let scheduler = ChartFrameScheduler()
   private let momentum = ChartMomentumController()
   private let realTimeScroll = ChartRealTimeScrollController()
@@ -26,9 +33,20 @@ public final class ChartHostView: UIView {
   private var forceNextDraw = true
 
   public override init(frame: CGRect) {
-    let metalView = MTKView(frame: frame, device: MTLCreateSystemDefaultDevice())
+    guard let device = MTLCreateSystemDefaultDevice() else {
+      fatalError("TradingCharts requires Metal")
+    }
+    let metalView = MTKView(frame: frame, device: device)
     self.metalView = metalView
-    self.renderer = ChartMetalRenderer(view: metalView)
+    #if MARKER_VARIANTS
+      let markerVariantAtlas = ChartMarkerVariantAtlas(device: device)
+      self.markerVariantAtlas = markerVariantAtlas
+      self.markerDecoder = ChartMarkerDecoder(markerVariantAtlas: markerVariantAtlas)
+      self.renderer = ChartMetalRenderer(view: metalView, markerVariantAtlas: markerVariantAtlas)
+    #else
+      self.markerDecoder = ChartMarkerDecoder()
+      self.renderer = ChartMetalRenderer(view: metalView)
+    #endif
     super.init(frame: frame)
 
     metalView.colorPixelFormat = .bgra8Unorm
@@ -36,6 +54,13 @@ public final class ChartHostView: UIView {
     metalView.isPaused = true
     metalView.enableSetNeedsDisplay = true
     metalView.delegate = renderer
+    #if MARKER_VARIANTS
+      templateContainer.isHidden = true
+      templateContainer.alpha = 0.01
+      templateContainer.isUserInteractionEnabled = false
+      templateContainer.accessibilityElementsHidden = true
+      addSubview(templateContainer)
+    #endif
     addSubview(metalView)
     addSubview(overlay)
 
@@ -100,10 +125,86 @@ public final class ChartHostView: UIView {
 
   public override func layoutSubviews() {
     super.layoutSubviews()
+    #if MARKER_VARIANTS
+      templateContainer.frame = bounds
+      if !pendingVariantTemplates.isEmpty {
+        // Retry templates that were waiting for non-zero bounds.
+        scheduleMarkerVariantTemplateProcessing()
+      }
+    #endif
     metalView.frame = bounds
     overlay.frame = bounds
     engine.setSize(width: Float(bounds.width), height: Float(bounds.height))
     requestFrame()
+  }
+
+  @objc(mountVariantTemplate:name:)
+  public func mountVariantTemplate(_ view: UIView, name: String) {
+    templateContainer.addSubview(view)
+    guard markerVariantAtlas.mount(view, name: name) else {
+      // If multiple marker templates mount with the same variant name, skip duplicates.
+      return
+    }
+    pendingVariantTemplates[name] = view
+    templateContainer.isHidden = false
+    setNeedsLayout()
+    // Wait for Fabric to finish mounting the template's children.
+    scheduleMarkerVariantTemplateProcessing()
+  }
+
+  @objc(unmountVariantTemplate:)
+  public func unmountVariantTemplate(_ view: UIView) -> Bool {
+    guard view.superview === templateContainer else { return false }
+    if let name = markerVariantAtlas.unmount(view), pendingVariantTemplates[name] === view {
+      pendingVariantTemplates.removeValue(forKey: name)
+    }
+    view.removeFromSuperview()
+    templateContainer.isHidden = pendingVariantTemplates.isEmpty
+    return true
+  }
+
+  @discardableResult
+  private func fillPendingVariantTemplates() -> Bool {
+    guard !pendingVariantTemplates.isEmpty else { return false }
+    var completed: [String] = []
+    var wasTextureFilled = false
+    for (name, view) in pendingVariantTemplates {
+      switch markerVariantAtlas.fill(view, name: name, scale: metalView.contentScaleFactor) {
+      case .filled:
+        completed.append(name)
+        wasTextureFilled = true
+        forceNextDraw = true
+      case .failed:
+        completed.append(name)
+      case .pendingLayout:
+        break
+      }
+    }
+    completed.forEach { pendingVariantTemplates.removeValue(forKey: $0) }
+    templateContainer.isHidden = pendingVariantTemplates.isEmpty
+    return wasTextureFilled
+  }
+
+  private func scheduleMarkerVariantTemplateProcessing() {
+    // Skip scheduling if marker template processing is already queued.
+    guard !markerVariantTemplateProcessingScheduled else { return }
+    markerVariantTemplateProcessingScheduled = true
+    let generation = markerVariantTemplateGeneration
+
+    // Run after the current Fabric mounting work finishes.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.markerVariantTemplateGeneration == generation else { return }
+      self.markerVariantTemplateProcessingScheduled = false
+      self.processMarkerVariantTemplates()
+    }
+  }
+
+  private func processMarkerVariantTemplates() {
+    let wasTextureFilled = fillPendingVariantTemplates()
+    markerVariantAtlas.logUnmatchedTemplates()
+    if wasTextureFilled {
+      requestFrame()
+    }
   }
 
   public override func didMoveToWindow() {
@@ -252,12 +353,20 @@ public final class ChartHostView: UIView {
   @objc(setMarkerJson:replace:)
   public func setMarkerJson(_ json: String, replace: Bool) {
     guard let markers = markerDecoder.decode(json, replace: replace) else { return }
+    #if MARKER_VARIANTS
+      if markers.contains(where: { $0.variantId >= 0 }) {
+        // Check for variant names that have no mounted template.
+        scheduleMarkerVariantTemplateProcessing()
+      }
+    #endif
     if engine.setMarkers(markers, replace: replace) { requestFrame() }
   }
+
   @objc(removeMarker:)
   public func removeMarker(_ id: String) {
     if engine.removeMarker(id) { requestFrame() }
   }
+
   @objc public func clearMarkers() {
     if engine.clearMarkers() { requestFrame() }
   }
@@ -338,6 +447,15 @@ public final class ChartHostView: UIView {
     events.reset()
     scheduler.suspend()
     forceNextDraw = true
+    #if MARKER_VARIANTS
+      // Cancel pending template processing during recycle.
+      markerVariantTemplateGeneration &+= 1
+      markerVariantTemplateProcessingScheduled = false
+      for template in templateContainer.subviews { template.removeFromSuperview() }
+      pendingVariantTemplates.removeAll(keepingCapacity: true)
+      markerVariantAtlas.clearMountedTemplates()
+      templateContainer.isHidden = true
+    #endif
 
     // Replace retained presentation state without disturbing in-flight readers.
     let frame = engine.snapshot()

@@ -7,6 +7,8 @@ export type {
 } from './markers';
 export { TradingCharts } from './TradingCharts';
 export { TradingChartsView } from './TradingChartsView';
+export { MarkerVariant } from './MarkerVariant';
+export type { MarkerVariantProps } from './MarkerVariant';
 export { createTradeBatcher } from './tradeBatcher';
 export type { TradeBatcher, TradeBatcherOptions } from './tradeBatcher';
 export type {

@@ -24,6 +24,8 @@ Pod::Spec.new do |s|
     "HEADER_SEARCH_PATHS" => "$(inherited) $(PODS_TARGET_SRCROOT)",
     "SWIFT_INCLUDE_PATHS" => "$(inherited) $(PODS_TARGET_SRCROOT)/ios/cxx",
     "SWIFT_OBJC_INTEROP_MODE" => "objcxx",
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS" => "$(inherited) MARKER_VARIANTS",
+    "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited) MARKER_VARIANTS=1",
     "DEFINES_MODULE" => "YES"
   }
 

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 import {
+  MarkerVariant,
   TradingChartsView,
   TradingCharts,
   type AdditionalChartSeriesOptions,
@@ -26,7 +27,7 @@ import {
   shouldUseSignificantPriceFormat,
 } from '../chartSettingsConfig';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
-import { buildExampleMarkers } from '../chartMarkers';
+import { buildExampleMarkers, MARKER_VARIANTS_ENABLED } from '../chartMarkers';
 import { APP_THEMES } from '../theme';
 
 type InteractiveChartProps = {
@@ -176,10 +177,104 @@ export const InteractiveChart = memo(function InteractiveChart({
       resolution={resolution}
       xAxis={chartConfig.xAxis}
       yAxis={chartConfig.yAxis}
-    />
+    >
+      {MARKER_VARIANTS_ENABLED && (
+        <>
+          <MarkerVariant name="buy" style={styles.buyMarker}>
+            <Text style={styles.markerText}>B</Text>
+          </MarkerVariant>
+
+          <MarkerVariant name="sell" style={styles.sellMarker}>
+            <Text style={styles.markerText}>S</Text>
+          </MarkerVariant>
+
+          <MarkerVariant name="signal" style={styles.signalMarker}>
+            <Text style={styles.signalMarkerEmoji}>🚀</Text>
+          </MarkerVariant>
+
+          <MarkerVariant name="arrow" style={styles.arrowMarker}>
+            <View style={styles.arrowMarkerTop} />
+            <View style={styles.arrowMarkerBottom} />
+            <Text style={styles.arrowMarkerText}>x</Text>
+          </MarkerVariant>
+
+          <MarkerVariant name="image" style={styles.imageMarker}>
+            <Image
+              source={require('../assets/images/bull-market.png')}
+              style={styles.image}
+            />
+          </MarkerVariant>
+        </>
+      )}
+    </TradingChartsView>
   );
 });
 
 const styles = StyleSheet.create({
   chart: { flex: 1 },
+  buyMarker: {
+    alignItems: 'center',
+    backgroundColor: '#16A34A',
+    borderRadius: 12,
+    height: 23,
+    justifyContent: 'center',
+    width: 23,
+  },
+  markerText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 12 },
+  sellMarker: {
+    alignItems: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    height: 23,
+    justifyContent: 'center',
+    width: 23,
+  },
+  signalMarker: {
+    alignItems: 'center',
+    backgroundColor: '#4F46E5',
+    borderRadius: 6,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  signalMarkerEmoji: { fontSize: 12 },
+  arrowMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    height: 24,
+    width: 24,
+  },
+  arrowMarkerTop: {
+    backgroundColor: '#0EA5E9',
+    height: 10,
+    width: 10,
+    transform: [{ translateY: 5 }, { rotate: '45deg' }],
+  },
+  arrowMarkerBottom: {
+    backgroundColor: '#0EA5E9',
+    height: 12,
+    width: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowMarkerText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    position: 'absolute',
+    paddingTop: 5,
+  },
+  imageMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    borderRadius: 6,
+    height: 24,
+    width: 24,
+  },
+  image: {
+    height: 20,
+    width: 20,
+    resizeMode: 'contain',
+  },
 });

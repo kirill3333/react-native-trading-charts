@@ -53,11 +53,16 @@ static_assert(static_cast<size_t>(MarkerField::kCount) == kMarkerValueCount);
 inline constexpr size_t kMarkerFloatsPerVertex = 8;
 inline constexpr int kMarkerAtlasColumns = 16;
 inline constexpr int kMarkerAtlasRows = 6;
+inline constexpr bool kMarkerVariantsEnabled = true;
+inline constexpr int kMarkerVariantCapacity = 8;
+inline constexpr float kMarkerVariantCell = 24.0f;
+inline constexpr size_t kMarkerVariantFloatsPerVertex = 4;
 
 struct Marker {
   std::string id;
   std::string text;
   std::array<double, kMarkerValueCount> values{};
+  int variant_id = -1;
   std::shared_ptr<const std::string> descriptor;
   double Get(MarkerField field) const {
     return values[static_cast<size_t>(field)];
@@ -67,6 +72,7 @@ struct Marker {
   }
   bool operator==(const Marker& other) const {
     return id == other.id && text == other.text && values == other.values &&
+           variant_id == other.variant_id &&
            (descriptor == other.descriptor ||
             (descriptor && other.descriptor &&
              *descriptor == *other.descriptor));
@@ -114,6 +120,8 @@ struct MarkerSnapshot {
   // x, y, u, v, r, g, b, a. UVs refer to a 16x6 atlas, cell 95 is white.
   std::vector<float> vertices;
   std::vector<MarkerDrawBatch> batches;
+  // x, y, u, v. UVs refer to one row of kMarkerVariantCapacity cells.
+  std::vector<float> variant_vertices;
   size_t visible_count = 0;
   std::vector<HitRegion> hit_regions;
 };
