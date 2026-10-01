@@ -62,7 +62,11 @@ export function MarketsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
-        <MarketsHeader onChange={setProvider} provider={provider} />
+        <MarketsHeader
+          onChange={setProvider}
+          provider={provider}
+          onOpenSynthetic={() => navigation.navigate('SyntheticChart')}
+        />
         <MarketsContent
           error={tickersQuery.error}
           isError={tickersQuery.isError}

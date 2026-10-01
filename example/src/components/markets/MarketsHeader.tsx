@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 
 import { type MarketProvider } from '../../api/marketData';
 import { APP_THEMES, type AppThemeColors } from '../../theme';
@@ -12,41 +13,63 @@ const MARKET_PROVIDERS = [
 type MarketsHeaderProps = {
   provider: MarketProvider;
   onChange: (provider: MarketProvider) => void;
+  onOpenSynthetic: () => void;
 };
 
-export function MarketsHeader({ provider, onChange }: MarketsHeaderProps) {
+export function MarketsHeader({
+  provider,
+  onChange,
+  onOpenSynthetic,
+}: MarketsHeaderProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
 
   return (
     <View style={styles.marketsHeader}>
-      <View accessibilityRole="tablist" style={styles.providerTabs}>
-        {MARKET_PROVIDERS.map((item) => {
-          const selected = item === provider;
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              key={item}
-              onPress={() => onChange(item)}
-              style={({ pressed }) => [
-                styles.providerTab,
-                selected && styles.providerTabSelected,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text
-                style={
-                  selected
-                    ? styles.providerTabTextSelected
-                    : styles.providerTabText
-                }
+      <View style={styles.providerRow}>
+        <View accessibilityRole="tablist" style={styles.providerTabs}>
+          {MARKET_PROVIDERS.map((item) => {
+            const selected = item === provider;
+            return (
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                key={item}
+                onPress={() => onChange(item)}
+                style={({ pressed }) => [
+                  styles.providerTab,
+                  selected && styles.providerTabSelected,
+                  pressed && styles.pressed,
+                ]}
               >
-                {item === 'binance' ? 'Binance' : 'Hyperliquid'}
-              </Text>
-            </Pressable>
-          );
-        })}
+                <Text
+                  style={
+                    selected
+                      ? styles.providerTabTextSelected
+                      : styles.providerTabText
+                  }
+                >
+                  {item === 'binance' ? 'Binance' : 'Hyperliquid'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable
+          accessibilityLabel="Open synthetic chart"
+          accessibilityRole="button"
+          onPress={onOpenSynthetic}
+          style={({ pressed }) => [
+            styles.syntheticButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <MaterialIcons
+            name="science"
+            size={24}
+            color={theme.colors.accentText}
+          />
+        </Pressable>
       </View>
       <Text style={styles.screenTitle}>Markets</Text>
       <Text style={styles.screenSubtitle}>
@@ -71,8 +94,19 @@ function createStyles(colors: AppThemeColors) {
       borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
-      marginBottom: 20,
+      flex: 1,
       padding: 3,
+    },
+    providerRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+    syntheticButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 44,
+      minHeight: 44,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.borderSubtle,
+      borderWidth: StyleSheet.hairlineWidth,
     },
     providerTab: {
       alignItems: 'center',
