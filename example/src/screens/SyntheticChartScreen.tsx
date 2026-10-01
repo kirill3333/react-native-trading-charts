@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { type ChartResolution } from 'react-native-trading-charts';
 
+import { SyntheticPerformancePanel } from '../components/synthetic/SyntheticPerformancePanel';
 import { SyntheticChartToolbar } from '../components/synthetic/SyntheticChartToolbar';
 import { SyntheticLoadingOverlay } from '../components/synthetic/SyntheticLoadingOverlay';
 import { ChartHeader } from '../components/ChartHeader';
@@ -56,20 +57,20 @@ export function SyntheticChartScreen() {
       header={
         <ChartHeader
           baseAsset="Synthetic"
-          venueLabel="Generated trades · 1 second candles"
-          price={feed.lastPrice}
-          pricePrecision={precision}
           onBack={() => navigation.goBack()}
         />
       }
       toolbar={
-        <SyntheticChartToolbar
-          candleCount={feed.candleCount}
-          eventsPerSecond={settings.eventsPerSecond}
-          error={feed.error}
-          onOpenSettings={openSettings}
-          onRetry={retry}
-        />
+        <>
+          <SyntheticChartToolbar
+            candleCount={feed.candleCount}
+            eventsPerSecond={settings.eventsPerSecond}
+            error={feed.error}
+            onOpenSettings={openSettings}
+            onRetry={retry}
+          />
+          <SyntheticPerformancePanel chartId={chartId} />
+        </>
       }
     >
       <InteractiveChart

@@ -371,6 +371,10 @@ describe('useChartDataFeed', () => {
 
     await act(async () => {
       resolveNextHistory([nextCandle]);
+      await nextHistory;
+    });
+    // Let React commit the new query result before flushing its notifications.
+    await act(async () => {
       await flushQueries();
     });
     expect(feed!.allTimeExtremes).toEqual({ high: 24, low: 18 });

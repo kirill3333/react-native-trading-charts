@@ -30,6 +30,16 @@ target 'TradingChartsExample' do
   )
 
   post_install do |installer|
+    installer.pods_project.targets.each do |pod_target|
+      next unless pod_target.name == 'TradingCharts'
+      pod_target.build_configurations.each do |build_config|
+        settings = build_config.build_settings
+        settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] =
+          Array(settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] || '$(inherited)') + ['TRADING_CHARTS_EXAMPLE_DIAGNOSTICS']
+        settings['GCC_PREPROCESSOR_DEFINITIONS'] =
+          Array(settings['GCC_PREPROCESSOR_DEFINITIONS'] || '$(inherited)') + ['TRADING_CHARTS_EXAMPLE_DIAGNOSTICS=1']
+      end
+    end
     react_native_post_install(
       installer,
       config[:reactNativePath],

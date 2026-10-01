@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.SurfaceHolder
 import android.widget.FrameLayout
 import android.widget.OverScroller
 import com.facebook.react.bridge.LifecycleEventListener
@@ -45,6 +46,24 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         setRenderer(renderer)
         renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         isClickable = false
+        renderer.diagnostics?.let { owner ->
+          holder.addCallback(
+              object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) = Unit
+
+                override fun surfaceChanged(
+                    holder: SurfaceHolder,
+                    format: Int,
+                    width: Int,
+                    height: Int,
+                ) = Unit
+
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                  ChartRenderingDiagnostics.surface(owner, 0, false)
+                }
+              }
+          )
+        }
       }
   private val overlay = ChartOverlayView(context)
   private val frameScheduled = AtomicBoolean(false)
@@ -53,6 +72,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var config = ChartConfig()
   private var registeredChartId: String? = null
   private var pendingChartId: String? = null
+  private var diagnosticsResumed = true
   private var disposed = false
   private var crosshairPinned = false
   private var crosshairGestureActive = false
@@ -330,6 +350,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       if (next == registeredChartId) return@post
       registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
       registeredChartId = next
+      updateDiagnostics()
       next?.let { TradingChartsRegistry.register(this, it) }
     }
   }
@@ -797,11 +818,13 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         TradingChartsRegistry.register(this, id)
       }
     }
+    updateDiagnostics()
     scheduleFrame()
   }
 
   override fun onWindowVisibilityChanged(visibility: Int) {
     super.onWindowVisibilityChanged(visibility)
+    updateDiagnostics()
     if (visibility != VISIBLE) {
       stopFling()
       realTimeScroll.stop()
@@ -809,6 +832,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   }
 
   override fun onDetachedFromWindow() {
+    renderer.diagnostics?.let { ChartRenderingDiagnostics.bind(it, null, false) }
     priceScaleChanges.clear()
     realTimeScroll.stop()
     stopFling()
@@ -827,6 +851,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     stopFling()
     priceScaleChanges.clear()
     disposed = true
+    renderer.diagnostics?.let(ChartRenderingDiagnostics::dispose)
     renderer.clearPending()
     (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)
     registeredChartId?.let { TradingChartsRegistry.unregister(this, it) }
@@ -834,14 +859,28 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     ChartEngineNative.nativeDestroy(engineHandle)
   }
 
+  private fun updateDiagnostics() {
+    renderer.diagnostics?.let {
+      ChartRenderingDiagnostics.bind(
+          it,
+          registeredChartId,
+          !disposed && isAttachedToWindow && windowVisibility == VISIBLE && diagnosticsResumed,
+      )
+    }
+  }
+
   private val lifecycleListener =
       object : LifecycleEventListener {
         override fun onHostResume() {
+          diagnosticsResumed = true
+          updateDiagnostics()
           plotView.onResume()
           scheduleFrame()
         }
 
         override fun onHostPause() {
+          diagnosticsResumed = false
+          updateDiagnostics()
           stopFling()
           realTimeScroll.stop()
           plotView.onPause()

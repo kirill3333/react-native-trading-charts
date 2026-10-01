@@ -10,6 +10,22 @@ private struct MetalUniforms {
 }
 
 final class ChartMetalRenderer: NSObject, MTKViewDelegate {
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
+  private let diagnosticsOwner = UUID().uuidString
+  var diagnosticsChartId: String? { didSet { updateDiagnosticsConnection() } }
+  var diagnosticsAttached = false { didSet { updateDiagnosticsConnection() } }
+
+  private func updateDiagnosticsConnection() {
+#if !targetEnvironment(simulator)
+    ChartPresentationDiagnostics.shared.connect(
+      owner: diagnosticsOwner, chartId: diagnosticsAttached ? diagnosticsChartId : nil
+    )
+#endif
+  }
+
+  deinit { ChartPresentationDiagnostics.shared.connect(owner: diagnosticsOwner, chartId: nil) }
+#endif
+
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue?
   private var pipeline: MTLRenderPipelineState?
@@ -174,6 +190,11 @@ final class ChartMetalRenderer: NSObject, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: frame.overlayVertexCount / 6)
       }
       encoder.endEncoding()
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS && !targetEnvironment(simulator)
+      if let handler = ChartPresentationDiagnostics.shared.presentationHandler(owner: diagnosticsOwner) {
+        drawable.addPresentedHandler { handler($0.presentedTime) }
+      }
+#endif
       command.present(drawable)
       command.addCompletedHandler { [contentPool, overlayPool, flightState, frame] command in
         if command.status == .error {
