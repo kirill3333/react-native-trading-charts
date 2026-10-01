@@ -1,13 +1,33 @@
 import {
   createStaticNavigation,
   type StaticParamList,
+  type ParamListBase,
+  type RouteProp,
 } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationOptions,
+} from '@react-navigation/native-stack';
 
 import { SettingsScreen } from './components/settings/SettingsScreen';
+import { SyntheticSettingsScreen } from './components/settings/SyntheticSettingsScreen';
 import { ChartScreen } from './screens/ChartScreen';
 import { MarketsScreen } from './screens/MarketsScreen';
+import { SyntheticChartScreen } from './screens/SyntheticChartScreen';
 import { useAppTheme } from './themeContext';
+
+type ModalOptions = { route: RouteProp<ParamListBase> };
+
+function modalOptions({ route }: ModalOptions): NativeStackNavigationOptions {
+  return {
+    orientation:
+      route.params &&
+      'orientation' in route.params &&
+      route.params.orientation === 'landscape'
+        ? 'landscape'
+        : 'portrait_up',
+  };
+}
 
 const RootStack = createNativeStackNavigator({
   initialRouteName: 'Markets',
@@ -21,21 +41,19 @@ const RootStack = createNativeStackNavigator({
       screens: {
         Markets: MarketsScreen,
         Chart: ChartScreen,
+        SyntheticChart: SyntheticChartScreen,
       },
     },
     Modals: {
       screenOptions: { presentation: 'modal' },
       screens: {
+        SyntheticSettings: {
+          screen: SyntheticSettingsScreen,
+          options: modalOptions,
+        },
         ChartSettings: {
           screen: SettingsScreen,
-          options: ({ route }) => ({
-            orientation:
-              route.params &&
-              'orientation' in route.params &&
-              route.params.orientation === 'landscape'
-                ? 'landscape'
-                : 'portrait_up',
-          }),
+          options: modalOptions,
         },
       },
     },

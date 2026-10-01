@@ -36,7 +36,14 @@ android {
 
   compileSdkVersion getExtOrDefault("compileSdkVersion")
 
+  buildFeatures {
+    buildConfig true
+  }
+
   defaultConfig {
+    buildConfigField "boolean", "TRADING_CHARTS_EXAMPLE_DIAGNOSTICS",
+        (findProperty("TRADING_CHARTS_EXAMPLE_DIAGNOSTICS") ?: "false").toString()
+
     minSdkVersion getExtOrDefault("minSdkVersion")
     externalNativeBuild {
       cmake {

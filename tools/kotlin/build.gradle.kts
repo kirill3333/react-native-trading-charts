@@ -11,9 +11,12 @@ repositories {
 
 val repositoryRoot = layout.projectDirectory.dir("../..")
 val kotlinSources =
-  fileTree(repositoryRoot.dir("android/src/main/java/com/tradingcharts")) {
-    include("**/*.kt")
-  }
+  files(
+    fileTree(repositoryRoot.dir("android/src/main/java/com/tradingcharts")) { include("**/*.kt") },
+    fileTree(repositoryRoot.dir("example/android/app/src/main/java/tradingcharts/example/performance")) {
+      include("**/*.kt")
+    },
+  )
 
 detekt {
   source.setFrom(kotlinSources)

@@ -88,3 +88,6 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+
+docs/.vitepress/cache/
+docs/.vitepress/dist/

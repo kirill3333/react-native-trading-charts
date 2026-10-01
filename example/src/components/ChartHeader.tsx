@@ -5,11 +5,11 @@ import { useAppTheme } from '../themeContext';
 
 type ChartHeaderProps = {
   baseAsset: string;
-  quoteAsset: string;
-  venueLabel: string;
-  price: number;
-  pricePrecision: number;
-  change24hPercent: number;
+  quoteAsset?: string;
+  venueLabel?: string;
+  price?: number;
+  pricePrecision?: number;
+  change24hPercent?: number;
   onBack: () => void;
 };
 
@@ -32,16 +32,21 @@ export function ChartHeader({
   quoteAsset,
   venueLabel,
   price,
-  pricePrecision,
+  pricePrecision = 2,
   change24hPercent,
   onBack,
 }: ChartHeaderProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
-  const positive = change24hPercent >= 0;
+  const positive = (change24hPercent ?? 0) >= 0;
 
   return (
-    <View style={styles.header}>
+    <View
+      style={[
+        styles.header,
+        venueLabel == null && price == null && styles.titleOnlyHeader,
+      ]}
+    >
       <Pressable
         accessibilityLabel="Back to markets"
         accessibilityRole="button"
@@ -54,17 +59,25 @@ export function ChartHeader({
       <View style={styles.titleBlock}>
         <Text style={styles.title}>
           {baseAsset}
-          <Text style={styles.quoteSymbol}> / {quoteAsset}</Text>
+          {quoteAsset != null && (
+            <Text style={styles.quoteSymbol}> / {quoteAsset}</Text>
+          )}
         </Text>
-        <Text style={styles.subtitle}>{venueLabel}</Text>
+        {venueLabel != null && (
+          <Text style={styles.subtitle}>{venueLabel}</Text>
+        )}
       </View>
-      <View style={styles.priceBlock}>
-        <Text style={styles.price}>{formatPrice(price, pricePrecision)}</Text>
-        <Text style={positive ? styles.positiveText : styles.negativeText}>
-          {positive ? '+' : ''}
-          {change24hPercent.toFixed(2)}%
-        </Text>
-      </View>
+      {price != null && (
+        <View style={styles.priceBlock}>
+          <Text style={styles.price}>{formatPrice(price, pricePrecision)}</Text>
+          {change24hPercent != null && (
+            <Text style={positive ? styles.positiveText : styles.negativeText}>
+              {positive ? '+' : ''}
+              {change24hPercent.toFixed(2)}%
+            </Text>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -77,6 +90,7 @@ function createStyles(colors: AppThemeColors) {
       minHeight: 72,
       paddingHorizontal: 12,
     },
+    titleOnlyHeader: { minHeight: 56 },
     backButton: {
       alignItems: 'center',
       borderRadius: 20,

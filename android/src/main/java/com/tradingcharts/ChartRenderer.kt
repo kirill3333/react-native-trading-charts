@@ -11,6 +11,12 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 internal class ChartRenderer : GLSurfaceView.Renderer {
+  val diagnostics =
+      if (BuildConfig.TRADING_CHARTS_EXAMPLE_DIAGNOSTICS) {
+        ChartRenderingDiagnostics.createOwner()
+      } else null
+
+  private var diagnosticsReady = false
   private val pendingLock = Any()
   private var pendingFrame: ChartFrame? = null
   private var renderedSnapshot: ChartSnapshot? = null
@@ -122,6 +128,9 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
       }
 
   override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    diagnosticsReady = false
+    diagnostics?.let { ChartRenderingDiagnostics.surface(it, android.os.Process.myTid(), false) }
+
     val vertexShader =
         compile(
             GLES30.GL_VERTEX_SHADER,
@@ -178,13 +187,18 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
     uploadedRevision = -1L
     GLES30.glEnable(GLES30.GL_BLEND)
     GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+    diagnosticsReady = true
   }
 
   override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
     GLES30.glViewport(0, 0, width, height)
+    diagnostics?.let {
+      ChartRenderingDiagnostics.surface(it, android.os.Process.myTid(), diagnosticsReady)
+    }
   }
 
   override fun onDrawFrame(gl: GL10?) {
+    val observation = diagnostics?.let(ChartRenderingDiagnostics::beginFrame) ?: 0L
     val pending = takePending()
     val frame = pending?.snapshot ?: renderedSnapshot
     if (pending != null) {
@@ -206,6 +220,7 @@ internal class ChartRenderer : GLSurfaceView.Renderer {
     if (!updateContent(frame, pending?.contentVertices)) return
     updateOverlay(frame)
     drawFrame(frame)
+    diagnostics?.let { ChartRenderingDiagnostics.finishFrame(it, observation) }
   }
 
   /**

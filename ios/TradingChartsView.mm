@@ -62,6 +62,9 @@ using namespace facebook::react;
       [TradingChartsRegistry.shared unregisterView:self chartId:_chartId];
     }
     _chartId = newChartId;
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
+    _host.diagnosticsChartId = newChartId;
+#endif
     if (_chartId.length > 0) {
       [TradingChartsRegistry.shared registerView:self chartId:_chartId];
     }

@@ -50,6 +50,8 @@
     "android/build/**",
     "android/generated/**",
     "coverage/**",
+    "docs/.vitepress/cache/**",
+    "docs/.vitepress/dist/**",
     "example/android/build/**",
     "example/ios/build/**",
     "example/ios/Pods/**",

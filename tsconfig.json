@@ -28,5 +28,10 @@
     "target": "ESNext",
     "verbatimModuleSyntax": true
   },
-  "exclude": ["tools/oxlint/anti-slop"]
+  "include": ["**/*", "docs/.vitepress/**/*.ts", "docs/.vitepress/**/*.mts"],
+  "exclude": [
+    "tools/oxlint/anti-slop",
+    "docs/.vitepress/cache",
+    "docs/.vitepress/dist"
+  ]
 }

@@ -7,6 +7,11 @@ import os
 
 @objc(TCChartHostView)
 public final class ChartHostView: UIView {
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
+  @objc public var diagnosticsChartId: String? {
+    didSet { renderer.diagnosticsChartId = diagnosticsChartId }
+  }
+#endif
   @objc public weak var delegate: ChartHostViewDelegate?
 
   private let engine = ChartEngineClient()
@@ -99,6 +104,9 @@ public final class ChartHostView: UIView {
 
   public override func didMoveToWindow() {
     super.didMoveToWindow()
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
+    renderer.diagnosticsAttached = window != nil
+#endif
     interaction.cancelInteraction()
     scheduler.suspend()
     guard window != nil else {
@@ -299,6 +307,9 @@ public final class ChartHostView: UIView {
   }
 
   @objc public func prepareForRecycle() {
+#if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
+    diagnosticsChartId = nil
+#endif
     realTimeScroll.stop()
     interaction.cancelInteraction()
     interaction.resetCrosshair()

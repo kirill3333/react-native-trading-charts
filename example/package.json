@@ -43,5 +43,21 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "ExamplePerformanceSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "ios": {
+      "modules": {
+        "ExamplePerformance": {
+          "className": "ExamplePerformanceModule",
+          "unstableRequiresMainQueueSetup": true
+        }
+      }
+    },
+    "android": {
+      "javaPackageName": "tradingcharts.example.performance"
+    }
   }
 }

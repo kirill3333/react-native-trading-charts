@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/logo.png" height="100" width="100">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/logo.png" height="100" width="100">
 </p>
 
 # react-native-trading-charts
@@ -15,10 +15,10 @@ reused between updates, and high-frequency trade streams can be batched before
 they cross the native boundary.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/panels.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/zoom.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/theme.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/docs/assets/settings.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/panels.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/zoom.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/theme.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/settings.png" width="200">
 </p>
 
 ## Why Native Trading Charts?
@@ -1171,7 +1171,7 @@ of being recreated during steady-state interaction. For high-frequency feeds,
 mutations.
 
 The normative command, revision, and snapshot contract is documented in
-[ChartEngine state and rendering protocol](docs/chart-engine-state-protocol.md).
+[ChartEngine state and rendering protocol](chart-engine-state-protocol.md).
 
 On iOS, Swift talks to the shared engine through the private
 `TradingChartsCxx` Clang module. Snapshot handles retain the underlying C++
