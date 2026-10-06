@@ -16,7 +16,6 @@ export type ChartTimeZone = 'utc' | 'device';
 export type SeriesLineWidth = 1 | 1.5 | 2.5;
 export type IndicatorLineWidth = 0.5 | SeriesLineWidth;
 export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
-export type MovingAveragePeriod = 10 | 20 | 50 | 100 | 200;
 export type MacdFastPeriod = 8 | 12 | 16;
 export type MacdSlowPeriod = 21 | 26 | 32;
 export type MacdSignalPeriod = 5 | 9 | 12;
@@ -60,7 +59,7 @@ export type ChartSettings = {
   rsiBandColorOverride: string | null;
   rsiLevelLineColorOverride: string | null;
   smaEnabled: boolean;
-  smaPeriod: MovingAveragePeriod;
+  smaPeriod: number;
   smaValueSource: OhlcValueSource;
   smaLineWidth: IndicatorLineWidth;
   smaLineStyle: ChartLineStyle;
@@ -69,7 +68,7 @@ export type ChartSettings = {
   smaGradientTopColor: string;
   smaGradientBottomColor: string;
   emaEnabled: boolean;
-  emaPeriod: MovingAveragePeriod;
+  emaPeriod: number;
   emaValueSource: OhlcValueSource;
   emaLineWidth: IndicatorLineWidth;
   emaLineStyle: ChartLineStyle;
