@@ -10,6 +10,7 @@ type SyntheticSettingsFieldProps = {
   value: string;
   error?: string;
   onChangeText: (text: string) => void;
+  onEndEditing?: () => void;
 };
 
 export function SyntheticSettingsField({
@@ -19,6 +20,7 @@ export function SyntheticSettingsField({
   value,
   error,
   onChangeText,
+  onEndEditing,
 }: SyntheticSettingsFieldProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
@@ -35,6 +37,7 @@ export function SyntheticSettingsField({
         selectTextOnFocus
         value={value}
         onChangeText={onChangeText}
+        onEndEditing={onEndEditing}
         style={[styles.input, error != null && styles.invalidInput]}
       />
       {error != null && (

@@ -2823,20 +2823,22 @@ void TestVolumePaneTickMinimumDependsOnHeight() {
              10.0);
 }
 
-std::array<size_t, 6> IndicatorBufferCapacities(
+std::array<size_t, 7> IndicatorBufferCapacities(
     const trading_charts::SeriesData& series) {
   return {series.candles.capacity(),
           series.rsi_states.capacity(),
           series.moving_average_states.capacity(),
           series.macd_states.capacity(),
           series.signal_candles.capacity(),
-          series.histogram.capacity()};
+          series.histogram.capacity(),
+          series.boll_states.capacity()};
 }
 
 void TestIndicatorAppendBufferGrowth() {
   for (const SeriesSource kind :
        {SeriesSource::kOhlcvRsi, SeriesSource::kOhlcvSma,
-        SeriesSource::kOhlcvEma, SeriesSource::kOhlcvMacd}) {
+        SeriesSource::kOhlcvEma, SeriesSource::kOhlcvMacd,
+        SeriesSource::kOhlcvBoll}) {
     // Exercise both streaming through warmup and appending to loaded history.
     for (const size_t history_size : {size_t{0}, size_t{1000}}) {
       trading_charts::SeriesData series;
@@ -2852,7 +2854,7 @@ void TestIndicatorAppendBufferGrowth() {
       }
       trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
       auto capacities = IndicatorBufferCapacities(series);
-      std::array<size_t, 6> reallocations{};
+      std::array<size_t, 7> reallocations{};
       for (size_t index = 0; index < 2048; ++index) {
         append();
         trading_charts::internal::RebuildDerivedSeries(series, &source,
@@ -3103,6 +3105,184 @@ void TestRsiFlatAndCascadeRemoval() {
   ExpectNear(snapshot->indicator_legends[0].values[0].value, 50.0);
   assert(engine.RemoveSeries("source"));
   assert(!engine.RemoveSeries("flat-rsi"));
+}
+
+void TestBollCalculationAndStreaming() {
+  for (const auto value_source :
+       {OhlcValueSource::kOpen, OhlcValueSource::kHigh, OhlcValueSource::kLow,
+        OhlcValueSource::kClose}) {
+    for (const std::uint32_t period : {1U, 3U, 20U}) {
+      trading_charts::SeriesData series;
+      series.config.source = SeriesSource::kOhlcvBoll;
+      series.config.line_source = value_source;
+      series.config.boll_period = period;
+      series.config.boll_std_dev_multiplier = 1.5;
+      std::vector<Candle> source;
+      for (size_t index = 0; index < 150; ++index) {
+        const double price = 1e9 + static_cast<double>(index % 11) / 16.0;
+        source.push_back(Candle{static_cast<double>(index) * 60'000, price,
+                                price + 0.25, price - 0.125, price + 0.0625,
+                                1});
+        for (int replacement = 0; replacement < 2; ++replacement) {
+          source.back().close += 0.015625;
+          trading_charts::internal::RebuildDerivedSeries(series, &source,
+                                                         index);
+          trading_charts::SeriesData rebuilt;
+          rebuilt.config = series.config;
+          trading_charts::internal::RebuildDerivedSeries(rebuilt, &source, 0);
+          assert(series.candles.size() == rebuilt.candles.size());
+          if (source.size() < period) {
+            assert(series.candles.empty());
+            continue;
+          }
+          const Candle& actual = series.candles.back();
+          ExpectNear(actual.high, rebuilt.candles.back().high);
+          ExpectNear(actual.low, rebuilt.candles.back().low);
+          // Independent centered two-pass reference, population variance.
+          const double origin = CandleValue(source[index], value_source);
+          double mean = 0.0;
+          for (size_t sample = index + 1 - period; sample <= index; ++sample) {
+            mean += CandleValue(source[sample], value_source) - origin;
+          }
+          mean /= period;
+          double variance = 0.0;
+          for (size_t sample = index + 1 - period; sample <= index; ++sample) {
+            const double delta =
+                CandleValue(source[sample], value_source) - origin - mean;
+            variance += delta * delta;
+          }
+          const double spread = 1.5 * std::sqrt(variance / period);
+          assert(std::abs(actual.close - (origin + mean)) < 1e-6);
+          assert(std::abs(actual.high - (origin + mean + spread)) < 1e-6);
+          assert(std::abs(actual.low - (origin + mean - spread)) < 1e-6);
+        }
+      }
+      trading_charts::internal::RebuildDerivedSeries(series, nullptr, 0);
+      assert(series.candles.empty() && series.boll_states.empty());
+    }
+  }
+  trading_charts::SeriesData series;
+  series.config.source = SeriesSource::kOhlcvBoll;
+  series.config.boll_period = 3;
+  std::vector<Candle> source{
+      {0, 1, 1, 1, 1, 0}, {1, 2, 2, 2, 2, 0}, {2, 3, 3, 3, 3, 0}};
+  trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
+  ExpectNear(series.candles.back().close, 2.0);
+  ExpectNear(series.candles.back().high, 2.0 + 2.0 * std::sqrt(2.0 / 3.0));
+  for (Candle& candle : source) {
+    candle.close = 7.0;
+  }
+  trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
+  ExpectNear(series.candles.back().high, 7.0);
+  ExpectNear(series.candles.back().low, 7.0);
+}
+
+void TestBollEngineIntegration() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.logical_spacing = true;
+  config.show_current_price = false;
+  engine.SetConfig(config);
+  engine.SetSize(700, 360);
+  SeriesConfig boll;
+  boll.series_id = "boll";
+  boll.source_series_id = "main";
+  boll.source = SeriesSource::kOhlcvBoll;
+  boll.type = SeriesType::kLine;
+  boll.boll_period = 3;
+  boll.declarative = true;
+  assert(engine.AddSeries(boll) == UpdateStatus::kApplied);
+  const double history[] = {60'000,  1, 1, 1, 1, 0, 120'000, 2, 2, 2, 2, 0,
+                            180'000, 3, 3, 3, 3, 0, 240'000, 4, 4, 4, 4, 0};
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  engine.FitContent();
+  auto frame = engine.Snapshot();
+  assert(frame->visible_y_max > 3.0 + 2.0 * std::sqrt(2.0 / 3.0));
+  const auto content = frame->content_vertices;
+  engine.SetCrosshair(true, frame->plot.right - 1, frame->plot.top + 30);
+  frame = engine.Snapshot();
+  assert(frame->content_vertices == content);
+  assert(frame->crosshair_series_values.size() == 1);
+  const auto selected = frame->crosshair_series_values.front();
+  assert(selected.kind == CrosshairSeriesValueKind::kBoll &&
+         selected.has_value);
+  ExpectNear(selected.middle, 3.0);
+  ExpectNear(selected.upper, 3.0 + 2.0 * std::sqrt(2.0 / 3.0));
+  engine.SetCrosshair(true, frame->plot.left + 1, frame->plot.top + 30);
+  assert(!engine.Snapshot()->crosshair_series_values.front().has_value);
+  const double replacement[] = {240'000, 4, 6, 4, 6, 0};
+  assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+         UpdateStatus::kApplied);
+  const auto updated =
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "boll");
+  ExpectNear(updated.back().close, 11.0 / 3.0);
+  boll.boll_period = 2;
+  assert(engine.AddSeries(boll) == UpdateStatus::kApplied);
+  ExpectNear(
+      trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "boll")
+          .back()
+          .close,
+      4.5);
+  const double prepended[] = {0, 0, 0, 0, 0, 0};
+  assert(engine.PrependHistory(prepended, std::size(prepended)) ==
+         UpdateStatus::kApplied);
+  assert(trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "boll")
+             .size() == 4);
+  boll.boll_period = 0;
+  assert(engine.AddSeries(boll) == UpdateStatus::kInvalidInput);
+  boll.boll_period = 2;
+  boll.boll_std_dev_multiplier = std::numeric_limits<double>::infinity();
+  assert(engine.AddSeries(boll) == UpdateStatus::kInvalidInput);
+  boll.boll_std_dev_multiplier = 2;
+  boll.source_series_id = "source";
+  boll.series_id = "derived";
+  assert(engine.AddSeries(boll) == UpdateStatus::kApplied);
+  SeriesConfig source;
+  source.series_id = "source";
+  assert(engine.AddSeries(source) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData("source", history, std::size(history), false) ==
+         UpdateStatus::kApplied);
+  assert(
+      !trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "derived")
+           .empty());
+  assert(engine.RemoveSeries("source"));
+  assert(!engine.RemoveSeries("derived"));
+}
+
+void TestBollGeometry() {
+  ChartConfig config;
+  config.line_source = OhlcValueSource::kClose;
+  SeriesConfig boll;
+  boll.boll_fill_top = Color{1, 0, 0, 0.4f};
+  boll.boll_fill_bottom = Color{0, 0, 1, 0.1f};
+  const std::vector<Candle> candles{{0, 2, 4, 0, 2, 0}, {10, 3, 5, 1, 3, 0}};
+  const trading_charts::internal::SeriesGeometryInput input{
+      config, candles, 0, 2, {0, 0, 100, 100}, 0, 10, 0, 5, nullptr};
+  std::vector<float> vertices;
+  trading_charts::internal::AppendBollGeometry(input, boll, true, vertices);
+  assert(vertices.size() == 36);
+  ExpectNear(vertices[5], 0.4f);
+  ExpectNear(vertices[17], 0.1f);
+  for (size_t index = 0; index < vertices.size(); index += 6) {
+    assert(vertices[index] >= 0 && vertices[index] <= 100);
+    assert(vertices[index + 1] >= 0 && vertices[index + 1] <= 100);
+  }
+  vertices.clear();
+  boll.boll_fill_enabled = false;
+  trading_charts::internal::AppendBollGeometry(input, boll, true, vertices);
+  assert(vertices.empty());
+  boll.boll_fill_enabled = true;
+  config.line_gap_threshold_ms = 5;
+  trading_charts::internal::AppendBollGeometry(input, boll, true, vertices);
+  assert(vertices.empty());
+  trading_charts::internal::AppendBollGeometry(input, boll, false, vertices);
+  assert(vertices.empty());
+  config.line_gap_threshold_ms = 0;
+  boll.boll_upper.dashed = true;
+  boll.boll_lower.gradient_enabled = true;
+  trading_charts::internal::AppendBollGeometry(input, boll, false, vertices);
+  assert(!vertices.empty());
 }
 
 void TestMovingAverageValuesWarmupAndIncrementalUpdates() {
@@ -4635,6 +4815,9 @@ int main() noexcept {
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();
     TestRsiFlatAndCascadeRemoval();
+    TestBollCalculationAndStreaming();
+    TestBollEngineIntegration();
+    TestBollGeometry();
     TestMovingAverageValuesWarmupAndIncrementalUpdates();
     TestMovingAverageSourcesValidationAndCascadeRemoval();
     TestDeclarativeDerivedSeriesResolvesForwardSource();

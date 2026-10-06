@@ -284,6 +284,7 @@ class RenderSnapshotBuilder {
     ReserveGeometry();
     AddRsiBackgroundGeometry();
     AddGridGeometry();
+    AddBollFills();
     AddSeriesGeometry();
     AddAdditionalSeriesGeometry();
     AddPaneSeparators();
@@ -748,7 +749,8 @@ class RenderSnapshotBuilder {
         });
       } else {
         const auto include_candle = [&](const Candle& candle) {
-          if (IsLineLikeSeries(series.config.type)) {
+          if (IsLineLikeSeries(series.config.type) &&
+              series.config.source != SeriesSource::kOhlcvBoll) {
             const double value = CandleValue(candle, series.config.line_source);
             minimum = std::min(minimum, value);
             maximum = std::max(maximum, value);
@@ -816,7 +818,8 @@ class RenderSnapshotBuilder {
         } else {
           const auto include_candle = [&](const Candle& candle) {
             has_value = true;
-            if (IsLineLikeSeries(series.config.type)) {
+            if (IsLineLikeSeries(series.config.type) &&
+                series.config.source != SeriesSource::kOhlcvBoll) {
               const double value =
                   CandleValue(candle, series.config.line_source);
               raw_min = std::min(raw_min, value);
@@ -1128,6 +1131,26 @@ class RenderSnapshotBuilder {
         float_count += (window.last - window.first) * kFloatsPerQuad;
         continue;
       }
+      if (series.config.source == SeriesSource::kOhlcvBoll) {
+        const size_t first = window.first > 0 ? window.first - 1 : 0;
+        const size_t last = std::min(window.last + 1, series.candles.size());
+        for (const IndicatorLineStyle* style :
+             {&series.config.boll_upper, &series.config.boll_middle,
+              &series.config.boll_lower}) {
+          ChartConfig line_config = input_.config;
+          line_config.series_type = SeriesType::kLine;
+          line_config.line_width = style->width;
+          line_config.line_dashed = style->dashed;
+          float_count += SeriesGeometryFloatCapacity(SeriesGeometryInput{
+              line_config, series.candles, first, last,
+              snapshot_->panes[resolved_pane_index].plot, input_.visible_x_min,
+              input_.visible_x_max, pane_y_min_[resolved_pane_index],
+              pane_y_max_[resolved_pane_index],
+              input_.config.logical_spacing ? &input_.candles : nullptr});
+        }
+        float_count += (last - first) * kFloatsPerQuad;
+        continue;
+      }
       ChartConfig config = input_.config;
       config.series_type = series.config.type;
       config.bar_line_width = series.config.line_width;
@@ -1394,6 +1417,35 @@ class RenderSnapshotBuilder {
         *content_vertices_);
   }
 
+  void AddBollSeriesGeometry(size_t index, bool fill) {
+    const SeriesData& series = input_.additional_series[index];
+    const auto pane = ValidPaneIndex(series, snapshot_->panes.size());
+    if (!pane.has_value() || !series.config.visible || series.candles.empty()) {
+      return;
+    }
+    const SeriesWindow& window = series_windows_[index];
+    const size_t first = window.first > 0 ? window.first - 1 : 0;
+    const size_t last = std::min(window.last + 1, series.candles.size());
+    ChartConfig config = input_.config;
+    config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
+    AppendBollGeometry(
+        SeriesGeometryInput{
+            config, series.candles, first, last, snapshot_->panes[*pane].plot,
+            input_.visible_x_min, input_.visible_x_max, pane_y_min_[*pane],
+            pane_y_max_[*pane],
+            input_.config.logical_spacing ? &input_.candles : nullptr},
+        series.config, fill, *content_vertices_);
+  }
+
+  void AddBollFills() {
+    for (size_t index = 0; index < input_.additional_series.size(); ++index) {
+      if (input_.additional_series[index].config.source ==
+          SeriesSource::kOhlcvBoll) {
+        AddBollSeriesGeometry(index, true);
+      }
+    }
+  }
+
   void AddAdditionalSeriesGeometry() {
     for (size_t index = 0; index < input_.additional_series.size(); ++index) {
       const SeriesData& series = input_.additional_series[index];
@@ -1407,6 +1459,10 @@ class RenderSnapshotBuilder {
       }
       const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvBoll) {
+        AddBollSeriesGeometry(index, false);
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvMacd) {
         VisitVisibleHistogram(
             index, [&](double timestamp, double value, const Color& color) {
@@ -1706,6 +1762,23 @@ class RenderSnapshotBuilder {
       selected.series_type = series.config.type;
       selected.source_type = series.config.source;
 
+      if (series.config.source == SeriesSource::kOhlcvBoll) {
+        selected.kind = CrosshairSeriesValueKind::kBoll;
+        const auto point =
+            std::lower_bound(series.candles.begin(), series.candles.end(),
+                             timestamp, [](const Candle& candle, double value) {
+                               return candle.timestamp < value;
+                             });
+        selected.has_value =
+            point != series.candles.end() && point->timestamp == timestamp;
+        if (selected.has_value) {
+          selected.upper = point->high;
+          selected.middle = point->close;
+          selected.lower = point->low;
+        }
+        snapshot_->crosshair_series_values.push_back(std::move(selected));
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvMacd) {
         selected.kind = CrosshairSeriesValueKind::kMacd;
         const auto macd =

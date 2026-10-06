@@ -70,6 +70,15 @@ internal data class PaneConfig(
     val valueFormat: ValueFormat,
 )
 
+internal data class BollLineStyle(
+    val widthPx: Float = 1f,
+    val color: Int = Color.rgb(46, 144, 245),
+    val gradientTopColor: Int = color,
+    val gradientBottomColor: Int = color,
+    val gradientEnabled: Boolean = false,
+    val dashed: Boolean = false,
+)
+
 internal data class SeriesConfig(
     val seriesId: String,
     val type: String,
@@ -113,6 +122,14 @@ internal data class SeriesConfig(
     val macdNegativeDecreasingColor: Int = Color.rgb(255, 59, 100),
     val macdZeroLineColor: Int = Color.rgb(151, 145, 165),
     val macdTextColor: Int? = null,
+    val bollPeriod: Long = 20,
+    val bollStdDevMultiplier: Double = 2.0,
+    val bollUpper: BollLineStyle = BollLineStyle(),
+    val bollMiddle: BollLineStyle = BollLineStyle(color = Color.rgb(245, 166, 35)),
+    val bollLower: BollLineStyle = BollLineStyle(),
+    val bollFillEnabled: Boolean = true,
+    val bollFillTopColor: Int = Color.argb(51, 46, 144, 245),
+    val bollFillBottomColor: Int = Color.argb(13, 46, 144, 245),
 )
 
 internal data class ResolutionConfig(

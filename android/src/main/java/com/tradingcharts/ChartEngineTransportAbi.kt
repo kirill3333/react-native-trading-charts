@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 3
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 4
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v3"
+  const val STRING_MARKER = "TradingCharts.Series.v4"
 
   object NumberIndex {
     const val VERSION = 0
@@ -31,7 +31,19 @@ internal object SeriesTransportAbi {
     const val MACD_SIGNAL_LINE_WIDTH = 22
     const val MACD_SIGNAL_GRADIENT_ENABLED = 23
     const val MACD_SIGNAL_LINE_DASHED = 24
-    const val SIZE = 25
+    const val BOLL_PERIOD = 25
+    const val BOLL_STD_DEV_MULTIPLIER = 26
+    const val BOLL_FILL_ENABLED = 27
+    const val BOLL_UPPER_WIDTH = 28
+    const val BOLL_UPPER_GRADIENT_ENABLED = 29
+    const val BOLL_UPPER_DASHED = 30
+    const val BOLL_MIDDLE_WIDTH = 31
+    const val BOLL_MIDDLE_GRADIENT_ENABLED = 32
+    const val BOLL_MIDDLE_DASHED = 33
+    const val BOLL_LOWER_WIDTH = 34
+    const val BOLL_LOWER_GRADIENT_ENABLED = 35
+    const val BOLL_LOWER_DASHED = 36
+    const val SIZE = 37
   }
 
   object ColorIndex {
@@ -58,7 +70,18 @@ internal object SeriesTransportAbi {
     const val MACD_NEGATIVE_DECREASING = 68
     const val MACD_ZERO_LINE = 72
     const val MACD_TEXT = 76
-    const val SIZE = 80
+    const val BOLL_FILL_TOP = 80
+    const val BOLL_FILL_BOTTOM = 84
+    const val BOLL_UPPER = 88
+    const val BOLL_UPPER_GRADIENT_TOP = 92
+    const val BOLL_UPPER_GRADIENT_BOTTOM = 96
+    const val BOLL_MIDDLE = 100
+    const val BOLL_MIDDLE_GRADIENT_TOP = 104
+    const val BOLL_MIDDLE_GRADIENT_BOTTOM = 108
+    const val BOLL_LOWER = 112
+    const val BOLL_LOWER_GRADIENT_TOP = 116
+    const val BOLL_LOWER_GRADIENT_BOTTOM = 120
+    const val SIZE = 124
   }
 
   object StringIndex {
@@ -70,8 +93,8 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 21
-  const val ROUND_TRIP_COLOR_COUNT = 76
+  const val ROUND_TRIP_NUMBER_COUNT = 33
+  const val ROUND_TRIP_COLOR_COUNT = 120
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
   const val ROUND_TRIP_SIZE =
@@ -93,7 +116,8 @@ private fun String.nativeSeriesType() =
       "hollowCandlestick" -> 2.0
       "histogram" -> 3.0
       "line" -> 4.0
-      "macd" -> 4.0
+      "macd",
+      "boll" -> 4.0
       "area" -> 5.0
       else -> 0.0
     }
@@ -130,6 +154,7 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
         "ohlcvSma" -> 3.0
         "ohlcvEma" -> 4.0
         "ohlcvMacd" -> 5.0
+        "ohlcvBoll" -> 6.0
         else -> 0.0
       }
   numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = visible.transportDouble()
@@ -156,6 +181,21 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
       macdSignalGradientEnabled.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.MACD_SIGNAL_LINE_DASHED] =
       macdSignalLineDashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_PERIOD] = bollPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_STD_DEV_MULTIPLIER] = bollStdDevMultiplier
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_FILL_ENABLED] = bollFillEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_WIDTH] = bollUpper.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_GRADIENT_ENABLED] =
+      bollUpper.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_DASHED] = bollUpper.dashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_MIDDLE_WIDTH] = bollMiddle.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_MIDDLE_GRADIENT_ENABLED] =
+      bollMiddle.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_MIDDLE_DASHED] = bollMiddle.dashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_WIDTH] = bollLower.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_GRADIENT_ENABLED] =
+      bollLower.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_DASHED] = bollLower.dashed.transportDouble()
   return numbers
 }
 
@@ -208,7 +248,46 @@ private fun SeriesConfig.nativeSeriesColors(numbers: DoubleArray): FloatArray {
   )
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_ZERO_LINE, macdZeroLineColor)
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_TEXT, macdTextColor ?: color)
+  putBollColors(colors)
   return colors
+}
+
+private fun SeriesConfig.putBollColors(colors: FloatArray) {
+  putColor(colors, SeriesTransportAbi.ColorIndex.BOLL_UPPER, bollUpper.color)
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_UPPER_GRADIENT_TOP,
+      bollUpper.gradientTopColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_UPPER_GRADIENT_BOTTOM,
+      bollUpper.gradientBottomColor,
+  )
+  putColor(colors, SeriesTransportAbi.ColorIndex.BOLL_MIDDLE, bollMiddle.color)
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_MIDDLE_GRADIENT_TOP,
+      bollMiddle.gradientTopColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_MIDDLE_GRADIENT_BOTTOM,
+      bollMiddle.gradientBottomColor,
+  )
+  putColor(colors, SeriesTransportAbi.ColorIndex.BOLL_LOWER, bollLower.color)
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_LOWER_GRADIENT_TOP,
+      bollLower.gradientTopColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BOLL_LOWER_GRADIENT_BOTTOM,
+      bollLower.gradientBottomColor,
+  )
+  putColor(colors, SeriesTransportAbi.ColorIndex.BOLL_FILL_TOP, bollFillTopColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.BOLL_FILL_BOTTOM, bollFillBottomColor)
 }
 
 internal fun SeriesConfig.nativeTransportPayload(): SeriesTransportPayload {
@@ -236,7 +315,7 @@ internal object SnapshotTransportAbi {
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
   const val INDICATOR_LEGEND_RECORD_WIDTH = 31
-  const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 17
+  const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 20
   const val PRICE_LINE_RECORD_WIDTH = 6
 
   object PaneIndex {

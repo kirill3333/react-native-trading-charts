@@ -16,12 +16,30 @@ export type ChartTimeZone = 'utc' | 'device';
 export type SeriesLineWidth = 1 | 1.5 | 2.5;
 export type IndicatorLineWidth = 0.5 | SeriesLineWidth;
 export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
-export type MovingAveragePeriod = 10 | 20 | 50 | 100 | 200;
 export type MacdFastPeriod = 8 | 12 | 16;
 export type MacdSlowPeriod = 21 | 26 | 32;
 export type MacdSignalPeriod = 5 | 9 | 12;
 
+export type BollLineSettings = {
+  width: IndicatorLineWidth;
+  style: ChartLineStyle;
+  color: string;
+  gradientEnabled: boolean;
+  gradientTopColor: string;
+  gradientBottomColor: string;
+};
+
 export type ChartSettings = {
+  bollEnabled: boolean;
+  bollPeriod: number;
+  bollStdDevMultiplier: number;
+  bollValueSource: OhlcValueSource;
+  bollUpperLine: BollLineSettings;
+  bollMiddleLine: BollLineSettings;
+  bollLowerLine: BollLineSettings;
+  bollFillEnabled: boolean;
+  bollFillTopColor: string;
+  bollFillBottomColor: string;
   seriesType: ChartSeriesType;
   seriesLineWidth: SeriesLineWidth;
   mainUpColorOverride: string | null;
@@ -41,7 +59,7 @@ export type ChartSettings = {
   rsiBandColorOverride: string | null;
   rsiLevelLineColorOverride: string | null;
   smaEnabled: boolean;
-  smaPeriod: MovingAveragePeriod;
+  smaPeriod: number;
   smaValueSource: OhlcValueSource;
   smaLineWidth: IndicatorLineWidth;
   smaLineStyle: ChartLineStyle;
@@ -50,7 +68,7 @@ export type ChartSettings = {
   smaGradientTopColor: string;
   smaGradientBottomColor: string;
   emaEnabled: boolean;
-  emaPeriod: MovingAveragePeriod;
+  emaPeriod: number;
   emaValueSource: OhlcValueSource;
   emaLineWidth: IndicatorLineWidth;
   emaLineStyle: ChartLineStyle;
@@ -104,7 +122,28 @@ export type ChartSettings = {
   currencySymbol: string;
 };
 
+function bollLineDefaults(color: string): BollLineSettings {
+  return {
+    width: 1,
+    style: 'solid',
+    color,
+    gradientEnabled: false,
+    gradientTopColor: color,
+    gradientBottomColor: color,
+  };
+}
+
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  bollEnabled: false,
+  bollPeriod: 20,
+  bollStdDevMultiplier: 2,
+  bollValueSource: 'close',
+  bollUpperLine: bollLineDefaults('#2E90F5'),
+  bollMiddleLine: bollLineDefaults('#F5A623'),
+  bollLowerLine: bollLineDefaults('#2E90F5'),
+  bollFillEnabled: true,
+  bollFillTopColor: '#2E90F533',
+  bollFillBottomColor: '#2E90F50D',
   seriesType: 'candlestick',
   seriesLineWidth: 1.5,
   mainUpColorOverride: null,

@@ -536,7 +536,8 @@ internal fun seriesConfigFromJson(
     declarative: Boolean = false,
 ): SeriesConfig = seriesConfig(JSONObject(json), fallback, declarative)
 
-private fun String.isLineLikeSeries() = this == "line" || this == "area" || this == "macd"
+private fun String.isLineLikeSeries() =
+    this == "line" || this == "area" || this == "macd" || this == "boll"
 
 private fun JSONObject?.optionalColor(name: String): Int? =
     this?.optString(name)?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
@@ -570,8 +571,8 @@ private fun seriesLineSource(
     source: JSONObject?,
 ): String {
   val sourceType = source?.optString("type")
-  if (sourceType == "ohlcvSma" || sourceType == "ohlcvEma" || sourceType == "ohlcvMacd") {
-    return source.optString("valueSource", "close")
+  if (sourceType in setOf("ohlcvSma", "ohlcvEma", "ohlcvMacd", "ohlcvBoll")) {
+    return source?.optString("valueSource", "close") ?: "close"
   }
   return if (type.isLineLikeSeries()) json.optString("source", "close") else "close"
 }
@@ -715,60 +716,101 @@ private fun seriesConfig(
       }
   val rsi = rsiConfigValues(source, levels, appearance, resolvedColor)
   return SeriesConfig(
-      seriesId = json.getString("seriesId"),
-      type = type,
-      paneId = json.getString("paneId"),
-      priceScaleId = json.getString("priceScaleId"),
-      visible = json.optBoolean("visible", true),
-      sourceType = source?.optString("type", "data") ?: "data",
-      sourceSeriesId = source?.optString("seriesId", "") ?: "",
-      color = resolvedColor,
-      upColor = appearance.optionalColor("upColor") ?: fallback.upColor,
-      downColor = appearance.optionalColor("downColor") ?: fallback.downColor,
-      declarative = declarative,
-      lineWidthPx =
-          type.macdOr(macd.lineWidthPx) {
-            seriesLineWidthPx(type, lineAppearance, fallback)
-          },
-      lineSource = seriesLineSource(type, json, source),
-      lineDashed =
-          type.macdOr(macd.lineDashed) {
-            seriesLineDashed(type, lineAppearance, fallback)
-          },
-      lineGradientTopColor =
-          type.macdOr(macd.lineGradientTopColor) {
-            lineGradient.optionalColor("topColor") ?: resolvedColor
-          },
-      lineGradientBottomColor =
-          type.macdOr(macd.lineGradientBottomColor) {
-            lineGradient.optionalColor("bottomColor") ?: resolvedColor
-          },
-      lineGradientEnabled = type.macdOr(macd.lineGradientEnabled) { lineGradient != null },
-      lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
-      movingAveragePeriod = movingAveragePeriod(source),
-      areaFillTopColor = areaFill.optionalColor("topColor") ?: fallback.areaFillTopColor,
-      areaFillBottomColor = areaFill.optionalColor("bottomColor") ?: fallback.areaFillBottomColor,
-      rsiPeriod = rsi.period,
-      rsiOversold = rsi.oversold,
-      rsiOverbought = rsi.overbought,
-      rsiTextColor = rsi.textColor,
-      rsiLevelLineColor = rsi.levelLineColor,
-      rsiBandColor = rsi.bandColor,
-      macdFastPeriod = macd.fastPeriod,
-      macdSlowPeriod = macd.slowPeriod,
-      macdSignalPeriod = macd.signalPeriod,
-      macdSignalLineWidthPx = macd.signalLineWidthPx,
-      macdSignalColor = macd.signalColor,
-      macdSignalGradientTopColor = macd.signalGradientTopColor,
-      macdSignalGradientBottomColor = macd.signalGradientBottomColor,
-      macdSignalGradientEnabled = macd.signalGradientEnabled,
-      macdSignalLineDashed = macd.signalLineDashed,
-      macdPositiveIncreasingColor = macd.positiveIncreasingColor,
-      macdPositiveDecreasingColor = macd.positiveDecreasingColor,
-      macdNegativeIncreasingColor = macd.negativeIncreasingColor,
-      macdNegativeDecreasingColor = macd.negativeDecreasingColor,
-      macdZeroLineColor = macd.zeroLineColor,
-      macdTextColor = macd.textColor,
+          seriesId = json.getString("seriesId"),
+          type = type,
+          paneId = json.getString("paneId"),
+          priceScaleId = json.getString("priceScaleId"),
+          visible = json.optBoolean("visible", true),
+          sourceType = source?.optString("type", "data") ?: "data",
+          sourceSeriesId = source?.optString("seriesId", "") ?: "",
+          color = resolvedColor,
+          upColor = appearance.optionalColor("upColor") ?: fallback.upColor,
+          downColor = appearance.optionalColor("downColor") ?: fallback.downColor,
+          declarative = declarative,
+          lineWidthPx =
+              type.macdOr(macd.lineWidthPx) {
+                seriesLineWidthPx(type, lineAppearance, fallback)
+              },
+          lineSource = seriesLineSource(type, json, source),
+          lineDashed =
+              type.macdOr(macd.lineDashed) {
+                seriesLineDashed(type, lineAppearance, fallback)
+              },
+          lineGradientTopColor =
+              type.macdOr(macd.lineGradientTopColor) {
+                lineGradient.optionalColor("topColor") ?: resolvedColor
+              },
+          lineGradientBottomColor =
+              type.macdOr(macd.lineGradientBottomColor) {
+                lineGradient.optionalColor("bottomColor") ?: resolvedColor
+              },
+          lineGradientEnabled = type.macdOr(macd.lineGradientEnabled) { lineGradient != null },
+          lineGapThresholdMs = json.optDouble("gapThresholdMs", 0.0),
+          movingAveragePeriod = movingAveragePeriod(source),
+          areaFillTopColor = areaFill.optionalColor("topColor") ?: fallback.areaFillTopColor,
+          areaFillBottomColor =
+              areaFill.optionalColor("bottomColor") ?: fallback.areaFillBottomColor,
+          rsiPeriod = rsi.period,
+          rsiOversold = rsi.oversold,
+          rsiOverbought = rsi.overbought,
+          rsiTextColor = rsi.textColor,
+          rsiLevelLineColor = rsi.levelLineColor,
+          rsiBandColor = rsi.bandColor,
+          macdFastPeriod = macd.fastPeriod,
+          macdSlowPeriod = macd.slowPeriod,
+          macdSignalPeriod = macd.signalPeriod,
+          macdSignalLineWidthPx = macd.signalLineWidthPx,
+          macdSignalColor = macd.signalColor,
+          macdSignalGradientTopColor = macd.signalGradientTopColor,
+          macdSignalGradientBottomColor = macd.signalGradientBottomColor,
+          macdSignalGradientEnabled = macd.signalGradientEnabled,
+          macdSignalLineDashed = macd.signalLineDashed,
+          macdPositiveIncreasingColor = macd.positiveIncreasingColor,
+          macdPositiveDecreasingColor = macd.positiveDecreasingColor,
+          macdNegativeIncreasingColor = macd.negativeIncreasingColor,
+          macdNegativeDecreasingColor = macd.negativeDecreasingColor,
+          macdZeroLineColor = macd.zeroLineColor,
+          macdTextColor = macd.textColor,
+      )
+      .withBoll(source, appearance, fallback.displayScale)
+}
+
+private fun SeriesConfig.withBoll(
+    source: JSONObject?,
+    appearance: JSONObject?,
+    density: Float,
+): SeriesConfig {
+  if (type != "boll") return this
+  val fill = appearance?.optJSONObject("fill")
+  return copy(
+      bollPeriod = source?.optLong("period", 20) ?: 20,
+      bollStdDevMultiplier = source?.optDouble("stdDevMultiplier", 2.0) ?: 2.0,
+      bollUpper =
+          bollLineStyle(appearance?.optJSONObject("upperLine"), density, Color.rgb(46, 144, 245)),
+      bollMiddle =
+          bollLineStyle(appearance?.optJSONObject("middleLine"), density, Color.rgb(245, 166, 35)),
+      bollLower =
+          bollLineStyle(appearance?.optJSONObject("lowerLine"), density, Color.rgb(46, 144, 245)),
+      bollFillEnabled = fill?.optBoolean("enabled", true) ?: true,
+      bollFillTopColor = fill.optionalColor("topColor") ?: Color.argb(51, 46, 144, 245),
+      bollFillBottomColor = fill.optionalColor("bottomColor") ?: Color.argb(13, 46, 144, 245),
+  )
+}
+
+private fun bollLineStyle(
+    appearance: JSONObject?,
+    density: Float,
+    defaultColor: Int,
+): BollLineStyle {
+  val color = appearance.optionalColor("color") ?: defaultColor
+  val gradient = appearance?.optJSONObject("gradient")
+  return BollLineStyle(
+      widthPx = (appearance?.optDouble("width", 1.0) ?: 1.0).toFloat() * density,
+      color = color,
+      gradientTopColor = gradient.optionalColor("topColor") ?: color,
+      gradientBottomColor = gradient.optionalColor("bottomColor") ?: color,
+      gradientEnabled = gradient != null,
+      dashed = appearance?.optString("style") == "dashed",
   )
 }
 

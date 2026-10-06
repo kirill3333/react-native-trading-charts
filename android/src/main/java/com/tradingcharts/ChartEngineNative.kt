@@ -77,6 +77,9 @@ internal data class CrosshairSeriesValueSnapshot(
     val signal: Double,
     val hasHistogram: Boolean,
     val histogram: Double,
+    val upper: Double = 0.0,
+    val middle: Double = 0.0,
+    val lower: Double = 0.0,
 )
 
 internal data class PriceLineValue(
@@ -744,6 +747,9 @@ internal object ChartEngineNative {
           signal = number(14),
           hasHistogram = number(15) != 0.0,
           histogram = number(16),
+          upper = number(17),
+          middle = number(18),
+          lower = number(19),
       )
     }
   }

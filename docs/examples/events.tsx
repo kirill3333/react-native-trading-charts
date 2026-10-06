@@ -20,6 +20,8 @@ export function SelectionSummary({ chartId }: { chartId: string }) {
                 return `${item.seriesId}: ${item.candle?.close ?? '—'}`;
               case 'scalar':
                 return `${item.seriesId}: ${item.value ?? '—'}`;
+              case 'boll':
+                return `${item.seriesId}: ${item.upper ?? '—'} / ${item.middle ?? '—'} / ${item.lower ?? '—'}`;
               case 'macd':
                 return `${item.seriesId}: ${item.macd ?? '—'}`;
             }

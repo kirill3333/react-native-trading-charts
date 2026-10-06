@@ -9,6 +9,7 @@ import { useChartSettingsStore } from '../../stores/chartSettingsStore';
 import { APP_THEMES, type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import {
+  BollSettingsSection,
   CrosshairSettingsSection,
   EmaSettingsSection,
   FormattingSettingsSection,
@@ -69,14 +70,26 @@ function SettingsContent() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <Text accessibilityRole="header" style={styles.groupTitle}>
+          Appearance and layout
+        </Text>
         <ThemeSettingsSection />
         <SeriesSettingsSection />
-        <VolumeSettingsSection />
         <PaneHeightsSettingsSection />
-        <RsiSettingsSection />
-        <MacdSettingsSection />
+
+        <Text accessibilityRole="header" style={styles.groupTitle}>
+          Indicators
+        </Text>
+        <VolumeSettingsSection />
         <SmaSettingsSection />
         <EmaSettingsSection />
+        <BollSettingsSection />
+        <RsiSettingsSection />
+        <MacdSettingsSection />
+
+        <Text accessibilityRole="header" style={styles.groupTitle}>
+          Axes and interaction
+        </Text>
         <XAxisSettingsSection />
         <YAxisSettingsSection />
         <GesturesSettingsSection />
@@ -126,13 +139,24 @@ function createStyles(colors: AppThemeColors) {
       width: 64,
     },
     closeText: { color: colors.accentText, fontSize: 14, fontWeight: '800' },
-    content: { paddingHorizontal: 14, paddingTop: 22, paddingBottom: 32 },
+    content: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 32 },
+    groupTitle: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      marginBottom: 8,
+      marginTop: 20,
+      paddingHorizontal: 14,
+      textTransform: 'uppercase',
+    },
     restoreButton: {
       alignItems: 'center',
       borderColor: colors.border,
       borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
       justifyContent: 'center',
+      marginTop: 16,
       minHeight: 46,
     },
     restoreText: {

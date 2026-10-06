@@ -1,12 +1,12 @@
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
+import { NumberSetting } from '../NumberSetting';
 import { SettingSegments } from '../SettingSegments';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
 import {
   INDICATOR_LINE_WIDTH_OPTIONS,
   LINE_OPTIONS,
-  SMA_PERIOD_OPTIONS,
   VALUE_SOURCE_OPTIONS,
 } from './settingsOptions';
 
@@ -26,10 +26,11 @@ export function SmaSettingsSection() {
       />
       {settings.smaEnabled ? (
         <>
-          <SettingSegments
-            label="Period"
+          <NumberSetting
+            label="SMA period"
+            description="Number of candles in the moving average window"
+            integer
             onValueChange={(smaPeriod) => updateSettings({ smaPeriod })}
-            options={SMA_PERIOD_OPTIONS}
             value={settings.smaPeriod}
           />
           <SettingSegments

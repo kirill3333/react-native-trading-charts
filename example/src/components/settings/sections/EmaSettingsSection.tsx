@@ -1,10 +1,10 @@
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
+import { NumberSetting } from '../NumberSetting';
 import { SettingSegments } from '../SettingSegments';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
 import {
-  EMA_PERIOD_OPTIONS,
   INDICATOR_LINE_WIDTH_OPTIONS,
   LINE_OPTIONS,
   VALUE_SOURCE_OPTIONS,
@@ -26,10 +26,11 @@ export function EmaSettingsSection() {
       />
       {settings.emaEnabled ? (
         <>
-          <SettingSegments
-            label="Period"
+          <NumberSetting
+            label="EMA period"
+            description="Number of candles used to seed and smooth the average"
+            integer
             onValueChange={(emaPeriod) => updateSettings({ emaPeriod })}
-            options={EMA_PERIOD_OPTIONS}
             value={settings.emaPeriod}
           />
           <SettingSegments

@@ -961,7 +961,8 @@ class AreaFillBuilder {
 };
 
 template <typename Builder>
-void AppendLinePath(const SeriesGeometryInput& input, Builder& builder) {
+void AppendLinePath(const SeriesGeometryInput& input, Builder& builder,
+                    double bucket_width = 1.0) {
   if (input.first_index >= input.end_index ||
       input.end_index > input.candles.size()) {
     return;
@@ -1030,8 +1031,8 @@ void AppendLinePath(const SeriesGeometryInput& input, Builder& builder) {
     previous_timestamp = candle.timestamp;
     has_previous_timestamp = true;
 
-    const int64_t column =
-        static_cast<int64_t>(std::floor(static_cast<double>(point.x)));
+    const int64_t column = static_cast<int64_t>(
+        std::floor(static_cast<double>(point.x) / bucket_width));
     if (!has_bucket || column != bucket_column) {
       flush_bucket();
       has_bucket = true;
@@ -1053,6 +1054,67 @@ void AppendLinePath(const SeriesGeometryInput& input, Builder& builder) {
   flush_bucket();
   builder.Finish();
 }
+
+class BollPathBuilder {
+ public:
+  BollPathBuilder(const SeriesGeometryInput& input, const SeriesConfig& series,
+                  bool fill, std::vector<float>& vertices)
+      : input_(input),
+        series_(series),
+        fill_(fill),
+        vertices_(vertices),
+        solid_(input, vertices),
+        dashed_(input, vertices) {}
+
+  void AddPoint(LinePoint point) {
+    if (!fill_) {
+      point.value =
+          CandleValue(input_.candles[point.index], input_.config.line_source);
+      point.y = ProjectY(input_, point.value);
+      if (input_.config.line_dashed) {
+        dashed_.AddPoint(point);
+      } else {
+        solid_.AddPoint(point);
+      }
+      return;
+    }
+    const Candle& candle = input_.candles[point.index];
+    const ColoredVertex top{point.x, ProjectY(input_, candle.high),
+                            series_.boll_fill_top};
+    const ColoredVertex bottom{point.x, ProjectY(input_, candle.low),
+                               series_.boll_fill_bottom};
+    if (has_previous_) {
+      AppendClippedTriangle(vertices_, previous_top_, top, bottom, input_.plot);
+      AppendClippedTriangle(vertices_, previous_top_, bottom, previous_bottom_,
+                            input_.plot);
+    }
+    previous_top_ = top;
+    previous_bottom_ = bottom;
+    has_previous_ = true;
+  }
+
+  void Finish() {
+    has_previous_ = false;
+    if (!fill_) {
+      if (input_.config.line_dashed) {
+        dashed_.Finish();
+      } else {
+        solid_.Finish();
+      }
+    }
+  }
+
+ private:
+  const SeriesGeometryInput& input_;
+  const SeriesConfig& series_;
+  bool fill_;
+  std::vector<float>& vertices_;
+  LineStrokeBuilder solid_;
+  DashedLineStrokeBuilder dashed_;
+  ColoredVertex previous_top_{};
+  ColoredVertex previous_bottom_{};
+  bool has_previous_ = false;
+};
 
 void AppendLineGeometry(const SeriesGeometryInput& input,
                         std::vector<float>& vertices) {
@@ -1079,6 +1141,57 @@ void AppendAreaGeometry(const SeriesGeometryInput& input,
 }
 
 }  // namespace
+
+void AppendBollGeometry(const SeriesGeometryInput& input,
+                        const SeriesConfig& series, bool fill,
+                        std::vector<float>& vertices) {
+  ChartConfig selection_config = input.config;
+  selection_config.line_source = OhlcValueSource::kClose;
+  // The reference cannot be rebound, so construct each input explicitly.
+  const SeriesGeometryInput shared{
+      selection_config,       input.candles,       input.first_index,
+      input.end_index,        input.plot,          input.visible_x_min,
+      input.visible_x_max,    input.visible_y_min, input.visible_y_max,
+      input.logical_reference};
+  const double bucket_width =
+      std::max(1.0, static_cast<double>(input.plot.Width()) *
+                        static_cast<double>(kLineBucketRepresentativeCount) /
+                        static_cast<double>(kMaxVisibleSamples));
+  if (fill) {
+    if (!series.boll_fill_enabled) {
+      return;
+    }
+    BollPathBuilder builder(shared, series, true, vertices);
+    AppendLinePath(shared, builder, bucket_width);
+    return;
+  }
+  const auto append = [&](const IndicatorLineStyle& style,
+                          OhlcValueSource source) {
+    ChartConfig config = input.config;
+    config.line_source = source;
+    config.line_width = style.width;
+    config.line = style.color;
+    config.line_dashed = style.dashed;
+    config.line_gradient_enabled = style.gradient_enabled;
+    config.line_gradient_top = style.gradient_top;
+    config.line_gradient_bottom = style.gradient_bottom;
+    const SeriesGeometryInput component{config,
+                                        input.candles,
+                                        input.first_index,
+                                        input.end_index,
+                                        input.plot,
+                                        input.visible_x_min,
+                                        input.visible_x_max,
+                                        input.visible_y_min,
+                                        input.visible_y_max,
+                                        input.logical_reference};
+    BollPathBuilder builder(component, series, false, vertices);
+    AppendLinePath(shared, builder, bucket_width);
+  };
+  append(series.boll_upper, OhlcValueSource::kHigh);
+  append(series.boll_middle, OhlcValueSource::kClose);
+  append(series.boll_lower, OhlcValueSource::kLow);
+}
 
 size_t SeriesQuadsPerSample(SeriesType type) {
   switch (type) {

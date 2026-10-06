@@ -7,6 +7,64 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun bollPayloadPreservesIndependentStylesAndCalculation() {
+    val payload =
+        SeriesConfig(
+                seriesId = "boll",
+                type = "boll",
+                paneId = "main",
+                priceScaleId = "main",
+                sourceType = "ohlcvBoll",
+                sourceSeriesId = "main",
+                bollPeriod = UInt.MAX_VALUE.toLong(),
+                bollStdDevMultiplier = 1.25,
+                bollFillEnabled = false,
+                bollUpper = BollLineStyle(widthPx = 3f, color = 0x40112233, dashed = true),
+                bollMiddle =
+                    BollLineStyle(
+                        widthPx = 2f,
+                        color = 0x50223344,
+                        gradientEnabled = true,
+                        gradientTopColor = 0x60334455,
+                        gradientBottomColor = 0x70445566,
+                    ),
+                bollLower = BollLineStyle(widthPx = 1f, color = 0x80556677.toInt()),
+                bollFillTopColor = 0x20667788,
+                bollFillBottomColor = 0x10778899,
+            )
+            .nativeTransportPayload()
+    assertEquals(4.0, payload.numbers[SeriesTransportAbi.NumberIndex.TYPE], 0.0)
+    assertEquals(6.0, payload.numbers[SeriesTransportAbi.NumberIndex.SOURCE], 0.0)
+    assertEquals(
+        UInt.MAX_VALUE.toDouble(),
+        payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_PERIOD],
+        0.0,
+    )
+    assertEquals(1.25, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_STD_DEV_MULTIPLIER], 0.0)
+    assertEquals(0.0, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_FILL_ENABLED], 0.0)
+    assertEquals(3.0, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_WIDTH], 0.0)
+    assertEquals(1.0, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_DASHED], 0.0)
+    assertEquals(
+        1.0,
+        payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_MIDDLE_GRADIENT_ENABLED],
+        0.0,
+    )
+    assertEquals(0x11 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BOLL_UPPER], 0f)
+    assertEquals(
+        0x44 / 255f,
+        payload.colors[SeriesTransportAbi.ColorIndex.BOLL_MIDDLE_GRADIENT_BOTTOM],
+        0f,
+    )
+    assertEquals(0x55 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BOLL_LOWER], 0f)
+    assertEquals(0x20 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BOLL_FILL_TOP + 3], 0f)
+    assertEquals(
+        0x10 / 255f,
+        payload.colors[SeriesTransportAbi.ColorIndex.BOLL_FILL_BOTTOM + 3],
+        0f,
+    )
+  }
+
+  @Test
   fun configPayloadOmitsYAxisPosition() {
     val payload =
         ChartConfig(
@@ -251,14 +309,14 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            25,
-            80,
+            37,
+            124,
             5,
             3,
             2,
             14,
             31,
-            17,
+            20,
         )
     )
     val expectedRoundTrip =
