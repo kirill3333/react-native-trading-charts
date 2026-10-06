@@ -85,6 +85,14 @@ export type PriceLineOptions = Readonly<{
 
 ```ts
 export type CrosshairSeriesValue =
+  | (CrosshairSeriesIdentity & Readonly<{
+      kind: 'boll';
+      seriesType: 'boll';
+      sourceType: 'ohlcvBoll';
+      upper: number | null;
+      middle: number | null;
+      lower: number | null;
+    }>)
   | (CrosshairSeriesIdentity &
       Readonly<{
         kind: 'ohlc';
@@ -219,7 +227,8 @@ export type AdditionalChartSeriesOptions =
   | HistogramSeriesOptions
   | RsiSeriesOptions
   | MovingAverageSeriesOptions
-  | MacdSeriesOptions;
+  | MacdSeriesOptions
+  | BollSeriesOptions;
 ```
 
 ### AdditionalOhlcSeriesOptions {#additionalohlcseriesoptions}
@@ -297,6 +306,40 @@ export type RsiLevels = {
   overbought?: number;
 };
 ```
+
+### BollSeriesOptions and BollSeriesAppearance {#bollseriesoptions}
+
+```ts
+export type BollSeriesAppearance = {
+  upperLine?: ChartLineAppearance;
+  middleLine?: ChartLineAppearance;
+  lowerLine?: ChartLineAppearance;
+  fill?: { enabled?: boolean; topColor?: string; bottomColor?: string };
+};
+
+export type BollSeriesOptions = AdditionalSeriesBase & {
+  type: 'boll';
+  source: {
+    type: 'ohlcvBoll';
+    seriesId: string;
+    period?: number;
+    stdDevMultiplier?: number;
+    valueSource?: OhlcValueSource;
+  };
+  gapThresholdMs?: number;
+  appearance?: BollSeriesAppearance;
+};
+
+export type NormalizedBollSeriesOptions = Omit<
+  BollSeriesOptions,
+  'visible' | 'source'
+> & {
+  visible: boolean;
+  source: Required<BollSeriesOptions['source']>;
+};
+```
+
+See [Bollinger Bands](/docs/bollinger-bands) for calculation and rendering defaults.
 
 ### MacdSeriesOptions {#macdseriesoptions}
 

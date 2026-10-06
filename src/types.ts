@@ -40,6 +40,15 @@ type CrosshairSeriesIdentity = Readonly<{
 export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
+        kind: 'boll';
+        seriesType: 'boll';
+        sourceType: 'ohlcvBoll';
+        upper: number | null;
+        middle: number | null;
+        lower: number | null;
+      }>)
+  | (CrosshairSeriesIdentity &
+      Readonly<{
         kind: 'ohlc';
         seriesType: 'candlestick' | 'hollowCandlestick' | 'bar';
         candle: OhlcCandle | null;
@@ -49,11 +58,7 @@ export type CrosshairSeriesValue =
         kind: 'scalar';
         seriesType: 'line' | 'area' | 'histogram';
         sourceType:
-          | 'data'
-          | 'ohlcvVolume'
-          | 'ohlcvRsi'
-          | 'ohlcvSma'
-          | 'ohlcvEma';
+          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma';
         value: number | null;
       }>)
   | (CrosshairSeriesIdentity &
@@ -284,6 +289,34 @@ export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
   appearance?: ChartLineAppearance;
 };
 
+export type BollSeriesAppearance = {
+  upperLine?: ChartLineAppearance;
+  middleLine?: ChartLineAppearance;
+  lowerLine?: ChartLineAppearance;
+  fill?: { enabled?: boolean; topColor?: string; bottomColor?: string };
+};
+
+export type BollSeriesOptions = AdditionalSeriesBase & {
+  type: 'boll';
+  source: {
+    type: 'ohlcvBoll';
+    seriesId: string;
+    period?: number;
+    stdDevMultiplier?: number;
+    valueSource?: OhlcValueSource;
+  };
+  gapThresholdMs?: number;
+  appearance?: BollSeriesAppearance;
+};
+
+export type NormalizedBollSeriesOptions = Omit<
+  BollSeriesOptions,
+  'visible' | 'source'
+> & {
+  visible: boolean;
+  source: Required<BollSeriesOptions['source']>;
+};
+
 export type MacdHistogramAppearance = {
   positiveIncreasingColor?: string;
   positiveDecreasingColor?: string;
@@ -318,7 +351,8 @@ export type AdditionalChartSeriesOptions =
   | HistogramSeriesOptions
   | RsiSeriesOptions
   | MovingAverageSeriesOptions
-  | MacdSeriesOptions;
+  | MacdSeriesOptions
+  | BollSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -327,6 +361,7 @@ export type AdditionalChartSeriesOptions =
  * configuration (theme), exactly as if the field were absent.
  */
 export type NormalizedAdditionalChartSeriesOptions =
+  | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
       visible: boolean;
@@ -683,6 +718,7 @@ export type ResolvedChartPaneOptions = {
 };
 
 export type ResolvedAdditionalChartSeriesOptions =
+  | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels' | 'appearance'> & {
       visible: boolean;
@@ -720,7 +756,9 @@ export type ResolvedAdditionalChartSeriesOptions =
         valueSource: OhlcValueSource;
       };
       appearance: {
-        macdLine: Required<Pick<ChartLineAppearance, 'width' | 'color' | 'style'>> &
+        macdLine: Required<
+          Pick<ChartLineAppearance, 'width' | 'color' | 'style'>
+        > &
           Pick<ChartLineAppearance, 'gradient'>;
         signalLine: Required<
           Pick<ChartLineAppearance, 'width' | 'color' | 'style'>

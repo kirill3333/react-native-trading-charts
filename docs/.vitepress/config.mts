@@ -84,6 +84,10 @@ export default defineConfig({
               link: '/docs/rsi',
             },
             {
+              text: 'Bollinger Bands',
+              link: '/docs/bollinger-bands',
+            },
+            {
               text: 'MACD',
               link: '/docs/macd',
             },

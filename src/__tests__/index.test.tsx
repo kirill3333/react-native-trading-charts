@@ -2104,3 +2104,36 @@ describe('selected candle events', () => {
     ).toEqual([]);
   });
 });
+
+it('sends normalized BOLL options through the imperative API', () => {
+  mockNativeModule.addSeries.mockClear();
+  TradingCharts.addSeries('chart', {
+    seriesId: 'boll',
+    type: 'boll',
+    paneId: 'main',
+    priceScaleId: 'main',
+    source: {
+      type: 'ohlcvBoll',
+      seriesId: 'main',
+      period: 12,
+      stdDevMultiplier: 1.5,
+    },
+  });
+  expect(mockNativeModule.addSeries).toHaveBeenCalledWith(
+    'chart',
+    JSON.stringify({
+      seriesId: 'boll',
+      type: 'boll',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: {
+        type: 'ohlcvBoll',
+        seriesId: 'main',
+        period: 12,
+        stdDevMultiplier: 1.5,
+        valueSource: 'close',
+      },
+      visible: true,
+    })
+  );
+});

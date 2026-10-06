@@ -17,6 +17,7 @@ typealias NativePriceLineSnapshot = trading_charts.PriceLineSnapshot
 typealias NativeChartConfig = trading_charts.ChartConfig
 typealias NativePaneConfig = trading_charts.PaneConfig
 typealias NativeSeriesConfig = trading_charts.SeriesConfig
+typealias NativeIndicatorLineStyle = trading_charts.IndicatorLineStyle
 typealias NativeSeriesType = trading_charts.SeriesType
 typealias NativeSeriesSource = trading_charts.SeriesSource
 typealias NativeUpdateStatus = trading_charts.UpdateStatus

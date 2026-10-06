@@ -18,7 +18,7 @@ Declare series in the `additionalSeries` prop when they are part of the screen's
 | `paneId`         | Existing pane ID                                                                             | Required       | Target pane.                                         |
 | `priceScaleId`   | Target pane's scale ID                                                                       | Required       | Must match the pane price scale.                     |
 | `visible`        | `boolean`                                                                                    | `true`         | Controls rendering without removing the series.      |
-| `type`           | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'`, `'macd'` | Required       | Series geometry or composite MACD indicator.         |
+| `type`           | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'`, `'macd'`, `'boll'` | Required       | Series geometry or composite indicator.         |
 | `source`         | OHLC field, derived indicator, or histogram source                                           | Type-specific  | Line/area value field or native-derived/data source. |
 | `gapThresholdMs` | Positive milliseconds                                                                        | `undefined`    | Optional line/area gap splitting.                    |
 | `appearance`     | Type-specific style                                                                          | Theme fallback | Optional line, area, or histogram style.             |
@@ -40,3 +40,5 @@ The example loads a comparison line with its own OHLC history. Its button remove
 OHLC-backed line and area series still receive full `OhlcCandle` objects. Standalone histograms receive `HistogramPoint` objects. Use `setSeriesData`, `prependSeriesData` and `updateSeriesData` to load, prepend and update data-backed series. Derived volume and indicators follow their OHLC source; do not write data directly into them.
 
 Use the `additionalSeries` prop for series declared in React, as in the indicator guides. When you also add or remove series through commands, keep that prop consistent with the layout you want. The prop configures series; data updates still go through the command API. Set `visible: false` to hide a series without removing it.
+
+See [Bollinger Bands](/docs/bollinger-bands) for a three-line price overlay with a gradient fill and configurable period, deviation multiplier, and OHLC source.

@@ -1,6 +1,7 @@
 import {
   type AdditionalChartSeriesOptions,
   type ChartAppearance,
+  type ChartLineAppearance,
   type ChartFormatters,
   type ChartSeriesOptions,
   type CrosshairOptions,
@@ -10,6 +11,7 @@ import {
   type PriceScaleMargins,
   type PriceExtremesOptions,
   type MacdSeriesOptions,
+  type BollSeriesOptions,
   type ChartPaneOptions,
   type RsiSeriesAppearance,
   type YAxisValueFormat,
@@ -19,6 +21,7 @@ import {
 
 import {
   type ChartSettings,
+  type BollLineSettings,
   type ScaleMarginPreset,
 } from './stores/chartSettingsStore';
 import { APP_THEMES } from './theme';
@@ -199,6 +202,46 @@ export function buildRsiAppearance(
   };
 }
 
+export function buildBollSeries(settings: ChartSettings): BollSeriesOptions {
+  const line = (value: BollLineSettings): ChartLineAppearance => {
+    const appearance: ChartLineAppearance = {
+      width: value.width,
+      style: value.style,
+      color: value.color,
+    };
+    if (value.gradientEnabled) {
+      appearance.gradient = {
+        topColor: value.gradientTopColor,
+        bottomColor: value.gradientBottomColor,
+      };
+    }
+    return appearance;
+  };
+  return {
+    seriesId: 'boll',
+    type: 'boll',
+    paneId: 'main',
+    priceScaleId: 'main',
+    source: {
+      type: 'ohlcvBoll',
+      seriesId: 'main',
+      period: settings.bollPeriod,
+      stdDevMultiplier: settings.bollStdDevMultiplier,
+      valueSource: settings.bollValueSource,
+    },
+    appearance: {
+      upperLine: line(settings.bollUpperLine),
+      middleLine: line(settings.bollMiddleLine),
+      lowerLine: line(settings.bollLowerLine),
+      fill: {
+        enabled: settings.bollFillEnabled,
+        topColor: settings.bollFillTopColor,
+        bottomColor: settings.bollFillBottomColor,
+      },
+    },
+  };
+}
+
 export function buildMovingAverageSeries(
   settings: ChartSettings
 ): AdditionalChartSeriesOptions[] {
@@ -286,8 +329,7 @@ export function buildMacdSeries(settings: ChartSettings): MacdSeriesOptions {
                 topColor:
                   settings.macdGradientTopColor ?? theme.gradientTopColor,
                 bottomColor:
-                  settings.macdGradientBottomColor ??
-                  theme.gradientBottomColor,
+                  settings.macdGradientBottomColor ?? theme.gradientBottomColor,
               },
             }
           : null),
@@ -311,17 +353,13 @@ export function buildMacdSeries(settings: ChartSettings): MacdSeriesOptions {
       },
       histogram: {
         positiveIncreasingColor:
-          settings.macdPositiveIncreasingColor ??
-          theme.positiveIncreasingColor,
+          settings.macdPositiveIncreasingColor ?? theme.positiveIncreasingColor,
         positiveDecreasingColor:
-          settings.macdPositiveDecreasingColor ??
-          theme.positiveDecreasingColor,
+          settings.macdPositiveDecreasingColor ?? theme.positiveDecreasingColor,
         negativeIncreasingColor:
-          settings.macdNegativeIncreasingColor ??
-          theme.negativeIncreasingColor,
+          settings.macdNegativeIncreasingColor ?? theme.negativeIncreasingColor,
         negativeDecreasingColor:
-          settings.macdNegativeDecreasingColor ??
-          theme.negativeDecreasingColor,
+          settings.macdNegativeDecreasingColor ?? theme.negativeDecreasingColor,
       },
       textColor: settings.macdTextColor ?? theme.textColor,
       zeroLineColor: settings.macdZeroLineColor ?? theme.zeroLineColor,

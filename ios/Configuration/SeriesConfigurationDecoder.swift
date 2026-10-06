@@ -4,6 +4,20 @@
 import Foundation
 
 enum SeriesConfigurationDecoder {
+  private static func bollLine(
+    _ appearance: JSONDictionary, fallback: NativeIndicatorLineStyle
+  ) -> NativeIndicatorLineStyle {
+    var line = fallback
+    line.width = appearance.number("width")?.floatValue ?? 1
+    line.color = colorFromHex(appearance.stringOrNil("color"), fallback: fallback.color)
+    line.dashed = appearance.stringOrNil("style") == "dashed"
+    let gradient = appearance.dictionaryOrNil("gradient")
+    line.gradient_enabled = gradient != nil
+    line.gradient_top = colorFromHex(gradient?.stringOrNil("topColor"), fallback: line.color)
+    line.gradient_bottom = colorFromHex(gradient?.stringOrNil("bottomColor"), fallback: line.color)
+    return line
+  }
+
   static func decode(
     json: String,
     declarative: Bool,
@@ -40,7 +54,7 @@ enum SeriesConfigurationDecoder {
     case "bar": config.type = .bar
     case "hollowCandlestick": config.type = .hollowCandlestick
     case "histogram": config.type = .histogram
-    case "line", "macd": config.type = .line
+    case "line", "macd", "boll": config.type = .line
     case "area": config.type = .area
     default: config.type = .candlestick
     }
@@ -58,6 +72,12 @@ enum SeriesConfigurationDecoder {
       let levels = item.dictionary("levels")
       config.rsi_oversold = levels.number("oversold")?.doubleValue ?? 30
       config.rsi_overbought = levels.number("overbought")?.doubleValue ?? 70
+    case "ohlcvBoll":
+      config.source = .ohlcvBoll
+      config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
+      let period = source?.number("period")?.uint64Value ?? 20
+      config.boll_period = period >= 1 && period <= UInt32.max ? UInt32(period) : 0
+      config.boll_std_dev_multiplier = source?.number("stdDevMultiplier")?.doubleValue ?? 2
     case "ohlcvMacd":
       config.source = .ohlcvMacd
       config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
@@ -159,6 +179,15 @@ enum SeriesConfigurationDecoder {
       config.macd_text_color_set = appearance.stringOrNil("textColor") != nil
       config.macd_text_color = colorFromHex(
         appearance.stringOrNil("textColor"), fallback: chartConfig.axis_text)
+    }
+    if config.source == .ohlcvBoll {
+      config.boll_upper = bollLine(appearance.dictionary("upperLine"), fallback: config.boll_upper)
+      config.boll_middle = bollLine(appearance.dictionary("middleLine"), fallback: config.boll_middle)
+      config.boll_lower = bollLine(appearance.dictionary("lowerLine"), fallback: config.boll_lower)
+      let fill = appearance.dictionary("fill")
+      config.boll_fill_enabled = fill.number("enabled")?.boolValue ?? true
+      config.boll_fill_top = colorFromHex(fill.stringOrNil("topColor"), fallback: config.boll_fill_top)
+      config.boll_fill_bottom = colorFromHex(fill.stringOrNil("bottomColor"), fallback: config.boll_fill_bottom)
     }
     return config
   }

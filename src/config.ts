@@ -13,6 +13,8 @@ import {
   type CrosshairTooltipField,
   type HistogramSeriesOptions,
   type MacdSeriesOptions,
+  type BollSeriesOptions,
+  type NormalizedBollSeriesOptions,
   type MovingAverageSeriesOptions,
   type NormalizedAdditionalChartSeriesOptions,
   type OhlcValueSource,
@@ -58,6 +60,7 @@ const CHART_SERIES_TYPES = new Set<string>([
 const ADDITIONAL_SERIES_TYPES = new Set<string>([
   ...CHART_SERIES_TYPES,
   'histogram',
+  'boll',
   'macd',
 ]);
 
@@ -1197,12 +1200,14 @@ function validateLineAppearance(
 }
 
 function validateChartLineAppearance(
-  appearance: {
-    width?: number;
-    color?: string;
-    style?: 'solid' | 'dashed';
-    gradient?: { topColor: string; bottomColor: string };
-  } | undefined,
+  appearance:
+    | {
+        width?: number;
+        color?: string;
+        style?: 'solid' | 'dashed';
+        gradient?: { topColor: string; bottomColor: string };
+      }
+    | undefined,
   name: string
 ): void {
   if (appearance?.width != null) {
@@ -1216,10 +1221,7 @@ function validateChartLineAppearance(
   }
   if (appearance?.gradient != null) {
     color(appearance.gradient.topColor, `${name}.gradient.topColor`);
-    color(
-      appearance.gradient.bottomColor,
-      `${name}.gradient.bottomColor`
-    );
+    color(appearance.gradient.bottomColor, `${name}.gradient.bottomColor`);
   }
 }
 
@@ -1324,6 +1326,58 @@ function resolveRsiSeriesOptions(
   };
 }
 
+function resolveBollSeriesOptions(
+  options: BollSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedBollSeriesOptions {
+  const period = options.source.period ?? 20;
+  if (!Number.isInteger(period) || period < 1 || period > UINT32_MAX) {
+    throw new TypeError(
+      `${name}.source.period must be an integer from 1 to ${UINT32_MAX}`
+    );
+  }
+  if (options.source.type !== 'ohlcvBoll') {
+    throw new TypeError(`${name}.source.type must be 'ohlcvBoll'`);
+  }
+  for (const key of ['upperLine', 'middleLine', 'lowerLine'] as const) {
+    validateChartLineAppearance(
+      options.appearance?.[key],
+      `${name}.appearance.${key}`
+    );
+  }
+  const fill = options.appearance?.fill;
+  for (const key of ['topColor', 'bottomColor'] as const) {
+    if (fill?.[key] != null) color(fill[key], `${name}.appearance.fill.${key}`);
+  }
+  if (
+    fill?.enabled != null &&
+    fill.enabled !== true &&
+    fill.enabled !== false
+  ) {
+    throw new TypeError(`${name}.appearance.fill.enabled must be a boolean`);
+  }
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    source: {
+      type: 'ohlcvBoll',
+      seriesId: identifier(options.source.seriesId, `${name}.source.seriesId`),
+      period,
+      stdDevMultiplier: finitePositive(
+        options.source.stdDevMultiplier ?? 2,
+        `${name}.source.stdDevMultiplier`
+      ),
+      valueSource: ohlcValueSource(
+        options.source.valueSource,
+        `${name}.source.valueSource`
+      ),
+    },
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
+}
+
 function resolveMacdSeriesOptions(
   options: MacdSeriesOptions,
   name: string,
@@ -1351,7 +1405,9 @@ function resolveMacdSeriesOptions(
     }
   }
   if (fastPeriod >= slowPeriod) {
-    throw new TypeError(`${name}.source.fastPeriod must be less than slowPeriod`);
+    throw new TypeError(
+      `${name}.source.fastPeriod must be less than slowPeriod`
+    );
   }
   validateChartLineAppearance(
     options.appearance?.macdLine,
@@ -1431,6 +1487,8 @@ export function resolveAdditionalSeriesOptions(
   name = 'options'
 ): NormalizedAdditionalChartSeriesOptions {
   const ids = resolveSeriesIdentifiers(options, name);
+  if (options.type === 'boll')
+    return resolveBollSeriesOptions(options, name, ids);
   if (isMacdSeriesOptions(options)) {
     return resolveMacdSeriesOptions(options, name, ids);
   }
@@ -1476,6 +1534,7 @@ function collectKnownOhlcSeries(
 ): Map<string, { paneId: string; priceScaleId: string }> {
   const result = new Map<string, { paneId: string; priceScaleId: string }>();
   items.forEach((item) => {
+    if (item.type === 'boll') return;
     if (
       item.type !== 'histogram' &&
       item.type !== 'macd' &&
@@ -1665,7 +1724,7 @@ function resolveConfiguredRsiSeries(
 }
 
 function resolveConfiguredMovingAverageSeries(
-  resolved: NormalizedMovingAverageSeriesOptions,
+  resolved: NormalizedMovingAverageSeriesOptions | NormalizedBollSeriesOptions,
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
@@ -1728,6 +1787,13 @@ function resolveConfiguredAdditionalSeries(
 ): ResolvedAdditionalChartSeriesOptions {
   const name = `additionalSeries[${index}]`;
   const ids = resolveConfiguredSeriesIdentifiers(item, name, context);
+  if (item.type === 'boll') {
+    return resolveConfiguredMovingAverageSeries(
+      resolveBollSeriesOptions(item, name, ids),
+      name,
+      context
+    );
+  }
   if (item.type === 'macd') {
     const resolved = resolveMacdSeriesOptions(item, name, ids);
     if (!isMacdSeriesOptions(resolved)) {

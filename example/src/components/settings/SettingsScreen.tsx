@@ -9,6 +9,7 @@ import { useChartSettingsStore } from '../../stores/chartSettingsStore';
 import { APP_THEMES, type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import {
+  BollSettingsSection,
   CrosshairSettingsSection,
   EmaSettingsSection,
   FormattingSettingsSection,
@@ -77,6 +78,7 @@ function SettingsContent() {
         <MacdSettingsSection />
         <SmaSettingsSection />
         <EmaSettingsSection />
+        <BollSettingsSection />
         <XAxisSettingsSection />
         <YAxisSettingsSection />
         <GesturesSettingsSection />

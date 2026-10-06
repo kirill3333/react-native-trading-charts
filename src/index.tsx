@@ -21,6 +21,8 @@ export type {
   MacdHistogramAppearance,
   MacdSeriesAppearance,
   MacdSeriesOptions,
+  BollSeriesOptions,
+  BollSeriesAppearance,
   MovingAverageSeriesOptions,
   RsiLevels,
   RsiSeriesAppearance,
