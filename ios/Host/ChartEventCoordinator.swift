@@ -186,6 +186,13 @@ final class ChartEventCoordinator {
         result["kind"] = "ohlc"
         result["seriesType"] = seriesTypeName(value.series_type)
         result["candle"] = value.has_value ? candleJson(value.candle) : NSNull()
+      case .boll:
+        result["kind"] = "boll"
+        result["seriesType"] = "boll"
+        result["sourceType"] = "ohlcvBoll"
+        result["upper"] = value.has_value ? value.upper : NSNull()
+        result["middle"] = value.has_value ? value.middle : NSNull()
+        result["lower"] = value.has_value ? value.lower : NSNull()
       case .macd:
         result["kind"] = "macd"
         result["seriesType"] = "macd"
@@ -237,6 +244,7 @@ final class ChartEventCoordinator {
     case .ohlcvSma: return "ohlcvSma"
     case .ohlcvEma: return "ohlcvEma"
     case .ohlcvMacd: return "ohlcvMacd"
+    case .ohlcvBoll: return "ohlcvBoll"
     default: return "data"
     }
   }

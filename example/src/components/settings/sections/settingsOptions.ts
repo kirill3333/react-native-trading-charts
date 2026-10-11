@@ -13,7 +13,6 @@ import {
   type MacdFastPeriod,
   type MacdSignalPeriod,
   type MacdSlowPeriod,
-  type MovingAveragePeriod,
   type PaneHeightWeight,
   type PriceFormat,
   type ScaleMarginPreset,
@@ -44,18 +43,6 @@ export const INDICATOR_LINE_WIDTH_OPTIONS = [
   { label: 'Hairline', value: 0.5 },
   ...SERIES_LINE_WIDTH_OPTIONS,
 ] satisfies ReadonlyArray<SettingSegmentOption<IndicatorLineWidth>>;
-
-export const SMA_PERIOD_OPTIONS = [
-  { label: '10', value: 10 },
-  { label: '20', value: 20 },
-  { label: '50', value: 50 },
-] satisfies ReadonlyArray<SettingSegmentOption<MovingAveragePeriod>>;
-
-export const EMA_PERIOD_OPTIONS = [
-  { label: '20', value: 20 },
-  { label: '50', value: 50 },
-  { label: '100', value: 100 },
-] satisfies ReadonlyArray<SettingSegmentOption<MovingAveragePeriod>>;
 
 export const MACD_FAST_PERIOD_OPTIONS = [
   { label: '8', value: 8 },

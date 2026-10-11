@@ -138,7 +138,8 @@ void ChartEngine::RefreshDerivedDependentsLocked(
   for (SeriesData& series : additional_series_) {
     const SeriesSource source = series.config.source;
     if ((source == SeriesSource::kOhlcvRsi ||
-         source == SeriesSource::kOhlcvMacd || IsMovingAverageSource(source)) &&
+         source == SeriesSource::kOhlcvMacd ||
+         source == SeriesSource::kOhlcvBoll || IsMovingAverageSource(source)) &&
         (series.config.source_series_id.empty()
              ? source_series_id == "main"
              : series.config.source_series_id == source_series_id)) {
@@ -196,6 +197,13 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       !IsValidMacdSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
+  if (config.source == SeriesSource::kOhlcvBoll &&
+      (config.type != SeriesType::kLine || config.boll_period == 0 ||
+       !std::isfinite(config.boll_std_dev_multiplier) ||
+       config.boll_std_dev_multiplier <= 0.0 ||
+       config.source_series_id.empty())) {
+    return UpdateStatus::kInvalidInput;
+  }
   MutationScope mutation(*this);
   SeriesConfig normalized = internal::NormalizeSeriesConfig(config, config_);
   const auto pane = std::find_if(
@@ -219,7 +227,8 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       PaneHasMacdLocked(pane_index)) {
     return UpdateStatus::kInvalidInput;
   }
-  if (IsMovingAverageSource(normalized.source)) {
+  if (IsMovingAverageSource(normalized.source) ||
+      normalized.source == SeriesSource::kOhlcvBoll) {
     if (normalized.source_series_id == "main") {
       if (pane != panes_.begin()) {
         return UpdateStatus::kInvalidInput;
@@ -328,6 +337,7 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
     series->rsi_states.clear();
     series->signal_candles.clear();
     series->macd_states.clear();
+    series->boll_states.clear();
     RefreshDerivedDependentsLocked(series_id, 0, mutation);
     return UpdateStatus::kApplied;
   }

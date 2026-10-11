@@ -4,6 +4,7 @@
 #include "cpp/internal/indicator_series.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -178,6 +179,64 @@ void RebuildMovingAverageSeries(SeriesData& series,
   }
 }
 
+void RebuildBollSeries(SeriesData& series, const std::vector<Candle>* source,
+                       size_t first_changed_source_index) {
+  const size_t period = series.config.boll_period;
+  if (source == nullptr || period == 0 || source->size() < period) {
+    series.candles.clear();
+    series.boll_states.clear();
+    return;
+  }
+  const size_t first = period - 1;
+  size_t start = std::max(first, first_changed_source_index);
+  if (start - first > series.boll_states.size()) {
+    start = first;
+  }
+  series.candles.resize(start - first);
+  series.boll_states.resize(start - first);
+  BollRollingState state;
+  if (start > first) {
+    state = series.boll_states.back();
+  }
+  if (start == first) {
+    series.candles.reserve(source->size() - first);
+    series.boll_states.reserve(source->size() - first);
+  }
+  const auto value_at = [&](size_t index) {
+    return CandleValue((*source)[index], series.config.line_source);
+  };
+  const double count = static_cast<double>(period);
+  for (size_t index = start; index < source->size(); ++index) {
+    // Center values before Welford updates to preserve small spreads at large
+    // prices. Rebase once per window to bound accumulated roundoff, O(n) total.
+    if (index == first || (index - first) % period == 0) {
+      state = BollRollingState{};
+      state.origin = value_at(index - first);
+      for (size_t offset = 0; offset < period; ++offset) {
+        const double value = value_at(index - first + offset) - state.origin;
+        const double delta = value - state.mean;
+        state.mean += delta / static_cast<double>(offset + 1);
+        state.m2 += delta * (value - state.mean);
+      }
+    } else {
+      const double previous_mean = state.mean;
+      const double incoming = value_at(index) - state.origin;
+      const double outgoing = value_at(index - period) - state.origin;
+      state.mean += (incoming - outgoing) / count;
+      state.m2 += (incoming - outgoing) *
+                  (incoming - state.mean + outgoing - previous_mean);
+      state.m2 = std::max(0.0, state.m2);
+    }
+    const double middle = state.origin + state.mean;
+    const double spread = series.config.boll_std_dev_multiplier *
+                          std::sqrt(std::max(0.0, state.m2 / count));
+    series.candles.push_back(Candle{(*source)[index].timestamp, middle,
+                                    middle + spread, middle - spread, middle,
+                                    0.0});
+    series.boll_states.push_back(state);
+  }
+}
+
 void RebuildMacdSeries(SeriesData& series, const std::vector<Candle>* source) {
   if (source == nullptr) {
     series.candles.clear();
@@ -296,6 +355,9 @@ void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,
       } else {
         RebuildRsiSeries(series, *source, first_changed_source_index);
       }
+      break;
+    case SeriesSource::kOhlcvBoll:
+      RebuildBollSeries(series, source, first_changed_source_index);
       break;
     case SeriesSource::kOhlcvSma:
     case SeriesSource::kOhlcvEma:

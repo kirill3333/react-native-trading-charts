@@ -81,6 +81,7 @@ enum class SeriesSource : std::uint8_t {
   kOhlcvSma = 3,
   kOhlcvEma = 4,
   kOhlcvMacd = 5,
+  kOhlcvBoll = 6,
 };
 
 inline bool IsMovingAverageSource(SeriesSource source) {
@@ -90,7 +91,8 @@ inline bool IsMovingAverageSource(SeriesSource source) {
 inline bool IsDerivedOhlcvSource(SeriesSource source) {
   return source == SeriesSource::kOhlcvVolume ||
          source == SeriesSource::kOhlcvRsi ||
-         source == SeriesSource::kOhlcvMacd || IsMovingAverageSource(source);
+         source == SeriesSource::kOhlcvMacd ||
+         source == SeriesSource::kOhlcvBoll || IsMovingAverageSource(source);
 }
 
 struct PaneConfig {
@@ -106,6 +108,21 @@ struct PaneConfig {
   int precision = 2;
   double min_move = 0.01;
   double y_range_multiplier = 1.0;
+};
+
+struct IndicatorLineStyle {
+  float width = 1.0f;
+  Color color{46.0f / 255.0f, 144.0f / 255.0f, 245.0f / 255.0f, 1.0f};
+  Color gradient_top = color;
+  Color gradient_bottom = color;
+  bool gradient_enabled = false;
+  bool dashed = false;
+};
+
+struct BollRollingState {
+  double origin = 0.0;
+  double mean = 0.0;
+  double m2 = 0.0;
 };
 
 struct SeriesConfig {
@@ -133,6 +150,16 @@ struct SeriesConfig {
   bool line_dashed = false;
   bool visible = true;
   bool declarative = false;
+  std::uint32_t boll_period = 20;
+  double boll_std_dev_multiplier = 2.0;
+  IndicatorLineStyle boll_upper;
+  IndicatorLineStyle boll_middle{
+      1.0f, Color{245.0f / 255.0f, 166.0f / 255.0f, 35.0f / 255.0f, 1.0f}};
+  IndicatorLineStyle boll_lower;
+  bool boll_fill_enabled = true;
+  Color boll_fill_top{46.0f / 255.0f, 144.0f / 255.0f, 245.0f / 255.0f, 0.2f};
+  Color boll_fill_bottom{46.0f / 255.0f, 144.0f / 255.0f, 245.0f / 255.0f,
+                         13.0f / 255.0f};
   std::uint32_t moving_average_period = 1;
   std::uint32_t rsi_period = 14;
   double rsi_oversold = 30.0;
@@ -200,6 +227,7 @@ struct SeriesData {
   std::vector<Candle> signal_candles;
   // SMA stores the rolling window sum; EMA stores the published EMA value.
   std::vector<double> moving_average_states;
+  std::vector<BollRollingState> boll_states;
   std::vector<RsiSmoothingState> rsi_states;
   std::vector<MacdSmoothingState> macd_states;
   std::optional<size_t> pane_index;
@@ -470,6 +498,7 @@ enum class CrosshairSeriesValueKind : std::uint8_t {
   kOhlc = 0,
   kScalar = 1,
   kMacd = 2,
+  kBoll = 3,
 };
 
 struct CrosshairSeriesValue {
@@ -484,6 +513,9 @@ struct CrosshairSeriesValue {
   double macd = 0.0;
   double signal = 0.0;
   double histogram = 0.0;
+  double upper = 0.0;
+  double middle = 0.0;
+  double lower = 0.0;
   bool has_value = false;
   bool has_macd = false;
   bool has_signal = false;

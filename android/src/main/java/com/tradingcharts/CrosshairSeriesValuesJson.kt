@@ -20,6 +20,14 @@ internal fun crosshairSeriesValuesJson(values: List<CrosshairSeriesValueSnapshot
         json.put("seriesType", seriesTypeName(value.seriesType))
         json.put("candle", if (value.hasValue) candleJson(value.candle) else JSONObject.NULL)
       }
+      SERIES_VALUE_KIND_BOLL -> {
+        json.put("kind", "boll")
+        json.put("seriesType", "boll")
+        json.put("sourceType", "ohlcvBoll")
+        json.put("upper", if (value.hasValue) value.upper else JSONObject.NULL)
+        json.put("middle", if (value.hasValue) value.middle else JSONObject.NULL)
+        json.put("lower", if (value.hasValue) value.lower else JSONObject.NULL)
+      }
       SERIES_VALUE_KIND_MACD -> {
         json.put("kind", "macd")
         json.put("seriesType", "macd")
@@ -71,6 +79,7 @@ private fun sourceTypeName(source: Int) =
 
 private const val SERIES_VALUE_KIND_OHLC = 0
 private const val SERIES_VALUE_KIND_MACD = 2
+private const val SERIES_VALUE_KIND_BOLL = 3
 private const val SERIES_TYPE_CANDLESTICK = 0
 private const val SERIES_TYPE_BAR = 1
 private const val SERIES_TYPE_HOLLOW_CANDLESTICK = 2

@@ -12,3 +12,4 @@ export { ThemeSettingsSection } from './ThemeSettingsSection';
 export { VolumeSettingsSection } from './VolumeSettingsSection';
 export { XAxisSettingsSection } from './XAxisSettingsSection';
 export { YAxisSettingsSection } from './YAxisSettingsSection';
+export { BollSettingsSection } from './BollSettingsSection';

@@ -143,6 +143,18 @@ enum class SeriesNumberIndex : std::uint8_t {
   kMacdSignalLineWidth,
   kMacdSignalGradientEnabled,
   kMacdSignalLineDashed,
+  kBollPeriod,
+  kBollStdDevMultiplier,
+  kBollFillEnabled,
+  kBollUpperWidth,
+  kBollUpperGradientEnabled,
+  kBollUpperDashed,
+  kBollMiddleWidth,
+  kBollMiddleGradientEnabled,
+  kBollMiddleDashed,
+  kBollLowerWidth,
+  kBollLowerGradientEnabled,
+  kBollLowerDashed,
   kCount,
 };
 
@@ -170,7 +182,18 @@ enum class SeriesColorIndex : std::uint8_t {
   kMacdNegativeDecreasing = 68,
   kMacdZeroLine = 72,
   kMacdText = 76,
-  kCount = 80,
+  kBollFillTop = 80,
+  kBollFillBottom = 84,
+  kBollUpper = 88,
+  kBollUpperGradientTop = 92,
+  kBollUpperGradientBottom = 96,
+  kBollMiddle = 100,
+  kBollMiddleGradientTop = 104,
+  kBollMiddleGradientBottom = 108,
+  kBollLower = 112,
+  kBollLowerGradientTop = 116,
+  kBollLowerGradientBottom = 120,
+  kCount = 124,
 };
 
 enum class SeriesStringIndex : std::uint8_t {
@@ -293,8 +316,8 @@ inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 3.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v3";
+inline constexpr double kChartEngineTransportAbiVersion = 4.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v4";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -305,12 +328,12 @@ inline constexpr size_t kPaneSnapshotRecordWidth = 14;
 inline constexpr size_t kIndicatorLegendValueRecordWidth = 6;
 inline constexpr size_t kIndicatorLegendValueCapacity = 3;
 inline constexpr size_t kIndicatorLegendRecordWidth = 31;
-inline constexpr size_t kCrosshairSeriesValueRecordWidth = 17;
+inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 45);
-static_assert(kSeriesNumberCount == 25);
-static_assert(kSeriesColorCount == 80);
+static_assert(kSeriesNumberCount == 37);
+static_assert(kSeriesColorCount == 124);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
               kSnapshotRecordHeaderCount);
@@ -318,7 +341,7 @@ static_assert(kTickRecordWidth == 2);
 static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
               kPaneSnapshotRecordWidth);
 static_assert(kIndicatorLegendRecordWidth == 31);
-static_assert(kCrosshairSeriesValueRecordWidth == 17);
+static_assert(kCrosshairSeriesValueRecordWidth == 20);
 static_assert(kIndicatorLegendRecordWidth ==
               ToIndex(IndicatorLegendRecordIndex::kValues) +
                   kIndicatorLegendValueRecordWidth *
@@ -972,6 +995,7 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
                   : source_value == 2.0 ? SeriesSource::kOhlcvRsi
                   : source_value == 3.0 ? SeriesSource::kOhlcvSma
                   : source_value == 4.0 ? SeriesSource::kOhlcvEma
+                  : source_value == 6.0 ? SeriesSource::kOhlcvBoll
                   : source_value == 5.0 ? SeriesSource::kOhlcvMacd
                                         : SeriesSource::kData;
   series.visible = number_at(SeriesNumberIndex::kVisible) != 0.0;
@@ -1044,6 +1068,53 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
       color_at(SeriesColorIndex::kMacdNegativeDecreasing);
   series.macd_zero_line = color_at(SeriesColorIndex::kMacdZeroLine);
   series.macd_text_color = color_at(SeriesColorIndex::kMacdText);
+  const double boll_period = number_at(SeriesNumberIndex::kBollPeriod);
+  series.boll_period =
+      std::isfinite(boll_period) && boll_period >= 1.0 &&
+              boll_period <= static_cast<double>(
+                                 std::numeric_limits<std::uint32_t>::max()) &&
+              std::floor(boll_period) == boll_period
+          ? static_cast<std::uint32_t>(boll_period)
+          : 0;
+  series.boll_std_dev_multiplier =
+      number_at(SeriesNumberIndex::kBollStdDevMultiplier);
+  series.boll_fill_enabled =
+      number_at(SeriesNumberIndex::kBollFillEnabled) != 0.0;
+  series.boll_fill_top = color_at(SeriesColorIndex::kBollFillTop);
+  series.boll_fill_bottom = color_at(SeriesColorIndex::kBollFillBottom);
+  series.boll_upper.width =
+      static_cast<float>(number_at(SeriesNumberIndex::kBollUpperWidth));
+  series.boll_upper.gradient_enabled =
+      number_at(SeriesNumberIndex::kBollUpperGradientEnabled) != 0.0;
+  series.boll_upper.dashed =
+      number_at(SeriesNumberIndex::kBollUpperDashed) != 0.0;
+  series.boll_upper.color = color_at(SeriesColorIndex::kBollUpper);
+  series.boll_upper.gradient_top =
+      color_at(SeriesColorIndex::kBollUpperGradientTop);
+  series.boll_upper.gradient_bottom =
+      color_at(SeriesColorIndex::kBollUpperGradientBottom);
+  series.boll_middle.width =
+      static_cast<float>(number_at(SeriesNumberIndex::kBollMiddleWidth));
+  series.boll_middle.gradient_enabled =
+      number_at(SeriesNumberIndex::kBollMiddleGradientEnabled) != 0.0;
+  series.boll_middle.dashed =
+      number_at(SeriesNumberIndex::kBollMiddleDashed) != 0.0;
+  series.boll_middle.color = color_at(SeriesColorIndex::kBollMiddle);
+  series.boll_middle.gradient_top =
+      color_at(SeriesColorIndex::kBollMiddleGradientTop);
+  series.boll_middle.gradient_bottom =
+      color_at(SeriesColorIndex::kBollMiddleGradientBottom);
+  series.boll_lower.width =
+      static_cast<float>(number_at(SeriesNumberIndex::kBollLowerWidth));
+  series.boll_lower.gradient_enabled =
+      number_at(SeriesNumberIndex::kBollLowerGradientEnabled) != 0.0;
+  series.boll_lower.dashed =
+      number_at(SeriesNumberIndex::kBollLowerDashed) != 0.0;
+  series.boll_lower.color = color_at(SeriesColorIndex::kBollLower);
+  series.boll_lower.gradient_top =
+      color_at(SeriesColorIndex::kBollLowerGradientTop);
+  series.boll_lower.gradient_bottom =
+      color_at(SeriesColorIndex::kBollLowerGradientBottom);
   return StatusValue(instance->AddSeries(series));
 }
 
@@ -1680,6 +1751,9 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotCrosshairSeriesValues(
       packed[offset + 14] = value.signal;
       packed[offset + 15] = value.has_histogram ? 1.0 : 0.0;
       packed[offset + 16] = value.histogram;
+      packed[offset + 17] = value.upper;
+      packed[offset + 18] = value.middle;
+      packed[offset + 19] = value.lower;
     }
   }
   return NewDoubleArray(env, packed);
