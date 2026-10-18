@@ -1272,6 +1272,8 @@ class RenderSnapshotBuilder {
         input_.visible_x_max,
         y_min_,
         y_max_,
+        nullptr,
+        input_.config.line_rounded,
     };
   }
 

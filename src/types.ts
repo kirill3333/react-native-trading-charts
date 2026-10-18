@@ -455,8 +455,14 @@ export type ChartAppearance = {
     downColor?: string;
     lineWidth?: number;
   };
-  line?: ChartLineAppearance;
-  area?: ChartAreaAppearance;
+  line?: ChartLineAppearance & {
+    /** Round caps and joins for the main chart only. Defaults to true. */
+    rounded?: boolean;
+  };
+  area?: ChartAreaAppearance & {
+    /** Round outline caps and joins for the main chart only. Defaults to true. */
+    rounded?: boolean;
+  };
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
   priceExtremes?: {
@@ -797,12 +803,14 @@ export type ResolvedChartAppearance = {
     width: number;
     color: string;
     style: ChartLineStyle;
+    rounded: boolean;
     gradient?: { topColor: string; bottomColor: string };
   };
   area: {
     width: number;
     color: string;
     style: ChartLineStyle;
+    rounded: boolean;
     gradient?: { topColor: string; bottomColor: string };
     fill: { topColor: string; bottomColor: string };
   };
