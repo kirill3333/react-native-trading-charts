@@ -1,8 +1,10 @@
 # Example performance monitor (iOS and Android)
 
 This module belongs to the example app. It is not exported by the chart package.
-The synthetic chart screen subscribes while focused and active, at one-second
-intervals. Unsubscribing stops native work when the last subscriber leaves.
+The shared Performance panel is available on both market and synthetic charts
+through Chart navigation. It is hidden by default on market charts and shown by
+default on synthetic charts. It subscribes at one-second intervals only while
+visible, focused, and active. Unsubscribing stops native work when the last subscriber leaves.
 
 ```ts
 import { getThreads, subscribe, JS_THREAD_NAME } from './performance';

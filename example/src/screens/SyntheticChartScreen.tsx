@@ -2,7 +2,6 @@ import { useCallback, useLayoutEffect } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { type ChartResolution } from 'react-native-trading-charts';
 
-import { SyntheticPerformancePanel } from '../components/synthetic/SyntheticPerformancePanel';
 import { SyntheticChartToolbar } from '../components/synthetic/SyntheticChartToolbar';
 import { SyntheticLoadingOverlay } from '../components/synthetic/SyntheticLoadingOverlay';
 import { ChartHeader } from '../components/ChartHeader';
@@ -38,7 +37,10 @@ export function SyntheticChartScreen() {
     )
   );
 
-  useLayoutEffect(() => activateChart(chartId), [activateChart, chartId]);
+  useLayoutEffect(
+    () => activateChart(chartId, { showPerformance: true }),
+    [activateChart, chartId]
+  );
   const retry = useCallback(
     () => applySettings(settings),
     [applySettings, settings]
@@ -52,25 +54,20 @@ export function SyntheticChartScreen() {
 
   return (
     <ChartWorkspace
+      chartId={chartId}
       isLandscape={isLandscape}
       onToggleOrientation={toggleOrientation}
       header={
-        <ChartHeader
-          baseAsset="Synthetic"
-          onBack={() => navigation.goBack()}
-        />
+        <ChartHeader baseAsset="Synthetic" onBack={() => navigation.goBack()} />
       }
       toolbar={
-        <>
-          <SyntheticChartToolbar
-            candleCount={feed.candleCount}
-            eventsPerSecond={settings.eventsPerSecond}
-            error={feed.error}
-            onOpenSettings={openSettings}
-            onRetry={retry}
-          />
-          <SyntheticPerformancePanel chartId={chartId} />
-        </>
+        <SyntheticChartToolbar
+          candleCount={feed.candleCount}
+          eventsPerSecond={settings.eventsPerSecond}
+          error={feed.error}
+          onOpenSettings={openSettings}
+          onRetry={retry}
+        />
       }
     >
       <InteractiveChart
