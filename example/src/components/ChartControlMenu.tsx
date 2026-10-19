@@ -13,21 +13,33 @@ import { useChartControlsStore } from '../stores/chartControlsStore';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
+import { ChartNavigationActions } from './ChartNavigationActions';
 import { SettingSwitch } from './settings/SettingSwitch';
+import { SERIES_OPTIONS } from './settings/sections/settingsOptions';
 
-export type ChartIndicatorMenuKind = 'indicators' | 'panels';
+export type ChartControlMenuKind =
+  'indicators' | 'panels' | 'charts' | 'navigation';
 
-type ChartIndicatorMenuProps = {
-  kind: ChartIndicatorMenuKind;
-  isLandscape: boolean;
-  onClose: () => void;
+const MENU_TITLES = {
+  indicators: 'Indicators',
+  panels: 'Panels',
+  charts: 'Charts',
+  navigation: 'Chart navigation',
 };
 
-export function ChartIndicatorMenu({
+type ChartControlMenuProps = {
+  kind: ChartControlMenuKind;
+  isLandscape: boolean;
+  onClose: () => void;
+  onToggleOrientation: () => void;
+};
+
+export function ChartControlMenu({
   kind,
   isLandscape,
   onClose,
-}: ChartIndicatorMenuProps) {
+  onToggleOrientation,
+}: ChartControlMenuProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
   const insets = useSafeAreaInsets();
@@ -55,7 +67,7 @@ export function ChartIndicatorMenu({
         ]}
       >
         <Pressable
-          accessibilityLabel="Close indicator menu"
+          accessibilityLabel={`Close ${MENU_TITLES[kind]} menu`}
           accessibilityRole="button"
           onPress={onClose}
           style={StyleSheet.absoluteFill}
@@ -63,10 +75,10 @@ export function ChartIndicatorMenu({
         <View accessibilityViewIsModal style={styles.menu}>
           <View style={styles.header}>
             <Text accessibilityRole="header" style={styles.title}>
-              {kind === 'indicators' ? 'Indicators' : 'Panels'}
+              {MENU_TITLES[kind]}
             </Text>
             <Pressable
-              accessibilityLabel="Close indicator menu"
+              accessibilityLabel={`Close ${MENU_TITLES[kind]} menu`}
               accessibilityRole="button"
               onPress={onClose}
               style={({ pressed }) => [styles.close, pressed && styles.pressed]}
@@ -79,7 +91,16 @@ export function ChartIndicatorMenu({
             </Pressable>
           </View>
           <ScrollView bounces={false}>
-            {kind === 'indicators' ? (
+            {kind === 'navigation' && (
+              <ChartNavigationActions
+                isLandscape={isLandscape}
+                onToggleOrientation={() => {
+                  onClose();
+                  onToggleOrientation();
+                }}
+              />
+            )}
+            {kind === 'indicators' && (
               <>
                 <SettingSwitch
                   label="BOLL"
@@ -102,7 +123,8 @@ export function ChartIndicatorMenu({
                   onValueChange={(smaEnabled) => updateSettings({ smaEnabled })}
                 />
               </>
-            ) : (
+            )}
+            {kind === 'panels' && (
               <>
                 <SettingSwitch
                   label="Volume"
@@ -123,6 +145,49 @@ export function ChartIndicatorMenu({
                   onValueChange={controls.toggleMacd}
                 />
               </>
+            )}
+            {kind === 'charts' && (
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Chart type"
+              >
+                {SERIES_OPTIONS.map(({ label, value }) => {
+                  const selected = settings.seriesType === value;
+                  return (
+                    <Pressable
+                      key={value}
+                      accessibilityLabel={label}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      onPress={() => {
+                        updateSettings({ seriesType: value });
+                        onClose();
+                      }}
+                      style={({ pressed }) => [
+                        styles.option,
+                        selected && styles.optionSelected,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionText,
+                          selected && styles.optionTextSelected,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                      {selected && (
+                        <MaterialIcons
+                          name="check"
+                          size={20}
+                          color={theme.colors.accentText}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
             )}
           </ScrollView>
         </View>
@@ -160,6 +225,16 @@ function createStyles(colors: AppThemeColors) {
       borderBottomWidth: StyleSheet.hairlineWidth,
     },
     title: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 48,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    optionSelected: { backgroundColor: colors.control },
+    optionText: { flex: 1, color: colors.text, fontSize: 15 },
+    optionTextSelected: { color: colors.accentText, fontWeight: '700' },
     close: {
       width: 44,
       height: 44,

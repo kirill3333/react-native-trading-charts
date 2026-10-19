@@ -431,6 +431,7 @@ describe('chart settings', () => {
 
     expect(config.series).toEqual({ type: 'line', source: 'close' });
     expect(config.appearance.line).toEqual({
+      rounded: true,
       width: 1.5,
       color: '#2E90F5',
       gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
@@ -446,10 +447,20 @@ describe('chart settings', () => {
 
     expect(config.series).toEqual({ type: 'area', source: 'close' });
     expect(config.appearance.area).toEqual({
+      rounded: true,
       width: 1.5,
       color: '#2E90F5',
       fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
     });
+  });
+
+  it('keeps line and area rounding settings independent', () => {
+    const config = buildChartViewConfig(
+      settingsWith({ lineRounded: false, areaRounded: true }),
+      { useSignificantPriceFormat: false, minMove: 0.01, precision: 2 }
+    );
+    expect(config.appearance.line?.rounded).toBe(false);
+    expect(config.appearance.area?.rounded).toBe(true);
   });
 
   it('applies the selected width to line and area appearances', () => {
@@ -469,10 +480,12 @@ describe('chart settings', () => {
     expect(darkConfig.appearance.line?.width).toBe(2.5);
     expect(darkConfig.appearance.area?.width).toBe(2.5);
     expect(lightConfig.appearance.line).toEqual({
+      rounded: true,
       width: 2.5,
       color: '#2962FF',
     });
     expect(lightConfig.appearance.area).toEqual({
+      rounded: true,
       width: 2.5,
       color: '#2962FF',
       fill: { topColor: '#2962FF33', bottomColor: '#2962FF00' },
@@ -508,11 +521,13 @@ describe('chart settings', () => {
       downColor: '#445566',
     });
     expect(lineConfig.appearance.line).toEqual({
+      rounded: true,
       width: 1.5,
       color: '#778899',
     });
     expect(lineConfig.appearance.line?.gradient).toBeUndefined();
     expect(areaConfig.appearance.area).toEqual({
+      rounded: true,
       width: 1.5,
       color: '#AABBCC',
       fill: {

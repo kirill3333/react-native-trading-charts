@@ -1,14 +1,14 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { type PerformanceSample } from '../../performance';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
-import { useAppTheme } from '../../themeContext';
+import { type PerformanceSample } from '../performance';
+import { APP_THEMES, type AppThemeColors } from '../theme';
+import { useAppTheme } from '../themeContext';
 
 function format(value: number | null | undefined, suffix = '') {
   return value == null ? '—' : `${value.toFixed(1)}${suffix}`;
 }
 
-export function SyntheticPerformanceReadout({
+export function PerformanceReadout({
   sample,
   android,
   landscape,

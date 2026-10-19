@@ -2,12 +2,11 @@ import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { TradingCharts } from 'react-native-trading-charts';
 
 import {
-  ChartIndicatorMenu,
-  type ChartIndicatorMenuKind,
-} from './ChartIndicatorMenu';
+  ChartControlMenu,
+  type ChartControlMenuKind,
+} from './ChartControlMenu';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
 import { useChartControlsStore } from '../stores/chartControlsStore';
 import { APP_THEMES, type AppThemeColors } from '../theme';
@@ -25,8 +24,7 @@ export function ChartControls({
   const navigation = useNavigation();
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
-  const chartId = useChartControlsStore((state) => state.activeChartId);
-  const [menu, setMenu] = useState<ChartIndicatorMenuKind | null>(null);
+  const [menu, setMenu] = useState<ChartControlMenuKind | null>(null);
   const hasIndicators = useChartSettingsStore(
     ({ settings }) =>
       settings.bollEnabled || settings.emaEnabled || settings.smaEnabled
@@ -76,47 +74,30 @@ export function ChartControls({
             size={24}
           />
         </Pressable>
-        <View style={styles.spacer} />
         <Pressable
-          accessibilityLabel="Zoom in chart"
+          accessibilityLabel="Chart type"
           accessibilityRole="button"
-          hitSlop={4}
-          onPress={() => {
-            if (chartId != null) {
-              TradingCharts.zoom(chartId, 1.25);
-            }
-          }}
-          style={({ pressed }) => [buttonStyle, pressed && styles.pressed]}
-        >
-          <MaterialIcons color={theme.colors.text} name="zoom-in" size={24} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Zoom out chart"
-          accessibilityRole="button"
-          hitSlop={4}
-          onPress={() => {
-            if (chartId != null) {
-              TradingCharts.zoom(chartId, 0.8);
-            }
-          }}
-          style={({ pressed }) => [buttonStyle, pressed && styles.pressed]}
-        >
-          <MaterialIcons color={theme.colors.text} name="zoom-out" size={24} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={
-            isLandscape ? 'Switch to portrait' : 'Switch to landscape'
-          }
-          accessibilityRole="switch"
-          accessibilityState={{ checked: isLandscape }}
-          onPress={onToggleOrientation}
+          accessibilityState={{ expanded: menu === 'charts' }}
+          onPress={() => setMenu('charts')}
           style={({ pressed }) => [buttonStyle, pressed && styles.pressed]}
         >
           <MaterialIcons
-            color={
-              isLandscape ? theme.colors.positive : theme.colors.accentText
-            }
-            name="screen-rotation"
+            color={theme.colors.accentText}
+            name="candlestick-chart"
+            size={24}
+          />
+        </Pressable>
+        <View style={styles.spacer} />
+        <Pressable
+          accessibilityLabel="Chart navigation"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: menu === 'navigation' }}
+          onPress={() => setMenu('navigation')}
+          style={({ pressed }) => [buttonStyle, pressed && styles.pressed]}
+        >
+          <MaterialIcons
+            color={theme.colors.accentText}
+            name="open-with"
             size={24}
           />
         </Pressable>
@@ -139,10 +120,11 @@ export function ChartControls({
         </Pressable>
       </ScrollView>
       {menu != null && (
-        <ChartIndicatorMenu
+        <ChartControlMenu
           kind={menu}
           isLandscape={isLandscape}
           onClose={() => setMenu(null)}
+          onToggleOrientation={onToggleOrientation}
         />
       )}
     </>

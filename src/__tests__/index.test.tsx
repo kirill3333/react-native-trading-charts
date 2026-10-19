@@ -1816,6 +1816,7 @@ describe('chart config', () => {
       width: 2.5,
       color: '#2E90F5',
       style: 'solid',
+      rounded: true,
       gradient: { topColor: '#C51BFF', bottomColor: '#2E90F5' },
     });
     expect(resolved.appearance.currentPrice).toMatchObject({
@@ -1842,6 +1843,7 @@ describe('chart config', () => {
       width: 1.5,
       color: '#2E90F5',
       style: 'solid',
+      rounded: true,
       fill: { topColor: '#2E90F540', bottomColor: '#2E90F500' },
     });
 
@@ -1866,6 +1868,7 @@ describe('chart config', () => {
       width: 2.5,
       color: '#3366FF',
       style: 'solid',
+      rounded: true,
       gradient: { topColor: '#66AAFF', bottomColor: '#2244AA' },
       fill: { topColor: '#3366FF80', bottomColor: '#11224400' },
     });
@@ -1876,6 +1879,22 @@ describe('chart config', () => {
         downBackgroundColor: '#3366FF',
       },
     });
+  });
+
+  it('resolves main line and area rounding independently', () => {
+    const defaults = resolveChartConfig({ chartId: 'rounded-defaults' });
+    expect(defaults.appearance.line.rounded).toBe(true);
+    expect(defaults.appearance.area.rounded).toBe(true);
+    for (const rounded of [true, false]) {
+      const resolved = jsonRoundTrip(
+        resolveChartConfig({
+          chartId: 'rounded',
+          appearance: { line: { rounded }, area: { rounded: !rounded } },
+        })
+      );
+      expect(resolved.appearance.line.rounded).toBe(rounded);
+      expect(resolved.appearance.area.rounded).toBe(!rounded);
+    }
   });
 
   it('resolves independent native date and price formatters', () => {

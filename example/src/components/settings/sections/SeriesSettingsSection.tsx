@@ -2,6 +2,7 @@ import { buildMainSeriesColors } from '../../../chartSettingsConfig';
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
 import { SettingSegments } from '../SettingSegments';
+import { SettingSwitch } from '../SettingSwitch';
 import { SettingsSection } from '../SettingsSection';
 import { SERIES_LINE_WIDTH_OPTIONS, SERIES_OPTIONS } from './settingsOptions';
 
@@ -35,6 +36,21 @@ export function SeriesSettingsSection() {
             }
             options={SERIES_LINE_WIDTH_OPTIONS}
             value={settings.seriesLineWidth}
+          />
+          <SettingSwitch
+            label="Round caps and joins"
+            onValueChange={(rounded) =>
+              updateSettings(
+                settings.seriesType === 'area'
+                  ? { areaRounded: rounded }
+                  : { lineRounded: rounded }
+              )
+            }
+            value={
+              settings.seriesType === 'area'
+                ? settings.areaRounded
+                : settings.lineRounded
+            }
           />
           <HexColorSetting
             description="Color of the close-price line"

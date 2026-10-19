@@ -809,6 +809,7 @@ function resolveAppearance(
       width: lineWidth,
       color: lineColor,
       style: resolvedLineStyle,
+      rounded: input?.line?.rounded ?? true,
       ...(resolvedLineGradient == null
         ? null
         : { gradient: resolvedLineGradient }),
@@ -817,6 +818,7 @@ function resolveAppearance(
       width: areaWidth,
       color: areaColor,
       style: resolvedAreaStyle,
+      rounded: input?.area?.rounded ?? true,
       ...(resolvedAreaGradient == null
         ? null
         : { gradient: resolvedAreaGradient }),

@@ -28,6 +28,9 @@ struct SeriesGeometryInput {
   double visible_y_min = 0.0;
   double visible_y_max = 1.0;
   const std::vector<Candle>* logical_reference = nullptr;
+  // Explicitly enabled only by the main chart path, never inherited by
+  // overlays.
+  bool rounded = false;
 };
 
 size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input);

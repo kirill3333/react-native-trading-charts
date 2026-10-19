@@ -185,6 +185,7 @@ function ChartContent<
 
   return (
     <ChartWorkspace
+      chartId={chartId}
       isLandscape={isLandscape}
       onToggleOrientation={onToggleOrientation}
       header={

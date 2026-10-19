@@ -186,6 +186,7 @@ internal data class ChartConfig(
     val candleRadiusPx: Float = 0f,
     val barLineWidthPx: Float = 1f,
     val lineWidthPx: Float = 1.5f,
+    val lineRounded: Boolean = true,
     val lineSource: String = "close",
     val lineDashed: Boolean = false,
     val lineGradientEnabled: Boolean = false,
@@ -199,6 +200,7 @@ internal data class ChartConfig(
     val lineGradientTopColor: Int = Color.rgb(56, 217, 138),
     val lineGradientBottomColor: Int = Color.rgb(56, 217, 138),
     val areaLineWidthPx: Float = 1.5f,
+    val areaLineRounded: Boolean = true,
     val areaLineColor: Int = Color.rgb(56, 217, 138),
     val areaLineDashed: Boolean = false,
     val areaLineGradientEnabled: Boolean = false,
@@ -361,6 +363,7 @@ internal data class ChartConfig(
         tradeAggregation.candleTimestamp.toDouble(),
         candleRadiusPx.toDouble(),
         (if (area) areaLineDashed else lineDashed).nativeDouble(),
+        (if (area) areaLineRounded else lineRounded).nativeDouble(),
     )
   }
 
