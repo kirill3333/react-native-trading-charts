@@ -62,6 +62,7 @@ A line connects one selected price from each candle, usually the close. Use it f
 | `series.gapThresholdMs`                | Positive milliseconds                  | `undefined`     | Splits the line when a timestamp gap exceeds this value.        |
 | `appearance.line.width`                | Positive number                        | `1.5`           | Native stroke width.                                            |
 | `appearance.line.color`                | Color                                  | `theme.upColor` | Solid line color and fallback active-series color.              |
+| `appearance.line.rounded` | Boolean | `true` | Round caps and joins on the main chart; `false` restores sharp joins and flat caps. |
 | `appearance.line.style`                | `'solid'` or `'dashed'`                | `'solid'`       | Solid or dashed stroke, drawn consistently on both platforms.   |
 | `appearance.line.gradient.topColor`    | Color                                  | `undefined`     | Top color of an optional vertical stroke gradient.              |
 | `appearance.line.gradient.bottomColor` | Color                                  | `undefined`     | Bottom color of an optional vertical stroke gradient.           |
@@ -80,8 +81,21 @@ An area chart adds a fill beneath a price line. It works for the same price-over
 | `appearance.area.width`            | Positive number                        | `1.5`                        | Outline width.                                     |
 | `appearance.area.color`            | Color                                  | `theme.upColor`              | Outline color and base color for default fill.     |
 | `appearance.area.gradient`         | `{ topColor, bottomColor }`            | `undefined`                  | Optional vertical gradient for the outline.        |
+| `appearance.area.rounded` | Boolean | `true` | Round outline caps and joins on the main chart only. |
 | `appearance.area.style`            | `'solid'` or `'dashed'`                | `'solid'`                    | Outline style; the area fill remains continuous.   |
 | `appearance.area.fill.topColor`    | Color                                  | Area color with `0x40` alpha | Fill color at the pane top.                        |
 | `appearance.area.fill.bottomColor` | Color                                  | Area color with `0x00` alpha | Fill color at the pane bottom.                     |
 
 <<< ../examples/area.tsx
+
+The `rounded` options apply only to the main line or area chart, not to indicators,
+additional series, price lines, or crosshair lines. Edge antialiasing stays enabled
+in both modes. Rounded caps extend half the stroke width past each endpoint,
+including dash endpoints, so wide dashed strokes have smaller visible gaps.
+
+```tsx
+appearance={{
+  line: { rounded: false },
+  area: { rounded: false },
+}}
+```

@@ -322,6 +322,7 @@ struct ChartConfig {
   float candle_radius = 0.0f;
   float bar_line_width = 1.0f;
   float line_width = 1.5f;
+  bool line_rounded = true;
   double line_gap_threshold_ms = 0.0;
   OhlcValueSource line_source = OhlcValueSource::kClose;
   bool line_gradient_enabled = false;

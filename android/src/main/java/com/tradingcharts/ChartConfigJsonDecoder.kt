@@ -80,9 +80,11 @@ internal class ChartConfigJsonDecoder(
           lineWidthPx = lineAppearance.optDouble("width", 1.5).toFloat() * density,
           lineSource = root.optJSONObject("series")?.optString("source", "close") ?: "close",
           lineDashed = lineAppearance.optString("style", "solid") == "dashed",
+          lineRounded = lineAppearance.optBoolean("rounded", true),
           lineGradientEnabled = lineGradient != null,
           areaLineWidthPx = areaAppearance.optDouble("width", 1.5).toFloat() * density,
           areaLineDashed = areaAppearance.optString("style", "solid") == "dashed",
+          areaLineRounded = areaAppearance.optBoolean("rounded", true),
           areaLineGradientEnabled = areaGradient != null,
           lineGapThresholdMs =
               root.optJSONObject("series")?.optDouble("gapThresholdMs", 0.0) ?: 0.0,

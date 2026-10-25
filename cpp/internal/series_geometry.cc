@@ -22,6 +22,10 @@ constexpr size_t kCandlestickQuadsPerSample = 2;
 constexpr size_t kHollowCandlestickQuadsPerSample = 6;
 constexpr size_t kBarQuadsPerSample = 3;
 constexpr size_t kLineQuadsPerSample = 8;
+constexpr int kRoundHalfCircleSegments = 8;
+// Three segment quads plus two semicircles (core triangle + fringe quad
+// per wedge). Also covers a segment with a join and one endpoint cap.
+constexpr size_t kRoundedLineQuadsPerSample = 3 + 3 * kRoundHalfCircleSegments;
 constexpr size_t kAreaQuadsPerSample = kLineQuadsPerSample + 1;
 constexpr size_t kRoundedCandlestickQuadsPerSample = 11;
 constexpr size_t kRoundedHollowCandlestickQuadsPerSample = 22;
@@ -366,6 +370,15 @@ class LineStrokeBuilder {
                                    end_outer_right, start_outer_right},
                                   {false, false, true, true}});
 
+    if (input_.rounded) {
+      if (start_cap) {
+        EmitRoundArc(start_point, normal, Multiply(normal, -1.0f), kPi);
+      }
+      if (end_cap) {
+        EmitRoundArc(end_point, Multiply(normal, -1.0f), normal, kPi);
+      }
+      return;
+    }
     if (start_cap) {
       const Vector2 cap = Multiply(direction, -fringe_);
       AppendColoredQuad(
@@ -384,6 +397,36 @@ class LineStrokeBuilder {
     }
   }
 
+  void EmitRoundArc(Vector2 center, Vector2 start, Vector2 end, float sweep) {
+    const int segments =
+        std::clamp(static_cast<int>(std::ceil(std::abs(sweep) / kPi *
+                                              kRoundHalfCircleSegments)),
+                   1, kRoundHalfCircleSegments);
+    const float step = sweep / static_cast<float>(segments);
+    const float cosine = std::cos(step);
+    const float sine = std::sin(step);
+    Vector2 previous_core = Add(center, Multiply(start, half_width_));
+    Vector2 previous_fringe =
+        Add(center, Multiply(start, half_width_ + fringe_));
+    for (int index = 1; index <= segments; ++index) {
+      // Use the exact final normal to meet the next segment without a seam.
+      const Vector2 next = index == segments
+                               ? end
+                               : Vector2{start.x * cosine - start.y * sine,
+                                         start.x * sine + start.y * cosine};
+      const Vector2 core = Add(center, Multiply(next, half_width_));
+      const Vector2 fringe = Add(center, Multiply(next, half_width_ + fringe_));
+      AppendColoredTriangle(input_, vertices_, center, previous_core, core);
+      AppendColoredQuad(
+          input_, vertices_,
+          ColoredQuad{{previous_fringe, fringe, core, previous_core},
+                      {true, true}});
+      start = next;
+      previous_core = core;
+      previous_fringe = fringe;
+    }
+  }
+
   void EmitJoin(const LinePoint& point, Vector2 incoming, Vector2 outgoing) {
     const float turn = Cross(incoming, outgoing);
     if (std::abs(turn) <= kTurnEpsilon && Dot(incoming, outgoing) > 0.0f) {
@@ -394,6 +437,12 @@ class LineStrokeBuilder {
     const Vector2 incoming_normal = Normal(incoming);
     const Vector2 outgoing_normal = Normal(outgoing);
     const float outer_sign = turn < 0.0f ? 1.0f : -1.0f;
+    if (input_.rounded) {
+      EmitRoundArc(center, Multiply(incoming_normal, outer_sign),
+                   Multiply(outgoing_normal, outer_sign),
+                   std::atan2(turn, Dot(incoming, outgoing)));
+      return;
+    }
     const Vector2 previous_core =
         Add(center, Multiply(incoming_normal, half_width_ * outer_sign));
     const Vector2 next_core =
@@ -1216,11 +1265,12 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
     return 0;
   }
   if (IsLineLikeSeries(input.config.series_type)) {
+    const size_t line_quads =
+        input.rounded ? kRoundedLineQuadsPerSample : kLineQuadsPerSample;
     if (input.config.line_dashed) {
       DashedLineCapacityBuilder builder(input.config.display_scale);
       AppendLinePath(input, builder);
-      const size_t stroke_quads =
-          builder.DrawnStepCount() * kLineQuadsPerSample;
+      const size_t stroke_quads = builder.DrawnStepCount() * line_quads;
       const size_t fill_quads = input.config.series_type == SeriesType::kArea
                                     ? builder.PointCount()
                                     : 0;
@@ -1233,8 +1283,9 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
         kColumnCapacityPadding;
     const size_t point_count =
         std::min(visible_count, columns * kMaximumPointsPerColumn);
-    return point_count * SeriesQuadsPerSample(input.config.series_type) *
-           kFloatsPerQuad;
+    const size_t fill_quads =
+        input.config.series_type == SeriesType::kArea ? 1 : 0;
+    return point_count * (line_quads + fill_quads) * kFloatsPerQuad;
   }
   size_t quads_per_sample = SeriesQuadsPerSample(input.config.series_type);
   if (input.config.candle_radius > 0.0f) {

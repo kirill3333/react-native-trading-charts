@@ -13,17 +13,20 @@ describe('chart controls store', () => {
     controls.toggleMacd();
     controls.toggleRsi();
     controls.toggleVolume();
+    controls.togglePerformance();
 
     expect(useChartControlsStore.getState()).toMatchObject({
       showMacd: true,
       showRsi: false,
       showVolume: false,
+      showPerformance: true,
     });
   });
 
   it('resets controls when another chart becomes active', () => {
     const controls = useChartControlsStore.getState();
     controls.toggleMacd();
+    controls.togglePerformance();
 
     controls.activateChart('chart-b');
 
@@ -32,6 +35,20 @@ describe('chart controls store', () => {
       showMacd: false,
       showRsi: true,
       showVolume: true,
+      showPerformance: false,
     });
+  });
+
+  it('shows performance by default for synthetic charts and resets it for market charts', () => {
+    const controls = useChartControlsStore.getState();
+    controls.activateChart('synthetic', { showPerformance: true });
+    expect(useChartControlsStore.getState().showPerformance).toBe(true);
+
+    controls.togglePerformance();
+    expect(useChartControlsStore.getState().showPerformance).toBe(false);
+    controls.togglePerformance();
+
+    controls.activateChart('market');
+    expect(useChartControlsStore.getState().showPerformance).toBe(false);
   });
 });

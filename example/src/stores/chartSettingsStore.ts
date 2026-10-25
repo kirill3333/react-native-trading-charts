@@ -42,6 +42,8 @@ export type ChartSettings = {
   bollFillBottomColor: string;
   seriesType: ChartSeriesType;
   seriesLineWidth: SeriesLineWidth;
+  lineRounded: boolean;
+  areaRounded: boolean;
   mainUpColorOverride: string | null;
   mainDownColorOverride: string | null;
   mainLineColorOverride: string | null;
@@ -146,6 +148,8 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   bollFillBottomColor: '#2E90F50D',
   seriesType: 'candlestick',
   seriesLineWidth: 1.5,
+  lineRounded: true,
+  areaRounded: true,
   mainUpColorOverride: null,
   mainDownColorOverride: null,
   mainLineColorOverride: null,

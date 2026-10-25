@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Text } from 'react-native';
-import { SyntheticPerformanceReadout } from '../components/synthetic/SyntheticPerformanceReadout';
+import { PerformanceReadout } from '../components/PerformanceReadout';
 import { AppThemeProvider } from '../themeContext';
 import { type PerformanceSample } from '../performance';
 
@@ -50,7 +50,7 @@ describe('performance readout', () => {
         act(() => {
           renderer = create(
             <AppThemeProvider mode={mode}>
-              <SyntheticPerformanceReadout
+              <PerformanceReadout
                 sample={sample}
                 android
                 landscape={landscape}
@@ -76,11 +76,7 @@ describe('performance readout', () => {
         act(() => {
           renderer!.update(
             <AppThemeProvider mode={mode}>
-              <SyntheticPerformanceReadout
-                sample={null}
-                android
-                landscape={landscape}
-              />
+              <PerformanceReadout sample={null} android landscape={landscape} />
             </AppThemeProvider>
           );
         });
@@ -99,7 +95,7 @@ describe('performance readout', () => {
     act(() => {
       renderer = create(
         <AppThemeProvider mode="dark">
-          <SyntheticPerformanceReadout
+          <PerformanceReadout
             sample={{ ...sample, metalFPS: 10 }}
             android={false}
             landscape={false}

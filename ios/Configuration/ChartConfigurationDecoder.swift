@@ -151,6 +151,8 @@ enum ChartConfigurationDecoder {
     config.line = usesArea ? areaColor : lineColor
     config.line_gradient_enabled = usesArea ? areaGradientEnabled : lineGradientEnabled
     config.line_dashed = usesArea ? areaDashed : lineDashed
+    config.line_rounded = (usesArea ? areaAppearance : lineAppearance)
+      .number("rounded")?.boolValue ?? true
     config.line_gradient_top = usesArea ? areaGradientTop : lineGradientTop
     config.line_gradient_bottom = usesArea ? areaGradientBottom : lineGradientBottom
     config.area_fill_top = areaFillTop

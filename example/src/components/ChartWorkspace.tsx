@@ -5,8 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { APP_THEMES, type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 import { ChartControls } from './ChartControls';
+import { PerformancePanel } from './PerformancePanel';
+import { useChartControlsStore } from '../stores/chartControlsStore';
 
 type ChartWorkspaceProps = {
+  chartId: string;
   isLandscape: boolean;
   onToggleOrientation: () => void;
   header: ReactNode;
@@ -15,12 +18,16 @@ type ChartWorkspaceProps = {
 };
 
 export function ChartWorkspace({
+  chartId,
   isLandscape,
   onToggleOrientation,
   header,
   toolbar,
   children,
 }: ChartWorkspaceProps) {
+  const showPerformance = useChartControlsStore(
+    (state) => state.activeChartId === chartId && state.showPerformance
+  );
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
   return (
@@ -35,6 +42,7 @@ export function ChartWorkspace({
         />
         <View style={styles.chartColumn}>
           {toolbar}
+          {showPerformance && <PerformancePanel chartId={chartId} />}
           <View style={styles.chartContainer}>{children}</View>
         </View>
       </View>

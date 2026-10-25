@@ -94,6 +94,7 @@ enum class ConfigNumberIndex : std::uint8_t {
   kCandleTimestamp,
   kCandleRadius,
   kLineDashed,
+  kLineRounded,
   kCount,
 };
 
@@ -331,7 +332,7 @@ inline constexpr size_t kIndicatorLegendRecordWidth = 31;
 inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 45);
+static_assert(kConfigNumberCount == 46);
 static_assert(kSeriesNumberCount == 37);
 static_assert(kSeriesColorCount == 124);
 static_assert(kSeriesStringCount == 5);
@@ -781,6 +782,10 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   if (number_count >
       static_cast<jsize>(ToIndex(ConfigNumberIndex::kLineDashed))) {
     config.line_dashed = number_at(ConfigNumberIndex::kLineDashed) != 0.0;
+  }
+  if (number_count >
+      static_cast<jsize>(ToIndex(ConfigNumberIndex::kLineRounded))) {
+    config.line_rounded = number_at(ConfigNumberIndex::kLineRounded) != 0.0;
   }
   config.candle_radius =
       number_count >

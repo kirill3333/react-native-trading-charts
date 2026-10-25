@@ -436,9 +436,11 @@ export function buildChartViewConfig(
       ? {
           ...appearancePreset.line,
           width: settings.seriesLineWidth,
+          rounded: settings.lineRounded,
         }
       : {
           width: settings.seriesLineWidth,
+          rounded: settings.lineRounded,
           color: mainColors.lineColor,
         };
   const areaAppearance = {
@@ -446,6 +448,7 @@ export function buildChartViewConfig(
       ? appearancePreset.area
       : { color: mainColors.lineColor }),
     width: settings.seriesLineWidth,
+    rounded: settings.areaRounded,
     fill: {
       topColor: mainColors.areaFillTopColor,
       bottomColor: mainColors.areaFillBottomColor,

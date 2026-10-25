@@ -3934,6 +3934,27 @@ void TestDashedLineGeometryUsesSharedTriangleContract() {
       },
       solid);
   assert(dashed.size() > solid.size());
+
+  config.line_dashed = true;
+  config.line_gradient_enabled = true;
+  config.line_gradient_top = {0.2f, 0.4f, 0.6f, 0.8f};
+  config.line_gradient_bottom = {0.6f, 0.8f, 1.0f, 0.8f};
+  auto rounded_input = input;
+  rounded_input.rounded = true;
+  std::vector<float> rounded;
+  const size_t capacity =
+      trading_charts::internal::SeriesGeometryFloatCapacity(rounded_input);
+  rounded.reserve(capacity);
+  trading_charts::internal::AppendSeriesGeometry(rounded_input, rounded);
+  assert(rounded.size() > dashed.size());
+  assert(rounded.size() <= capacity);
+  for (size_t offset = 0; offset < rounded.size(); offset += 6) {
+    const float amount = rounded[offset + 1] / input.plot.Height();
+    ExpectNear(rounded[offset + 2], 0.2f + 0.4f * amount, 1e-6);
+    assert(rounded[offset] >= input.plot.left);
+    assert(rounded[offset] <= input.plot.right);
+    assert(rounded[offset + 5] >= 0.0f && rounded[offset + 5] <= 0.8f);
+  }
 }
 
 void TestCustomHistogramAndRuntimePaneWeights() {
@@ -4490,6 +4511,157 @@ void TestLineSegmentsKeepConstantWidthAtSharpTurns() {
   assert(start_cross_x * end_cross_x + start_cross_y * end_cross_y > 0.0f);
 }
 
+void TestRoundedLineCapsJoinsAndClipping() {
+  for (const auto type : {SeriesType::kLine, SeriesType::kArea}) {
+    for (const float scale : {1.0f, 3.0f}) {
+      ChartConfig config;
+      config.series_type = type;
+      config.line_width = 8.0f * scale;
+      config.display_scale = scale;
+      config.line = {0.2f, 0.4f, 0.6f, 0.5f};
+      config.area_fill_top.a = 0.0f;
+      config.area_fill_bottom.a = 0.0f;
+      const std::vector<Candle> candles{
+          {20.0, 50.0, 50.0, 50.0, 50.0, 0.0},
+          {80.0, 50.0, 50.0, 50.0, 50.0, 0.0},
+      };
+      trading_charts::internal::SeriesGeometryInput input{
+          config,
+          candles,
+          0,
+          candles.size(),
+          {0.0f, 0.0f, 100.0f * scale, 100.0f * scale},
+          0.0,
+          100.0,
+          0.0,
+          100.0,
+          nullptr,
+          true};
+      std::vector<float> vertices;
+      const size_t capacity =
+          trading_charts::internal::SeriesGeometryFloatCapacity(input);
+      vertices.reserve(capacity);
+      trading_charts::internal::AppendSeriesGeometry(input, vertices);
+      assert(vertices.size() <= capacity);
+      float left = 100.0f * scale;
+      float right = 0.0f;
+      for (size_t i = 0; i < vertices.size(); i += 6) {
+        if (vertices[i + 5] == config.line.a) {
+          left = std::min(left, vertices[i]);
+          right = std::max(right, vertices[i]);
+        }
+      }
+      ExpectNear(left, 16.0f * scale, 1e-4);
+      ExpectNear(right, 84.0f * scale, 1e-4);
+      input.rounded = false;
+      vertices.clear();
+      trading_charts::internal::AppendSeriesGeometry(input, vertices);
+      for (size_t i = 0; i < vertices.size(); i += 6) {
+        if (vertices[i + 5] == config.line.a) {
+          assert(vertices[i] >= 20.0f * scale);
+          assert(vertices[i] <= 80.0f * scale);
+        }
+      }
+    }
+  }
+
+  ChartConfig config;
+  config.series_type = SeriesType::kLine;
+  config.line_width = 8.0f;
+  // Both turn directions, including a nearly reversing segment and duplicate
+  // positions. The rounded stroke must never grow a miter spike.
+  for (const double middle : {20.0, 80.0}) {
+    const std::vector<Candle> candles{
+        {20.0, 50.0, 50.0, 50.0, 50.0, 0.0},
+        {21.0, middle, middle, middle, middle, 0.0},
+        {21.0, middle, middle, middle, middle, 0.0},
+        {22.0, 50.0, 50.0, 50.0, 50.0, 0.0},
+    };
+    trading_charts::internal::SeriesGeometryInput input{
+        config, candles, 0,   candles.size(), {0.0f, 0.0f, 100.0f, 100.0f},
+        0.0,    100.0,   0.0, 100.0,          nullptr,
+        true};
+    std::vector<float> vertices;
+    trading_charts::internal::AppendSeriesGeometry(input, vertices);
+    bool has_round_tip = false;
+    for (size_t i = 0; i < vertices.size(); i += 6) {
+      assert(std::isfinite(vertices[i]) && std::isfinite(vertices[i + 1]));
+      assert(vertices[i + 1] >= 15.0f - 1e-4f &&
+             vertices[i + 1] <= 85.0f + 1e-4f);
+      has_round_tip |= vertices[i + 1] < 17.0f || vertices[i + 1] > 83.0f;
+    }
+    assert(has_round_tip);
+    // Clip through the rounded joint and its alpha fringe.
+    input.visible_y_min = 25.0;
+    input.visible_y_max = 75.0;
+    vertices.clear();
+    trading_charts::internal::AppendSeriesGeometry(input, vertices);
+    for (size_t i = 0; i < vertices.size(); i += 6) {
+      assert(vertices[i + 1] >= input.plot.top - 1e-4f);
+      assert(vertices[i + 1] <= input.plot.bottom + 1e-4f);
+    }
+  }
+}
+
+std::vector<float> BlueStrokeVertices(const std::vector<float>& vertices) {
+  std::vector<float> result;
+  for (size_t i = 0; i < vertices.size(); i += 6) {
+    if (vertices[i + 2] == 0.0f && vertices[i + 3] == 0.0f &&
+        vertices[i + 4] == 1.0f) {
+      result.insert(result.end(), vertices.begin() + static_cast<ptrdiff_t>(i),
+                    vertices.begin() + static_cast<ptrdiff_t>(i + 6));
+    }
+  }
+  return result;
+}
+
+void TestRoundingIsExclusiveToMainLineAndArea() {
+  for (const auto type : {SeriesType::kLine, SeriesType::kArea,
+                          SeriesType::kCandlestick, SeriesType::kBar}) {
+    ChartEngine engine;
+    ChartConfig config;
+    config.series_type = type;
+    config.line = {1.0f, 0.0f, 0.0f, 1.0f};
+    config.show_current_price = false;
+    config.initial_visible_count = 10;
+    engine.SetConfig(config);
+    engine.SetSize(500.0f, 300.0f);
+    const double history[] = {
+        0.0,  20.0, 20.0, 20.0,     20.0, 1.0,  60000.0, 80.0, 80.0,
+        80.0, 80.0, 1.0,  120000.0, 20.0, 20.0, 20.0,    20.0, 1.0,
+    };
+    assert(engine.SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+    SeriesConfig series;
+    series.series_id = "additional";
+    series.type = SeriesType::kLine;
+    series.color = {0.0f, 0.0f, 1.0f, 1.0f};
+    assert(engine.AddSeries(series) == UpdateStatus::kApplied);
+    assert(engine.SetSeriesData(series.series_id, history, std::size(history),
+                                false) == UpdateStatus::kApplied);
+    series.series_id = "sma";
+    series.source = SeriesSource::kOhlcvSma;
+    series.source_series_id = "main";
+    series.moving_average_period = 2;
+    assert(engine.AddSeries(series) == UpdateStatus::kApplied);
+    const auto rounded = engine.Snapshot();
+    const auto overlays = BlueStrokeVertices(ContentOf(*rounded));
+    assert(!overlays.empty());
+    config.line_rounded = false;
+    engine.SetConfig(config);
+    const auto sharp = engine.Snapshot();
+    assert(BlueStrokeVertices(ContentOf(*sharp)) == overlays);
+    if (type == SeriesType::kLine || type == SeriesType::kArea) {
+      assert(ContentOf(*rounded) != ContentOf(*sharp));
+    } else {
+      assert(ContentOf(*rounded) == ContentOf(*sharp));
+    }
+    config.line_rounded = true;
+    engine.SetConfig(config);
+    assert(ContentOf(*engine.Snapshot()) == ContentOf(*rounded));
+  }
+}
+
 void TestPriceLinesAndYAxisValueMapping() {
   ChartEngine engine;
   ChartConfig config;
@@ -4838,6 +5010,8 @@ int main() noexcept {
     TestAreaFillAndLineLikeSemantics();
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
+    TestRoundedLineCapsJoinsAndClipping();
+    TestRoundingIsExclusiveToMainLineAndArea();
     TestPriceLinesAndYAxisValueMapping();
     TestClearPreservesChartDefinitions();
     TestResetForReuseStartsNewChart();
