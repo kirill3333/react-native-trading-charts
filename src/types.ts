@@ -56,9 +56,14 @@ export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
         kind: 'scalar';
-        seriesType: 'line' | 'area' | 'histogram';
+        seriesType: 'line' | 'area' | 'histogram' | 'sar';
         sourceType:
-          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma';
+          | 'data'
+          | 'ohlcvVolume'
+          | 'ohlcvRsi'
+          | 'ohlcvSma'
+          | 'ohlcvEma'
+          | 'ohlcvSar';
         value: number | null;
       }>)
   | (CrosshairSeriesIdentity &
@@ -289,6 +294,34 @@ export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
   appearance?: ChartLineAppearance;
 };
 
+export type SarSeriesAppearance = {
+  upColor?: string;
+  downColor?: string;
+  reversalColor?: string;
+};
+
+export type SarSeriesOptions = AdditionalSeriesBase & {
+  type: 'sar';
+  source: {
+    type: 'ohlcvSar';
+    seriesId: string;
+    /** Initial acceleration and increment. Default 0.02. */
+    step?: number;
+    /** Acceleration limit. Must satisfy 0 < step <= maximum <= 1. Default 0.20. */
+    maximum?: number;
+  };
+  appearance?: SarSeriesAppearance;
+};
+
+export type NormalizedSarSeriesOptions = Omit<
+  SarSeriesOptions,
+  'visible' | 'source' | 'appearance'
+> & {
+  visible: boolean;
+  source: Required<SarSeriesOptions['source']>;
+  appearance: Required<SarSeriesAppearance>;
+};
+
 export type BollSeriesAppearance = {
   upperLine?: ChartLineAppearance;
   middleLine?: ChartLineAppearance;
@@ -352,7 +385,8 @@ export type AdditionalChartSeriesOptions =
   | RsiSeriesOptions
   | MovingAverageSeriesOptions
   | MacdSeriesOptions
-  | BollSeriesOptions;
+  | BollSeriesOptions
+  | SarSeriesOptions;
 
 /**
  * Result of resolving an imperative addSeries() call: identifiers and the
@@ -361,6 +395,7 @@ export type AdditionalChartSeriesOptions =
  * configuration (theme), exactly as if the field were absent.
  */
 export type NormalizedAdditionalChartSeriesOptions =
+  | NormalizedSarSeriesOptions
   | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
@@ -724,6 +759,7 @@ export type ResolvedChartPaneOptions = {
 };
 
 export type ResolvedAdditionalChartSeriesOptions =
+  | NormalizedSarSeriesOptions
   | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels' | 'appearance'> & {

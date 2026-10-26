@@ -202,7 +202,7 @@ final class ChartEventCoordinator {
         result["histogram"] = value.has_histogram ? value.histogram : NSNull()
       default:
         result["kind"] = "scalar"
-        result["seriesType"] = seriesTypeName(value.series_type)
+        result["seriesType"] = value.source_type == .ohlcvSar ? "sar" : seriesTypeName(value.series_type)
         result["sourceType"] = sourceTypeName(value.source_type)
         result["value"] = value.has_value ? value.value : NSNull()
       }
@@ -245,6 +245,7 @@ final class ChartEventCoordinator {
     case .ohlcvEma: return "ohlcvEma"
     case .ohlcvMacd: return "ohlcvMacd"
     case .ohlcvBoll: return "ohlcvBoll"
+    case .ohlcvSar: return "ohlcvSar"
     default: return "data"
     }
   }

@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly script_dir="$(
+  cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+  pwd
+)"
 readonly build_dir="${TMPDIR:-/tmp}/trading-charts-cpp-iwyu"
+
+compiler_args=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+  # Homebrew IWYU does not discover Xcode's libc++ headers automatically.
+  compiler_args+=(-isysroot "$sdk_path" -isystem "$sdk_path/usr/include/c++/v1")
+fi
 
 cmake \
   -S cpp \
@@ -21,4 +32,6 @@ iwyu_tool.py -p "$build_dir" \
   cpp/internal/series_geometry.cc \
   cpp/tests/chart_engine_test.cc \
   -- \
+  "${compiler_args[@]}" \
+  -Xiwyu "--mapping_file=$script_dir/libcxx.imp" \
   -Xiwyu --error

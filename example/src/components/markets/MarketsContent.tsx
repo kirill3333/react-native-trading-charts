@@ -1,7 +1,8 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { type MarketProvider, type MarketTicker } from '../../api/marketData';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { MarketsErrorState, MarketsInlineError } from './MarketsErrorStates';
 import { MarketsList } from './MarketsList';
@@ -80,7 +81,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

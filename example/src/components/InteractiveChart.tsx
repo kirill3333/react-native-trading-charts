@@ -3,7 +3,6 @@ import { StyleSheet } from 'react-native';
 import {
   TradingChartsView,
   TradingCharts,
-  type AdditionalChartSeriesOptions,
   type ChartResolution,
   type VisibleRangeChangeEvent,
   type YAxisPressEvent,
@@ -15,11 +14,7 @@ import {
   type AllTimeExtremes,
 } from '../allTimeExtremes';
 import {
-  buildMacdSeries,
-  buildMovingAverageSeries,
-  buildBollSeries,
-  buildRsiAppearance,
-  buildVolumeAppearance,
+  buildAdditionalSeries,
   buildChartPanes,
   buildChartViewConfig,
   shouldUseSignificantPriceFormat,
@@ -37,7 +32,7 @@ type InteractiveChartProps = {
   showRsi: boolean;
   showMacd: boolean;
   allTimeExtremes: AllTimeExtremes | null;
-  onVisibleRangeChange: (event: VisibleRangeChangeEvent) => void;
+  onVisibleRangeChange?: (event: VisibleRangeChangeEvent) => void;
 };
 
 export const InteractiveChart = memo(function InteractiveChart({
@@ -85,40 +80,10 @@ export const InteractiveChart = memo(function InteractiveChart({
       }),
     [minMove, settings, showMacd, showRsi, showVolume]
   );
-  const additionalSeries = useMemo<
-    ReadonlyArray<AdditionalChartSeriesOptions> | undefined
-  >(() => {
-    const result: AdditionalChartSeriesOptions[] =
-      buildMovingAverageSeries(settings);
-    if (settings.bollEnabled) result.push(buildBollSeries(settings));
-    if (showVolume) {
-      result.push({
-        seriesId: 'volume',
-        type: 'histogram',
-        paneId: 'volume',
-        priceScaleId: 'volume',
-        source: { type: 'ohlcvVolume', seriesId: 'main' },
-        appearance: buildVolumeAppearance(settings),
-      });
-    }
-    if (showRsi) {
-      result.push({
-        seriesId: 'rsi',
-        type: 'line',
-        paneId: 'rsi',
-        priceScaleId: 'rsi',
-        source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
-        levels: { oversold: 30, overbought: 70 },
-        appearance: {
-          ...buildRsiAppearance(settings),
-        },
-      });
-    }
-    if (showMacd) {
-      result.push(buildMacdSeries(settings));
-    }
-    return result.length > 0 ? result : undefined;
-  }, [settings, showMacd, showRsi, showVolume]);
+  const additionalSeries = useMemo(
+    () => buildAdditionalSeries(settings, { showVolume, showRsi, showMacd }),
+    [settings, showMacd, showRsi, showVolume]
+  );
 
   useEffect(() => {
     syncAllTimePriceLines(

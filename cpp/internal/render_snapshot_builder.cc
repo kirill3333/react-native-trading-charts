@@ -695,7 +695,8 @@ class RenderSnapshotBuilder {
   template <typename Callback>
   void VisitLineGapAnchors(const SeriesData& series, const SeriesWindow& window,
                            Callback&& callback) const {
-    if (!IsLineLikeSeries(series.config.type) || window.first != window.last ||
+    if (series.config.source == SeriesSource::kOhlcvSar ||
+        !IsLineLikeSeries(series.config.type) || window.first != window.last ||
         series.candles.empty()) {
       return;
     }
@@ -1131,6 +1132,11 @@ class RenderSnapshotBuilder {
         float_count += (window.last - window.first) * kFloatsPerQuad;
         continue;
       }
+      if (series.config.source == SeriesSource::kOhlcvSar) {
+        float_count += SarGeometryFloatCapacity(
+            BuildSarGeometryInput(index, resolved_pane_index));
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvBoll) {
         const size_t first = window.first > 0 ? window.first - 1 : 0;
         const size_t last = std::min(window.last + 1, series.candles.size());
@@ -1419,6 +1425,21 @@ class RenderSnapshotBuilder {
         *content_vertices_);
   }
 
+  SeriesGeometryInput BuildSarGeometryInput(size_t index, size_t pane) const {
+    const SeriesWindow& window = series_windows_[index];
+    return SeriesGeometryInput{
+        input_.config,
+        input_.additional_series[index].candles,
+        window.first,
+        window.last,
+        snapshot_->panes[pane].plot,
+        input_.visible_x_min,
+        input_.visible_x_max,
+        pane_y_min_[pane],
+        pane_y_max_[pane],
+        input_.config.logical_spacing ? &input_.candles : nullptr};
+  }
+
   void AddBollSeriesGeometry(size_t index, bool fill) {
     const SeriesData& series = input_.additional_series[index];
     const auto pane = ValidPaneIndex(series, snapshot_->panes.size());
@@ -1461,6 +1482,11 @@ class RenderSnapshotBuilder {
       }
       const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvSar) {
+        AppendSarGeometry(BuildSarGeometryInput(index, resolved_pane_index),
+                          series, *content_vertices_);
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvBoll) {
         AddBollSeriesGeometry(index, false);
         continue;

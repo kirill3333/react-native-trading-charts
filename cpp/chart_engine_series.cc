@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -139,7 +140,8 @@ void ChartEngine::RefreshDerivedDependentsLocked(
     const SeriesSource source = series.config.source;
     if ((source == SeriesSource::kOhlcvRsi ||
          source == SeriesSource::kOhlcvMacd ||
-         source == SeriesSource::kOhlcvBoll || IsMovingAverageSource(source)) &&
+         source == SeriesSource::kOhlcvBoll ||
+         source == SeriesSource::kOhlcvSar || IsMovingAverageSource(source)) &&
         (series.config.source_series_id.empty()
              ? source_series_id == "main"
              : series.config.source_series_id == source_series_id)) {
@@ -197,6 +199,13 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       !IsValidMacdSeriesConfig(config)) {
     return UpdateStatus::kInvalidInput;
   }
+  if (config.source == SeriesSource::kOhlcvSar &&
+      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
+       !std::isfinite(config.sar_step) || !std::isfinite(config.sar_maximum) ||
+       config.sar_step <= 0.0 || config.sar_step > config.sar_maximum ||
+       config.sar_maximum > 1.0)) {
+    return UpdateStatus::kInvalidInput;
+  }
   if (config.source == SeriesSource::kOhlcvBoll &&
       (config.type != SeriesType::kLine || config.boll_period == 0 ||
        !std::isfinite(config.boll_std_dev_multiplier) ||
@@ -228,7 +237,8 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
     return UpdateStatus::kInvalidInput;
   }
   if (IsMovingAverageSource(normalized.source) ||
-      normalized.source == SeriesSource::kOhlcvBoll) {
+      normalized.source == SeriesSource::kOhlcvBoll ||
+      normalized.source == SeriesSource::kOhlcvSar) {
     if (normalized.source_series_id == "main") {
       if (pane != panes_.begin()) {
         return UpdateStatus::kInvalidInput;
@@ -338,6 +348,7 @@ UpdateStatus ChartEngine::SetSeriesData(const std::string& series_id,
     series->signal_candles.clear();
     series->macd_states.clear();
     series->boll_states.clear();
+    series->sar_states.clear();
     RefreshDerivedDependentsLocked(series_id, 0, mutation);
     return UpdateStatus::kApplied;
   }

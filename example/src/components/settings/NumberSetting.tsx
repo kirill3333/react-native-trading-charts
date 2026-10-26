@@ -1,57 +1,61 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { createThemedStyles } from '../../createThemedStyles';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { SettingsRow } from './SettingsRow';
+import {
+  MAX_INTEGER_SETTING_VALUE,
+  parseSettingNumber,
+} from '../../settingNumber';
 
 type NumberSettingProps = {
   label: string;
   description: string;
   value: number;
   integer?: boolean;
+  validate?: (value: number) => string | undefined;
   onValueChange: (value: number) => void;
 };
-
-export function parseSettingNumber(
-  text: string,
-  integer: boolean
-): number | null {
-  const trimmed = text.trim().replace(',', '.');
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (integer && (!Number.isInteger(value) || value > 0xffffffff)) return null;
-  return value;
-}
 
 export function NumberSetting({
   label,
   description,
   value,
   integer = false,
+  validate,
   onValueChange,
 }: NumberSettingProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
-  const [draft, setDraft] = useState(String(value));
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    setDraft(String(value));
-    setError(undefined);
-  }, [value]);
+  const [draft, setDraft] = useState<{
+    value: number;
+    text: string;
+    error: string | undefined;
+  }>({ value, text: String(value), error: undefined });
+  // Reset before children commit, while preserving the native input and focus.
+  if (!Object.is(draft.value, value)) {
+    setDraft({ value, text: String(value), error: undefined });
+  }
+  const { error } = draft;
   const commit = () => {
-    const parsed = parseSettingNumber(draft, integer);
+    const parsed = parseSettingNumber(draft.text, integer);
     if (parsed == null) {
-      setError(
-        integer
-          ? 'Enter an integer from 1 to 4294967295'
-          : 'Enter a positive number'
-      );
+      setDraft({
+        ...draft,
+        error: integer
+          ? `Enter an integer from 1 to ${MAX_INTEGER_SETTING_VALUE}`
+          : 'Enter a positive number',
+      });
       return;
     }
-    setError(undefined);
-    setDraft(String(parsed));
+    const validationError = validate?.(parsed);
+    if (validationError != null) {
+      setDraft({ ...draft, error: validationError });
+      return;
+    }
+    setDraft({ value, text: String(parsed), error: undefined });
     onValueChange(parsed);
   };
   return (
@@ -64,8 +68,8 @@ export function NumberSetting({
           keyboardAppearance={theme.dark ? 'dark' : 'light'}
           keyboardType={integer ? 'number-pad' : 'decimal-pad'}
           selectTextOnFocus
-          value={draft}
-          onChangeText={setDraft}
+          value={draft.text}
+          onChangeText={(text) => setDraft({ ...draft, text })}
           onEndEditing={commit}
           style={[styles.input, error != null && styles.invalidInput]}
         />
@@ -98,7 +102,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

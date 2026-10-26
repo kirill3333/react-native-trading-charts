@@ -156,6 +156,8 @@ enum class SeriesNumberIndex : std::uint8_t {
   kBollLowerWidth,
   kBollLowerGradientEnabled,
   kBollLowerDashed,
+  kSarStep,
+  kSarMaximum,
   kCount,
 };
 
@@ -194,7 +196,8 @@ enum class SeriesColorIndex : std::uint8_t {
   kBollLower = 112,
   kBollLowerGradientTop = 116,
   kBollLowerGradientBottom = 120,
-  kCount = 124,
+  kSarReversal = 124,
+  kCount = 128,
 };
 
 enum class SeriesStringIndex : std::uint8_t {
@@ -317,8 +320,8 @@ inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 4.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v4";
+inline constexpr double kChartEngineTransportAbiVersion = 5.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v5";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -333,8 +336,8 @@ inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 46);
-static_assert(kSeriesNumberCount == 37);
-static_assert(kSeriesColorCount == 124);
+static_assert(kSeriesNumberCount == 39);
+static_assert(kSeriesColorCount == 128);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
               kSnapshotRecordHeaderCount);
@@ -1000,6 +1003,7 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
                   : source_value == 2.0 ? SeriesSource::kOhlcvRsi
                   : source_value == 3.0 ? SeriesSource::kOhlcvSma
                   : source_value == 4.0 ? SeriesSource::kOhlcvEma
+                  : source_value == 7.0 ? SeriesSource::kOhlcvSar
                   : source_value == 6.0 ? SeriesSource::kOhlcvBoll
                   : source_value == 5.0 ? SeriesSource::kOhlcvMacd
                                         : SeriesSource::kData;
@@ -1120,6 +1124,9 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
       color_at(SeriesColorIndex::kBollLowerGradientTop);
   series.boll_lower.gradient_bottom =
       color_at(SeriesColorIndex::kBollLowerGradientBottom);
+  series.sar_step = number_at(SeriesNumberIndex::kSarStep);
+  series.sar_maximum = number_at(SeriesNumberIndex::kSarMaximum);
+  series.sar_reversal = color_at(SeriesColorIndex::kSarReversal);
   return StatusValue(instance->AddSeries(series));
 }
 
