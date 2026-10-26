@@ -6,8 +6,9 @@ import {
   View,
 } from 'react-native';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { useSyntheticSettingsDraft } from '../../hooks/useSyntheticSettingsDraft';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { SyntheticSettingsActions } from './SyntheticSettingsActions';
 import { SyntheticSettingsField } from './SyntheticSettingsField';
@@ -61,7 +62,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

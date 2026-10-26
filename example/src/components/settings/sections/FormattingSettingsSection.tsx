@@ -1,7 +1,8 @@
 import { StyleSheet, TextInput } from 'react-native';
 
+import { createThemedStyles } from '../../../createThemedStyles';
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
-import { APP_THEMES, type AppThemeColors } from '../../../theme';
+import { type AppThemeColors } from '../../../theme';
 import { useAppTheme } from '../../../themeContext';
 import { SettingSegments } from '../SettingSegments';
 import { SettingsRow } from '../SettingsRow';
@@ -10,9 +11,7 @@ import { LOCALE_OPTIONS, TIME_ZONE_OPTIONS } from './settingsOptions';
 
 export function FormattingSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
 
@@ -40,9 +39,7 @@ export function FormattingSettingsSection() {
           autoCorrect={false}
           keyboardAppearance={theme.dark ? 'dark' : 'light'}
           maxLength={4}
-          onChangeText={(currencySymbol) =>
-            updateSettings({ currencySymbol })
-          }
+          onChangeText={(currencySymbol) => updateSettings({ currencySymbol })}
           placeholder="None"
           placeholderTextColor={theme.colors.inputPlaceholder}
           selectTextOnFocus
@@ -71,7 +68,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

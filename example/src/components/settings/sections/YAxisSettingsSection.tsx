@@ -2,16 +2,11 @@ import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { SettingSegments } from '../SettingSegments';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
-import {
-  FORMAT_OPTIONS,
-  MARGIN_OPTIONS,
-} from './settingsOptions';
+import { FORMAT_OPTIONS, MARGIN_OPTIONS } from './settingsOptions';
 
 export function YAxisSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
 
   return (
     <SettingsSection title="Y axis">

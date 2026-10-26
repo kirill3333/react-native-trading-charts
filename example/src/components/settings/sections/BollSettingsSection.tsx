@@ -1,72 +1,11 @@
-import {
-  type BollLineSettings,
-  useChartSettingsStore,
-} from '../../../stores/chartSettingsStore';
+import { LineAppearanceFields } from '../LineAppearanceFields';
+import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
 import { NumberSetting } from '../NumberSetting';
 import { SettingSegments } from '../SettingSegments';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
-import {
-  INDICATOR_LINE_WIDTH_OPTIONS,
-  LINE_OPTIONS,
-  VALUE_SOURCE_OPTIONS,
-} from './settingsOptions';
-
-function BollLineSettingsForm({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: BollLineSettings;
-  onChange: (value: BollLineSettings) => void;
-}) {
-  const update = (patch: Partial<BollLineSettings>) =>
-    onChange({ ...value, ...patch });
-  return (
-    <>
-      <SettingSegments
-        label={`${label} width`}
-        value={value.width}
-        options={INDICATOR_LINE_WIDTH_OPTIONS}
-        onValueChange={(width) => update({ width })}
-      />
-      <SettingSegments
-        label={`${label} style`}
-        value={value.style}
-        options={LINE_OPTIONS}
-        onValueChange={(style) => update({ style })}
-      />
-      <HexColorSetting
-        label={`${label} color`}
-        value={value.color}
-        onValueChange={(color) => update({ color })}
-      />
-      <SettingSwitch
-        label={`${label} gradient`}
-        value={value.gradientEnabled}
-        onValueChange={(gradientEnabled) => update({ gradientEnabled })}
-      />
-      {value.gradientEnabled ? (
-        <>
-          <HexColorSetting
-            label={`${label} gradient top`}
-            value={value.gradientTopColor}
-            onValueChange={(gradientTopColor) => update({ gradientTopColor })}
-          />
-          <HexColorSetting
-            label={`${label} gradient bottom`}
-            value={value.gradientBottomColor}
-            onValueChange={(gradientBottomColor) =>
-              update({ gradientBottomColor })
-            }
-          />
-        </>
-      ) : null}
-    </>
-  );
-}
+import { VALUE_SOURCE_OPTIONS } from './settingsOptions';
 
 export function BollSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
@@ -104,20 +43,32 @@ export function BollSettingsSection() {
               updateSettings({ bollValueSource })
             }
           />
-          <BollLineSettingsForm
+          <LineAppearanceFields
             label="Upper"
             value={settings.bollUpperLine}
-            onChange={(bollUpperLine) => updateSettings({ bollUpperLine })}
+            onChange={(patch) =>
+              updateSettings({
+                bollUpperLine: { ...settings.bollUpperLine, ...patch },
+              })
+            }
           />
-          <BollLineSettingsForm
+          <LineAppearanceFields
             label="Middle"
             value={settings.bollMiddleLine}
-            onChange={(bollMiddleLine) => updateSettings({ bollMiddleLine })}
+            onChange={(patch) =>
+              updateSettings({
+                bollMiddleLine: { ...settings.bollMiddleLine, ...patch },
+              })
+            }
           />
-          <BollLineSettingsForm
+          <LineAppearanceFields
             label="Lower"
             value={settings.bollLowerLine}
-            onChange={(bollLowerLine) => updateSettings({ bollLowerLine })}
+            onChange={(patch) =>
+              updateSettings({
+                bollLowerLine: { ...settings.bollLowerLine, ...patch },
+              })
+            }
           />
           <SettingSwitch
             label="Band fill"

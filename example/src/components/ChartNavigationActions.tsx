@@ -3,9 +3,10 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons/static'
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { TradingCharts } from 'react-native-trading-charts';
 
+import { createThemedStyles } from '../createThemedStyles';
 import { useChartControlsStore } from '../stores/chartControlsStore';
 import { isPerformanceAvailable } from '../performance';
-import { APP_THEMES, type AppThemeColors } from '../theme';
+import { type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 import { SettingSwitch } from './settings/SettingSwitch';
 
@@ -117,7 +118,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

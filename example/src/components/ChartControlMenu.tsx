@@ -9,9 +9,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { createThemedStyles } from '../createThemedStyles';
+import { CHART_INDICATORS } from '../chartIndicators';
 import { useChartControlsStore } from '../stores/chartControlsStore';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
-import { APP_THEMES, type AppThemeColors } from '../theme';
+import { type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 import { ChartNavigationActions } from './ChartNavigationActions';
 import { SettingSwitch } from './settings/SettingSwitch';
@@ -100,36 +102,16 @@ export function ChartControlMenu({
                 }}
               />
             )}
-            {kind === 'indicators' && (
-              <>
+            {kind === 'indicators' &&
+              CHART_INDICATORS.map(({ key, label, description }) => (
                 <SettingSwitch
-                  label="BOLL"
-                  description="Bollinger Bands"
-                  value={settings.bollEnabled}
-                  onValueChange={(bollEnabled) =>
-                    updateSettings({ bollEnabled })
-                  }
+                  key={key}
+                  label={label}
+                  description={description}
+                  value={settings[key]}
+                  onValueChange={(value) => updateSettings({ [key]: value })}
                 />
-                <SettingSwitch
-                  label="SAR"
-                  description="Parabolic stop and reverse"
-                  value={settings.sarEnabled}
-                  onValueChange={(sarEnabled) => updateSettings({ sarEnabled })}
-                />
-                <SettingSwitch
-                  label="EMA"
-                  description="Exponential moving average"
-                  value={settings.emaEnabled}
-                  onValueChange={(emaEnabled) => updateSettings({ emaEnabled })}
-                />
-                <SettingSwitch
-                  label="SMA"
-                  description="Simple moving average"
-                  value={settings.smaEnabled}
-                  onValueChange={(smaEnabled) => updateSettings({ smaEnabled })}
-                />
-              </>
-            )}
+              ))}
             {kind === 'panels' && (
               <>
                 <SettingSwitch
@@ -251,7 +233,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

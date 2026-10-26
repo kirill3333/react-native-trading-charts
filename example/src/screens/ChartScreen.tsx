@@ -1,15 +1,17 @@
-import { useCallback, useLayoutEffect } from 'react';
+import { useCallback } from 'react';
 import {
   type StaticScreenProps,
   useNavigation,
 } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import {
   type ChartResolution,
   type VisibleRangeChangeEvent,
 } from 'react-native-trading-charts';
 
+import { ConnectionBadge } from '../components/ConnectionBadge';
+import { tickerPair } from '../marketPresentation';
+import { useChartActivation } from '../hooks/useChartActivation';
 import {
   BINANCE_INTERVALS,
   type BinanceInterval,
@@ -27,10 +29,7 @@ import {
   hyperliquidMarketData,
   type MarketDataAdapter,
 } from '../api/marketData';
-import {
-  useChartDataFeed,
-  type ChartConnectionStatus,
-} from '../api/useChartDataFeed';
+import { useChartDataFeed } from '../api/useChartDataFeed';
 import { ChartWorkspace } from '../components/ChartWorkspace';
 import { ChartErrorBanner } from '../components/ChartErrorBanner';
 import { ChartHeader } from '../components/ChartHeader';
@@ -41,8 +40,6 @@ import {
 } from '../components/TimeIntervalSelector';
 import { useChartOrientation } from '../hooks/useChartOrientation';
 import { useChartControlsStore } from '../stores/chartControlsStore';
-import { APP_THEMES, type AppThemeColors } from '../theme';
-import { useAppTheme } from '../themeContext';
 
 export type ChartRouteParams =
   | {
@@ -72,33 +69,6 @@ type PriceTicker = {
   precision: number;
   minMove: number;
 };
-
-type ConnectionBadgeProps = {
-  status: ChartConnectionStatus;
-};
-
-function ConnectionBadge({ status }: ConnectionBadgeProps) {
-  const theme = useAppTheme();
-  const styles = THEMED_STYLES[theme.mode];
-  if (status === 'historical' || status === 'error' || status === 'no-data') {
-    return null;
-  }
-  if (status === 'live') {
-    return (
-      <View pointerEvents="none" style={styles.liveBadge}>
-        <View style={styles.liveDot} />
-      </View>
-    );
-  }
-
-  return (
-    <View pointerEvents="none" style={styles.connectionBadge}>
-      {status !== 'paused' && status !== 'offline' ? (
-        <ActivityIndicator color={theme.colors.accentText} size="small" />
-      ) : null}
-    </View>
-  );
-}
 
 type IntervalOption<TInterval extends ChartInterval> =
   TimeIntervalOption<TInterval> & {
@@ -142,7 +112,6 @@ function ChartContent<
   const showVolume = useChartControlsStore((state) => state.showVolume);
   const showRsi = useChartControlsStore((state) => state.showRsi);
   const showMacd = useChartControlsStore((state) => state.showMacd);
-  const activateChart = useChartControlsStore((state) => state.activateChart);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
   const resolution = intervalConfig?.resolution ?? DEFAULT_RESOLUTION;
@@ -151,9 +120,7 @@ function ChartContent<
     useChartDataFeed(adapter, ticker, interval, chartId);
   const displayedPrice = lastPrice ?? ticker.lastPrice;
 
-  useLayoutEffect(() => {
-    activateChart(chartId);
-  }, [activateChart, chartId]);
+  useChartActivation(chartId);
 
   const changeInterval = useCallback(
     (nextInterval: TInterval) => {
@@ -234,17 +201,18 @@ export function ChartScreen({ route }: ChartScreenProps) {
   const navigation = useNavigation<ChartNavigation>();
   const { isLandscape, toggleOrientation } = useChartOrientation(navigation);
   const params = route.params;
+  const pair = tickerPair(params.ticker);
   if (params.provider === 'hyperliquid') {
     return (
       <ChartContent
         isLandscape={isLandscape}
         onToggleOrientation={toggleOrientation}
         adapter={hyperliquidMarketData}
-        baseAsset={params.ticker.baseAsset}
+        baseAsset={pair.base}
         chartId={hyperliquidChartIdFor(params.ticker.symbol, params.interval)}
         interval={params.interval}
         intervals={HYPERLIQUID_INTERVALS}
-        quoteAsset={params.ticker.quoteAsset}
+        quoteAsset={pair.quote}
         ticker={params.ticker}
         venueLabel="Hyperliquid Perpetual"
       />
@@ -255,67 +223,13 @@ export function ChartScreen({ route }: ChartScreenProps) {
       isLandscape={isLandscape}
       onToggleOrientation={toggleOrientation}
       adapter={binanceMarketData}
-      baseAsset={params.ticker.symbol.slice(0, -4)}
+      baseAsset={pair.base}
       chartId={chartIdFor(params.ticker.symbol, params.interval)}
       interval={params.interval}
       intervals={BINANCE_INTERVALS}
-      quoteAsset="USDT"
+      quoteAsset={pair.quote}
       ticker={params.ticker}
       venueLabel="Binance Spot"
     />
   );
 }
-
-function createStyles(colors: AppThemeColors) {
-  return StyleSheet.create({
-    liveBadge: {
-      alignItems: 'center',
-      backgroundColor: colors.liveSurface,
-      borderRadius: 12,
-      flexDirection: 'row',
-      left: 12,
-      paddingHorizontal: 9,
-      paddingVertical: 6,
-      position: 'absolute',
-      top: 12,
-    },
-    liveDot: {
-      backgroundColor: colors.positive,
-      borderRadius: 4,
-      height: 7,
-      marginRight: 6,
-      width: 7,
-    },
-    liveText: {
-      color: colors.liveText,
-      fontSize: 10,
-      fontWeight: '900',
-      letterSpacing: 0.8,
-    },
-    connectionBadge: {
-      alignItems: 'center',
-      alignSelf: 'center',
-      backgroundColor: colors.connectionSurface,
-      borderColor: colors.border,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      position: 'absolute',
-      top: 12,
-    },
-    connectionText: {
-      color: colors.textSecondary,
-      fontSize: 12,
-      fontWeight: '600',
-      marginLeft: 8,
-    },
-    connectionTextWithoutSpinner: { marginLeft: 0 },
-  });
-}
-
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};

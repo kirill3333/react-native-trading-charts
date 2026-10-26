@@ -1,6 +1,7 @@
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { createThemedStyles } from '../../createThemedStyles';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 
 type SyntheticSettingsFieldProps = {
@@ -69,7 +70,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

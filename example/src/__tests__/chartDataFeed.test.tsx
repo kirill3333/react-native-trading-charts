@@ -5,7 +5,7 @@ import {
   QueryClientProvider,
 } from '@tanstack/react-query';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { useLayoutEffect } from 'react';
+import { StrictMode, useLayoutEffect } from 'react';
 import { type OhlcCandle } from 'react-native-trading-charts';
 
 import { type MarketDataAdapter } from '../api/marketData';
@@ -389,6 +389,139 @@ describe('useChartDataFeed', () => {
     expect(feed!.allTimeExtremes).toEqual({ high: 24, low: 18 });
 
     act(() => renderer.unmount());
+    queryClient.clear();
+  });
+  it('ignores an old market resync that completes after switching charts', async () => {
+    let resolveOldSnapshot!: (candles: OhlcCandle[]) => void;
+    const oldSnapshot = new Promise<OhlcCandle[]>((resolve) => {
+      resolveOldSnapshot = resolve;
+    });
+    const nextCandle = { ...initialCandle, close: 20 };
+    const fetchCandles = jest
+      .fn<MarketDataAdapter<TestTicker, '1m', TestMessage>['fetchCandles']>()
+      .mockResolvedValueOnce([initialCandle])
+      .mockReturnValueOnce(oldSnapshot)
+      .mockResolvedValue([nextCandle]);
+    const sockets: FakeSocket[] = [];
+    const websocket = createMarketWebSocketFactory(protocol, {
+      isFocused: () => true,
+      isOnline: () => true,
+      subscribeFocused: () => () => undefined,
+      subscribeOnline: () => () => undefined,
+      createSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const adapter = createAdapter(fetchCandles, websocket);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    let symbol = 'BTCUSDT';
+    let feed: FeedResult | null = null;
+    function Harness() {
+      feed = useChartDataFeed(
+        adapter,
+        { symbol, lastPrice: 10 },
+        '1m',
+        symbol,
+        mockCharts
+      );
+      return null;
+    }
+    const view = () => (
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = create(view());
+    });
+    await act(async () => {
+      await flushQueries();
+    });
+    await act(async () => {
+      sockets[0]!.open();
+      await flushQueries();
+    });
+    expect(fetchCandles).toHaveBeenCalledTimes(2);
+    symbol = 'ETHUSDT';
+    act(() => {
+      renderer.update(view());
+    });
+    await act(async () => {
+      await flushQueries();
+    });
+    expect(mockCharts.setHistory).toHaveBeenLastCalledWith('ETHUSDT', [
+      nextCandle,
+    ]);
+    mockCharts.setHistory.mockClear();
+    await act(async () => {
+      resolveOldSnapshot([initialCandle]);
+      await flushQueries();
+    });
+    expect(mockCharts.setHistory).not.toHaveBeenCalled();
+    expect(feed!.lastPrice).toBe(20);
+    act(() => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('keeps exactly one active subscription across StrictMode effect replay', async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const adapter = createAdapter(
+      jest
+        .fn<MarketDataAdapter<TestTicker, '1m', TestMessage>['fetchCandles']>()
+        .mockResolvedValue([initialCandle]),
+      {
+        connect: () => {
+          active += 1;
+          maximumActive = Math.max(maximumActive, active);
+          return {
+            close: () => {
+              active -= 1;
+            },
+            retry: () => undefined,
+            reportProtocolError: () => undefined,
+          };
+        },
+      }
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    function Harness() {
+      useChartDataFeed(
+        adapter,
+        { symbol: 'BTCUSDT', lastPrice: 10 },
+        '1m',
+        'chart',
+        mockCharts
+      );
+      return null;
+    }
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <StrictMode>
+          <QueryClientProvider client={queryClient}>
+            <Harness />
+          </QueryClientProvider>
+        </StrictMode>
+      );
+    });
+    await act(async () => {
+      await flushQueries();
+    });
+    expect(active).toBe(1);
+    expect(maximumActive).toBe(1);
+    expect(mockCharts.setHistory).toHaveBeenCalledWith('chart', [
+      initialCandle,
+    ]);
+    act(() => renderer.unmount());
+    expect(active).toBe(0);
     queryClient.clear();
   });
 });

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { isHexColor, normalizeHexColor } from '../../hexColor';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { SettingsRow } from './SettingsRow';
 
@@ -102,7 +103,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

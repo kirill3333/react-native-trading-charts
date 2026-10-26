@@ -4,7 +4,8 @@ import { useNavigation } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { type HyperliquidTicker } from '../api/hyperliquid';
+import { createThemedStyles } from '../createThemedStyles';
+import { isHyperliquidTicker } from '../marketPresentation';
 import {
   binanceMarketData,
   hyperliquidMarketData,
@@ -13,14 +14,8 @@ import {
 } from '../api/marketData';
 import { MarketsContent } from '../components/markets/MarketsContent';
 import { MarketsHeader } from '../components/markets/MarketsHeader';
-import { APP_THEMES, type AppThemeColors } from '../theme';
+import { type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
-
-function isHyperliquidTicker(
-  ticker: MarketTicker
-): ticker is HyperliquidTicker {
-  return 'provider' in ticker && ticker.provider === 'hyperliquid';
-}
 
 export function MarketsScreen() {
   const navigation = useNavigation();
@@ -89,7 +84,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

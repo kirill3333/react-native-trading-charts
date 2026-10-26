@@ -1,8 +1,9 @@
 import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { ChartErrorBanner } from '../ChartErrorBanner';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 
 type SyntheticChartToolbarProps = {
@@ -94,7 +95,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);
