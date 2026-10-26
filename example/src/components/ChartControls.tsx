@@ -27,7 +27,10 @@ export function ChartControls({
   const [menu, setMenu] = useState<ChartControlMenuKind | null>(null);
   const hasIndicators = useChartSettingsStore(
     ({ settings }) =>
-      settings.bollEnabled || settings.emaEnabled || settings.smaEnabled
+      settings.sarEnabled ||
+      settings.bollEnabled ||
+      settings.emaEnabled ||
+      settings.smaEnabled
   );
   const hasPanels = useChartControlsStore(
     (state) => state.showMacd || state.showRsi || state.showVolume

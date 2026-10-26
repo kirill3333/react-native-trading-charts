@@ -14,13 +14,22 @@ export function useSyntheticDataFeed(
   settings: SyntheticSettings,
   charts: SyntheticFeedApi = TradingCharts
 ) {
+  const [session, setSession] = useState({ chartId, charts, settings });
   const [snapshot, setSnapshot] = useState(() =>
     initialSyntheticSnapshot(settings)
   );
+  // A new feed must not commit the previous feed's status or price range.
+  if (
+    session.chartId !== chartId ||
+    session.charts !== charts ||
+    session.settings !== settings
+  ) {
+    setSession({ chartId, charts, settings });
+    setSnapshot(initialSyntheticSnapshot(settings));
+  }
   const feedRef = useRef<SyntheticFeed | null>(null);
 
   useEffect(() => {
-    setSnapshot(initialSyntheticSnapshot(settings));
     const feed = new SyntheticFeed(chartId, settings, charts, setSnapshot);
     feedRef.current = feed;
     return () => {

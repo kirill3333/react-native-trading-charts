@@ -18,6 +18,7 @@ import {
   buildMacdSeries,
   buildMovingAverageSeries,
   buildBollSeries,
+  buildSarSeries,
   buildRsiAppearance,
   buildVolumeAppearance,
   buildChartPanes,
@@ -91,6 +92,7 @@ export const InteractiveChart = memo(function InteractiveChart({
     const result: AdditionalChartSeriesOptions[] =
       buildMovingAverageSeries(settings);
     if (settings.bollEnabled) result.push(buildBollSeries(settings));
+    if (settings.sarEnabled) result.push(buildSarSeries(settings));
     if (showVolume) {
       result.push({
         seriesId: 'volume',

@@ -111,6 +111,12 @@ export function ChartControlMenu({
                   }
                 />
                 <SettingSwitch
+                  label="SAR"
+                  description="Parabolic stop and reverse"
+                  value={settings.sarEnabled}
+                  onValueChange={(sarEnabled) => updateSettings({ sarEnabled })}
+                />
+                <SettingSwitch
                   label="EMA"
                   description="Exponential moving average"
                   value={settings.emaEnabled}

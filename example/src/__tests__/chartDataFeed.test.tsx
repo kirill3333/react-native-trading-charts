@@ -5,6 +5,7 @@ import {
   QueryClientProvider,
 } from '@tanstack/react-query';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { useLayoutEffect } from 'react';
 import { type OhlcCandle } from 'react-native-trading-charts';
 
 import { type MarketDataAdapter } from '../api/marketData';
@@ -332,15 +333,20 @@ describe('useChartDataFeed', () => {
     });
     let symbol = 'BTCUSDT';
     let feed: FeedResult | null = null;
+    const committed: Array<{ symbol: string; feed: FeedResult }> = [];
 
     function Harness() {
-      feed = useChartDataFeed(
+      const currentFeed = useChartDataFeed(
         adapter,
         { symbol, lastPrice: symbol === 'BTCUSDT' ? 10 : 20 },
         '1m',
         `${symbol}:1m`,
         mockCharts
       );
+      feed = currentFeed;
+      useLayoutEffect(() => {
+        committed.push({ symbol, feed: currentFeed });
+      });
       return null;
     }
 
@@ -368,6 +374,9 @@ describe('useChartDataFeed', () => {
       await Promise.resolve();
     });
     expect(feed!.allTimeExtremes).toBeNull();
+    expect(
+      committed.find((commit) => commit.symbol === 'ETHUSDT')?.feed
+    ).toMatchObject({ allTimeExtremes: null, lastPrice: 20 });
 
     await act(async () => {
       resolveNextHistory([nextCandle]);

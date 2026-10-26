@@ -238,6 +238,29 @@ describe('TradingCharts data API', () => {
     );
   });
 
+  it('sends normalized SAR parameters and colors through addSeries', () => {
+    TradingCharts.addSeries('chart', {
+      seriesId: 'sar',
+      type: 'sar',
+      paneId: 'main',
+      priceScaleId: 'main',
+      source: { type: 'ohlcvSar', seriesId: 'main' },
+      appearance: { reversalColor: '#11223380' },
+    });
+    expect(
+      JSON.parse(mockNativeModule.addSeries.mock.calls[0]![1])
+    ).toMatchObject({
+      type: 'sar',
+      visible: true,
+      source: { type: 'ohlcvSar', seriesId: 'main', step: 0.02, maximum: 0.2 },
+      appearance: {
+        upColor: '#38D98A',
+        downColor: '#FF3B64',
+        reversalColor: '#11223380',
+      },
+    });
+  });
+
   it('resolves imperative addSeries options before sending them', () => {
     TradingCharts.addSeries('chart', {
       seriesId: 'momentum',

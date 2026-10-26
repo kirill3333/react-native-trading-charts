@@ -12,6 +12,7 @@ import {
   type PriceExtremesOptions,
   type MacdSeriesOptions,
   type BollSeriesOptions,
+  type SarSeriesOptions,
   type ChartPaneOptions,
   type RsiSeriesAppearance,
   type YAxisValueFormat,
@@ -536,6 +537,26 @@ export function buildChartViewConfig(
       visible: settings.yAxisVisible,
       scaleMargins: SCALE_MARGIN_PRESETS[settings.yAxisScaleMargins],
       valueFormat: yAxisValueFormat,
+    },
+  };
+}
+
+export function buildSarSeries(settings: ChartSettings): SarSeriesOptions {
+  return {
+    seriesId: 'sar',
+    type: 'sar',
+    paneId: 'main',
+    priceScaleId: 'main',
+    source: {
+      type: 'ohlcvSar',
+      seriesId: 'main',
+      step: settings.sarStep,
+      maximum: settings.sarMaximum,
+    },
+    appearance: {
+      upColor: settings.sarUpColor,
+      downColor: settings.sarDownColor,
+      reversalColor: settings.sarReversalColor,
     },
   };
 }

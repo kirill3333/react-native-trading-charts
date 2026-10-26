@@ -82,6 +82,7 @@ enum class SeriesSource : std::uint8_t {
   kOhlcvEma = 4,
   kOhlcvMacd = 5,
   kOhlcvBoll = 6,
+  kOhlcvSar = 7,
 };
 
 inline bool IsMovingAverageSource(SeriesSource source) {
@@ -92,7 +93,8 @@ inline bool IsDerivedOhlcvSource(SeriesSource source) {
   return source == SeriesSource::kOhlcvVolume ||
          source == SeriesSource::kOhlcvRsi ||
          source == SeriesSource::kOhlcvMacd ||
-         source == SeriesSource::kOhlcvBoll || IsMovingAverageSource(source);
+         source == SeriesSource::kOhlcvBoll ||
+         source == SeriesSource::kOhlcvSar || IsMovingAverageSource(source);
 }
 
 struct PaneConfig {
@@ -117,6 +119,14 @@ struct IndicatorLineStyle {
   Color gradient_bottom = color;
   bool gradient_enabled = false;
   bool dashed = false;
+};
+
+struct SarState {
+  double next_sar = 0.0;
+  double extreme = 0.0;
+  double acceleration = 0.02;
+  bool rising = true;
+  bool reversal = false;
 };
 
 struct BollRollingState {
@@ -150,6 +160,9 @@ struct SeriesConfig {
   bool line_dashed = false;
   bool visible = true;
   bool declarative = false;
+  double sar_step = 0.02;
+  double sar_maximum = 0.20;
+  Color sar_reversal{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 1.0f};
   std::uint32_t boll_period = 20;
   double boll_std_dev_multiplier = 2.0;
   IndicatorLineStyle boll_upper;
@@ -228,6 +241,8 @@ struct SeriesData {
   // SMA stores the rolling window sum; EMA stores the published EMA value.
   std::vector<double> moving_average_states;
   std::vector<BollRollingState> boll_states;
+  // One state per published SAR point; the first source candle has no output.
+  std::vector<SarState> sar_states;
   std::vector<RsiSmoothingState> rsi_states;
   std::vector<MacdSmoothingState> macd_states;
   std::optional<size_t> pane_index;

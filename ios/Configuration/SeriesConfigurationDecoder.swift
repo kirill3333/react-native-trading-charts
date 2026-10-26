@@ -18,6 +18,17 @@ enum SeriesConfigurationDecoder {
     return line
   }
 
+  private static func seriesType(_ type: String) -> NativeSeriesType {
+    switch type {
+    case "bar": return .bar
+    case "hollowCandlestick": return .hollowCandlestick
+    case "histogram": return .histogram
+    case "line", "macd", "boll", "sar": return .line
+    case "area": return .area
+    default: return .candlestick
+    }
+  }
+
   static func decode(
     json: String,
     declarative: Bool,
@@ -50,14 +61,7 @@ enum SeriesConfigurationDecoder {
     config.price_scale_id = nativeString(item.string("priceScaleId"))
     config.visible = item.number("visible")?.boolValue ?? true
     config.declarative = declarative
-    switch type {
-    case "bar": config.type = .bar
-    case "hollowCandlestick": config.type = .hollowCandlestick
-    case "histogram": config.type = .histogram
-    case "line", "macd", "boll": config.type = .line
-    case "area": config.type = .area
-    default: config.type = .candlestick
-    }
+    config.type = seriesType(type)
 
     let sourceValue = item["source"]
     let source = sourceValue as? JSONDictionary
@@ -72,6 +76,11 @@ enum SeriesConfigurationDecoder {
       let levels = item.dictionary("levels")
       config.rsi_oversold = levels.number("oversold")?.doubleValue ?? 30
       config.rsi_overbought = levels.number("overbought")?.doubleValue ?? 70
+    case "ohlcvSar":
+      config.source = .ohlcvSar
+      config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
+      config.sar_step = source?.number("step")?.doubleValue ?? 0.02
+      config.sar_maximum = source?.number("maximum")?.doubleValue ?? 0.20
     case "ohlcvBoll":
       config.source = .ohlcvBoll
       config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
@@ -97,6 +106,8 @@ enum SeriesConfigurationDecoder {
     config.color = colorFromHex(appearance.stringOrNil("color"), fallback: chartConfig.axis_text)
     config.up = colorFromHex(appearance.stringOrNil("upColor"), fallback: chartConfig.up)
     config.down = colorFromHex(appearance.stringOrNil("downColor"), fallback: chartConfig.down)
+    config.sar_reversal = colorFromHex(
+      appearance.stringOrNil("reversalColor"), fallback: config.sar_reversal)
     var defaultLevel = config.color
     defaultLevel.a *= 0.5
     var defaultBand = config.color

@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 4
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 5
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v4"
+  const val STRING_MARKER = "TradingCharts.Series.v5"
 
   object NumberIndex {
     const val VERSION = 0
@@ -43,7 +43,9 @@ internal object SeriesTransportAbi {
     const val BOLL_LOWER_WIDTH = 34
     const val BOLL_LOWER_GRADIENT_ENABLED = 35
     const val BOLL_LOWER_DASHED = 36
-    const val SIZE = 37
+    const val SAR_STEP = 37
+    const val SAR_MAXIMUM = 38
+    const val SIZE = 39
   }
 
   object ColorIndex {
@@ -81,7 +83,8 @@ internal object SeriesTransportAbi {
     const val BOLL_LOWER = 112
     const val BOLL_LOWER_GRADIENT_TOP = 116
     const val BOLL_LOWER_GRADIENT_BOTTOM = 120
-    const val SIZE = 124
+    const val SAR_REVERSAL = 124
+    const val SIZE = 128
   }
 
   object StringIndex {
@@ -93,8 +96,8 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 33
-  const val ROUND_TRIP_COLOR_COUNT = 120
+  const val ROUND_TRIP_NUMBER_COUNT = 35
+  const val ROUND_TRIP_COLOR_COUNT = 124
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
   const val ROUND_TRIP_SIZE =
@@ -117,7 +120,8 @@ private fun String.nativeSeriesType() =
       "histogram" -> 3.0
       "line" -> 4.0
       "macd",
-      "boll" -> 4.0
+      "boll",
+      "sar" -> 4.0
       "area" -> 5.0
       else -> 0.0
     }
@@ -155,6 +159,7 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
         "ohlcvEma" -> 4.0
         "ohlcvMacd" -> 5.0
         "ohlcvBoll" -> 6.0
+        "ohlcvSar" -> 7.0
         else -> 0.0
       }
   numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = visible.transportDouble()
@@ -196,6 +201,8 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
   numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_GRADIENT_ENABLED] =
       bollLower.gradientEnabled.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_DASHED] = bollLower.dashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.SAR_STEP] = sarStep
+  numbers[SeriesTransportAbi.NumberIndex.SAR_MAXIMUM] = sarMaximum
   return numbers
 }
 
@@ -248,6 +255,7 @@ private fun SeriesConfig.nativeSeriesColors(numbers: DoubleArray): FloatArray {
   )
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_ZERO_LINE, macdZeroLineColor)
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_TEXT, macdTextColor ?: color)
+  putColor(colors, SeriesTransportAbi.ColorIndex.SAR_REVERSAL, sarReversalColor)
   putBollColors(colors)
   return colors
 }

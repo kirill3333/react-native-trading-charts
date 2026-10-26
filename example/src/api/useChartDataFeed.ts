@@ -92,10 +92,39 @@ export function useChartDataFeed<
   );
   const sessionKey = `${adapter.provider}:${ticker.symbol}:${interval}`;
   const topic = adapter.topicFor(ticker.symbol, interval);
-  const [connection, setConnection] =
-    useState<ChartConnectionSnapshot>(EMPTY_CONNECTION);
+  const [session, setSession] = useState({
+    key: sessionKey,
+    chartId,
+    charts,
+    adapter,
+    lastPrice: ticker.lastPrice,
+  });
+  const [connection, setConnection] = useState<ChartConnectionSnapshot>(() => ({
+    ...EMPTY_CONNECTION,
+    lastPrice: ticker.lastPrice,
+  }));
   const [allTimeExtremes, setAllTimeExtremes] =
     useState<AllTimeExtremes | null>(null);
+  const targetChanged =
+    session.chartId !== chartId ||
+    session.charts !== charts ||
+    session.adapter !== adapter;
+  // Do not commit the previous market's price or extremes to a new chart.
+  if (
+    session.key !== sessionKey ||
+    targetChanged ||
+    !Object.is(session.lastPrice, ticker.lastPrice)
+  ) {
+    setSession({
+      key: sessionKey,
+      chartId,
+      charts,
+      adapter,
+      lastPrice: ticker.lastPrice,
+    });
+    setConnection({ ...EMPTY_CONNECTION, lastPrice: ticker.lastPrice });
+    setAllTimeExtremes(null);
+  }
   const appliedPageCountRef = useRef(0);
   const liveHistoryAppliedRef = useRef(false);
   const websocketRef = useRef<MarketWebSocketConnection | null>(null);
@@ -128,9 +157,7 @@ export function useChartDataFeed<
   useEffect(() => {
     appliedPageCountRef.current = 0;
     liveHistoryAppliedRef.current = false;
-    setAllTimeExtremes(null);
-    setConnection({ ...EMPTY_CONNECTION, lastPrice: ticker.lastPrice });
-  }, [sessionKey, ticker.lastPrice]);
+  }, [adapter, chartId, charts, sessionKey, ticker.lastPrice]);
 
   useEffect(() => {
     const pages = historyQuery.data?.pages;

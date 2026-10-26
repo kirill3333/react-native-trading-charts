@@ -92,6 +92,28 @@ describe('Binance Spot parsing', () => {
       ])
     ).toEqual([expect.objectContaining({ symbol: 'BTCUSDT', precision: 2 })]);
   });
+
+  it('skips instruments with missing or unusable price filters', () => {
+    const filters = [
+      [],
+      [{ filterType: 'LOT_SIZE', stepSize: '0.01' }],
+      [{ filterType: 'PRICE_FILTER' }],
+      ...['', '0', '-0.01', 'NaN', 'Infinity'].map((tickSize) => [
+        { filterType: 'PRICE_FILTER', tickSize },
+      ]),
+      [{ filterType: 'PRICE_FILTER', tickSize: '0.01000000' }],
+    ];
+    expect(
+      parseInstrumentsResponse({
+        symbols: filters.map((priceFilters, index) => ({
+          symbol: `ASSET${index}USDT`,
+          status: 'TRADING',
+          quoteAsset: 'USDT',
+          filters: priceFilters,
+        })),
+      })
+    ).toEqual([{ symbol: 'ASSET8USDT', precision: 2, minMove: 0.01 }]);
+  });
 });
 
 describe('Binance native klines', () => {

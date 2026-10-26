@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -296,6 +297,7 @@ void ChartEngine::ClearLocked(MutationScope& mutation) {
     series.rsi_states.clear();
     series.signal_candles.clear();
     series.macd_states.clear();
+    series.sar_states.clear();
   }
   last_trade_timestamp_.reset();
   crosshair_active_ = false;

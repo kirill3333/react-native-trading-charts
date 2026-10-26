@@ -13,6 +13,8 @@ import {
   type CrosshairTooltipField,
   type HistogramSeriesOptions,
   type MacdSeriesOptions,
+  type SarSeriesOptions,
+  type NormalizedSarSeriesOptions,
   type BollSeriesOptions,
   type NormalizedBollSeriesOptions,
   type MovingAverageSeriesOptions,
@@ -61,6 +63,7 @@ const ADDITIONAL_SERIES_TYPES = new Set<string>([
   ...CHART_SERIES_TYPES,
   'histogram',
   'boll',
+  'sar',
   'macd',
 ]);
 
@@ -1328,6 +1331,52 @@ function resolveRsiSeriesOptions(
   };
 }
 
+function resolveSarSeriesOptions(
+  options: SarSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedSarSeriesOptions {
+  if (options.source.type !== 'ohlcvSar') {
+    throw new TypeError(`${name}.source.type must be 'ohlcvSar'`);
+  }
+  const step = finitePositive(
+    options.source.step ?? 0.02,
+    `${name}.source.step`
+  );
+  const maximum = finitePositive(
+    options.source.maximum ?? 0.2,
+    `${name}.source.maximum`
+  );
+  if (step > maximum || maximum > 1) {
+    throw new TypeError(`${name}.source must satisfy 0 < step <= maximum <= 1`);
+  }
+  return {
+    ...ids,
+    type: 'sar',
+    visible: options.visible ?? true,
+    source: {
+      type: 'ohlcvSar',
+      seriesId: identifier(options.source.seriesId, `${name}.source.seriesId`),
+      step,
+      maximum,
+    },
+    appearance: {
+      upColor: color(
+        options.appearance?.upColor ?? DEFAULT_THEME.upColor,
+        `${name}.appearance.upColor`
+      ),
+      downColor: color(
+        options.appearance?.downColor ?? DEFAULT_THEME.downColor,
+        `${name}.appearance.downColor`
+      ),
+      reversalColor: color(
+        options.appearance?.reversalColor ?? DEFAULT_THEME.axisTextColor,
+        `${name}.appearance.reversalColor`
+      ),
+    },
+  };
+}
+
 function resolveBollSeriesOptions(
   options: BollSeriesOptions,
   name: string,
@@ -1489,6 +1538,8 @@ export function resolveAdditionalSeriesOptions(
   name = 'options'
 ): NormalizedAdditionalChartSeriesOptions {
   const ids = resolveSeriesIdentifiers(options, name);
+  if (options.type === 'sar')
+    return resolveSarSeriesOptions(options, name, ids);
   if (options.type === 'boll')
     return resolveBollSeriesOptions(options, name, ids);
   if (isMacdSeriesOptions(options)) {
@@ -1502,7 +1553,7 @@ export function resolveAdditionalSeriesOptions(
   }
   if (!isAdditionalSeriesType(options.type)) {
     throw new TypeError(
-      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'histogram' or 'macd'`
+      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'histogram', 'boll', 'sar' or 'macd'`
     );
   }
   if (options.type === 'histogram') {
@@ -1536,7 +1587,7 @@ function collectKnownOhlcSeries(
 ): Map<string, { paneId: string; priceScaleId: string }> {
   const result = new Map<string, { paneId: string; priceScaleId: string }>();
   items.forEach((item) => {
-    if (item.type === 'boll') return;
+    if (item.type === 'boll' || item.type === 'sar') return;
     if (
       item.type !== 'histogram' &&
       item.type !== 'macd' &&
@@ -1726,7 +1777,10 @@ function resolveConfiguredRsiSeries(
 }
 
 function resolveConfiguredMovingAverageSeries(
-  resolved: NormalizedMovingAverageSeriesOptions | NormalizedBollSeriesOptions,
+  resolved:
+    | NormalizedMovingAverageSeriesOptions
+    | NormalizedBollSeriesOptions
+    | NormalizedSarSeriesOptions,
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
@@ -1789,6 +1843,13 @@ function resolveConfiguredAdditionalSeries(
 ): ResolvedAdditionalChartSeriesOptions {
   const name = `additionalSeries[${index}]`;
   const ids = resolveConfiguredSeriesIdentifiers(item, name, context);
+  if (item.type === 'sar') {
+    return resolveConfiguredMovingAverageSeries(
+      resolveSarSeriesOptions(item, name, ids),
+      name,
+      context
+    );
+  }
   if (item.type === 'boll') {
     return resolveConfiguredMovingAverageSeries(
       resolveBollSeriesOptions(item, name, ids),

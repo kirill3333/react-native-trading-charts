@@ -88,6 +88,10 @@ export default defineConfig({
               link: '/docs/bollinger-bands',
             },
             {
+              text: 'Parabolic SAR',
+              link: '/docs/parabolic-sar',
+            },
+            {
               text: 'MACD',
               link: '/docs/macd',
             },

@@ -10,6 +10,7 @@ import { APP_THEMES, type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import {
   BollSettingsSection,
+  SarSettingsSection,
   CrosshairSettingsSection,
   EmaSettingsSection,
   FormattingSettingsSection,
@@ -84,6 +85,7 @@ function SettingsContent() {
         <SmaSettingsSection />
         <EmaSettingsSection />
         <BollSettingsSection />
+        <SarSettingsSection />
         <RsiSettingsSection />
         <MacdSettingsSection />
 
