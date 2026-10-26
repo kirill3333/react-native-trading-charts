@@ -2179,3 +2179,28 @@ it('sends normalized BOLL options through the imperative API', () => {
     })
   );
 });
+
+it('forwards baseline options through addSeries without filling appearance defaults', () => {
+  jest.clearAllMocks();
+  TradingCharts.addSeries('main', {
+    type: 'baseline',
+    seriesId: 'baseline',
+    paneId: 'main',
+    priceScaleId: 'main',
+    source: 'low',
+    baseValue: { type: 'price', value: -5 },
+    appearance: { bottomLineColor: '#123456', baseLine: { visible: false } },
+  });
+  const options = mockNativeModule.addSeries.mock.calls[0]?.[1];
+  expect(mockNativeModule.addSeries).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(options!)).toEqual({
+    type: 'baseline',
+    seriesId: 'baseline',
+    paneId: 'main',
+    priceScaleId: 'main',
+    visible: true,
+    source: 'low',
+    baseValue: { type: 'price', value: -5 },
+    appearance: { bottomLineColor: '#123456', baseLine: { visible: false } },
+  });
+});

@@ -15,6 +15,7 @@ type NumberSettingProps = {
   description: string;
   value: number;
   integer?: boolean;
+  allowNonPositive?: boolean;
   validate?: (value: number) => string | undefined;
   onValueChange: (value: number) => void;
 };
@@ -24,6 +25,7 @@ export function NumberSetting({
   description,
   value,
   integer = false,
+  allowNonPositive = false,
   validate,
   onValueChange,
 }: NumberSettingProps) {
@@ -39,14 +41,20 @@ export function NumberSetting({
     setDraft({ value, text: String(value), error: undefined });
   }
   const { error } = draft;
+  const decimalError = allowNonPositive
+    ? 'Enter a finite number'
+    : 'Enter a positive number';
+  const decimalKeyboard = allowNonPositive
+    ? 'numbers-and-punctuation'
+    : 'decimal-pad';
   const commit = () => {
-    const parsed = parseSettingNumber(draft.text, integer);
+    const parsed = parseSettingNumber(draft.text, integer, allowNonPositive);
     if (parsed == null) {
       setDraft({
         ...draft,
         error: integer
           ? `Enter an integer from 1 to ${MAX_INTEGER_SETTING_VALUE}`
-          : 'Enter a positive number',
+          : decimalError,
       });
       return;
     }
@@ -66,7 +74,7 @@ export function NumberSetting({
           accessibilityValue={error ? { text: error } : undefined}
           autoCorrect={false}
           keyboardAppearance={theme.dark ? 'dark' : 'light'}
-          keyboardType={integer ? 'number-pad' : 'decimal-pad'}
+          keyboardType={integer ? 'number-pad' : decimalKeyboard}
           selectTextOnFocus
           value={draft.text}
           onChangeText={(text) => setDraft({ ...draft, text })}

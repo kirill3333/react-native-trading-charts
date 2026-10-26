@@ -99,3 +99,37 @@ appearance={{
   area: { rounded: false },
 }}
 ```
+
+## Baseline
+
+A baseline chart fills the space between a price line and a reference level. Above the level it uses the upper color palette; below it uses the lower palette. Both the outline and fill change color exactly at crossings. Data, OHLC source selection and time gaps work as for Line/Area.
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `series.type` | — | `'baseline'` |
+| `series.source` | `'close'` | `'open'`, `'high'`, `'low'`, or `'close'` |
+| `series.gapThresholdMs` | Unset | Break outline and fill across larger timestamp gaps |
+| `series.baseValue` | `{ type: 'percentage', value: 50 }` | Fixed `{ type: 'price', value }` or pane-height percentage |
+| `appearance.baseline.width` | `1.5` | Positive outline width in points / dp |
+| `appearance.baseline.style` | `'solid'` | `'solid'` or `'dashed'`; fill remains continuous |
+| `appearance.baseline.rounded` | `true` | Round caps and joins, main series only |
+| `appearance.baseline.topLineColor` | `theme.upColor` | Outline above the base |
+| `appearance.baseline.bottomLineColor` | `theme.downColor` | Outline below the base |
+| `appearance.baseline.topFill.topColor` | Upper color, alpha `0x40` | Fill color at the pane top |
+| `appearance.baseline.topFill.bottomColor` | Upper color, alpha `0x00` | Upper fill color at the base |
+| `appearance.baseline.bottomFill.topColor` | Lower color, alpha `0x00` | Lower fill color at the base |
+| `appearance.baseline.bottomFill.bottomColor` | Lower color, alpha `0x40` | Fill color at the pane bottom |
+| `appearance.baseline.baseLine.visible` | `true` | Show the reference line |
+| `appearance.baseline.baseLine.color` | `theme.gridColor` | Reference line color |
+| `appearance.baseline.baseLine.width` | `1` | Positive reference line width in points / dp |
+| `appearance.baseline.baseLine.style` | `'dashed'` | `'solid'` or `'dashed'` |
+
+Percentage is measured upward from the bottom of the plot: 0 is the bottom and 100 the top. It follows the final Y range after autoscale or manual Y scaling. Each additional pane resolves its own percentage level. A fixed price may be zero or negative; it must be finite. Autoscale follows data, so a distant base can leave the screen without compressing the price line. Geometry remains clipped to the pane.
+
+Current-price line and badge colors follow the selected value relative to the base (equality uses the upper color). Explicit `appearance.currentPrice` overrides still apply. Changing the chart type preserves history, viewport and selection.
+
+<<< ../examples/baseline.tsx
+
+Baseline is also available through `additionalSeries` and `addSeries()`. Each series has its own `baseValue`; omitted appearance fields inherit the chart's `appearance.baseline`, including when the main chart uses another type. Additional series do not support rounded caps/joins.
+
+<<< ../examples/baseline-additional.tsx

@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 5
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 6
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v5"
+  const val STRING_MARKER = "TradingCharts.Series.v6"
 
   object NumberIndex {
     const val VERSION = 0
@@ -45,7 +45,12 @@ internal object SeriesTransportAbi {
     const val BOLL_LOWER_DASHED = 36
     const val SAR_STEP = 37
     const val SAR_MAXIMUM = 38
-    const val SIZE = 39
+    const val BASELINE_PERCENTAGE = 39
+    const val BASELINE_VALUE = 40
+    const val BASELINE_VISIBLE = 41
+    const val BASELINE_DASHED = 42
+    const val BASELINE_WIDTH = 43
+    const val SIZE = 44
   }
 
   object ColorIndex {
@@ -84,7 +89,14 @@ internal object SeriesTransportAbi {
     const val BOLL_LOWER_GRADIENT_TOP = 116
     const val BOLL_LOWER_GRADIENT_BOTTOM = 120
     const val SAR_REVERSAL = 124
-    const val SIZE = 128
+    const val BASELINE_TOP_LINE = 128
+    const val BASELINE_BOTTOM_LINE = 132
+    const val BASELINE_TOP_FILL_TOP = 136
+    const val BASELINE_TOP_FILL_BOTTOM = 140
+    const val BASELINE_BOTTOM_FILL_TOP = 144
+    const val BASELINE_BOTTOM_FILL_BOTTOM = 148
+    const val BASELINE_BASE_LINE = 152
+    const val SIZE = 156
   }
 
   object StringIndex {
@@ -96,8 +108,8 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 35
-  const val ROUND_TRIP_COLOR_COUNT = 124
+  const val ROUND_TRIP_NUMBER_COUNT = 40
+  const val ROUND_TRIP_COLOR_COUNT = 152
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
   const val ROUND_TRIP_SIZE =
@@ -123,6 +135,7 @@ private fun String.nativeSeriesType() =
       "boll",
       "sar" -> 4.0
       "area" -> 5.0
+      "baseline" -> 6.0
       else -> 0.0
     }
 
@@ -203,6 +216,14 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
   numbers[SeriesTransportAbi.NumberIndex.BOLL_LOWER_DASHED] = bollLower.dashed.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.SAR_STEP] = sarStep
   numbers[SeriesTransportAbi.NumberIndex.SAR_MAXIMUM] = sarMaximum
+  numbers[SeriesTransportAbi.NumberIndex.BASELINE_PERCENTAGE] =
+      baseline.percentage.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BASELINE_VALUE] = baseline.value
+  numbers[SeriesTransportAbi.NumberIndex.BASELINE_VISIBLE] =
+      baseline.baseLineVisible.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BASELINE_DASHED] =
+      baseline.baseLineDashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.BASELINE_WIDTH] = baseline.baseLineWidthPx.toDouble()
   return numbers
 }
 
@@ -256,6 +277,26 @@ private fun SeriesConfig.nativeSeriesColors(numbers: DoubleArray): FloatArray {
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_ZERO_LINE, macdZeroLineColor)
   putColor(colors, SeriesTransportAbi.ColorIndex.MACD_TEXT, macdTextColor ?: color)
   putColor(colors, SeriesTransportAbi.ColorIndex.SAR_REVERSAL, sarReversalColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.BASELINE_TOP_LINE, baseline.topLineColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.BASELINE_BOTTOM_LINE, baseline.bottomLineColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.BASELINE_TOP_FILL_TOP, baseline.topFillTopColor)
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BASELINE_TOP_FILL_BOTTOM,
+      baseline.topFillBottomColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BASELINE_BOTTOM_FILL_TOP,
+      baseline.bottomFillTopColor,
+  )
+  putColor(
+      colors,
+      SeriesTransportAbi.ColorIndex.BASELINE_BOTTOM_FILL_BOTTOM,
+      baseline.bottomFillBottomColor,
+  )
+  putColor(colors, SeriesTransportAbi.ColorIndex.BASELINE_BASE_LINE, baseline.baseLineColor)
+
   putBollColors(colors)
   return colors
 }

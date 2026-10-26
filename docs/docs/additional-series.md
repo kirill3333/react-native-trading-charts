@@ -44,3 +44,5 @@ Use the `additionalSeries` prop for series declared in React, as in the indicato
 See [Bollinger Bands](/docs/bollinger-bands) for a three-line price overlay with a gradient fill and configurable period, deviation multiplier, and OHLC source.
 
 See [Parabolic SAR](/docs/parabolic-sar) for a price overlay with hollow circles, configurable acceleration and three trend/reversal colors.
+
+[Baseline series](/docs/series-types#baseline) support both fixed-price and pane-percentage bases, with separate outline and gradient colors above and below the level. They accept OHLC data and can be added declaratively or with `addSeries()`.

@@ -1,3 +1,4 @@
+import { resolveBaselineAppearance, resolveBaseValue } from './baselineConfig';
 import {
   type AdditionalOhlcSeriesOptions,
   type AdditionalChartSeriesOptions,
@@ -7,6 +8,7 @@ import {
   type ChartLineAppearance,
   type ChartPaneOptions,
   type ChartSeriesType,
+  type ChartSeriesOptions,
   type ChartTheme,
   type ChartTextStyle,
   type CompactValueFormat,
@@ -57,6 +59,7 @@ const CHART_SERIES_TYPES = new Set<string>([
   'bar',
   'line',
   'area',
+  'baseline',
 ]);
 
 const ADDITIONAL_SERIES_TYPES = new Set<string>([
@@ -768,9 +771,13 @@ function resolveAppearance(
       'appearance.area.fill.bottomColor'
     ),
   };
+  const baseline = resolveBaselineAppearance(input?.baseline, theme);
   let activeUpColor = upColor;
   let activeDownColor = downColor;
-  if (seriesType === 'bar') {
+  if (seriesType === 'baseline') {
+    activeUpColor = baseline.topLineColor;
+    activeDownColor = baseline.bottomLineColor;
+  } else if (seriesType === 'bar') {
     activeUpColor = barUpColor;
     activeDownColor = barDownColor;
   } else if (seriesType === 'line' || seriesType === 'area') {
@@ -790,6 +797,7 @@ function resolveAppearance(
   const badgeFallback = '#000000';
 
   return {
+    baseline: { ...baseline, rounded: input?.baseline?.rounded ?? true },
     backgroundColor,
     grid: {
       color: gridColor,
@@ -1553,8 +1561,20 @@ export function resolveAdditionalSeriesOptions(
   }
   if (!isAdditionalSeriesType(options.type)) {
     throw new TypeError(
-      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'histogram', 'boll', 'sar' or 'macd'`
+      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'baseline', 'histogram', 'boll', 'sar' or 'macd'`
     );
+  }
+  if (options.type === 'baseline') {
+    if (options.appearance != null)
+      resolveBaselineAppearance(options.appearance, DEFAULT_THEME);
+    return {
+      ...options,
+      ...ids,
+      visible: options.visible ?? true,
+      source: ohlcValueSource(options.source, `${name}.source`),
+      baseValue: resolveBaseValue(options.baseValue),
+      ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+    };
   }
   if (options.type === 'histogram') {
     return resolveHistogramSeriesOptions(options, name, ids);
@@ -1864,6 +1884,21 @@ function resolveConfiguredAdditionalSeries(
     }
     return resolveConfiguredMacdSeries(resolved, name, context);
   }
+  if (item.type === 'baseline') {
+    return {
+      ...item,
+      ...ids,
+      visible: item.visible ?? true,
+      source: ohlcValueSource(item.source, `${name}.source`),
+      baseValue: resolveBaseValue(item.baseValue),
+      ...resolveGapThreshold(item.gapThresholdMs, `${name}.gapThresholdMs`),
+      appearance: resolveBaselineAppearance(
+        item.appearance,
+        context.theme,
+        context.appearance.baseline
+      ),
+    };
+  }
   if (item.type === 'histogram') {
     return resolveConfiguredHistogramSeries(item, name, ids, context);
   }
@@ -1887,6 +1922,25 @@ function resolveConfiguredAdditionalSeries(
   };
 }
 
+function resolveMainSeries(
+  input: ChartSeriesOptions | undefined,
+  type: ChartSeriesType
+): ResolvedChartConfig['series'] {
+  if (type !== 'line' && type !== 'area' && type !== 'baseline')
+    return { type };
+  const series: Extract<
+    ResolvedChartConfig['series'],
+    { source: OhlcValueSource }
+  > = {
+    type,
+    source: ohlcValueSource(input?.source, 'series.source'),
+    ...resolveGapThreshold(input?.gapThresholdMs, 'series.gapThresholdMs'),
+  };
+  if (type === 'baseline')
+    series.baseValue = resolveBaseValue(input?.baseValue);
+  return series;
+}
+
 export function resolveChartConfig(
   props: TradingChartsViewProps
 ): ResolvedChartConfig {
@@ -1903,24 +1957,10 @@ export function resolveChartConfig(
   const seriesType = props.series?.type ?? 'candlestick';
   if (!isChartSeriesType(seriesType)) {
     throw new TypeError(
-      "series.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line' or 'area'"
+      "series.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area' or 'baseline'"
     );
   }
-  const resolvedSeries =
-    seriesType === 'line' || seriesType === 'area'
-      ? {
-          type: seriesType,
-          source: ohlcValueSource(props.series?.source, 'series.source'),
-          ...(props.series?.gapThresholdMs == null
-            ? null
-            : {
-                gapThresholdMs: optionalGapThreshold(
-                  props.series.gapThresholdMs,
-                  'series.gapThresholdMs'
-                ),
-              }),
-        }
-      : { type: seriesType };
+  const resolvedSeries = resolveMainSeries(props.series, seriesType);
   const tooltipBackgroundOpacity = opacity(
     props.crosshair?.tooltipBackgroundOpacity ?? 1,
     'crosshair.tooltipBackgroundOpacity'
