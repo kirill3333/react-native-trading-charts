@@ -7,6 +7,24 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun sarPayloadPreservesParametersAndThreeColors() {
+    val payload = SeriesConfig(
+      seriesId = "sar", type = "sar", paneId = "main", priceScaleId = "main",
+      sourceType = "ohlcvSar", sourceSeriesId = "main", sarStep = 0.05, sarMaximum = 0.4,
+      upColor = 0x80112233.toInt(), downColor = 0xff445566.toInt(), sarReversalColor = 0x40778899,
+    ).nativeTransportPayload()
+    assertEquals(4.0, payload.numbers[SeriesTransportAbi.NumberIndex.TYPE], 0.0)
+    assertEquals(7.0, payload.numbers[SeriesTransportAbi.NumberIndex.SOURCE], 0.0)
+    assertEquals(0.05, payload.numbers[SeriesTransportAbi.NumberIndex.SAR_STEP], 0.0)
+    assertEquals(0.4, payload.numbers[SeriesTransportAbi.NumberIndex.SAR_MAXIMUM], 0.0)
+    assertEquals(0x11 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.UP], 0f)
+    assertEquals(0x80 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.UP + 3], 0f)
+    assertEquals(0x44 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.DOWN], 0f)
+    assertEquals(0x77 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.SAR_REVERSAL], 0f)
+    assertEquals(0x40 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.SAR_REVERSAL + 3], 0f)
+  }
+
+  @Test
   fun bollPayloadPreservesIndependentStylesAndCalculation() {
     val payload =
         SeriesConfig(
@@ -74,7 +92,7 @@ class ChartEngineTransportAbiTest {
             )
             .nativeNumbers()
 
-    assertEquals(45, payload.size)
+    assertEquals(46, payload.size)
     assertEquals(0.0, payload[5], 0.0)
     assertEquals(123.0, payload[6], 0.0)
     assertEquals(0.0, payload[11], 0.0)
@@ -309,8 +327,8 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            37,
-            124,
+            39,
+            128,
             5,
             3,
             2,

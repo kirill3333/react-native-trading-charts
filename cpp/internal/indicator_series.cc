@@ -179,6 +179,71 @@ void RebuildMovingAverageSeries(SeriesData& series,
   }
 }
 
+// Matches TA-Lib SAR's two-bar initialization and reversal/clamping order.
+// Each saved state describes the next candidate, so replacing the live candle
+// starts from the preceding completed candle rather than accumulating changes.
+void RebuildSarSeries(SeriesData& series, const std::vector<Candle>* source,
+                      size_t first_changed_source_index) {
+  if (source == nullptr || source->size() < 2) {
+    series.candles.clear();
+    series.sar_states.clear();
+    return;
+  }
+  size_t start =
+      std::max<size_t>(1, std::min(first_changed_source_index, source->size()));
+  if (start - 1 > series.sar_states.size() ||
+      start - 1 > series.candles.size()) {
+    start = 1;
+  }
+  series.candles.resize(start - 1);
+  series.sar_states.resize(start - 1);
+  SarState state;
+  if (start == 1) {
+    const Candle& first = (*source)[0];
+    const Candle& second = (*source)[1];
+    const double down = first.low - second.low;
+    const double up = second.high - first.high;
+    state.rising = !(down > 0.0 && down > up);
+    state.next_sar = state.rising ? first.low : first.high;
+    state.extreme = state.rising ? second.high : second.low;
+    state.acceleration = series.config.sar_step;
+    series.candles.reserve(source->size() - 1);
+    series.sar_states.reserve(source->size() - 1);
+  } else {
+    state = series.sar_states.back();
+  }
+  for (size_t index = start; index < source->size(); ++index) {
+    const Candle& current = (*source)[index];
+    // TA-Lib uses today's range twice on the initialization iteration.
+    const Candle& previous = (*source)[index == 1 ? index : index - 1];
+    double value = state.next_sar;
+    const bool reversed =
+        state.rising ? current.low <= value : current.high >= value;
+    state.reversal = reversed && index > 1;
+    if (reversed) {
+      state.rising = !state.rising;
+      value = state.rising
+                  ? std::min({state.extreme, previous.low, current.low})
+                  : std::max({state.extreme, previous.high, current.high});
+      state.extreme = state.rising ? current.high : current.low;
+      state.acceleration = series.config.sar_step;
+    } else if (state.rising ? current.high > state.extreme
+                            : current.low < state.extreme) {
+      state.extreme = state.rising ? current.high : current.low;
+      state.acceleration = std::min(state.acceleration + series.config.sar_step,
+                                    series.config.sar_maximum);
+    }
+    const double candidate =
+        std::fma(state.acceleration, state.extreme - value, value);
+    state.next_sar = state.rising
+                         ? std::min({candidate, previous.low, current.low})
+                         : std::max({candidate, previous.high, current.high});
+    series.candles.push_back(
+        Candle{current.timestamp, value, value, value, value, 0.0});
+    series.sar_states.push_back(state);
+  }
+}
+
 void RebuildBollSeries(SeriesData& series, const std::vector<Candle>* source,
                        size_t first_changed_source_index) {
   const size_t period = series.config.boll_period;
@@ -355,6 +420,9 @@ void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,
       } else {
         RebuildRsiSeries(series, *source, first_changed_source_index);
       }
+      break;
+    case SeriesSource::kOhlcvSar:
+      RebuildSarSeries(series, source, first_changed_source_index);
       break;
     case SeriesSource::kOhlcvBoll:
       RebuildBollSeries(series, source, first_changed_source_index);

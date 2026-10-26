@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect } from 'react';
+import { useCallback } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { type ChartResolution } from 'react-native-trading-charts';
 
+import { useChartActivation } from '../hooks/useChartActivation';
 import { SyntheticChartToolbar } from '../components/synthetic/SyntheticChartToolbar';
 import { SyntheticLoadingOverlay } from '../components/synthetic/SyntheticLoadingOverlay';
 import { ChartHeader } from '../components/ChartHeader';
@@ -13,7 +14,6 @@ import { useChartControlsStore } from '../stores/chartControlsStore';
 import { useSyntheticSettingsStore } from '../stores/syntheticSettingsStore';
 
 const RESOLUTION: ChartResolution = { unit: 'second' };
-const ignoreVisibleRange = () => undefined;
 
 export function SyntheticChartScreen() {
   const navigation = useNavigation();
@@ -24,7 +24,6 @@ export function SyntheticChartScreen() {
   const applySettings = useSyntheticSettingsStore(
     (state) => state.applySettings
   );
-  const activateChart = useChartControlsStore((state) => state.activateChart);
   const showVolume = useChartControlsStore((state) => state.showVolume);
   const showRsi = useChartControlsStore((state) => state.showRsi);
   const showMacd = useChartControlsStore((state) => state.showMacd);
@@ -37,10 +36,7 @@ export function SyntheticChartScreen() {
     )
   );
 
-  useLayoutEffect(
-    () => activateChart(chartId, { showPerformance: true }),
-    [activateChart, chartId]
-  );
+  useChartActivation(chartId, true);
   const retry = useCallback(
     () => applySettings(settings),
     [applySettings, settings]
@@ -80,7 +76,6 @@ export function SyntheticChartScreen() {
         showRsi={showRsi}
         showMacd={showMacd}
         allTimeExtremes={feed.allTimeExtremes}
-        onVisibleRangeChange={ignoreVisibleRange}
       />
       {feed.status === 'loading' && <SyntheticLoadingOverlay />}
     </ChartWorkspace>

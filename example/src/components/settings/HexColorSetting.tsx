@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { isHexColor, normalizeHexColor } from '../../hexColor';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 import { SettingsRow } from './SettingsRow';
 
@@ -21,14 +22,16 @@ export function HexColorSetting({
 }: HexColorSettingProps) {
   const theme = useAppTheme();
   const styles = THEMED_STYLES[theme.mode];
-  const [draft, setDraft] = useState(value);
-  const valid = isHexColor(draft);
-
-  useEffect(() => setDraft(value), [value]);
+  const [draft, setDraft] = useState({ value, text: value });
+  // Reset before children commit, while preserving the native input and focus.
+  if (draft.value !== value) {
+    setDraft({ value, text: value });
+  }
+  const valid = isHexColor(draft.text);
 
   const updateDraft = (nextValue: string) => {
     const normalized = normalizeHexColor(nextValue);
-    setDraft(normalized);
+    setDraft({ value, text: normalized });
     if (isHexColor(normalized)) onValueChange(normalized);
   };
 
@@ -39,7 +42,7 @@ export function HexColorSetting({
           <View
             accessibilityElementsHidden
             importantForAccessibility="no"
-            style={[styles.swatch, valid && { backgroundColor: draft }]}
+            style={[styles.swatch, valid && { backgroundColor: draft.text }]}
           />
           <TextInput
             accessibilityLabel={`${label} HEX color`}
@@ -54,7 +57,7 @@ export function HexColorSetting({
             selectTextOnFocus
             spellCheck={false}
             style={[styles.input, !valid && styles.inputInvalid]}
-            value={draft}
+            value={draft.text}
           />
         </View>
         {!valid ? (
@@ -100,7 +103,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

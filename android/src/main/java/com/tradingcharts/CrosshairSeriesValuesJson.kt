@@ -38,7 +38,7 @@ internal fun crosshairSeriesValuesJson(values: List<CrosshairSeriesValueSnapshot
       }
       else -> {
         json.put("kind", "scalar")
-        json.put("seriesType", seriesTypeName(value.seriesType))
+        json.put("seriesType", scalarSeriesTypeName(value))
         json.put("sourceType", sourceTypeName(value.sourceType))
         json.put("value", if (value.hasValue) value.value else JSONObject.NULL)
       }
@@ -47,6 +47,9 @@ internal fun crosshairSeriesValuesJson(values: List<CrosshairSeriesValueSnapshot
   }
   return result.toString()
 }
+
+private fun scalarSeriesTypeName(value: CrosshairSeriesValueSnapshot) =
+    if (value.sourceType == SERIES_SOURCE_SAR) "sar" else seriesTypeName(value.seriesType)
 
 private fun candleJson(candle: DoubleArray) =
     JSONObject()
@@ -74,6 +77,7 @@ private fun sourceTypeName(source: Int) =
       SERIES_SOURCE_SMA -> "ohlcvSma"
       SERIES_SOURCE_EMA -> "ohlcvEma"
       SERIES_SOURCE_MACD -> "ohlcvMacd"
+      SERIES_SOURCE_SAR -> "ohlcvSar"
       else -> "data"
     }
 
@@ -90,3 +94,5 @@ private const val SERIES_SOURCE_RSI = 2
 private const val SERIES_SOURCE_SMA = 3
 private const val SERIES_SOURCE_EMA = 4
 private const val SERIES_SOURCE_MACD = 5
+
+private const val SERIES_SOURCE_SAR = 7

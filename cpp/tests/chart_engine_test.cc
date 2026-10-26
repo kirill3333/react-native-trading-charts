@@ -20,6 +20,7 @@
 
 #include "cpp/internal/config_constants.h"
 #include "cpp/internal/indicator_series.h"
+#include "cpp/internal/render_snapshot_builder.h"
 #include "cpp/internal/series_geometry.h"
 #include "cpp/internal/trading_time.h"
 #include "cpp/internal/triangle_geometry.h"
@@ -2823,7 +2824,7 @@ void TestVolumePaneTickMinimumDependsOnHeight() {
              10.0);
 }
 
-std::array<size_t, 7> IndicatorBufferCapacities(
+std::array<size_t, 8> IndicatorBufferCapacities(
     const trading_charts::SeriesData& series) {
   return {series.candles.capacity(),
           series.rsi_states.capacity(),
@@ -2831,14 +2832,15 @@ std::array<size_t, 7> IndicatorBufferCapacities(
           series.macd_states.capacity(),
           series.signal_candles.capacity(),
           series.histogram.capacity(),
-          series.boll_states.capacity()};
+          series.boll_states.capacity(),
+          series.sar_states.capacity()};
 }
 
 void TestIndicatorAppendBufferGrowth() {
   for (const SeriesSource kind :
        {SeriesSource::kOhlcvRsi, SeriesSource::kOhlcvSma,
         SeriesSource::kOhlcvEma, SeriesSource::kOhlcvMacd,
-        SeriesSource::kOhlcvBoll}) {
+        SeriesSource::kOhlcvBoll, SeriesSource::kOhlcvSar}) {
     // Exercise both streaming through warmup and appending to loaded history.
     for (const size_t history_size : {size_t{0}, size_t{1000}}) {
       trading_charts::SeriesData series;
@@ -2854,7 +2856,7 @@ void TestIndicatorAppendBufferGrowth() {
       }
       trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
       auto capacities = IndicatorBufferCapacities(series);
-      std::array<size_t, 7> reallocations{};
+      std::array<size_t, 8> reallocations{};
       for (size_t index = 0; index < 2048; ++index) {
         append();
         trading_charts::internal::RebuildDerivedSeries(series, &source,
@@ -3105,6 +3107,281 @@ void TestRsiFlatAndCascadeRemoval() {
   ExpectNear(snapshot->indicator_legends[0].values[0].value, 50.0);
   assert(engine.RemoveSeries("source"));
   assert(!engine.RemoveSeries("flat-rsi"));
+}
+
+SeriesConfig SarConfig() {
+  SeriesConfig config;
+  config.series_id = "sar";
+  config.source_series_id = "main";
+  config.source = SeriesSource::kOhlcvSar;
+  config.type = SeriesType::kLine;
+  config.declarative = true;
+  return config;
+}
+
+void TestSarReferenceAndStreaming() {
+  // Golden outputs generated with Python TA-Lib 0.6.8, SAR(high, low, .02, .2).
+  const std::vector<std::vector<double>> highs = {
+      {10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22},
+      {22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10},
+      {10, 11, 12, 12, 13, 9, 8, 8, 14, 15, 12, 11, 16},
+      {10, 10, 10, 10, 10}};
+  const std::vector<std::vector<double>> lows = {
+      {8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+      {20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8},
+      {8, 9, 10, 10, 11, 7, 6, 6, 10, 11, 8, 7, 12},
+      {10, 10, 10, 10, 10}};
+  const std::vector<std::vector<double>> expected = {
+      {8, 8.06, 8.2176, 8.504544, 8.94418048, 9.549762432, 10.32379094016,
+       11.258460208537603, 12.337106575171585, 13.5364273916407,
+       14.82914191331256, 16.06331353065005},
+      {22, 21.94, 21.7824, 21.495456, 21.05581952, 20.450237568, 19.67620905984,
+       18.741539791462397, 17.662893424828415, 16.4635726083593,
+       15.17085808668744, 13.936686469349953},
+      {8, 8.06, 8.2176, 8.368896, 13, 13, 12.72, 6, 6, 6.36, 6.7056, 7},
+      {10, 10, 10, 10}};
+  for (size_t fixture = 0; fixture < highs.size(); ++fixture) {
+    trading_charts::SeriesData series;
+    series.config = SarConfig();
+    std::vector<Candle> source;
+    trading_charts::internal::RebuildDerivedSeries(series, &source, 0);
+    assert(series.candles.empty());
+    for (size_t index = 0; index < highs[fixture].size(); ++index) {
+      const double high = highs[fixture][index];
+      const double low = lows[fixture][index];
+      source.push_back(
+          {static_cast<double>(index) * 60'000, low, high, low, high, 1});
+      trading_charts::internal::RebuildDerivedSeries(series, &source, index);
+      if (index == 0) {
+        assert(series.candles.empty() && series.sar_states.empty());
+        continue;
+      }
+      ExpectNear(series.candles.back().close, expected[fixture][index - 1]);
+      assert(series.sar_states.back().acceleration <= 0.20);
+      assert(!series.sar_states.front().reversal);
+      if (fixture == 2) {
+        assert(series.sar_states.back().reversal == (index == 5 || index == 8));
+      }
+      if (fixture < 2 && index >= 10) {
+        ExpectNear(series.sar_states.back().acceleration, 0.20);
+      }
+      // Replace the same candle through both sides of a reversal, then restore
+      // it. Each intermediate result must equal an independent full rebuild.
+      for (const double change : {-10.0, 10.0, 0.0}) {
+        source.back().high = high + std::max(change, 0.0);
+        source.back().low = low + std::min(change, 0.0);
+        trading_charts::internal::RebuildDerivedSeries(series, &source, index);
+        trading_charts::SeriesData rebuilt;
+        rebuilt.config = series.config;
+        trading_charts::internal::RebuildDerivedSeries(rebuilt, &source, 0);
+        assert(series.candles.size() == rebuilt.candles.size());
+        for (size_t point = 0; point < series.candles.size(); ++point) {
+          ExpectNear(series.candles[point].close, rebuilt.candles[point].close);
+          const auto& actual = series.sar_states[point];
+          const auto& reference = rebuilt.sar_states[point];
+          ExpectNear(actual.next_sar, reference.next_sar);
+          ExpectNear(actual.extreme, reference.extreme);
+          ExpectNear(actual.acceleration, reference.acceleration);
+          assert(actual.rising == reference.rising);
+          assert(actual.reversal == reference.reversal);
+        }
+      }
+      ExpectNear(series.candles.back().close, expected[fixture][index - 1]);
+    }
+    trading_charts::internal::RebuildDerivedSeries(series, nullptr, 0);
+    assert(series.candles.empty() && series.sar_states.empty());
+  }
+}
+
+void TestSarEngineIntegration() {
+  for (const bool logical : {false, true}) {
+    ChartEngine engine;
+    ChartConfig chart;
+    chart.logical_spacing = logical;
+    chart.show_current_price = false;
+    engine.SetConfig(chart);
+    engine.SetSize(700, 360);
+    SeriesConfig sar = SarConfig();
+    assert(engine.AddSeries(sar) == UpdateStatus::kApplied);
+    const double history[] = {60'000, 8,  10, 8,       10, 1,  120'000, 9,  11,
+                              9,      11, 1,  180'000, 10, 12, 10,      12, 1};
+    assert(engine.SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+    const auto check_rebuild = [&] {
+      const auto source = engine.Candles();
+      trading_charts::SeriesData rebuilt;
+      rebuilt.config = sar;
+      trading_charts::internal::RebuildDerivedSeries(rebuilt, &source, 0);
+      const auto actual =
+          trading_charts::ChartEngineTestAccess::SeriesCandles(engine, "sar");
+      assert(actual.size() == rebuilt.candles.size());
+      for (size_t index = 0; index < actual.size(); ++index) {
+        ExpectNear(actual[index].timestamp, rebuilt.candles[index].timestamp);
+        ExpectNear(actual[index].close, rebuilt.candles[index].close);
+      }
+    };
+    engine.FitContent();
+    auto frame = engine.Snapshot();
+    const auto content = frame->content_vertices;
+    engine.SetCrosshair(true, frame->plot.right - 1, frame->plot.top + 30);
+    frame = engine.Snapshot();
+    assert(frame->content_vertices == content);
+    assert(frame->crosshair_series_values.size() == 1);
+    assert(frame->crosshair_series_values[0].kind ==
+           CrosshairSeriesValueKind::kScalar);
+    assert(frame->crosshair_series_values[0].source_type ==
+           SeriesSource::kOhlcvSar);
+    assert(frame->crosshair_series_values[0].has_value);
+    ExpectNear(frame->crosshair_series_values[0].value, 8.06);
+    engine.SetCrosshair(true, frame->plot.left + 1, frame->plot.top + 30);
+    assert(!engine.Snapshot()->crosshair_series_values[0].has_value);
+    const double replacement[] = {180'000, 10, 12, 5, 5, 1};
+    assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+           UpdateStatus::kApplied);
+    check_rebuild();
+    const double trades[] = {180'001, 13, 1, 240'001, 14, 1, 300'001, 4, 1};
+    assert(engine.UpdateTrades(trades, std::size(trades)) ==
+           UpdateStatus::kApplied);
+    check_rebuild();
+    const double prepend[] = {0, 7, 9, 7, 9, 1};
+    assert(engine.PrependHistory(prepend, std::size(prepend)) ==
+           UpdateStatus::kApplied);
+    check_rebuild();
+    sar.sar_step = 0.1;
+    assert(engine.AddSeries(sar) == UpdateStatus::kApplied);
+    check_rebuild();
+    sar.visible = false;
+    assert(engine.AddSeries(sar) == UpdateStatus::kApplied);
+    assert(engine.Snapshot()->crosshair_series_values.empty());
+    engine.Clear();
+    check_rebuild();
+    assert(engine.SetHistory(history, std::size(history)) ==
+           UpdateStatus::kApplied);
+    check_rebuild();
+    assert(engine.RemoveSeries("sar"));
+    sar.sar_step = 0;
+    assert(engine.AddSeries(sar) == UpdateStatus::kInvalidInput);
+    sar.sar_step = 0.3;
+    assert(engine.AddSeries(sar) == UpdateStatus::kInvalidInput);
+    sar.sar_maximum = 1.1;
+    assert(engine.AddSeries(sar) == UpdateStatus::kInvalidInput);
+    sar.sar_maximum = std::numeric_limits<double>::infinity();
+    assert(engine.AddSeries(sar) == UpdateStatus::kInvalidInput);
+  }
+}
+
+void TestSarAutoscaleAndGaps() {
+  ChartConfig config;
+  config.show_current_price = false;
+  const std::vector<Candle> candles = {{0, 90, 100, 90, 100, 1},
+                                       {60'000, 100, 110, 100, 110, 1},
+                                       {120'000, 110, 120, 110, 120, 1},
+                                       {600'000, 120, 130, 120, 130, 1}};
+  const std::vector<PaneConfig> panes{PaneConfig{}};
+  const std::vector<PriceLine> lines;
+  std::vector<trading_charts::SeriesData> series(1);
+  series[0].config = SarConfig();
+  series[0].pane_index = 0;
+  series[0].source_binding.kind =
+      trading_charts::SeriesSourceBindingKind::kMain;
+  trading_charts::internal::RebuildDerivedSeries(series[0], &candles, 0);
+  trading_charts::internal::SnapshotBuildInput input{config, candles, panes,
+                                                     series, lines};
+  input.width = 800;
+  input.height = 500;
+  input.viewport_initialized = true;
+  for (const bool logical : {false, true}) {
+    config.logical_spacing = logical;
+    input.visible_x_min = logical ? 2.6 : 570'000;
+    input.visible_x_max = logical ? 3.4 : 630'000;
+    series[0].config.visible = true;
+    const auto visible = trading_charts::internal::BuildRenderSnapshot(input);
+    assert(visible->has_visible_candles);
+    assert(visible->visible_y_min <= series[0].candles.back().close);
+    series[0].config.visible = false;
+    const auto hidden = trading_charts::internal::BuildRenderSnapshot(input);
+    assert(visible->visible_y_min < hidden->visible_y_min - 1);
+    assert(visible->content_vertices->size() >
+           hidden->content_vertices->size());
+  }
+  config.logical_spacing = false;
+  input.visible_x_min = 180'000;
+  input.visible_x_max = 300'000;
+  const auto hidden = trading_charts::internal::BuildRenderSnapshot(input);
+  series[0].config.visible = true;
+  const auto gap = trading_charts::internal::BuildRenderSnapshot(input);
+  assert(!gap->has_visible_candles);
+  assert(gap->last_visible_index + 1 == gap->first_visible_index);
+  ExpectNear(gap->visible_y_min, hidden->visible_y_min);
+  ExpectNear(gap->visible_y_max, hidden->visible_y_max);
+  assert(*gap->content_vertices == *hidden->content_vertices);
+}
+
+void TestSarGeometry() {
+  trading_charts::SeriesData series;
+  series.config = SarConfig();
+  series.config.up = Color{0, 1, 0, 1};
+  series.config.down = Color{1, 0, 0, 1};
+  series.config.sar_reversal = Color{0, 0, 1, 1};
+  series.candles = {{1, 5, 5, 5, 5, 0}, {2, 5, 5, 5, 5, 0}, {3, 5, 5, 5, 5, 0}};
+  series.sar_states.resize(3);
+  series.sar_states[1].reversal = true;
+  series.sar_states[1].rising = false;
+  series.sar_states[2].rising = false;
+  for (const float scale : {1.0f, 3.0f}) {
+    ChartConfig config;
+    config.display_scale = scale;
+    trading_charts::internal::SeriesGeometryInput input{
+        config, series.candles, 0, 3, {0, 0, 400 * scale, 100 * scale}, 0, 4, 0,
+        10};
+    std::vector<float> vertices;
+    const auto capacity =
+        trading_charts::internal::SarGeometryFloatCapacity(input);
+    vertices.reserve(capacity);
+    trading_charts::internal::AppendSarGeometry(input, series, vertices);
+    assert(!vertices.empty() && vertices.size() <= capacity);
+    for (size_t offset = 0; offset < vertices.size(); offset += 6) {
+      const float x = vertices[offset];
+      const float y = vertices[offset + 1];
+      const int point = static_cast<int>(std::round(x / (100 * scale)));
+      const float dx = x - static_cast<float>(point) * 100 * scale;
+      const float dy = y - 50 * scale;
+      const float radius = std::sqrt(dx * dx + dy * dy) / scale;
+      assert(radius >= 1.49f && radius <= 3.51f);
+      assert(vertices[offset + 2] == (point == 3 ? 1.0f : 0.0f));
+      assert(vertices[offset + 3] == (point == 1 ? 1.0f : 0.0f));
+      assert(vertices[offset + 4] == (point == 2 ? 1.0f : 0.0f));
+    }
+    // Clip both rings at the plot edges; capacity includes clipped triangles.
+    input.visible_x_min = 1;
+    input.visible_x_max = 3;
+    vertices.clear();
+    const auto clipped_capacity =
+        trading_charts::internal::SarGeometryFloatCapacity(input);
+    vertices.reserve(clipped_capacity);
+    trading_charts::internal::AppendSarGeometry(input, series, vertices);
+    assert(!vertices.empty() && vertices.size() <= clipped_capacity);
+    for (size_t offset = 0; offset < vertices.size(); offset += 6) {
+      assert(vertices[offset] >= input.plot.left - 1e-4f &&
+             vertices[offset] <= input.plot.right + 1e-4f);
+      assert(vertices[offset + 1] >= input.plot.top - 1e-4f &&
+             vertices[offset + 1] <= input.plot.bottom + 1e-4f);
+    }
+    // A viewport beginning after the reversal must not recolor its first point.
+    input.first_index = 2;
+    vertices.clear();
+    trading_charts::internal::AppendSarGeometry(input, series, vertices);
+    assert(!vertices.empty());
+    for (size_t offset = 0; offset < vertices.size(); offset += 6) {
+      assert(vertices[offset + 2] == 1 && vertices[offset + 4] == 0);
+    }
+    // Empty time gaps have no connecting geometry.
+    input.first_index = 1;
+    input.end_index = 1;
+    vertices.clear();
+    trading_charts::internal::AppendSarGeometry(input, series, vertices);
+    assert(vertices.empty());
+  }
 }
 
 void TestBollCalculationAndStreaming() {
@@ -4987,6 +5264,10 @@ int main() noexcept {
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();
     TestRsiFlatAndCascadeRemoval();
+    TestSarReferenceAndStreaming();
+    TestSarEngineIntegration();
+    TestSarGeometry();
+    TestSarAutoscaleAndGaps();
     TestBollCalculationAndStreaming();
     TestBollEngineIntegration();
     TestBollGeometry();

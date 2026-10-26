@@ -7,6 +7,7 @@ import {
   jest,
 } from '@jest/globals';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { useLayoutEffect } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { useSyntheticDataFeed } from '../hooks/useSyntheticDataFeed';
@@ -56,16 +57,12 @@ describe('synthetic feed lifecycle', () => {
 
   it('streams while mounted, pauses in background, and cleans up on unmount', () => {
     act(() => {
-      renderer = create(
-        <Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />
-      );
+      renderer = create(<Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />);
     });
     act(() => jest.advanceTimersByTime(100));
     expect(charts.setHistory).toHaveBeenCalledTimes(1);
     act(() => {
-      renderer?.update(
-        <Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />
-      );
+      renderer?.update(<Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />);
     });
     charts.updateTrades.mockClear();
     act(() => jest.advanceTimersByTime(5_000));
@@ -76,9 +73,7 @@ describe('synthetic feed lifecycle', () => {
     }
     charts.updateTrades.mockClear();
     act(() => {
-      renderer?.update(
-        <Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />
-      );
+      renderer?.update(<Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />);
     });
     act(() => jest.advanceTimersByTime(100));
     expect(charts.updateTrades).toHaveBeenCalledTimes(1);
@@ -138,9 +133,7 @@ describe('synthetic feed lifecycle', () => {
   it('defers work when mounted in background and starts on app activation', () => {
     AppState.currentState = 'background';
     act(() => {
-      renderer = create(
-        <Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />
-      );
+      renderer = create(<Harness settings={DEFAULT_SYNTHETIC_SETTINGS} />);
     });
     act(() => jest.advanceTimersByTime(1_000));
     expect(charts.setHistory).not.toHaveBeenCalled();
@@ -149,5 +142,41 @@ describe('synthetic feed lifecycle', () => {
     });
     act(() => jest.advanceTimersByTime(100));
     expect(charts.setHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('commits a fresh loading snapshot immediately when settings change', () => {
+    const committed: Array<ReturnType<typeof useSyntheticDataFeed>> = [];
+    function ObservedFeed({ settings }: HarnessProps) {
+      const snapshot = useSyntheticDataFeed('synthetic-hook', settings, charts);
+      useLayoutEffect(() => {
+        committed.push(snapshot);
+      });
+      return null;
+    }
+    act(() => {
+      renderer = create(<ObservedFeed settings={DEFAULT_SYNTHETIC_SETTINGS} />);
+    });
+    act(() => jest.advanceTimersByTime(100));
+    expect(committed.at(-1)?.status).toBe('live');
+    committed.length = 0;
+    act(() => {
+      renderer?.update(
+        <ObservedFeed
+          settings={{
+            ...DEFAULT_SYNTHETIC_SETTINGS,
+            minPrice: 20,
+            maxPrice: 40,
+          }}
+        />
+      );
+    });
+    expect(committed[0]).toMatchObject({
+      status: 'loading',
+      lastPrice: 30,
+      candleCount: 0,
+      allTimeExtremes: null,
+    });
+    act(() => jest.advanceTimersByTime(100));
+    expect(committed.at(-1)?.status).toBe('live');
   });
 });

@@ -13,3 +13,5 @@ export { VolumeSettingsSection } from './VolumeSettingsSection';
 export { XAxisSettingsSection } from './XAxisSettingsSection';
 export { YAxisSettingsSection } from './YAxisSettingsSection';
 export { BollSettingsSection } from './BollSettingsSection';
+
+export { SarSettingsSection } from './SarSettingsSection';

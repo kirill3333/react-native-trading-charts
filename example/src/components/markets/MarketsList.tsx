@@ -8,9 +8,15 @@ import {
   View,
 } from 'react-native';
 
-import { type HyperliquidTicker } from '../../api/hyperliquid';
+import {
+  formatMarketPrice,
+  formatTurnover,
+  isHyperliquidTicker,
+  tickerPair,
+} from '../../marketPresentation';
+import { createThemedStyles } from '../../createThemedStyles';
 import { type MarketProvider, type MarketTicker } from '../../api/marketData';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 
 const ROW_HEIGHT = 73;
@@ -99,7 +105,9 @@ function TickerRow({ ticker, onPress }: TickerRowProps) {
         </Text>
       </View>
       <View style={styles.tickerPriceBlock}>
-        <Text style={styles.tickerPrice}>{formatPrice(ticker)}</Text>
+        <Text style={styles.tickerPrice}>
+          {formatMarketPrice(ticker.lastPrice, ticker.precision)}
+        </Text>
         <Text style={positive ? styles.positiveText : styles.negativeText}>
           {change}
         </Text>
@@ -107,44 +115,6 @@ function TickerRow({ ticker, onPress }: TickerRowProps) {
       <Text style={styles.disclosure}>›</Text>
     </Pressable>
   );
-}
-
-function isHyperliquidTicker(
-  ticker: MarketTicker
-): ticker is HyperliquidTicker {
-  return 'provider' in ticker && ticker.provider === 'hyperliquid';
-}
-
-function formatPrice(ticker: MarketTicker): string {
-  return ticker.lastPrice.toLocaleString('en-US', {
-    minimumFractionDigits: ticker.precision,
-    maximumFractionDigits: ticker.precision,
-  });
-}
-
-function formatTurnover(value: number): string {
-  if (value >= 1_000_000_000) {
-    return `$${(value / 1_000_000_000).toFixed(2)}B`;
-  }
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(2)}M`;
-  }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(2)}K`;
-  }
-  return `$${value.toFixed(2)}`;
-}
-
-type TickerPair = {
-  base: string;
-  quote: string;
-};
-
-function tickerPair(ticker: MarketTicker): TickerPair {
-  if (isHyperliquidTicker(ticker)) {
-    return { base: ticker.baseAsset, quote: ticker.quoteAsset };
-  }
-  return { base: ticker.symbol.slice(0, -4), quote: 'USDT' };
 }
 
 function createStyles(colors: AppThemeColors) {
@@ -206,7 +176,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

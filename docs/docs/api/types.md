@@ -102,9 +102,9 @@ export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
         kind: 'scalar';
-        seriesType: 'line' | 'area' | 'histogram';
+        seriesType: 'line' | 'area' | 'histogram' | 'sar';
         sourceType:
-          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma';
+          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma' | 'ohlcvSar';
         value: number | null;
       }>)
   | (CrosshairSeriesIdentity &
@@ -340,6 +340,29 @@ export type NormalizedBollSeriesOptions = Omit<
 ```
 
 See [Bollinger Bands](/docs/bollinger-bands) for calculation and rendering defaults.
+
+### SarSeriesOptions and SarSeriesAppearance {#sarseriesoptions}
+
+```ts
+export type SarSeriesAppearance = {
+  upColor?: string;
+  downColor?: string;
+  reversalColor?: string;
+};
+
+export type SarSeriesOptions = AdditionalSeriesBase & {
+  type: 'sar';
+  source: {
+    type: 'ohlcvSar';
+    seriesId: string;
+    step?: number;
+    maximum?: number;
+  };
+  appearance?: SarSeriesAppearance;
+};
+```
+
+See [Parabolic SAR](/docs/parabolic-sar) for calculation, validation and rendering defaults.
 
 ### MacdSeriesOptions {#macdseriesoptions}
 

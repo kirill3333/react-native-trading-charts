@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { APP_THEMES, type AppThemeColors } from '../theme';
+import { formatMarketPrice } from '../marketPresentation';
+import { createThemedStyles } from '../createThemedStyles';
+import { type AppThemeColors } from '../theme';
 import { useAppTheme } from '../themeContext';
 
 type ChartHeaderProps = {
@@ -12,20 +14,6 @@ type ChartHeaderProps = {
   change24hPercent?: number;
   onBack: () => void;
 };
-
-const priceFormatters = new Map<number, Intl.NumberFormat>();
-
-function formatPrice(value: number, precision: number): string {
-  let formatter = priceFormatters.get(precision);
-  if (formatter == null) {
-    formatter = new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    });
-    priceFormatters.set(precision, formatter);
-  }
-  return formatter.format(value);
-}
 
 export function ChartHeader({
   baseAsset,
@@ -69,7 +57,9 @@ export function ChartHeader({
       </View>
       {price != null && (
         <View style={styles.priceBlock}>
-          <Text style={styles.price}>{formatPrice(price, pricePrecision)}</Text>
+          <Text style={styles.price}>
+            {formatMarketPrice(price, pricePrecision)}
+          </Text>
           {change24hPercent != null && (
             <Text style={positive ? styles.positiveText : styles.negativeText}>
               {positive ? '+' : ''}
@@ -138,7 +128,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

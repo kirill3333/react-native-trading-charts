@@ -358,7 +358,7 @@ std::optional<size_t> ChartEngine::SeparatorAt(float y, float hit_slop) const {
   }
   const std::vector<Rect> rects = PaneRectsLocked();
   for (size_t index = 0; index + 1 < rects.size(); ++index) {
-    if (std::abs(y - rects[index].bottom) <= hit_slop) {
+    if (std::fabs(y - rects[index].bottom) <= hit_slop) {
       return index;
     }
   }

@@ -200,15 +200,20 @@ export function parseInstrumentsResponse(
         instrument.quoteAsset === 'USDT' &&
         instrument.isSpotTradingAllowed !== false
     )
-    .map((instrument) => {
+    .flatMap((instrument) => {
       const tickSize = instrument.filters.find(
         (filter) => filter.filterType === 'PRICE_FILTER'
-      )!.tickSize!;
-      return {
-        symbol: instrument.symbol,
-        precision: tickSizePrecision(tickSize),
-        minMove: Number(tickSize),
-      };
+      )?.tickSize;
+      if (tickSize == null) return [];
+      const minMove = Number(tickSize);
+      if (!Number.isFinite(minMove) || minMove <= 0) return [];
+      return [
+        {
+          symbol: instrument.symbol,
+          precision: tickSizePrecision(tickSize),
+          minMove,
+        },
+      ];
     });
 }
 

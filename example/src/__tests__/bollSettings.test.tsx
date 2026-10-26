@@ -7,10 +7,8 @@ import {
   DEFAULT_CHART_SETTINGS,
   useChartSettingsStore,
 } from '../stores/chartSettingsStore';
-import {
-  NumberSetting,
-  parseSettingNumber,
-} from '../components/settings/NumberSetting';
+import { NumberSetting } from '../components/settings/NumberSetting';
+import { parseSettingNumber } from '../settingNumber';
 import { TextInput } from 'react-native';
 
 describe('BOLL example settings', () => {

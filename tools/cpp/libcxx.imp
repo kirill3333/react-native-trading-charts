@@ -1,0 +1,5 @@
+[
+  # libc++ implements <cmath> in private __math headers. IWYU 0.26 otherwise
+  # maps these to <math>, which is not a public C++ standard library header.
+  { "include": ["@<__math/.*>", "private", "<cmath>", "public"] }
+]

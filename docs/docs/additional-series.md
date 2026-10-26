@@ -42,3 +42,5 @@ OHLC-backed line and area series still receive full `OhlcCandle` objects. Standa
 Use the `additionalSeries` prop for series declared in React, as in the indicator guides. When you also add or remove series through commands, keep that prop consistent with the layout you want. The prop configures series; data updates still go through the command API. Set `visible: false` to hide a series without removing it.
 
 See [Bollinger Bands](/docs/bollinger-bands) for a three-line price overlay with a gradient fill and configurable period, deviation multiplier, and OHLC source.
+
+See [Parabolic SAR](/docs/parabolic-sar) for a price overlay with hollow circles, configurable acceleration and three trend/reversal colors.

@@ -39,6 +39,11 @@ size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input);
 // (histogram series tessellate outside this path and report 1).
 size_t SeriesQuadsPerSample(SeriesType type);
 
+size_t SarGeometryFloatCapacity(const SeriesGeometryInput& input);
+
+void AppendSarGeometry(const SeriesGeometryInput& input,
+                       const SeriesData& series, std::vector<float>& vertices);
+
 void AppendBollGeometry(const SeriesGeometryInput& input,
                         const SeriesConfig& series, bool fill,
                         std::vector<float>& vertices);

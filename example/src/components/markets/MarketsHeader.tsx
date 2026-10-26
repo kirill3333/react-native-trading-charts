@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons/static';
 
+import { createThemedStyles } from '../../createThemedStyles';
 import { type MarketProvider } from '../../api/marketData';
-import { APP_THEMES, type AppThemeColors } from '../../theme';
+import { type AppThemeColors } from '../../theme';
 import { useAppTheme } from '../../themeContext';
 
 const MARKET_PROVIDERS = [
@@ -141,7 +142,4 @@ function createStyles(colors: AppThemeColors) {
   });
 }
 
-const THEMED_STYLES = {
-  dark: createStyles(APP_THEMES.dark.colors),
-  light: createStyles(APP_THEMES.light.colors),
-};
+const THEMED_STYLES = createThemedStyles(createStyles);

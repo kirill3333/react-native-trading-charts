@@ -30,6 +30,12 @@ export type BollLineSettings = {
 };
 
 export type ChartSettings = {
+  sarEnabled: boolean;
+  sarStep: number;
+  sarMaximum: number;
+  sarUpColor: string;
+  sarDownColor: string;
+  sarReversalColor: string;
   bollEnabled: boolean;
   bollPeriod: number;
   bollStdDevMultiplier: number;
@@ -136,6 +142,12 @@ function bollLineDefaults(color: string): BollLineSettings {
 }
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  sarEnabled: false,
+  sarStep: 0.02,
+  sarMaximum: 0.2,
+  sarUpColor: '#38D98A',
+  sarDownColor: '#FF3B64',
+  sarReversalColor: '#9791A5',
   bollEnabled: false,
   bollPeriod: 20,
   bollStdDevMultiplier: 2,

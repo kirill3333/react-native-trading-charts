@@ -18,6 +18,11 @@
 namespace trading_charts::internal {
 namespace {
 
+constexpr size_t kSarSegments = 16;
+constexpr size_t kSarBands = 3;
+constexpr float kSarOuterRadius = 3.0f;
+constexpr float kSarInnerRadius = 2.0f;
+constexpr float kSarFringe = 0.5f;
 constexpr size_t kCandlestickQuadsPerSample = 2;
 constexpr size_t kHollowCandlestickQuadsPerSample = 6;
 constexpr size_t kBarQuadsPerSample = 3;
@@ -1240,6 +1245,81 @@ void AppendBollGeometry(const SeriesGeometryInput& input,
   append(series.boll_upper, OhlcValueSource::kHigh);
   append(series.boll_middle, OhlcValueSource::kClose);
   append(series.boll_lower, OhlcValueSource::kLow);
+}
+
+size_t SarGeometryFloatCapacity(const SeriesGeometryInput& input) {
+  size_t capacity = 0;
+  const float radius =
+      (kSarOuterRadius + kSarFringe) *
+      std::max(kMinimumDisplayScale, input.config.display_scale);
+  VisitVisibleSamples(input, [&](const SeriesSample& sample) {
+    if (IsHorizontallyOutsidePlot(sample.x, radius, input.plot) ||
+        sample.close_y + radius < input.plot.top ||
+        sample.close_y - radius > input.plot.bottom) {
+      return;
+    }
+    const bool clipped = sample.x - radius < input.plot.left ||
+                         sample.x + radius > input.plot.right ||
+                         sample.close_y - radius < input.plot.top ||
+                         sample.close_y + radius > input.plot.bottom;
+    const size_t clipping_factor =
+        clipped ? kMaximumClippedPolygonVertexCount - 2 : 1;
+    capacity += kSarSegments * kSarBands * kFloatsPerQuad * clipping_factor;
+  });
+  return capacity;
+}
+
+void AppendSarGeometry(const SeriesGeometryInput& input,
+                       const SeriesData& series, std::vector<float>& vertices) {
+  // Unit directions are shared by every ring and frame; no per-point trig or
+  // scratch allocation is needed in the tessellation loop.
+  static const auto directions = [] {
+    std::array<Vector2, kSarSegments> result{};
+    for (size_t index = 0; index < kSarSegments; ++index) {
+      const float angle = 2.0f * kPi * static_cast<float>(index) /
+                          static_cast<float>(kSarSegments);
+      result[index] = Vector2{std::cos(angle), std::sin(angle)};
+    }
+    return result;
+  }();
+  const float scale =
+      std::max(kMinimumDisplayScale, input.config.display_scale);
+  const std::array<float, kSarBands + 1> radii = {
+      (kSarInnerRadius - kSarFringe) * scale, kSarInnerRadius * scale,
+      kSarOuterRadius * scale, (kSarOuterRadius + kSarFringe) * scale};
+  const std::array<float, kSarBands + 1> alphas = {0.0f, 1.0f, 1.0f, 0.0f};
+  VisitVisibleSamples(input, [&](const SeriesSample& sample) {
+    const size_t index =
+        static_cast<size_t>(&sample.candle - input.candles.data());
+    if (index >= series.sar_states.size() ||
+        IsHorizontallyOutsidePlot(sample.x, radii.back(), input.plot) ||
+        sample.close_y + radii.back() < input.plot.top ||
+        sample.close_y - radii.back() > input.plot.bottom) {
+      return;
+    }
+    const SarState& state = series.sar_states[index];
+    const Color color = state.reversal ? series.config.sar_reversal
+                        : state.rising ? series.config.up
+                                       : series.config.down;
+    const auto vertex = [&](size_t direction, size_t band) {
+      Color shade = color;
+      shade.a *= alphas[band];
+      return ColoredVertex{
+          sample.x + directions[direction].x * radii[band],
+          sample.close_y + directions[direction].y * radii[band], shade};
+    };
+    for (size_t segment = 0; segment < kSarSegments; ++segment) {
+      const size_t next = (segment + 1) % kSarSegments;
+      for (size_t band = 0; band < kSarBands; ++band) {
+        const auto a = vertex(segment, band);
+        const auto b = vertex(next, band);
+        const auto c = vertex(next, band + 1);
+        const auto d = vertex(segment, band + 1);
+        AppendClippedTriangle(vertices, a, b, c, input.plot);
+        AppendClippedTriangle(vertices, a, c, d, input.plot);
+      }
+    }
+  });
 }
 
 size_t SeriesQuadsPerSample(SeriesType type) {

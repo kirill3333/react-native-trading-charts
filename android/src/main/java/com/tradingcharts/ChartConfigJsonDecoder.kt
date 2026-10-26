@@ -775,6 +775,16 @@ private fun seriesConfig(
           macdTextColor = macd.textColor,
       )
       .withBoll(source, appearance, fallback.displayScale)
+      .withSar(source, appearance)
+}
+
+private fun SeriesConfig.withSar(source: JSONObject?, appearance: JSONObject?): SeriesConfig {
+  if (type != "sar") return this
+  return copy(
+      sarStep = source?.optDouble("step", 0.02) ?: 0.02,
+      sarMaximum = source?.optDouble("maximum", 0.20) ?: 0.20,
+      sarReversalColor = appearance.optionalColor("reversalColor") ?: Color.rgb(151, 145, 165),
+  )
 }
 
 private fun SeriesConfig.withBoll(
