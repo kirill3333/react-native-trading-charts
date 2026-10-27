@@ -26,7 +26,7 @@ bool IsSupportedSeriesType(SeriesType type) {
   return type == SeriesType::kCandlestick ||
          type == SeriesType::kHollowCandlestick || type == SeriesType::kBar ||
          type == SeriesType::kHistogram || type == SeriesType::kLine ||
-         type == SeriesType::kArea;
+         type == SeriesType::kArea || type == SeriesType::kBaseline;
 }
 
 bool IsValidRsiSeriesConfig(const SeriesConfig& config) {

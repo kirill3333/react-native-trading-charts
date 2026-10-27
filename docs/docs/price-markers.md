@@ -4,6 +4,10 @@ description: 'Mark app-defined prices with lines and labels in the main chart pa
 
 # Custom price markers
 
+<figure>
+  <img src="/assets/price-marker.webp" alt="The orange Axis press line and badge mark an app-defined price." width="240">
+</figure>
+
 A custom price marker draws a horizontal line and an axis label at a price chosen by your app. For example, an order screen can show an entry price or a target next to the market candles, so users can see where it falls on the chart.
 
 Create the marker with `setPriceLine` and give it a stable ID, such as the order's ID. Updating that ID moves or relabels the existing marker; removing it clears the line. Markers belong to the main price pane, and your app decides which prices to display and how long to keep them.

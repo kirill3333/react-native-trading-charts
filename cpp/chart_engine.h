@@ -42,10 +42,12 @@ enum class SeriesType : std::uint8_t {
   kHistogram = 3,
   kLine = 4,
   kArea = 5,
+  kBaseline = 6,
 };
 
 inline bool IsLineLikeSeries(SeriesType type) {
-  return type == SeriesType::kLine || type == SeriesType::kArea;
+  return type == SeriesType::kLine || type == SeriesType::kArea ||
+         type == SeriesType::kBaseline;
 }
 
 enum class OhlcValueSource : std::uint8_t {
@@ -135,7 +137,32 @@ struct BollRollingState {
   double m2 = 0.0;
 };
 
+struct BaselineConfig {
+  bool percentage = true;
+  double value = 50.0;
+  Color top_line{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 1.0f};
+  Color bottom_line{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 1.0f};
+  Color top_fill_top{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f,
+                     64.0f / 255.0f};
+  Color top_fill_bottom{56.0f / 255.0f, 217.0f / 255.0f, 138.0f / 255.0f, 0.0f};
+  Color bottom_fill_top{1.0f, 59.0f / 255.0f, 100.0f / 255.0f, 0.0f};
+  Color bottom_fill_bottom{1.0f, 59.0f / 255.0f, 100.0f / 255.0f,
+                           64.0f / 255.0f};
+  bool line_visible = true;
+  bool line_dashed = true;
+  float line_width = 1.0f;
+  Color line_color{41.0f / 255.0f, 36.0f / 255.0f, 49.0f / 255.0f, 1.0f};
+};
+
+inline double BaselinePrice(const BaselineConfig& baseline, double minimum,
+                            double maximum) {
+  return baseline.percentage
+             ? minimum + (maximum - minimum) * (baseline.value / 100.0)
+             : baseline.value;
+}
+
 struct SeriesConfig {
+  BaselineConfig baseline;
   std::string series_id;
   std::string pane_id = "main";
   std::string price_scale_id = "main";
@@ -327,6 +354,7 @@ struct TradeAggregationConfig {
 };
 
 struct ChartConfig {
+  BaselineConfig baseline;
   Resolution resolution;
   TradeAggregationConfig trade_aggregation;
   int initial_visible_count = 100;

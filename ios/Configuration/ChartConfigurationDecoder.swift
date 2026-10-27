@@ -6,6 +6,9 @@ import Foundation
 typealias JSONDictionary = [String: Any]
 
 struct SeriesAppearanceDefaults {
+  var baseline: NativeBaselineConfig
+  var baselineWidth: Float
+  var baselineDashed: Bool
   var lineWidth: Float
   var lineColor: NativeColor
   var lineGradientTop: NativeColor
@@ -32,6 +35,20 @@ struct ResolvedChartConfiguration {
 }
 
 enum ChartConfigurationDecoder {
+  private static func applyBaseline(
+    series: JSONDictionary, appearance: JSONDictionary, defaults: SeriesAppearanceDefaults,
+    config: inout NativeChartConfig
+  ) {
+    guard series.string("type") == "baseline" else { return }
+    config.series_type = .baseline
+    config.baseline = SeriesConfigurationDecoder.baseline(
+      appearance: appearance, baseValue: series.dictionary("baseValue"), fallback: defaults.baseline)
+    config.line_width = defaults.baselineWidth
+    config.line_dashed = defaults.baselineDashed
+    config.line_rounded = appearance.number("rounded")?.boolValue ?? true
+    config.line_gradient_enabled = false
+  }
+
   static func decode(_ json: String) -> ResolvedChartConfiguration? {
     guard
       let data = json.data(using: .utf8),
@@ -46,6 +63,7 @@ enum ChartConfigurationDecoder {
     let candlesAppearance = appearance.dictionary("candles")
     let barsAppearance = appearance.dictionary("bars")
     let lineAppearance = appearance.dictionary("line")
+    let baselineAppearance = appearance.dictionary("baseline")
     let areaAppearance = appearance.dictionary("area")
     let series = root.dictionary("series")
     let seriesType = series.string("type")
@@ -131,6 +149,10 @@ enum ChartConfigurationDecoder {
     let areaFillBottom = colorFromHex(areaFill.stringOrNil("bottomColor"), fallback: config.area_fill_bottom)
 
     let defaults = SeriesAppearanceDefaults(
+      baseline: SeriesConfigurationDecoder.baseline(
+        appearance: baselineAppearance, baseValue: [:], fallback: NativeBaselineConfig()),
+      baselineWidth: baselineAppearance.number("width")?.floatValue ?? 1.5,
+      baselineDashed: baselineAppearance.string("style") == "dashed",
       lineWidth: lineWidth,
       lineColor: lineColor,
       lineGradientTop: lineGradientTop,
@@ -157,6 +179,7 @@ enum ChartConfigurationDecoder {
     config.line_gradient_bottom = usesArea ? areaGradientBottom : lineGradientBottom
     config.area_fill_top = areaFillTop
     config.area_fill_bottom = areaFillBottom
+    applyBaseline(series: series, appearance: baselineAppearance, defaults: defaults, config: &config)
     switch series.string("source") {
     case "open": config.line_source = .open
     case "high": config.line_source = .high

@@ -1,5 +1,6 @@
 import {
   type ChartLineStyle,
+  type ChartBaselineAppearance,
   type ChartSeriesType,
   type OhlcValueSource,
 } from 'react-native-trading-charts';
@@ -47,6 +48,12 @@ export type ChartSettings = {
   bollFillTopColor: string;
   bollFillBottomColor: string;
   seriesType: ChartSeriesType;
+  baselineMode: 'percentage' | 'price';
+  baselinePercentage: number;
+  baselinePrice: number;
+  baselineSource: OhlcValueSource;
+  baselineRounded: boolean;
+  baselineAppearance: ChartBaselineAppearance;
   seriesLineWidth: SeriesLineWidth;
   lineRounded: boolean;
   areaRounded: boolean;
@@ -159,6 +166,12 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   bollFillTopColor: '#2E90F533',
   bollFillBottomColor: '#2E90F50D',
   seriesType: 'candlestick',
+  baselineMode: 'percentage',
+  baselinePercentage: 50,
+  baselinePrice: 0,
+  baselineSource: 'close',
+  baselineRounded: true,
+  baselineAppearance: {},
   seriesLineWidth: 1.5,
   lineRounded: true,
   areaRounded: true,

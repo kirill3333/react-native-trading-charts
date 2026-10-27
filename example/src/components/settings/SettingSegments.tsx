@@ -13,6 +13,7 @@ export type SettingSegmentOption<TValue extends string | number> = {
 type SettingSegmentsProps<TValue extends string | number> = {
   description?: string;
   disabled?: boolean;
+  wrap?: boolean;
   label: string;
   onValueChange: (value: TValue) => void;
   options: ReadonlyArray<SettingSegmentOption<TValue>>;
@@ -22,6 +23,7 @@ type SettingSegmentsProps<TValue extends string | number> = {
 export function SettingSegments<TValue extends string | number>({
   description,
   disabled = false,
+  wrap = false,
   label,
   onValueChange,
   options,
@@ -31,7 +33,10 @@ export function SettingSegments<TValue extends string | number>({
   const styles = THEMED_STYLES[theme.mode];
   return (
     <SettingsRow description={description} disabled={disabled} label={label}>
-      <View accessibilityRole="radiogroup" style={styles.group}>
+      <View
+        accessibilityRole="radiogroup"
+        style={[styles.group, wrap && styles.wrappedGroup]}
+      >
         {options.map((option) => {
           const selected = option.value === value;
           return (
@@ -69,6 +74,7 @@ function createStyles(colors: AppThemeColors) {
       flexDirection: 'row',
       padding: 2,
     },
+    wrappedGroup: { flexWrap: 'wrap', maxWidth: 260 },
     option: {
       alignItems: 'center',
       borderRadius: 6,

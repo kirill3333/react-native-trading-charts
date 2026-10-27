@@ -4,6 +4,10 @@ description: 'Choose time spacing, price scales and readable date and number for
 
 # Axes & formatting
 
+<figure>
+  <img src="/assets/candles.webp" alt="Time labels appear below the candles and price labels along the right axis." width="240">
+</figure>
+
 The axes tell users when a value occurred and how large it was. The X axis represents time; the Y axis shows prices or the values in an indicator pane. Their labels need to suit the data: a price may need two decimals, a small token price more precision, and volume a compact number.
 
 Use `xAxis` and `yAxis` for spacing, dimensions and scale behavior. Use `formatters` when labels in different places need different formats. For example, the axis can show a short price while the tooltip shows more decimals for inspection.

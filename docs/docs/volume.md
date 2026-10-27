@@ -4,6 +4,10 @@ description: 'Draw volume from candle data or supply your own histogram values.'
 
 # Volume & histograms
 
+<figure>
+  <img src="/assets/volume.webp" alt="The volume histogram is displayed below the main price pane." width="240">
+</figure>
+
 Volume tells you how much traded during each candle. Showing it below price lets users compare price changes with trading activity at the same time. A histogram draws one vertical bar per timestamp, with bar height representing the value.
 
 If your candles include `volume`, the library can derive these bars from the OHLC series. You do not need to keep a second copy of the volume data in JavaScript. For a value you calculate yourself, such as volume delta, supply independent `HistogramPoint` objects instead. Those points can be positive or negative.

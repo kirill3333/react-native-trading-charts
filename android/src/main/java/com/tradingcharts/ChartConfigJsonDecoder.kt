@@ -70,6 +70,13 @@ internal class ChartConfigJsonDecoder(
       ChartConfig(
           resolution = decodeResolution(),
           tradeAggregation = decodeTradeAggregation(),
+          baseline =
+              baselineConfig(
+                  appearance.optJSONObject("baseline"),
+                  root.optJSONObject("series")?.optJSONObject("baseValue"),
+                  BaselineConfig(widthPx = 1.5f * density, baseLineWidthPx = density),
+                  density,
+              ),
           initialVisibleCount = root.getInt("initialVisibleCount"),
           defaultScale = root.optDouble("defaultScale", 1.0),
           defaultYScale = yAxis.optDouble("defaultScale", 1.0),
@@ -539,7 +546,7 @@ internal fun seriesConfigFromJson(
 ): SeriesConfig = seriesConfig(JSONObject(json), fallback, declarative)
 
 private fun String.isLineLikeSeries() =
-    this == "line" || this == "area" || this == "macd" || this == "boll"
+    this == "baseline" || this == "line" || this == "area" || this == "macd" || this == "boll"
 
 private fun JSONObject?.optionalColor(name: String): Int? =
     this?.optString(name)?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
@@ -553,7 +560,8 @@ private fun seriesLineWidthPx(
   if (appearance?.has("width") == true) {
     return appearance.getDouble("width").toFloat() * fallback.displayScale
   }
-  return if (type == "area") fallback.areaLineWidthPx else fallback.lineWidthPx
+  return if (type == "baseline") fallback.baseline.widthPx
+  else if (type == "area") fallback.areaLineWidthPx else fallback.lineWidthPx
 }
 
 private fun seriesLineDashed(
@@ -562,7 +570,9 @@ private fun seriesLineDashed(
     fallback: ChartConfig,
 ): Boolean {
   if (!type.isLineLikeSeries()) return false
-  val fallbackDashed = if (type == "area") fallback.areaLineDashed else fallback.lineDashed
+  val fallbackDashed =
+      if (type == "baseline") fallback.baseline.dashed
+      else if (type == "area") fallback.areaLineDashed else fallback.lineDashed
   return appearance?.optString("style")?.takeIf { it.isNotEmpty() }?.let { it == "dashed" }
       ?: fallbackDashed
 }
@@ -776,6 +786,19 @@ private fun seriesConfig(
       )
       .withBoll(source, appearance, fallback.displayScale)
       .withSar(source, appearance)
+      .withBaseline(json, fallback)
+}
+
+private fun SeriesConfig.withBaseline(json: JSONObject, fallback: ChartConfig): SeriesConfig {
+  if (type != "baseline") return this
+  val style =
+      baselineConfig(
+          json.optJSONObject("appearance"),
+          json.optJSONObject("baseValue"),
+          fallback.baseline,
+          fallback.displayScale,
+      )
+  return copy(baseline = style, color = style.topLineColor)
 }
 
 private fun SeriesConfig.withSar(source: JSONObject?, appearance: JSONObject?): SeriesConfig {
@@ -843,3 +866,39 @@ internal fun parseChartColor(value: String): Int {
     )
   }
 }
+
+private fun baselineConfig(
+    appearance: JSONObject?,
+    base: JSONObject?,
+    fallback: BaselineConfig,
+    density: Float,
+): BaselineConfig {
+  val reference = base ?: JSONObject()
+  val options = appearance ?: JSONObject()
+  val top = options.optJSONObject("topFill")
+  val bottom = options.optJSONObject("bottomFill")
+  val line = options.optJSONObject("baseLine") ?: JSONObject()
+  return fallback.copy(
+      percentage = reference.optString("type") != "price",
+      value = reference.optDouble("value", 50.0),
+      widthPx =
+          options.optDouble("width", (fallback.widthPx / density).toDouble()).toFloat() * density,
+      dashed = baselineDashed(options, fallback.dashed),
+      rounded = options.optBoolean("rounded", fallback.rounded),
+      topLineColor = appearance.optionalColor("topLineColor") ?: fallback.topLineColor,
+      bottomLineColor = appearance.optionalColor("bottomLineColor") ?: fallback.bottomLineColor,
+      topFillTopColor = top.optionalColor("topColor") ?: fallback.topFillTopColor,
+      topFillBottomColor = top.optionalColor("bottomColor") ?: fallback.topFillBottomColor,
+      bottomFillTopColor = bottom.optionalColor("topColor") ?: fallback.bottomFillTopColor,
+      bottomFillBottomColor = bottom.optionalColor("bottomColor") ?: fallback.bottomFillBottomColor,
+      baseLineVisible = line.optBoolean("visible", fallback.baseLineVisible),
+      baseLineDashed = baselineDashed(line, fallback.baseLineDashed),
+      baseLineWidthPx =
+          line.optDouble("width", (fallback.baseLineWidthPx / density).toDouble()).toFloat() *
+              density,
+      baseLineColor = line.optionalColor("color") ?: fallback.baseLineColor,
+  )
+}
+
+private fun baselineDashed(options: JSONObject, fallback: Boolean): Boolean =
+    if (options.has("style")) options.getString("style") == "dashed" else fallback

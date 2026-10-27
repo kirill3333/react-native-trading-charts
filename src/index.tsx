@@ -6,6 +6,8 @@ export type {
   ChartTheme,
   ChartAppearance,
   ChartAreaAppearance,
+  ChartBaselineAppearance,
+  BaselineBaseValue,
   ChartLineAppearance,
   ChartLineStyle,
   ChartBadgeStyle,

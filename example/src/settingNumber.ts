@@ -3,13 +3,15 @@ export const MAX_INTEGER_SETTING_VALUE = 4_294_967_295;
 
 export function parseSettingNumber(
   text: string,
-  requireInteger: boolean
+  requireInteger: boolean,
+  allowNonPositive = false
 ): number | null {
   const normalizedText = text.trim().replace(',', '.');
-  if (!/^\d+(\.\d+)?$/.test(normalizedText)) return null;
+  const pattern = allowNonPositive ? /^-?\d+(\.\d+)?$/ : /^\d+(\.\d+)?$/;
+  if (!pattern.test(normalizedText)) return null;
 
   const value = Number(normalizedText);
-  if (!Number.isFinite(value) || value <= 0) return null;
+  if (!Number.isFinite(value) || (!allowNonPositive && value <= 0)) return null;
   if (
     requireInteger &&
     (!Number.isInteger(value) || value > MAX_INTEGER_SETTING_VALUE)

@@ -102,7 +102,7 @@ export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
         kind: 'scalar';
-        seriesType: 'line' | 'area' | 'histogram' | 'sar';
+        seriesType: 'line' | 'area' | 'baseline' | 'histogram' | 'sar';
         sourceType:
           'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma' | 'ohlcvSar';
         value: number | null;
@@ -172,7 +172,7 @@ export type TradingChartsViewProps = ViewProps & {
 
 ```ts
 export type ChartSeriesType =
-  'candlestick' | 'hollowCandlestick' | 'bar' | 'line' | 'area';
+  'candlestick' | 'hollowCandlestick' | 'bar' | 'line' | 'area' | 'baseline';
 ```
 
 ### ChartSeriesOptions {#chartseriesoptions}
@@ -181,11 +181,19 @@ export type ChartSeriesType =
 export type ChartSeriesOptions =
   | {
       type?: 'candlestick' | 'hollowCandlestick' | 'bar';
+      baseValue?: never;
       source?: never;
       gapThresholdMs?: never;
     }
   | {
       type: 'line' | 'area';
+      baseValue?: never;
+      source?: OhlcValueSource;
+      gapThresholdMs?: number;
+    }
+  | {
+      type: 'baseline';
+      baseValue?: BaselineBaseValue;
       source?: OhlcValueSource;
       gapThresholdMs?: number;
     };
@@ -242,6 +250,13 @@ export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
         source?: OhlcValueSource;
         gapThresholdMs?: number;
         appearance?: ChartLineAppearance;
+      }
+    | {
+        type: 'baseline';
+        source?: OhlcValueSource;
+        gapThresholdMs?: number;
+        baseValue?: BaselineBaseValue;
+        appearance?: ChartBaselineAppearance;
       }
     | {
         type: 'area';
@@ -552,6 +567,7 @@ export type ChartAppearance = {
     lineWidth?: number;
   };
   line?: ChartLineAppearance;
+  baseline?: ChartBaselineAppearance & { rounded?: boolean };
   area?: ChartAreaAppearance;
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
@@ -1019,5 +1035,31 @@ export type TradeBatcher = {
   flush(): void;
   /** Permanently stop the batcher, drop queued trades, and cancel its timer. */
   dispose(): void;
+};
+```
+
+### BaselineBaseValue
+
+```ts
+export type BaselineBaseValue =
+  { type: 'price'; value: number } | { type: 'percentage'; value: number };
+```
+
+### ChartBaselineAppearance
+
+```ts
+export type ChartBaselineAppearance = {
+  width?: number;
+  style?: ChartLineStyle;
+  topLineColor?: string;
+  bottomLineColor?: string;
+  topFill?: { topColor?: string; bottomColor?: string };
+  bottomFill?: { topColor?: string; bottomColor?: string };
+  baseLine?: {
+    visible?: boolean;
+    color?: string;
+    width?: number;
+    style?: ChartLineStyle;
+  };
 };
 ```

@@ -4,6 +4,10 @@ description: 'Show the latest price and label the highest and lowest visible val
 
 # Current price & extremes
 
+<figure>
+  <img src="/assets/price-overlays.webp" alt="The current-price badge and line appear on the right; high and low labels mark visible extremes." width="240">
+</figure>
+
 Price overlays label values that are easy to lose track of while panning or zooming. The current-price line and its axis badge show the latest value in the main series. The extrema labels mark the highest and lowest visible values.
 
 Use `currentPrice` and `priceExtremes` to choose which labels appear. They follow chart data automatically, so your app does not need to maintain them as custom markers. If you need to label an order price or another value of your own, use [custom price markers](/docs/price-markers).
