@@ -12,6 +12,10 @@ All main series use the same OHLCV data: open, high, low, close and volume. Chan
 
 ## Candlestick
 
+<figure>
+  <img src="/assets/candles.webp" alt="Filled candlesticks show OHLC values." width="240">
+</figure>
+
 A candlestick shows four prices for one interval. Its body spans open to close, and its wick spans low to high. Use it when readers need to inspect the range and direction of each candle. `upColor` applies when close is at least open; `downColor` applies when it is lower.
 
 | Property                       | Type / values            | Default           | Description                                                                                 |
@@ -24,6 +28,10 @@ A candlestick shows four prices for one interval. Its body spans open to close, 
 <<< ../examples/candlestick.tsx
 
 ## Hollow candlestick
+
+<figure>
+  <img src="/assets/hollow.webp" alt="Rising candles have outlined bodies." width="240">
+</figure>
 
 Hollow candles show the same OHLC values as filled candles. Rising bodies have an outline and falling bodies are filled, so direction is visible from the body shape as well as its color. Choose this style when that distinction suits your screen.
 
@@ -40,6 +48,10 @@ The hollow outline uses the same native thickness as the wick.
 
 ## OHLC bar
 
+<figure>
+  <img src="/assets/bars.webp" alt="OHLC bars show open and close ticks on a high-low stem." width="240">
+</figure>
+
 An OHLC bar uses a vertical low-to-high stem with a short open tick on the left and close tick on the right. It carries the same four prices as a candle with less filled area. Set `lineWidth` to keep the ticks readable at your chosen zoom.
 
 | Property                    | Type / values   | Default                        | Description                                                  |
@@ -52,6 +64,10 @@ An OHLC bar uses a vertical low-to-high stem with a short open tick on the left 
 <<< ../examples/ohlc-bar.tsx
 
 ## Line
+
+<figure>
+  <img src="/assets/line.webp" alt="A line connects the selected candle values." width="240">
+</figure>
 
 A line connects one selected price from each candle, usually the close. Use it for a price overview where individual candle bodies would add detail the screen does not need. Set `source` to choose the OHLC field, and `gapThresholdMs` to leave breaks across large time gaps.
 
@@ -70,6 +86,10 @@ A line connects one selected price from each candle, usually the close. Use it f
 <<< ../examples/line.tsx
 
 ## Area
+
+<figure>
+  <img src="/assets/area.webp" alt="An area chart fills below the price line." width="240">
+</figure>
 
 An area chart adds a fill beneath a price line. It works for the same price-over-time views as a line chart, with the fill making the shape more visible. Style the outline separately from the fill; the data still comes from the selected OHLC field.
 
@@ -101,6 +121,10 @@ appearance={{
 ```
 
 ## Baseline
+
+<figure>
+  <img src="/assets/baseline.webp" alt="A baseline chart colors the line and fill above and below its reference level." width="240">
+</figure>
 
 A baseline chart fills the space between a price line and a reference level. Above the level it uses the upper color palette; below it uses the lower palette. Both the outline and fill change color exactly at crossings. Data, OHLC source selection and time gaps work as for Line/Area.
 

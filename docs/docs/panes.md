@@ -4,6 +4,10 @@ description: 'Separate price, volume and indicators into aligned plot areas with
 
 # Panes
 
+<figure>
+  <img src="/assets/panes.webp" alt="Price, volume and RSI occupy separate panes with their own scales." width="240">
+</figure>
+
 A pane is a separate plot area within one chart. For example, a trading screen can show candles at the top, volume underneath and RSI at the bottom. Each pane has its own vertical scale, so a large volume value does not flatten the price chart.
 
 The panes share one time axis. Panning or zooming changes the visible time range for all of them, so values at the same timestamp stay aligned. `heightWeight` controls how much vertical space each pane gets; users can drag the separators when resizing is enabled.

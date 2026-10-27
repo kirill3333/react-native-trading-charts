@@ -4,6 +4,10 @@ description: 'Overlay Parabolic SAR with configurable acceleration and three tre
 
 # Parabolic SAR
 
+<figure>
+  <img src="/assets/sar.webp" alt="SAR dots appear above or below the price candles." width="240">
+</figure>
+
 SAR draws hollow circles over the source price pane. The shared C++ engine calculates values from high/low prices, following [TA-Lib SAR](https://github.com/TA-Lib/ta-lib/blob/main/src/ta_func/ta_SAR.c), including its two-candle initialization and reversal rules. The first candle has no value. The initial acceleration equals `step`; each new trend extreme increases it by `step`, up to `maximum`.
 
 ```tsx

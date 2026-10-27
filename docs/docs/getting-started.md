@@ -44,6 +44,10 @@ For Expo, use a development build that includes this library. Expo Go does not c
 
 ## Render your first chart
 
+<figure>
+  <img src="/assets/candles.webp" alt="A chart rendered in the iOS example app." width="240">
+</figure>
+
 Copy this component into a native screen. It creates sample candles and loads them into a chart with a fixed height. Replace the sample data with your feed once it renders.
 
 <<< ../examples/first-chart.tsx

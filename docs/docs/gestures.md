@@ -29,4 +29,8 @@ gestures emit scale events.
 
 ## Touch and programmatic controls
 
+<figure>
+  <img src="/assets/crosshair.webp" alt="A long press selects a candle with the crosshair and tooltip." width="240">
+</figure>
+
 <<< ../examples/gestures.tsx

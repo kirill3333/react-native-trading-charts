@@ -4,6 +4,10 @@ description: 'Overlay Bollinger Bands with configurable calculation, three line 
 
 # Bollinger Bands (BOLL)
 
+<figure>
+  <img src="/assets/boll.webp" alt="The upper and lower bands surround the candles, with the middle line between them." width="240">
+</figure>
+
 BOLL draws a simple moving average and two bands around it on the source price pane. The shared C++ engine calculates all three values from the source OHLC candles and updates them when history, candles, or trades change.
 
 For a window of `N` prices and multiplier `K`:

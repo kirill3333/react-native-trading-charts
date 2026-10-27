@@ -86,6 +86,10 @@ Axis regions do not automatically grow for larger fonts. Increase
 
 ## Light theme example
 
+<figure>
+  <img src="/assets/light.webp" alt="A candlestick chart using a light background, dark axis labels and green and red candles." width="240">
+</figure>
+
 Explicit `appearance` values override the related theme fallbacks. Additional line/area series can also set their own `appearance` on the series options.
 
 <<< ../examples/styling.tsx

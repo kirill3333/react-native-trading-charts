@@ -4,6 +4,10 @@ description: 'Build native price charts for iOS and Android with historical cand
 
 # Introduction
 
+<figure>
+  <img src="/assets/candles.webp" alt="A candlestick chart with time and price axes." width="240">
+</figure>
+
 `react-native-trading-charts` draws historical and live market data in React Native apps on iOS and Android. Use it for a price screen where users need to inspect candles, follow incoming trades or compare price with volume and indicators.
 
 Your app supplies the data and React configuration. The native chart stores the candles, handles gestures and draws the result. It uses a shared C++ engine with Metal on iOS and OpenGL ES 3 on Android. The package adds no runtime dependencies beyond its React and React Native peers; it does not embed a browser or a general-purpose graphics framework.

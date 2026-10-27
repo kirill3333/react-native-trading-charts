@@ -4,6 +4,10 @@ description: 'Let users inspect candles with a crosshair, axis badges and a tool
 
 # Crosshair & tooltips
 
+<figure>
+  <img src="/assets/crosshair.webp" alt="The crosshair selects a candle and displays its time, price and OHLC tooltip." width="240">
+</figure>
+
 A crosshair lets users inspect one candle without estimating its value from the axes. Its lines mark the selected time and price, while a tooltip can show that candle's open, high, low, close and volume.
 
 Use the built-in tooltip when those values belong on the chart. If your screen has its own detail panel, handle `onSelectedCandleChange` and show the selected values there. You can hide the built-in tooltip while keeping the selection interaction.

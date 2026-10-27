@@ -4,6 +4,10 @@ description: 'Add comparison prices or derived indicators to an existing chart.'
 
 # Additional series
 
+<figure>
+  <img src="/assets/moving-averages.webp" alt="SMA and EMA are drawn over the main candlestick series." width="240">
+</figure>
+
 An additional series puts another set of values on the same chart. Use one to overlay a moving average on price, compare two instruments, or show volume below the candles. The main series keeps its own data and remains the chart's time reference.
 
 There are two ways to supply those values. A comparison line has its own OHLC history, which your app loads and updates. An indicator such as SMA or RSI derives its values from an existing OHLC series and follows that source's updates automatically.
