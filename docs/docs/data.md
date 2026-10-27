@@ -46,6 +46,10 @@ A histogram point is one numeric value at a timestamp. Use it for an independent
 
 ## Loading and updating data
 
+<figure>
+  <img src="/assets/candles.webp" alt="Candles rendered from market data in the example app." width="240">
+</figure>
+
 Load history once, then send only the changes your feed produces. `prependHistory` adds older candles during pagination. The series-data methods perform the corresponding operations on an additional series.
 
 | Method              | Arguments                     | Returns | Description                                                               |

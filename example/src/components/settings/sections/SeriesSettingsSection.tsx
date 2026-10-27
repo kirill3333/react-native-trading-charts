@@ -1,3 +1,4 @@
+import { BaselineSettingsFields } from './BaselineSettingsFields';
 import { buildMainSeriesColors } from '../../../chartSettingsConfig';
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
@@ -8,9 +9,7 @@ import { SERIES_LINE_WIDTH_OPTIONS, SERIES_OPTIONS } from './settingsOptions';
 
 export function SeriesSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const colors = buildMainSeriesColors(settings);
   const lineSeries =
     settings.seriesType === 'line' || settings.seriesType === 'area';
@@ -23,10 +22,12 @@ export function SeriesSettingsSection() {
     <SettingsSection title="Main chart">
       <SettingSegments
         label="Style"
+        wrap
         onValueChange={(seriesType) => updateSettings({ seriesType })}
         options={SERIES_OPTIONS}
         value={settings.seriesType}
       />
+      {settings.seriesType === 'baseline' ? <BaselineSettingsFields /> : null}
       {lineSeries ? (
         <>
           <SettingSegments

@@ -4,6 +4,10 @@ description: 'Display RSI on its own scale with configurable reference levels an
 
 # RSI
 
+<figure>
+  <img src="/assets/rsi.webp" alt="The RSI pane shows the indicator line and its 30 and 70 levels." width="240">
+</figure>
+
 The Relative Strength Index (RSI) compares recent gains and losses in closing prices and expresses the result on a scale of 0 to 100. Put it below the price chart when users need to inspect this value alongside the candles without sharing the price axis.
 
 The library calculates RSI from an OHLC source using Wilder smoothing. You provide the source and optional period; new source candles and trades update the indicator automatically. RSI must use a pane separate from `main` because its fixed range has different units from price.

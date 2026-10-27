@@ -16,6 +16,7 @@ import {
   type ScaleMarginPreset,
 } from '../stores/chartSettingsStore';
 import { APP_THEMES } from '../theme';
+import { buildBaselineAppearance } from '../baselineSettings';
 import { buildPriceFormats, type MarketChartFormat } from './priceFormats';
 
 export const SCALE_MARGIN_PRESETS = {
@@ -79,6 +80,26 @@ export function buildMainSeriesColors(
   };
 }
 
+function buildMainSeriesOptions(settings: ChartSettings): ChartSeriesOptions {
+  if (settings.seriesType === 'baseline') {
+    return {
+      type: 'baseline',
+      source: settings.baselineSource,
+      baseValue: {
+        type: settings.baselineMode,
+        value:
+          settings.baselineMode === 'price'
+            ? settings.baselinePrice
+            : settings.baselinePercentage,
+      },
+    };
+  }
+  if (settings.seriesType === 'line' || settings.seriesType === 'area') {
+    return { type: settings.seriesType, source: 'close' };
+  }
+  return { type: settings.seriesType };
+}
+
 export function buildChartViewConfig(
   settings: ChartSettings,
   market: MarketChartFormat,
@@ -117,10 +138,7 @@ export function buildChartViewConfig(
   };
 
   return {
-    series:
-      settings.seriesType === 'line' || settings.seriesType === 'area'
-        ? { type: settings.seriesType, source: 'close' }
-        : { type: settings.seriesType },
+    series: buildMainSeriesOptions(settings),
     appearance: {
       ...appearancePreset,
       candles: {
@@ -132,6 +150,10 @@ export function buildChartViewConfig(
         ...appearancePreset.bars,
         upColor: mainColors.upColor,
         downColor: mainColors.downColor,
+      },
+      baseline: {
+        ...buildBaselineAppearance(settings),
+        rounded: settings.baselineRounded,
       },
       line: lineAppearance,
       area: areaAppearance,

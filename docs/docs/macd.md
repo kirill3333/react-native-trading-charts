@@ -4,6 +4,10 @@ description: 'Add MACD with a signal line and histogram calculated from your can
 
 # MACD
 
+<figure>
+  <img src="/assets/macd.webp" alt="The bottom pane shows the MACD and signal lines with a histogram around zero." width="240">
+</figure>
+
 Moving Average Convergence Divergence (MACD) shows the difference between a faster and a slower exponential moving average. Its signal line smooths that difference, and its histogram shows the distance between the MACD and signal lines. A separate pane lets users inspect these changes alongside the price candles.
 
 Add MACD as one additional series. The library calculates and draws both lines, the histogram and zero line, and supplies the pane's scale and legend. You can style each component without creating separate series IDs for them.

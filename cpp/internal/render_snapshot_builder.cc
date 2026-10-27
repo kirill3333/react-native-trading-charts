@@ -1160,6 +1160,7 @@ class RenderSnapshotBuilder {
       ChartConfig config = input_.config;
       config.series_type = series.config.type;
       config.bar_line_width = series.config.line_width;
+      config.baseline = series.config.baseline;
       config.line_width = series.config.line_width;
       config.line_dashed = series.config.line_dashed;
       config.line_source = series.config.line_source;
@@ -1525,6 +1526,7 @@ class RenderSnapshotBuilder {
       config.up = series.config.up;
       config.down = series.config.down;
       config.bar_line_width = series.config.line_width;
+      config.baseline = series.config.baseline;
       config.line_width = series.config.line_width;
       config.line = series.config.color;
       config.line_dashed = series.config.line_dashed;
@@ -1618,7 +1620,11 @@ class RenderSnapshotBuilder {
             ? CandleValue(current, input_.config.line_source)
             : current.close;
     snapshot_->current_price = current_value;
-    const bool current_price_up = current.close >= current.open;
+    const bool current_price_up =
+        input_.config.series_type == SeriesType::kBaseline
+            ? current_value >=
+                  BaselinePrice(input_.config.baseline, y_min_, y_max_)
+            : current.close >= current.open;
     snapshot_->current_price_color =
         current_price_up ? input_.config.current_price_line_up
                          : input_.config.current_price_line_down;

@@ -12,6 +12,10 @@ These settings apply when you send raw trades. Candles supplied by your feed kee
 
 ## Resolution
 
+<figure>
+  <img src="/assets/candles.webp" alt="One-minute candles in the example app" width="240">
+</figure>
+
 Resolution is the amount of time represented by one aggregated candle. `{ unit: 'minute', multiplier: 5 }` groups trades into five-minute intervals. Use `fixed` for a duration that does not fit a calendar unit.
 
 | Property     | Type / values                                                  | Default                | Description                        |

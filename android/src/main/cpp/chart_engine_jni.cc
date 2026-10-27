@@ -95,6 +95,11 @@ enum class ConfigNumberIndex : std::uint8_t {
   kCandleRadius,
   kLineDashed,
   kLineRounded,
+  kBaselinePercentage,
+  kBaselineValue,
+  kBaselineVisible,
+  kBaselineDashed,
+  kBaselineWidth,
   kCount,
 };
 
@@ -116,6 +121,13 @@ enum class ConfigColorIndex : std::uint8_t {
   kLineGradientBottom = 56,
   kAreaFillTop = 60,
   kAreaFillBottom = 64,
+  kBaselineTopLine = 68,
+  kBaselineBottomLine = 72,
+  kBaselineTopFillTop = 76,
+  kBaselineTopFillBottom = 80,
+  kBaselineBottomFillTop = 84,
+  kBaselineBottomFillBottom = 88,
+  kBaselineBaseLine = 92,
 };
 
 enum class SeriesNumberIndex : std::uint8_t {
@@ -158,6 +170,11 @@ enum class SeriesNumberIndex : std::uint8_t {
   kBollLowerDashed,
   kSarStep,
   kSarMaximum,
+  kBaselinePercentage,
+  kBaselineValue,
+  kBaselineVisible,
+  kBaselineDashed,
+  kBaselineWidth,
   kCount,
 };
 
@@ -197,7 +214,14 @@ enum class SeriesColorIndex : std::uint8_t {
   kBollLowerGradientTop = 116,
   kBollLowerGradientBottom = 120,
   kSarReversal = 124,
-  kCount = 128,
+  kBaselineTopLine = 128,
+  kBaselineBottomLine = 132,
+  kBaselineTopFillTop = 136,
+  kBaselineTopFillBottom = 140,
+  kBaselineBottomFillTop = 144,
+  kBaselineBottomFillBottom = 148,
+  kBaselineBaseLine = 152,
+  kCount = 156,
 };
 
 enum class SeriesStringIndex : std::uint8_t {
@@ -319,9 +343,10 @@ inline constexpr jsize kLegacyConfigColorCount = 32;
 inline constexpr jsize kExtendedConfigColorCount = 48;
 inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
+inline constexpr jsize kBaselineConfigColorCount = 96;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 5.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v5";
+inline constexpr double kChartEngineTransportAbiVersion = 6.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v6";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -335,9 +360,9 @@ inline constexpr size_t kIndicatorLegendRecordWidth = 31;
 inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
-static_assert(kConfigNumberCount == 46);
-static_assert(kSeriesNumberCount == 39);
-static_assert(kSeriesColorCount == 128);
+static_assert(kConfigNumberCount == 51);
+static_assert(kSeriesNumberCount == 44);
+static_assert(kSeriesColorCount == 156);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
               kSnapshotRecordHeaderCount);
@@ -645,7 +670,7 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
   std::array<jdouble, kConfigNumberCount> config_numbers{};
-  std::array<jfloat, kAreaConfigColorCount> config_colors{};
+  std::array<jfloat, kBaselineConfigColorCount> config_colors{};
   env->GetDoubleArrayRegion(
       numbers, 0,
       std::min(number_count, static_cast<jsize>(config_numbers.size())),
@@ -730,6 +755,8 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
       config.series_type = SeriesType::kLine;
     } else if (series_type == 5.0) {
       config.series_type = SeriesType::kArea;
+    } else if (series_type == 6.0) {
+      config.series_type = SeriesType::kBaseline;
     }
   }
   config.bar_line_width =
@@ -836,6 +863,30 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
   config.x_time_zone = StringAt(env, strings, 1, "UTC");
   config.y_locale = StringAt(env, strings, 2, "en-GB");
   config.currency_symbol = StringAt(env, strings, 3, "");
+  if (number_count >= static_cast<jsize>(kConfigNumberCount) &&
+      color_count >= kBaselineConfigColorCount) {
+    config.baseline.percentage =
+        number_at(ConfigNumberIndex::kBaselinePercentage) != 0.0;
+    config.baseline.value = number_at(ConfigNumberIndex::kBaselineValue);
+    config.baseline.line_visible =
+        number_at(ConfigNumberIndex::kBaselineVisible) != 0.0;
+    config.baseline.line_dashed =
+        number_at(ConfigNumberIndex::kBaselineDashed) != 0.0;
+    config.baseline.line_width =
+        static_cast<float>(number_at(ConfigNumberIndex::kBaselineWidth));
+    config.baseline.top_line = color_at(ConfigColorIndex::kBaselineTopLine);
+    config.baseline.bottom_line =
+        color_at(ConfigColorIndex::kBaselineBottomLine);
+    config.baseline.top_fill_top =
+        color_at(ConfigColorIndex::kBaselineTopFillTop);
+    config.baseline.top_fill_bottom =
+        color_at(ConfigColorIndex::kBaselineTopFillBottom);
+    config.baseline.bottom_fill_top =
+        color_at(ConfigColorIndex::kBaselineBottomFillTop);
+    config.baseline.bottom_fill_bottom =
+        color_at(ConfigColorIndex::kBaselineBottomFillBottom);
+    config.baseline.line_color = color_at(ConfigColorIndex::kBaselineBaseLine);
+  }
   instance->SetConfig(config);
 }
 
@@ -997,6 +1048,8 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
     series.type = SeriesType::kLine;
   } else if (type == 5) {
     series.type = SeriesType::kArea;
+  } else if (type == 6) {
+    series.type = SeriesType::kBaseline;
   }
   const double source_value = number_at(SeriesNumberIndex::kSource);
   series.source = source_value == 1.0   ? SeriesSource::kOhlcvVolume
@@ -1127,6 +1180,27 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   series.sar_step = number_at(SeriesNumberIndex::kSarStep);
   series.sar_maximum = number_at(SeriesNumberIndex::kSarMaximum);
   series.sar_reversal = color_at(SeriesColorIndex::kSarReversal);
+  series.baseline.percentage =
+      number_at(SeriesNumberIndex::kBaselinePercentage) != 0.0;
+  series.baseline.value = number_at(SeriesNumberIndex::kBaselineValue);
+  series.baseline.line_visible =
+      number_at(SeriesNumberIndex::kBaselineVisible) != 0.0;
+  series.baseline.line_dashed =
+      number_at(SeriesNumberIndex::kBaselineDashed) != 0.0;
+  series.baseline.line_width =
+      static_cast<float>(number_at(SeriesNumberIndex::kBaselineWidth));
+  series.baseline.top_line = color_at(SeriesColorIndex::kBaselineTopLine);
+  series.baseline.bottom_line = color_at(SeriesColorIndex::kBaselineBottomLine);
+  series.baseline.top_fill_top =
+      color_at(SeriesColorIndex::kBaselineTopFillTop);
+  series.baseline.top_fill_bottom =
+      color_at(SeriesColorIndex::kBaselineTopFillBottom);
+  series.baseline.bottom_fill_top =
+      color_at(SeriesColorIndex::kBaselineBottomFillTop);
+  series.baseline.bottom_fill_bottom =
+      color_at(SeriesColorIndex::kBaselineBottomFillBottom);
+  series.baseline.line_color = color_at(SeriesColorIndex::kBaselineBaseLine);
+
   return StatusValue(instance->AddSeries(series));
 }
 

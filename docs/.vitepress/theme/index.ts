@@ -1,7 +1,7 @@
 import { h } from 'vue';
 import DefaultTheme from 'vitepress/theme';
 import { type Theme } from 'vitepress';
-import panels from '../../../assets/panels.png';
+import panels from '../../../assets/panels.webp';
 import './custom.css';
 
 export default {

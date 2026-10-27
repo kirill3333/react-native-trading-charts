@@ -26,6 +26,7 @@ export const SERIES_OPTIONS = [
   { label: 'Bars', value: 'bar' },
   { label: 'Line', value: 'line' },
   { label: 'Area', value: 'area' },
+  { label: 'Baseline', value: 'baseline' },
 ] satisfies ReadonlyArray<SettingSegmentOption<ChartSeriesType>>;
 
 export const SPACING_OPTIONS = [

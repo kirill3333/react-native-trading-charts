@@ -7,6 +7,24 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun baselinePayloadPreservesBaseAndBothColorRegions() {
+    val payload = SeriesConfig(
+      seriesId = "baseline", type = "baseline", paneId = "main", priceScaleId = "main",
+      baseline = BaselineConfig(percentage = false, value = -12.5,
+        baseLineWidthPx = 3f, baseLineVisible = false, topLineColor = 0x80112233.toInt(),
+        bottomFillBottomColor = 0x40778899),
+    ).nativeTransportPayload()
+    assertEquals(6.0, payload.numbers[SeriesTransportAbi.NumberIndex.TYPE], 0.0)
+    assertEquals(0.0, payload.numbers[SeriesTransportAbi.NumberIndex.BASELINE_PERCENTAGE], 0.0)
+    assertEquals(-12.5, payload.numbers[SeriesTransportAbi.NumberIndex.BASELINE_VALUE], 0.0)
+    assertEquals(3.0, payload.numbers[SeriesTransportAbi.NumberIndex.BASELINE_WIDTH], 0.0)
+    assertEquals(0.0, payload.numbers[SeriesTransportAbi.NumberIndex.BASELINE_VISIBLE], 0.0)
+    assertEquals(0x11 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BASELINE_TOP_LINE], 0f)
+    assertEquals(0x80 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BASELINE_TOP_LINE + 3], 0f)
+    assertEquals(0x77 / 255f, payload.colors[SeriesTransportAbi.ColorIndex.BASELINE_BOTTOM_FILL_BOTTOM], 0f)
+  }
+
+  @Test
   fun sarPayloadPreservesParametersAndThreeColors() {
     val payload = SeriesConfig(
       seriesId = "sar", type = "sar", paneId = "main", priceScaleId = "main",
@@ -92,7 +110,7 @@ class ChartEngineTransportAbiTest {
             )
             .nativeNumbers()
 
-    assertEquals(46, payload.size)
+    assertEquals(51, payload.size)
     assertEquals(0.0, payload[5], 0.0)
     assertEquals(123.0, payload[6], 0.0)
     assertEquals(0.0, payload[11], 0.0)
@@ -327,8 +345,8 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            39,
-            128,
+            44,
+            156,
             5,
             3,
             2,

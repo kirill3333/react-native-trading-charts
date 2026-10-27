@@ -22,7 +22,19 @@ bool IsFinitePositive(T value) {
 bool IsSupportedMainSeriesType(SeriesType type) {
   return type == SeriesType::kCandlestick || type == SeriesType::kBar ||
          type == SeriesType::kHollowCandlestick || type == SeriesType::kLine ||
-         type == SeriesType::kArea;
+         type == SeriesType::kArea || type == SeriesType::kBaseline;
+}
+
+void NormalizeBaseline(BaselineConfig& baseline, float display_scale) {
+  if (!std::isfinite(baseline.value) ||
+      (baseline.percentage &&
+       (baseline.value < 0.0 || baseline.value > 100.0))) {
+    baseline.percentage = true;
+    baseline.value = 50.0;
+  }
+  if (!IsFinitePositive(baseline.line_width)) {
+    baseline.line_width = display_scale;
+  }
 }
 
 OhlcValueSource NormalizeLineSource(OhlcValueSource source) {
@@ -106,6 +118,7 @@ ChartConfig NormalizeChartConfig(ChartConfig config) {
       config.line_gap_threshold_ms < 0.0) {
     config.line_gap_threshold_ms = 0.0;
   }
+  NormalizeBaseline(config.baseline, config.display_scale);
   config.line_source = NormalizeLineSource(config.line_source);
   if (!std::isfinite(config.tooltip_background_opacity)) {
     config.tooltip_background_opacity = defaults.tooltip_background_opacity;
@@ -139,6 +152,7 @@ ChartConfig NormalizeChartConfig(ChartConfig config) {
 
 SeriesConfig NormalizeSeriesConfig(SeriesConfig config,
                                    const ChartConfig& chart_config) {
+  NormalizeBaseline(config.baseline, chart_config.display_scale);
   config.line_source = NormalizeLineSource(config.line_source);
   if (!IsFinitePositive(config.line_width)) {
     config.line_width = chart_config.line_width;

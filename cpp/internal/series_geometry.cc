@@ -245,8 +245,56 @@ Vector2 Direction(const LinePoint& first, const LinePoint& second) {
 
 Vector2 Normal(Vector2 direction) { return Vector2{-direction.y, direction.x}; }
 
+float BaselineY(const SeriesGeometryInput& input) {
+  const double price = BaselinePrice(input.config.baseline, input.visible_y_min,
+                                     input.visible_y_max);
+  const double projected = static_cast<double>(input.plot.bottom) -
+                           (price - input.visible_y_min) /
+                               (input.visible_y_max - input.visible_y_min) *
+                               static_cast<double>(input.plot.Height());
+  // Keep far-away finite prices representable in the float geometry contract.
+  constexpr double kMaximumProjectedBaseline =
+      static_cast<double>(std::numeric_limits<float>::max()) / 4.0;
+  return static_cast<float>(std::clamp(projected, -kMaximumProjectedBaseline,
+                                       kMaximumProjectedBaseline));
+}
+
+// Split stroke triangles, not the path: dash phase and joins stay continuous.
+// The source alpha is coverage only; each side supplies its own RGBA color.
+void AppendStrokeTriangle(const SeriesGeometryInput& input,
+                          std::vector<float>& vertices, const ColoredVertex& a,
+                          const ColoredVertex& b, const ColoredVertex& c) {
+  if (input.config.series_type != SeriesType::kBaseline) {
+    AppendClippedTriangle(vertices, a, b, c, input.plot);
+    return;
+  }
+  const float base_y = BaselineY(input);
+  const auto append = [&](Rect clip, Color color) {
+    if (!(clip.bottom > clip.top)) {
+      return;
+    }
+    // Preserve independent coverage at each vertex, including AA fringes.
+    const auto colored = [&](ColoredVertex vertex) {
+      const float coverage = vertex.color.a;
+      vertex.color = color;
+      vertex.color.a *= coverage;
+      return vertex;
+    };
+    AppendClippedTriangle(vertices, colored(a), colored(b), colored(c), clip);
+  };
+  Rect top = input.plot;
+  top.bottom = std::min(top.bottom, base_y);
+  append(top, input.config.baseline.top_line);
+  Rect bottom = input.plot;
+  bottom.top = std::max(bottom.top, base_y);
+  append(bottom, input.config.baseline.bottom_line);
+}
+
 Color LineColorAtY(const SeriesGeometryInput& input, float y,
                    float alpha_scale = 1.0f) {
+  if (input.config.series_type == SeriesType::kBaseline) {
+    return Color{1.0f, 1.0f, 1.0f, alpha_scale};
+  }
   Color color = input.config.line;
   if (input.config.line_gradient_enabled && input.plot.Height() > 0.0f) {
     const float amount =
@@ -278,8 +326,8 @@ void AppendColoredQuad(const SeriesGeometryInput& input,
   const ColoredVertex d =
       LineVertex(input, quad.points[kFourthVertexIndex],
                  quad.transparent[kFourthVertexIndex] ? 0.0f : 1.0f);
-  AppendClippedTriangle(vertices, a, b, c, input.plot);
-  AppendClippedTriangle(vertices, a, c, d, input.plot);
+  AppendStrokeTriangle(input, vertices, a, b, c);
+  AppendStrokeTriangle(input, vertices, a, c, d);
 }
 
 void AppendColoredTriangle(const SeriesGeometryInput& input,
@@ -288,10 +336,11 @@ void AppendColoredTriangle(const SeriesGeometryInput& input,
                            bool first_transparent = false,
                            bool second_transparent = false,
                            bool third_transparent = false) {
-  AppendClippedTriangle(
-      vertices, LineVertex(input, first, first_transparent ? 0.0f : 1.0f),
+  AppendStrokeTriangle(
+      input, vertices,
+      LineVertex(input, first, first_transparent ? 0.0f : 1.0f),
       LineVertex(input, second, second_transparent ? 0.0f : 1.0f),
-      LineVertex(input, third, third_transparent ? 0.0f : 1.0f), input.plot);
+      LineVertex(input, third, third_transparent ? 0.0f : 1.0f));
 }
 
 class LineStrokeBuilder {
@@ -1014,6 +1063,68 @@ class AreaFillBuilder {
   bool has_previous_ = false;
 };
 
+class BaselineFillBuilder {
+ public:
+  BaselineFillBuilder(const SeriesGeometryInput& input,
+                      std::vector<float>& vertices)
+      : input_(input), vertices_(vertices), base_y_(BaselineY(input)) {}
+
+  void AddPoint(const LinePoint& point) {
+    if (has_previous_) {
+      const bool crosses = (previous_.y < base_y_ && point.y > base_y_) ||
+                           (previous_.y > base_y_ && point.y < base_y_);
+      if (crosses) {
+        const float fraction =
+            (base_y_ - previous_.y) / (point.y - previous_.y);
+        LinePoint crossing = InterpolateLinePoint(previous_, point, fraction);
+        crossing.y = base_y_;
+        AppendSegment(previous_, crossing);
+        AppendSegment(crossing, point);
+      } else {
+        AppendSegment(previous_, point);
+      }
+    }
+    previous_ = point;
+    has_previous_ = true;
+  }
+
+  void Finish() { has_previous_ = false; }
+
+ private:
+  Color FillColor(float y, bool top) const {
+    const BaselineConfig& style = input_.config.baseline;
+    const float start = top ? input_.plot.top : base_y_;
+    const float end = top ? base_y_ : input_.plot.bottom;
+    const float fraction = end > start ? (y - start) / (end - start) : 0.0f;
+    return InterpolateColor(
+        top ? style.top_fill_top : style.bottom_fill_top,
+        top ? style.top_fill_bottom : style.bottom_fill_bottom, fraction);
+  }
+
+  void AppendSegment(const LinePoint& first, const LinePoint& second) {
+    if (first.y == base_y_ && second.y == base_y_) {
+      return;
+    }
+    const bool top = first.y < base_y_ || second.y < base_y_;
+    const ColoredVertex a{first.x, first.y, FillColor(first.y, top)};
+    const ColoredVertex b{second.x, second.y, FillColor(second.y, top)};
+    // Clip the fill boundary before tessellation to avoid loss of precision
+    // when a fixed-price base is very far outside the visible scale. Gradient
+    // evaluation still uses the actual projected base, not this clipped edge.
+    const float edge = std::clamp(base_y_, input_.plot.top, input_.plot.bottom);
+    const ColoredVertex c{second.x, edge, FillColor(edge, top)};
+    const ColoredVertex d{first.x, edge, FillColor(edge, top)};
+    AppendClippedTriangle(vertices_, a, b, c, input_.plot);
+    AppendClippedTriangle(vertices_, a, c, d, input_.plot);
+  }
+
+  const SeriesGeometryInput& input_;
+  std::vector<float>& vertices_;
+  float base_y_;
+  LinePoint previous_;
+  bool has_previous_ = false;
+};
+
 template <typename Builder>
 void AppendLinePath(const SeriesGeometryInput& input, Builder& builder,
                     double bucket_width = 1.0) {
@@ -1181,6 +1292,44 @@ void AppendLineGeometry(const SeriesGeometryInput& input,
   AppendLinePath(input, stroke);
 }
 
+void AppendBaselineGeometry(const SeriesGeometryInput& input,
+                            std::vector<float>& vertices) {
+  BaselineFillBuilder fill(input, vertices);
+  AppendLinePath(input, fill);
+  const float y = BaselineY(input);
+  if (input.config.baseline.line_visible && y >= input.plot.top &&
+      y <= input.plot.bottom) {
+    ChartConfig config = input.config;
+    config.series_type = SeriesType::kLine;
+    config.line = config.baseline.line_color;
+    config.line_width = config.baseline.line_width;
+    config.line_gradient_enabled = false;
+    SeriesGeometryInput line{config,
+                             input.candles,
+                             input.first_index,
+                             input.end_index,
+                             input.plot,
+                             input.visible_x_min,
+                             input.visible_x_max,
+                             input.visible_y_min,
+                             input.visible_y_max};
+    const LinePoint first{0.0, 0.0, 0, input.plot.left, y};
+    const LinePoint last{0.0, 0.0, 0, input.plot.right, y};
+    if (config.baseline.line_dashed) {
+      DashedLineStrokeBuilder stroke(line, vertices);
+      stroke.AddPoint(first);
+      stroke.AddPoint(last);
+      stroke.Finish();
+    } else {
+      LineStrokeBuilder stroke(line, vertices);
+      stroke.AddPoint(first);
+      stroke.AddPoint(last);
+      stroke.Finish();
+    }
+  }
+  AppendLineGeometry(input, vertices);
+}
+
 void AppendAreaGeometry(const SeriesGeometryInput& input,
                         std::vector<float>& vertices) {
   AreaFillBuilder fill(input, vertices);
@@ -1334,6 +1483,8 @@ size_t SeriesQuadsPerSample(SeriesType type) {
       return 1;
     case SeriesType::kLine:
       return kLineQuadsPerSample;
+    case SeriesType::kBaseline:
+      return kAreaQuadsPerSample * (kMaximumClippedPolygonVertexCount - 2);
     case SeriesType::kArea:
       return kAreaQuadsPerSample;
   }
@@ -1341,6 +1492,31 @@ size_t SeriesQuadsPerSample(SeriesType type) {
 }
 
 size_t SeriesGeometryFloatCapacity(const SeriesGeometryInput& input) {
+  if (input.config.series_type == SeriesType::kBaseline) {
+    ChartConfig config = input.config;
+    config.series_type = SeriesType::kArea;
+    const SeriesGeometryInput area{config,
+                                   input.candles,
+                                   input.first_index,
+                                   input.end_index,
+                                   input.plot,
+                                   input.visible_x_min,
+                                   input.visible_x_max,
+                                   input.visible_y_min,
+                                   input.visible_y_max,
+                                   input.logical_reference,
+                                   input.rounded};
+    const size_t guide_steps =
+        static_cast<size_t>(
+            std::ceil(input.plot.Width() /
+                      (kDashLength *
+                       std::max(kMinimumDisplayScale, config.display_scale)))) +
+        1;
+    return SeriesGeometryFloatCapacity(area) * 2 *
+               (kMaximumClippedPolygonVertexCount - 2) +
+           guide_steps * kLineQuadsPerSample * kFloatsPerQuad *
+               (kMaximumClippedPolygonVertexCount - 2);
+  }
   if (input.config.series_type == SeriesType::kHistogram) {
     return 0;
   }
@@ -1394,6 +1570,9 @@ void AppendSeriesGeometry(const SeriesGeometryInput& input,
       return;
     case SeriesType::kLine:
       AppendLineGeometry(input, vertices);
+      return;
+    case SeriesType::kBaseline:
+      AppendBaselineGeometry(input, vertices);
       return;
     case SeriesType::kArea:
       AppendAreaGeometry(input, vertices);

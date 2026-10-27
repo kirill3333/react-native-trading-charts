@@ -4,6 +4,10 @@ description: 'Overlay SMA or EMA lines to show an average of recent candle price
 
 # SMA & EMA
 
+<figure>
+  <img src="/assets/moving-averages.webp" alt="The solid blue SMA and dashed orange EMA overlay the candles." width="240">
+</figure>
+
 A moving average turns recent prices into a smoother line. For example, a 20-period SMA on a one-minute chart averages the last 20 candles at each point. Overlay it on the candles when users need to compare individual price moves with the recent average.
 
 A simple moving average (SMA) gives every price in that window equal weight. An exponential moving average (EMA) gives more weight to recent prices, so it responds differently to new data. Both appear as additional line series and default to using closing prices.

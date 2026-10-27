@@ -6,6 +6,32 @@ We want this community to be friendly and respectful to each other. Please follo
 
 ## Development workflow
 
+### Documentation website
+
+Run `yarn docs:dev` to edit the VitePress site locally. To build and preview
+the production site using the same path as GitHub Pages:
+
+```sh
+DOCS_BASE=/react-native-trading-charts/ yarn docs:build
+DOCS_BASE=/react-native-trading-charts/ yarn docs:preview
+```
+
+Open the preview server's URL with `/react-native-trading-charts/` appended.
+The generated site is in `docs/.vitepress/dist`; this directory is ignored by
+Git and should not be committed.
+
+To enable publishing, open the repository's **Settings → Pages** and select
+**GitHub Actions** as the source. Merge the documentation, assets, dependency
+lockfile and `.github/workflows/docs.yml` into `main`. The **Publish documentation**
+workflow builds and deploys changes to the site automatically. It can also be
+run manually from the Actions tab on `main`.
+
+The default published address is
+<https://kirill3333.github.io/react-native-trading-charts/>. The workflow reads
+the base path from GitHub Pages, so a custom domain can also be configured there.
+
+### Library and example app
+
 This project is a monorepo managed using [Yarn workspaces](https://yarnpkg.com/features/workspaces). It contains the following packages:
 
 - The library package in the root directory.

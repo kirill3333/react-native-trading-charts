@@ -15,10 +15,10 @@ reused between updates, and high-frequency trade streams can be batched before
 they cross the native boundary.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/panels.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/zoom.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/theme.png" width="200">
-  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/settings.png" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/panels.webp" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/zoom.webp" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/theme.webp" width="200">
+  <img src="https://raw.githubusercontent.com/kirill3333/react-native-trading-charts/main/assets/settings.webp" width="200">
 </p>
 
 ## Why Native Trading Charts?

@@ -18,6 +18,29 @@ enum SeriesConfigurationDecoder {
     return line
   }
 
+  static func baseline(
+    appearance: JSONDictionary, baseValue: JSONDictionary, fallback: NativeBaselineConfig
+  ) -> NativeBaselineConfig {
+    var config = fallback
+    config.percentage = baseValue.stringOrNil("type") != "price"
+    config.value = baseValue.number("value")?.doubleValue ?? 50
+    config.top_line = colorFromHex(appearance.stringOrNil("topLineColor"), fallback: config.top_line)
+    config.bottom_line = colorFromHex(appearance.stringOrNil("bottomLineColor"), fallback: config.bottom_line)
+    let top = appearance.dictionary("topFill")
+    config.top_fill_top = colorFromHex(top.stringOrNil("topColor"), fallback: config.top_fill_top)
+    config.top_fill_bottom = colorFromHex(top.stringOrNil("bottomColor"), fallback: config.top_fill_bottom)
+    let bottom = appearance.dictionary("bottomFill")
+    config.bottom_fill_top = colorFromHex(bottom.stringOrNil("topColor"), fallback: config.bottom_fill_top)
+    config.bottom_fill_bottom = colorFromHex(bottom.stringOrNil("bottomColor"), fallback: config.bottom_fill_bottom)
+    let line = appearance.dictionary("baseLine")
+    config.line_visible = line.number("visible")?.boolValue ?? config.line_visible
+    config.line_width = line.number("width")?.floatValue ?? config.line_width
+    config.line_dashed = line.stringOrNil("style") != nil
+      ? line.string("style") == "dashed" : config.line_dashed
+    config.line_color = colorFromHex(line.stringOrNil("color"), fallback: config.line_color)
+    return config
+  }
+
   private static func seriesType(_ type: String) -> NativeSeriesType {
     switch type {
     case "bar": return .bar
@@ -25,6 +48,7 @@ enum SeriesConfigurationDecoder {
     case "histogram": return .histogram
     case "line", "macd", "boll", "sar": return .line
     case "area": return .area
+    case "baseline": return .baseline
     default: return .candlestick
     }
   }
@@ -117,7 +141,7 @@ enum SeriesConfigurationDecoder {
     config.rsi_level_line = colorFromHex(appearance.stringOrNil("levelLineColor"), fallback: defaultLevel)
     config.rsi_band = colorFromHex(appearance.stringOrNil("bandColor"), fallback: defaultBand)
 
-    if config.type == .line || config.type == .area {
+    if config.type == .line || config.type == .area || config.type == .baseline {
       let area = config.type == .area
       let valueSource = (sourceValue as? String) ?? source?.stringOrNil("valueSource") ?? "close"
       switch valueSource {
@@ -145,6 +169,16 @@ enum SeriesConfigurationDecoder {
         config.area_fill_bottom = colorFromHex(fill.stringOrNil("bottomColor"), fallback: defaults.areaFillBottom)
       }
       config.line_gap_threshold_ms = item.number("gapThresholdMs")?.doubleValue ?? 0
+    }
+
+    if config.type == .baseline {
+      config.baseline = baseline(
+        appearance: appearance, baseValue: item.dictionary("baseValue"), fallback: defaults.baseline)
+      config.line_width = appearance.number("width")?.floatValue ?? defaults.baselineWidth
+      config.line_dashed = appearance.stringOrNil("style") != nil
+        ? appearance.string("style") == "dashed" : defaults.baselineDashed
+      config.line_gradient_enabled = false
+      config.color = config.baseline.top_line
     }
 
     if config.source == .ohlcvMacd {

@@ -233,6 +233,7 @@ final class ChartEventCoordinator {
     case .bar: return "bar"
     case .histogram: return "histogram"
     case .area: return "area"
+    case .baseline: return "baseline"
     default: return "line"
     }
   }

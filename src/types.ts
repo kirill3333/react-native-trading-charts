@@ -56,7 +56,7 @@ export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
         kind: 'scalar';
-        seriesType: 'line' | 'area' | 'histogram' | 'sar';
+        seriesType: 'line' | 'area' | 'baseline' | 'histogram' | 'sar';
         sourceType:
           | 'data'
           | 'ohlcvVolume'
@@ -164,7 +164,7 @@ export type ResolvedTradeAggregationOptions = {
 };
 
 export type ChartSeriesType =
-  'candlestick' | 'hollowCandlestick' | 'bar' | 'line' | 'area';
+  'candlestick' | 'hollowCandlestick' | 'bar' | 'line' | 'area' | 'baseline';
 
 export type OhlcValueSource = 'open' | 'high' | 'low' | 'close';
 
@@ -187,14 +187,55 @@ export type ChartAreaAppearance = ChartLineAppearance & {
   };
 };
 
+export type BaselineBaseValue =
+  { type: 'price'; value: number } | { type: 'percentage'; value: number };
+
+export type ChartBaselineAppearance = {
+  width?: number;
+  style?: ChartLineStyle;
+  topLineColor?: string;
+  bottomLineColor?: string;
+  topFill?: { topColor?: string; bottomColor?: string };
+  bottomFill?: { topColor?: string; bottomColor?: string };
+  baseLine?: {
+    visible?: boolean;
+    color?: string;
+    width?: number;
+    style?: ChartLineStyle;
+  };
+};
+
+export type ResolvedBaselineAppearance = {
+  width: number;
+  style: ChartLineStyle;
+  topLineColor: string;
+  bottomLineColor: string;
+  topFill: { topColor: string; bottomColor: string };
+  bottomFill: { topColor: string; bottomColor: string };
+  baseLine: {
+    visible: boolean;
+    color: string;
+    width: number;
+    style: ChartLineStyle;
+  };
+};
+
 export type ChartSeriesOptions =
   | {
       type?: 'candlestick' | 'hollowCandlestick' | 'bar';
+      baseValue?: never;
       source?: never;
       gapThresholdMs?: never;
     }
   | {
       type: 'line' | 'area';
+      baseValue?: never;
+      source?: OhlcValueSource;
+      gapThresholdMs?: number;
+    }
+  | {
+      type: 'baseline';
+      baseValue?: BaselineBaseValue;
       source?: OhlcValueSource;
       gapThresholdMs?: number;
     };
@@ -240,6 +281,13 @@ export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
         source?: OhlcValueSource;
         gapThresholdMs?: number;
         appearance?: ChartLineAppearance;
+      }
+    | {
+        type: 'baseline';
+        source?: OhlcValueSource;
+        gapThresholdMs?: number;
+        baseValue?: BaselineBaseValue;
+        appearance?: ChartBaselineAppearance;
       }
     | {
         type: 'area';
@@ -494,6 +542,7 @@ export type ChartAppearance = {
     /** Round caps and joins for the main chart only. Defaults to true. */
     rounded?: boolean;
   };
+  baseline?: ChartBaselineAppearance & { rounded?: boolean };
   area?: ChartAreaAppearance & {
     /** Round outline caps and joins for the main chart only. Defaults to true. */
     rounded?: boolean;
@@ -724,7 +773,8 @@ export type ResolvedChartConfig = {
   series:
     | { type: 'candlestick' | 'hollowCandlestick' | 'bar' }
     | {
-        type: 'line' | 'area';
+        type: 'line' | 'area' | 'baseline';
+        baseValue?: BaselineBaseValue;
         source: OhlcValueSource;
         gapThresholdMs?: number;
       };
@@ -831,6 +881,7 @@ export type ResolvedChartTextStyle = {
 export type ResolvedChartBorderStyle = Required<ChartBorderStyle>;
 
 export type ResolvedChartAppearance = {
+  baseline: ResolvedBaselineAppearance & { rounded: boolean };
   backgroundColor: string;
   grid: { color: string; opacity: number };
   candles: { upColor: string; downColor: string; radius: number };

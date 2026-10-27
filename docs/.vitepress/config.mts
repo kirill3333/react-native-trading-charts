@@ -1,6 +1,15 @@
-import { defineConfig } from 'vitepress';
+import { withMermaid } from 'vitepress-plugin-mermaid';
 
-export default defineConfig({
+export default withMermaid({
+  base: process.env.DOCS_BASE || '/',
+  mermaid: {
+    htmlLabels: false,
+  },
+  vite: {
+    optimizeDeps: {
+      include: ['mermaid'],
+    },
+  },
   lang: 'en-US',
   title: 'React Native Trading Charts',
   description:

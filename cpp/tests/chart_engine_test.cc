@@ -4721,6 +4721,194 @@ void TestAreaFillAndLineLikeSemantics() {
   assert(additional_snapshot->content_vertices != nullptr);
 }
 
+void TestBaselineGeometry() {
+  using trading_charts::internal::AppendSeriesGeometry;
+  using trading_charts::internal::SeriesGeometryFloatCapacity;
+  using trading_charts::internal::SeriesGeometryInput;
+  ChartConfig config;
+  config.series_type = SeriesType::kBaseline;
+  config.baseline.line_visible = false;
+  config.baseline.top_line = {0.0f, 1.0f, 0.0f, 1.0f};
+  config.baseline.bottom_line = {1.0f, 0.0f, 0.0f, 1.0f};
+  config.baseline.top_fill_top = {0.0f, 1.0f, 0.0f, 0.5f};
+  config.baseline.top_fill_bottom = {0.0f, 1.0f, 0.0f, 0.0f};
+  config.baseline.bottom_fill_top = {1.0f, 0.0f, 0.0f, 0.0f};
+  config.baseline.bottom_fill_bottom = {1.0f, 0.0f, 0.0f, 0.5f};
+  const std::vector<Candle> candles{{0.0, 25.0, 25.0, 25.0, 25.0, 0.0},
+                                    {1.0, 75.0, 75.0, 75.0, 75.0, 0.0},
+                                    {2.0, 25.0, 25.0, 25.0, 25.0, 0.0},
+                                    {3.0, 50.0, 50.0, 50.0, 50.0, 0.0},
+                                    {4.0, 50.0, 50.0, 50.0, 50.0, 0.0}};
+  for (bool rounded : {false, true}) {
+    for (bool dashed : {false, true}) {
+      config.line_dashed = dashed;
+      const SeriesGeometryInput input{
+          config, candles, 0,   candles.size(), {0.0f, 0.0f, 100.0f, 100.0f},
+          -0.25,  4.25,    0.0, 100.0,          nullptr,
+          rounded};
+      std::vector<float> vertices;
+      vertices.reserve(SeriesGeometryFloatCapacity(input));
+      const size_t capacity = vertices.capacity();
+      AppendSeriesGeometry(input, vertices);
+      assert(!vertices.empty());
+      assert(vertices.capacity() == capacity);
+      assert(vertices.size() % 18 == 0);
+      bool has_top = false;
+      bool has_bottom = false;
+      for (size_t offset = 0; offset < vertices.size(); offset += 18) {
+        // Every triangle belongs entirely to one side, including its AA fringe.
+        const bool top = vertices[offset + 3] > 0.5f;
+        has_top = has_top || top;
+        has_bottom = has_bottom || !top;
+        for (size_t vertex = offset; vertex < offset + 18; vertex += 6) {
+          assert(std::isfinite(vertices[vertex]));
+          assert(vertices[vertex] >= 0.0f && vertices[vertex] <= 100.0f);
+          assert(vertices[vertex + 1] >= 0.0f &&
+                 vertices[vertex + 1] <= 100.0f);
+          assert(top ? vertices[vertex + 1] <= 50.0001f
+                     : vertices[vertex + 1] >= 49.9999f);
+          ExpectNear(vertices[vertex + 2], top ? 0.0 : 1.0);
+          ExpectNear(vertices[vertex + 3], top ? 1.0 : 0.0);
+          assert(vertices[vertex + 5] >= -1e-5f &&
+                 vertices[vertex + 5] <= 1.00001f);
+        }
+      }
+      assert(has_top && has_bottom);
+      // At the first sample, price 25 is halfway between base 50 and pane
+      // bottom.
+      ExpectNear(vertices[5], 0.25);
+    }
+  }
+  config.line_dashed = false;
+  for (double base : {-1e300, -100.0, 0.0, 50.0, 100.0, 200.0, 1e300}) {
+    config.baseline.percentage = false;
+    config.baseline.value = base;
+    std::vector<float> vertices;
+    const SeriesGeometryInput input{
+        config, candles, 0,   candles.size(), {0.0f, 0.0f, 100.0f, 100.0f},
+        -0.25,  4.25,    0.0, 100.0};
+    AppendSeriesGeometry(input, vertices);
+    assert(!vertices.empty());
+    for (size_t offset = 0; offset < vertices.size(); offset += 6) {
+      assert(std::isfinite(vertices[offset + 1]));
+      assert(vertices[offset + 1] >= -1e-4f &&
+             vertices[offset + 1] <= 100.0001f);
+      if (base <= 0.0) {
+        ExpectNear(vertices[offset + 2], 0.0);
+      }
+      if (base >= 100.0) {
+        ExpectNear(vertices[offset + 3], 0.0);
+      }
+    }
+  }
+  config.line_gap_threshold_ms = 0.5;
+  std::vector<float> split;
+  AppendSeriesGeometry(SeriesGeometryInput{config,
+                                           candles,
+                                           0,
+                                           candles.size(),
+                                           {0.0f, 0.0f, 100.0f, 100.0f},
+                                           -0.25,
+                                           4.25,
+                                           0.0,
+                                           100.0},
+                       split);
+  assert(split.empty());
+  AppendSeriesGeometry(SeriesGeometryInput{config,
+                                           candles,
+                                           0,
+                                           1,
+                                           {0.0f, 0.0f, 100.0f, 100.0f},
+                                           -0.25,
+                                           4.25,
+                                           0.0,
+                                           100.0},
+                       split);
+  assert(split.empty());
+}
+
+void TestBaselineEngineSemantics() {
+  ChartEngine engine;
+  ChartConfig config;
+  config.series_type = SeriesType::kBaseline;
+  config.line_source = OhlcValueSource::kLow;
+  config.initial_visible_count = 2;
+  config.baseline.percentage = false;
+  config.baseline.value = 10000.0;
+  config.current_price_line_down = {1.0f, 0.0f, 0.0f, 1.0f};
+  config.current_price_line_up = {0.0f, 1.0f, 0.0f, 1.0f};
+  engine.SetConfig(config);
+  engine.SetSize(600.0f, 300.0f);
+  const double history[] = {0.0,     10.0, 30.0, 5.0, 20.0, 1.0,
+                            60000.0, 20.0, 40.0, 7.0, 30.0, 1.0};
+  assert(engine.SetHistory(history, 12) == UpdateStatus::kApplied);
+  const auto initial = engine.Snapshot();
+  ExpectNear(initial->visible_minimum.value, 5.0);
+  ExpectNear(initial->visible_maximum.value, 7.0);
+  ExpectNear(initial->current_price, 7.0);
+  ExpectNear(initial->current_price_color.r, 1.0);
+  assert(initial->visible_y_max < 100.0);
+  engine.SetCrosshair(true, initial->plot.left, initial->plot.top);
+  assert(engine.Snapshot()->content_vertices == initial->content_vertices);
+  for (double percent : {0.0, 50.0, 100.0}) {
+    config.baseline.percentage = true;
+    config.baseline.value = percent;
+    engine.SetConfig(config);
+    const auto snapshot = engine.Snapshot();
+    ExpectNear(snapshot->visible_y_min, initial->visible_y_min);
+    ExpectNear(snapshot->visible_y_max, initial->visible_y_max);
+    assert(snapshot->crosshair_visible);
+    const bool up = 7.0 >= trading_charts::BaselinePrice(
+                               config.baseline, snapshot->visible_y_min,
+                               snapshot->visible_y_max);
+    ExpectNear(snapshot->current_price_color.g, up ? 1.0 : 0.0);
+  }
+  config.baseline.percentage = false;
+  config.baseline.value = 7.0;
+  engine.SetConfig(config);
+  ExpectNear(engine.Snapshot()->current_price_color.g, 1.0);
+  SeriesConfig series;
+  series.series_id = "baseline-comparison";
+  series.type = SeriesType::kBaseline;
+  series.line_source = OhlcValueSource::kLow;
+  assert(engine.AddSeries(series) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData(series.series_id, history, 12, false) ==
+         UpdateStatus::kApplied);
+  const auto additional = engine.Snapshot();
+  assert(!additional->crosshair_series_values.empty());
+  const auto& selected = additional->crosshair_series_values.back();
+  assert(selected.series_type == SeriesType::kBaseline);
+  assert(selected.kind == trading_charts::CrosshairSeriesValueKind::kScalar);
+
+  PaneConfig comparison;
+  comparison.pane_id = "comparison";
+  comparison.price_scale_id = "comparison";
+  engine.SetPanes({PaneConfig{}, comparison}, false);
+  series.series_id = "pane-baseline";
+  series.pane_id = comparison.pane_id;
+  series.price_scale_id = comparison.price_scale_id;
+  series.line_source = OhlcValueSource::kClose;
+  series.baseline.value = 25.0;
+  series.baseline.line_color = {0.0f, 0.0f, 1.0f, 1.0f};
+  assert(engine.AddSeries(series) == UpdateStatus::kApplied);
+  assert(engine.SetSeriesData(series.series_id, history, 12, false) ==
+         UpdateStatus::kApplied);
+  const auto panes = engine.Snapshot();
+  const auto& pane = panes->panes[1];
+  assert(pane.visible_y_max > 30.0 && pane.visible_y_min < 20.0);
+  const float guide_y = pane.plot.bottom - pane.plot.Height() * 0.25f;
+  bool found_guide = false;
+  const auto& geometry = ContentOf(*panes);
+  for (size_t index = 0; index < geometry.size(); index += 6) {
+    if (geometry[index + 2] == 0.0f && geometry[index + 3] == 0.0f &&
+        geometry[index + 4] == 1.0f && geometry[index + 5] > 0.5f) {
+      found_guide = true;
+      assert(std::abs(geometry[index + 1] - guide_y) <= 1.0f);
+    }
+  }
+  assert(found_guide);
+}
+
 void TestLineGapThresholdAndContentReuse() {
   const double history[] = {
       0.0, 10.0, 12.0, 9.0, 11.0, 1.0, 600000.0, 20.0, 22.0, 19.0, 21.0, 1.0,
@@ -5289,6 +5477,8 @@ int main() noexcept {
     TestPaneLayoutEdgeCasesMatchHitTesting();
     TestLineSourceAutoscaleCurrentPriceAndGradient();
     TestAreaFillAndLineLikeSemantics();
+    TestBaselineGeometry();
+    TestBaselineEngineSemantics();
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
     TestRoundedLineCapsJoinsAndClipping();

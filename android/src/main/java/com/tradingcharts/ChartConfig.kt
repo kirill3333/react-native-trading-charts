@@ -79,7 +79,26 @@ internal data class BollLineStyle(
     val dashed: Boolean = false,
 )
 
+internal data class BaselineConfig(
+    val percentage: Boolean = true,
+    val value: Double = 50.0,
+    val widthPx: Float = 1.5f,
+    val dashed: Boolean = false,
+    val rounded: Boolean = true,
+    val topLineColor: Int = Color.rgb(56, 217, 138),
+    val bottomLineColor: Int = Color.rgb(255, 59, 100),
+    val topFillTopColor: Int = Color.argb(64, 56, 217, 138),
+    val topFillBottomColor: Int = Color.argb(0, 56, 217, 138),
+    val bottomFillTopColor: Int = Color.argb(0, 255, 59, 100),
+    val bottomFillBottomColor: Int = Color.argb(64, 255, 59, 100),
+    val baseLineVisible: Boolean = true,
+    val baseLineDashed: Boolean = true,
+    val baseLineWidthPx: Float = 1f,
+    val baseLineColor: Int = Color.rgb(41, 36, 49),
+)
+
 internal data class SeriesConfig(
+    val baseline: BaselineConfig = BaselineConfig(),
     val seriesId: String,
     val type: String,
     val paneId: String,
@@ -179,6 +198,7 @@ internal data class TradeAggregationConfig(
 )
 
 internal data class ChartConfig(
+    val baseline: BaselineConfig = BaselineConfig(),
     val resolution: ResolutionConfig = ResolutionConfig(),
     val tradeAggregation: TradeAggregationConfig = TradeAggregationConfig(),
     val initialVisibleCount: Int = 100,
@@ -354,7 +374,9 @@ internal data class ChartConfig(
         seriesType.nativeSeriesType(),
         barLineWidthPx.toDouble(),
         lineSource.nativeLineSource(),
-        (if (area) areaLineWidthPx else lineWidthPx).toDouble(),
+        (if (seriesType == "baseline") baseline.widthPx
+            else if (area) areaLineWidthPx else lineWidthPx)
+            .toDouble(),
         (if (area) areaLineGradientEnabled else lineGradientEnabled).nativeDouble(),
         lineGapThresholdMs,
         resolution.unit.toDouble(),
@@ -365,8 +387,17 @@ internal data class ChartConfig(
         tradeAggregation.outsideSession.toDouble(),
         tradeAggregation.candleTimestamp.toDouble(),
         candleRadiusPx.toDouble(),
-        (if (area) areaLineDashed else lineDashed).nativeDouble(),
-        (if (area) areaLineRounded else lineRounded).nativeDouble(),
+        (if (seriesType == "baseline") baseline.dashed
+            else if (area) areaLineDashed else lineDashed)
+            .nativeDouble(),
+        (if (seriesType == "baseline") baseline.rounded
+            else if (area) areaLineRounded else lineRounded)
+            .nativeDouble(),
+        baseline.percentage.nativeDouble(),
+        baseline.value,
+        baseline.baseLineVisible.nativeDouble(),
+        baseline.baseLineDashed.nativeDouble(),
+        baseline.baseLineWidthPx.toDouble(),
     )
   }
 
@@ -391,6 +422,13 @@ internal data class ChartConfig(
             if (area) areaLineGradientBottomColor else lineGradientBottomColor,
             areaFillTopColor,
             areaFillBottomColor,
+            baseline.topLineColor,
+            baseline.bottomLineColor,
+            baseline.topFillTopColor,
+            baseline.topFillBottomColor,
+            baseline.bottomFillTopColor,
+            baseline.bottomFillBottomColor,
+            baseline.baseLineColor,
         )
     return FloatArray(values.size * 4).also { output ->
       values.forEachIndexed { index, color ->
@@ -498,6 +536,7 @@ private fun String.nativeSeriesType() =
       "hollowCandlestick" -> 2.0
       "line" -> 4.0
       "area" -> 5.0
+      "baseline" -> 6.0
       else -> 0.0
     }
 

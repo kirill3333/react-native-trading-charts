@@ -67,6 +67,7 @@ private fun seriesTypeName(type: Int) =
       SERIES_TYPE_HOLLOW_CANDLESTICK -> "hollowCandlestick"
       SERIES_TYPE_HISTOGRAM -> "histogram"
       SERIES_TYPE_AREA -> "area"
+      SERIES_TYPE_BASELINE -> "baseline"
       else -> "line"
     }
 
@@ -96,3 +97,5 @@ private const val SERIES_SOURCE_EMA = 4
 private const val SERIES_SOURCE_MACD = 5
 
 private const val SERIES_SOURCE_SAR = 7
+
+private const val SERIES_TYPE_BASELINE = 6

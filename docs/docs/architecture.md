@@ -10,23 +10,28 @@ The shared C++ engine gives iOS and Android the same rules for aggregation, visi
 
 When connecting a fast feed or investigating performance, start by separating data processing from drawing. The chart requests frames when data or interactions change its state, so an idle screen does not need a continuous render loop.
 
-```text
-React configuration and market data
-                |
-                v
-Fabric view / TurboModule command registry
-                |
-                v
-Swift (iOS) / Kotlin (Android) platform adapters
-                |
-                v
-Shared C++ state, aggregation, viewport, and geometry
-                |
-        immutable render snapshot
-           /                 \
-          v                   v
-  Metal + Core Animation   OpenGL ES 3 + Canvas
-          iOS                  Android
+```mermaid
+flowchart TD
+    accTitle: Chart architecture and rendering flow
+    accDescr: React sends configuration through Fabric and market data through TurboModule commands. Native adapters update the shared C++ engine, which publishes immutable snapshots consumed by the iOS or Android renderer.
+
+    react["React application"]
+    fabric["Fabric view"]
+    registry["TurboModule command registry<br/>Routes by chartId · bounded pending queue"]
+    adapters["Native adapters<br/>Swift on iOS · Kotlin on Android"]
+    engine["Shared C++ engine<br/>Candle store · aggregation · viewport<br/>Autoscale · ticks · geometry"]
+    snapshot["Immutable render snapshot<br/>Content geometry · crosshair geometry<br/>Axis labels and selection metadata"]
+    ios["iOS<br/>Metal + Core Animation"]
+    android["Android<br/>OpenGL ES 3 + Canvas"]
+
+    react -->|Configuration| fabric
+    react -->|Market data and commands| registry
+    fabric --> adapters
+    registry --> adapters
+    adapters -->|Data, configuration and gestures| engine
+    engine -->|Snapshot requested for a frame| snapshot
+    snapshot --> ios
+    snapshot --> android
 ```
 
 The native registry finds the chart by `chartId`. If its view has not mounted,
