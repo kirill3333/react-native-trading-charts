@@ -56,6 +56,9 @@ npm-debug.log
 yarn-debug.log
 yarn-error.log
 
+# Watchman synchronization cookies
+.watchman-cookie-*
+
 # BUCK
 buck-out/
 \.buckd/
