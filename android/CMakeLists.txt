@@ -25,3 +25,8 @@ target_include_directories(
 
 find_library(log-lib log)
 target_link_libraries(tradingcharts PRIVATE ${log-lib})
+
+# 16 KB page size support (Android 15+). Needed on NDK < r28; harmless on r28+.
+if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64")
+  target_link_options(tradingcharts PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
