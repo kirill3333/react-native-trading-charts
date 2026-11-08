@@ -120,6 +120,7 @@ internal data class SeriesConfig(
     val movingAveragePeriod: Long = 1L,
     val areaFillTopColor: Int = Color.argb(64, 56, 217, 138),
     val areaFillBottomColor: Int = Color.argb(0, 56, 217, 138),
+    val legendVisible: Boolean = true,
     val rsiPeriod: Int = 14,
     val rsiOversold: Double = 30.0,
     val rsiOverbought: Double = 70.0,

@@ -43,13 +43,14 @@ internal data class IndicatorLegendValueSnapshot(
 internal data class IndicatorLegendSnapshot(
     val paneIndex: Int,
     val kind: Int,
-    val period: Int,
-    val fastPeriod: Int,
-    val slowPeriod: Int,
-    val signalPeriod: Int,
+    val period: Long,
+    val fastPeriod: Long,
+    val slowPeriod: Long,
+    val signalPeriod: Long,
     val valueSource: Int,
     val textColor: Int,
     val textColorSet: Boolean,
+    val stdDevMultiplier: Double,
     val values: List<IndicatorLegendValueSnapshot>,
 )
 
@@ -314,6 +315,13 @@ internal object ChartEngineNative {
       histogram: Boolean,
       values: DoubleArray,
   ): Int
+
+  @JvmStatic
+  external fun nativeSetSeriesLegendVisible(
+      handle: Long,
+      seriesId: String,
+      visible: Boolean,
+  ): Boolean
 
   @JvmStatic
   external fun nativeSetPaneHeight(handle: Long, paneId: String, heightWeight: Double): Boolean
@@ -679,6 +687,7 @@ internal object ChartEngineNative {
           slowPeriod = record.slowPeriod,
           signalPeriod = record.signalPeriod,
           valueSource = record.valueSource,
+          stdDevMultiplier = record.stdDevMultiplier,
           textColor = record.textColor,
           textColorSet = record.textColorSet,
           values =

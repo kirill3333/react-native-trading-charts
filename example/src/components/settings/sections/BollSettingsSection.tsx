@@ -3,6 +3,7 @@ import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
 import { NumberSetting } from '../NumberSetting';
 import { SettingSegments } from '../SettingSegments';
+import { LegendSetting } from '../LegendSetting';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
 import { VALUE_SOURCE_OPTIONS } from './settingsOptions';
@@ -20,6 +21,7 @@ export function BollSettingsSection() {
       />
       {settings.bollEnabled ? (
         <>
+          <LegendSetting indicator="boll" />
           <NumberSetting
             label="BOLL period"
             description="Number of candles in the SMA and standard deviation window"

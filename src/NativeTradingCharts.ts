@@ -27,6 +27,7 @@ export interface Spec extends TurboModule {
     data: ReadonlyArray<number>
   ): void;
   removeSeries(chartId: string, seriesId: string): void;
+  setSeriesLegendVisible(chartId: string, seriesId: string, visible: boolean): void;
   setPaneHeight(chartId: string, paneId: string, heightWeight: number): void;
   setPriceLine(
     chartId: string,

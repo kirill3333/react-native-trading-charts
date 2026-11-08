@@ -3454,6 +3454,88 @@ void TestBollCalculationAndStreaming() {
   ExpectNear(series.candles.back().low, 7.0);
 }
 
+void TestIndicatorLegendVisibleWindow() {
+  ChartConfig config;
+  const std::vector<Candle> candles = {{0, 10, 11, 9, 10, 1},
+                                       {60'000, 12, 12, 10, 11, 0},
+                                       {120'000, 12, 13, 11, 13, 3},
+                                       {600'000, 14, 15, 14, 15, 4}};
+  const std::vector<PaneConfig> panes{PaneConfig{}};
+  const std::vector<PriceLine> lines;
+  std::vector<trading_charts::SeriesData> series(3);
+  for (size_t i = 0; i < 2; ++i) {
+    auto& average = series[i];
+    average.pane_index = 0;
+    average.config.type = SeriesType::kLine;
+    average.config.source = SeriesSource::kOhlcvSma;
+    average.config.moving_average_period = static_cast<std::uint32_t>(i + 1);
+    trading_charts::internal::RebuildDerivedSeries(average, &candles, 0);
+  }
+  auto& volume = series.back();
+  volume.pane_index = 0;
+  volume.config.type = SeriesType::kHistogram;
+  volume.config.source = SeriesSource::kOhlcvVolume;
+  volume.source_binding.kind = trading_charts::SeriesSourceBindingKind::kMain;
+  trading_charts::internal::SnapshotBuildInput input{config, candles, panes,
+                                                     series, lines};
+  input.width = 600;
+  input.height = 400;
+  input.viewport_initialized = true;
+  for (const bool logical : {false, true}) {
+    config.logical_spacing = logical;
+    input.visible_x_min = 0;
+    input.visible_x_max = logical ? 1 : 60'000;
+    const auto frame = trading_charts::internal::BuildRenderSnapshot(input);
+    assert(frame->last_visible_index == 1 &&
+           frame->indicator_legends.size() == 3);
+    const auto& legends = frame->indicator_legends;
+    assert(legends[0].period == 1 && legends[1].period == 2);
+    ExpectNear(legends[0].values[0].value, 11);
+    ExpectNear(legends[1].values[0].value, 10.5);
+    assert(legends[2].values[0].has_value);
+    ExpectNear(legends[2].values[0].value, 0);
+    ExpectColor(legends[2].values[0].color, volume.config.down);
+
+    input.previous = frame;
+    input.crosshair_active = true;
+    input.crosshair_touch_x = frame->plot.left;
+    input.crosshair_touch_y = frame->plot.top;
+    const auto selected = trading_charts::internal::BuildRenderSnapshot(input);
+    assert(selected->content_vertices == frame->content_vertices);
+    assert(!selected->indicator_legends[1].values[0].has_value);
+    ExpectColor(selected->indicator_legends[2].values[0].color,
+                volume.config.up);
+    input.previous = selected;
+    input.crosshair_active = false;
+    const auto restored = trading_charts::internal::BuildRenderSnapshot(input);
+    ExpectColor(restored->indicator_legends[2].values[0].color,
+                volume.config.down);
+    ExpectNear(restored->indicator_legends[1].values[0].value, 10.5);
+    input.previous.reset();
+  }
+  config.logical_spacing = false;
+  input.visible_x_min = 180'000;
+  input.visible_x_max = 300'000;
+  const auto gap = trading_charts::internal::BuildRenderSnapshot(input);
+  assert(!gap->has_visible_candles);
+  for (const auto& legend : gap->indicator_legends) {
+    assert(!legend.values[0].has_value);
+  }
+
+  volume.source_binding.kind =
+      trading_charts::SeriesSourceBindingKind::kAdditional;
+  volume.source_binding.additional_series_index = series.size();
+  auto& source = series.emplace_back();
+  source.pane_index = 0;
+  source.config.visible = false;
+  source.candles = {candles.front(), candles.back()};
+  input.visible_x_min = 0;
+  input.visible_x_max = 60'000;
+  const auto missing = trading_charts::internal::BuildRenderSnapshot(input);
+  assert(missing->has_visible_candles);
+  assert(!missing->indicator_legends.back().values[0].has_value);
+}
+
 void TestBollEngineIntegration() {
   ChartEngine engine;
   ChartConfig config;
@@ -3486,6 +3568,24 @@ void TestBollEngineIntegration() {
          selected.has_value);
   ExpectNear(selected.middle, 3.0);
   ExpectNear(selected.upper, 3.0 + 2.0 * std::sqrt(2.0 / 3.0));
+  const auto& legend = frame->indicator_legends.at(0);
+  assert(legend.kind == IndicatorKind::kBoll && legend.value_count == 3);
+  assert(legend.period == 3 && legend.std_dev_multiplier == 2);
+  ExpectNear(legend.values[0].value, selected.upper);
+  ExpectNear(legend.values[1].value, selected.middle);
+  ExpectNear(legend.values[2].value, selected.lower);
+  ExpectColor(legend.values[0].color, boll.boll_upper.color);
+  ExpectColor(legend.values[1].color, boll.boll_middle.color);
+  ExpectColor(legend.values[2].color, boll.boll_lower.color);
+  assert(engine.SetSeriesLegendVisible("boll", false));
+  auto hidden = engine.Snapshot();
+  assert(hidden->indicator_legends.empty() &&
+         hidden->content_vertices == content);
+  assert(hidden->crosshair_series_values.at(0).has_value);
+  assert(!engine.SetSeriesLegendVisible("boll", false));
+  assert(engine.Snapshot() == hidden);
+  assert(engine.SetSeriesLegendVisible("boll", true));
+  assert(engine.Snapshot()->indicator_legends.at(0).values[0].has_value);
   engine.SetCrosshair(true, frame->plot.left + 1, frame->plot.top + 30);
   assert(!engine.Snapshot()->crosshair_series_values.front().has_value);
   const double replacement[] = {240'000, 4, 6, 4, 6, 0};
@@ -3560,6 +3660,11 @@ void TestBollGeometry() {
   boll.boll_lower.gradient_enabled = true;
   trading_charts::internal::AppendBollGeometry(input, boll, false, vertices);
   assert(!vertices.empty());
+  config.series_type = SeriesType::kBaseline;
+  std::vector<float> baseline_vertices;
+  trading_charts::internal::AppendBollGeometry(input, boll, false,
+                                               baseline_vertices);
+  assert(baseline_vertices == vertices);
 }
 
 void TestMovingAverageValuesWarmupAndIncrementalUpdates() {
@@ -3924,6 +4029,12 @@ void TestMacdWarmupIncrementalLegendAndAutoscale() {
   ExpectNear(selected->indicator_legends[0].values[0].value, -1.0 / 54.0);
   ExpectColor(selected->indicator_legends[0].values[0].color,
               macd.macd_negative_increasing);
+  engine.SetCrosshair(false, 0, 0);
+  const auto restored = engine.Snapshot();
+  ExpectColor(restored->indicator_legends[0].values[0].color,
+              macd.macd_negative_decreasing);
+  ExpectNear(restored->indicator_legends[0].values[0].value,
+             latest_legend.values[0].value);
 
   const double append[] = {540.0, 8.0, 8.0, 8.0, 8.0, 1.0};
   assert(engine.UpdateCandle(append, std::size(append)) ==
@@ -5515,6 +5626,7 @@ int main() noexcept {
     TestSarGeometry();
     TestSarAutoscaleAndGaps();
     TestBollCalculationAndStreaming();
+    TestIndicatorLegendVisibleWindow();
     TestBollEngineIntegration();
     TestBollGeometry();
     TestMovingAverageValuesWarmupAndIncrementalUpdates();

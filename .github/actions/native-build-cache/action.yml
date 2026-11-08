@@ -1,0 +1,30 @@
+name: Cache native build result
+description: Restore the successful Turbo task for this source tree and runner.
+inputs:
+  task:
+    description: Example workspace build task
+    required: true
+outputs:
+  cache-hit:
+    description: Whether this exact build has already succeeded
+    value: ${{ steps.cache.outputs.cache-hit }}
+  image-version:
+    description: Hosted runner image version
+    value: ${{ steps.fingerprint.outputs.image-version }}
+runs:
+  using: composite
+  steps:
+    - id: fingerprint
+      shell: bash
+      env:
+        TASK: ${{ inputs.task }}
+      run: |
+        yarn turbo run "$TASK" --env-mode=loose --dry=json |
+          jq -er --arg task "$TASK" '.tasks[] | select(.task == $task) | "hash=\(.hash)"' >> "$GITHUB_OUTPUT"
+        echo "image-version=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+    - id: cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: .turbo/cache
+        key: native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.task }}-${{ steps.fingerprint.outputs.hash }}

@@ -19,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
               prepend:(BOOL)prepend
                update:(BOOL)update;
 - (void)removeSeries:(NSString *)seriesId;
+- (void)setSeriesLegendVisible:(NSString *)seriesId visible:(BOOL)visible;
 - (void)setPaneHeight:(NSString *)paneId weight:(double)weight;
 - (void)zoomByScale:(double)scale;
 - (void)scrollChartToRealTime;

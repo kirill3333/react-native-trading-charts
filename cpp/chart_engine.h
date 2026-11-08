@@ -186,6 +186,7 @@ struct SeriesConfig {
   bool line_gradient_enabled = false;
   bool line_dashed = false;
   bool visible = true;
+  bool legend_visible = true;
   bool declarative = false;
   double sar_step = 0.02;
   double sar_maximum = 0.20;
@@ -513,19 +514,22 @@ struct PaneSnapshot {
 enum class IndicatorKind : std::uint8_t {
   kRsi = 0,
   kMacd = 1,
+  kBoll = 2,
+  kSma = 3,
+  kEma = 4,
+  kVolume = 5,
 };
 
 struct IndicatorLegendValue {
   double value = 0.0;
-  double latest_value = 0.0;
   Color color;
   bool has_value = false;
-  bool has_latest_value = false;
 };
 
 struct IndicatorLegend {
   std::string pane_id;
   size_t pane_index = 0;
+  double std_dev_multiplier = 0.0;
   IndicatorKind kind = IndicatorKind::kRsi;
   std::uint32_t period = 14;
   std::uint32_t fast_period = 12;
@@ -649,6 +653,7 @@ class ChartEngine {
   UpdateStatus UpdateSeriesData(const std::string& series_id,
                                 const double* values, size_t value_count,
                                 bool histogram);
+  bool SetSeriesLegendVisible(const std::string& series_id, bool visible);
   bool SetPaneHeight(const std::string& pane_id, double height_weight);
   bool SetPriceLine(const PriceLine& price_line);
   bool RemovePriceLine(const std::string& price_line_id);

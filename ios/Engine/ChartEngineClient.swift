@@ -195,6 +195,9 @@ final class ChartEngineClient {
   }
 
   @discardableResult
+  func setSeriesLegendVisible(_ seriesId: String, visible: Bool) -> Bool {
+    handle.SetSeriesLegendVisible(std.string(seriesId), visible)
+  }
   func setPaneHeight(_ paneId: String, weight: Double) -> Bool {
     handle.SetPaneHeight(std.string(paneId), weight)
   }

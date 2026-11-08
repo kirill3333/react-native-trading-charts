@@ -49,6 +49,7 @@ export function buildRsiAppearance(
 export function buildBollSeries(settings: ChartSettings): BollSeriesOptions {
   return {
     seriesId: 'boll',
+    legendVisible: settings.bollLegendVisible,
     type: 'boll',
     paneId: 'main',
     priceScaleId: 'main',
@@ -94,6 +95,7 @@ export function buildMovingAverageSeries(
   return averages
     .filter(({ enabled }) => enabled)
     .map(({ kind, type, period, valueSource }) => ({
+      legendVisible: settings[`${kind}LegendVisible`],
       seriesId: kind,
       type: 'line',
       paneId: 'main',
@@ -107,6 +109,7 @@ export function buildMacdSeries(settings: ChartSettings): MacdSeriesOptions {
   const theme = APP_THEMES[settings.themeMode].macd;
   return {
     seriesId: 'macd',
+    legendVisible: settings.macdLegendVisible,
     type: 'macd',
     paneId: 'macd',
     priceScaleId: 'macd',
@@ -183,6 +186,7 @@ export function buildAdditionalSeries(
   if (showVolume) {
     result.push({
       seriesId: 'volume',
+      legendVisible: settings.volumeLegendVisible,
       type: 'histogram',
       paneId: 'volume',
       priceScaleId: 'volume',
@@ -193,6 +197,7 @@ export function buildAdditionalSeries(
   if (showRsi) {
     result.push({
       seriesId: 'rsi',
+      legendVisible: settings.rsiLegendVisible,
       type: 'line',
       paneId: 'rsi',
       priceScaleId: 'rsi',

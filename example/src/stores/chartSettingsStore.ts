@@ -31,6 +31,12 @@ export type BollLineSettings = {
 };
 
 export type ChartSettings = {
+  smaLegendVisible: boolean;
+  emaLegendVisible: boolean;
+  bollLegendVisible: boolean;
+  volumeLegendVisible: boolean;
+  rsiLegendVisible: boolean;
+  macdLegendVisible: boolean;
   sarEnabled: boolean;
   sarStep: number;
   sarMaximum: number;
@@ -154,6 +160,12 @@ function bollLineDefaults(color: string): BollLineSettings {
 }
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  smaLegendVisible: true,
+  emaLegendVisible: true,
+  bollLegendVisible: true,
+  volumeLegendVisible: true,
+  rsiLegendVisible: true,
+  macdLegendVisible: true,
   sarEnabled: false,
   sarStep: 0.02,
   sarMaximum: 0.2,

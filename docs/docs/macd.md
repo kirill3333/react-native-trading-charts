@@ -37,7 +37,7 @@ previous value, and `negativeDecreasingColor` otherwise. The first bar uses
 
 The legend reads `MACD 12 26 CLOSE 9`, followed by histogram, MACD and signal
 values in their component colors. With a crosshair, it shows values at the
-selected timestamp. Otherwise it shows the latest values. An em dash means
+selected timestamp. Without a selection it shows the values of the last visible candle. Set `legendVisible: false` to hide the legend. An em dash means
 that a component has no value yet, for example during warm-up.
 
 ## Complete example

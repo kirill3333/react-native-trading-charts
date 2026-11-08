@@ -175,6 +175,7 @@ enum class SeriesNumberIndex : std::uint8_t {
   kBaselineVisible,
   kBaselineDashed,
   kBaselineWidth,
+  kLegendVisible,
   kCount,
 };
 
@@ -279,6 +280,7 @@ enum class IndicatorLegendRecordIndex : std::uint8_t {
   kTextColorB,
   kTextColorA,
   kValues,
+  kStdDevMultiplier = 31,
 };
 
 enum class SnapshotMetaIndex : std::uint8_t {
@@ -349,8 +351,8 @@ inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kBaselineConfigColorCount = 96;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 7.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v7";
+inline constexpr double kChartEngineTransportAbiVersion = 8.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v8";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -360,12 +362,12 @@ inline constexpr size_t kTickRecordWidth = ToIndex(TickRecordIndex::kCount);
 inline constexpr size_t kPaneSnapshotRecordWidth = 14;
 inline constexpr size_t kIndicatorLegendValueRecordWidth = 6;
 inline constexpr size_t kIndicatorLegendValueCapacity = 3;
-inline constexpr size_t kIndicatorLegendRecordWidth = 31;
+inline constexpr size_t kIndicatorLegendRecordWidth = 32;
 inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 51);
-static_assert(kSeriesNumberCount == 44);
+static_assert(kSeriesNumberCount == 45);
 static_assert(kSeriesColorCount == 156);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
@@ -373,9 +375,10 @@ static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
 static_assert(kTickRecordWidth == 2);
 static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
               kPaneSnapshotRecordWidth);
-static_assert(kIndicatorLegendRecordWidth == 31);
+static_assert(ToIndex(IndicatorLegendRecordIndex::kStdDevMultiplier) + 1 ==
+              kIndicatorLegendRecordWidth);
 static_assert(kCrosshairSeriesValueRecordWidth == 20);
-static_assert(kIndicatorLegendRecordWidth ==
+static_assert(ToIndex(IndicatorLegendRecordIndex::kStdDevMultiplier) ==
               ToIndex(IndicatorLegendRecordIndex::kValues) +
                   kIndicatorLegendValueRecordWidth *
                       kIndicatorLegendValueCapacity);
@@ -1085,6 +1088,7 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
   series.line_gradient_bottom = color_at(SeriesColorIndex::kLineGradientBottom);
   series.area_fill_top = color_at(SeriesColorIndex::kAreaFillTop);
   series.area_fill_bottom = color_at(SeriesColorIndex::kAreaFillBottom);
+  series.legend_visible = number_at(SeriesNumberIndex::kLegendVisible) != 0.0;
   series.rsi_period = static_cast<std::uint32_t>(
       std::max(number_at(SeriesNumberIndex::kRsiPeriod), 0.0));
   series.rsi_oversold = number_at(SeriesNumberIndex::kRsiOversold);
@@ -1252,6 +1256,16 @@ Java_com_tradingcharts_ChartEngineNative_nativeUpdateSeriesData(
                         CopyString(env, series_id), data.data(), data.size(),
                         histogram == JNI_TRUE))
                   : 2;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeSetSeriesLegendVisible(
+    JNIEnv* env, jclass, jlong handle, jstring series_id, jboolean visible) {
+  auto* instance = EngineFromHandle(handle);
+  return instance && instance->SetSeriesLegendVisible(
+                         CopyString(env, series_id), visible == JNI_TRUE)
+             ? JNI_TRUE
+             : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1784,6 +1798,8 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotIndicatorLegends(
           static_cast<double>(legend.signal_period));
       set(IndicatorLegendRecordIndex::kValueSource,
           static_cast<double>(legend.value_source));
+      set(IndicatorLegendRecordIndex::kStdDevMultiplier,
+          legend.std_dev_multiplier);
       set(IndicatorLegendRecordIndex::kValueCount,
           static_cast<double>(legend.value_count));
       set(IndicatorLegendRecordIndex::kTextColorSet,

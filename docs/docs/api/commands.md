@@ -27,6 +27,7 @@ Both reads reject with `E_CHART_NOT_MOUNTED` when the chart is unregistered. Han
 | [prependSeriesData](#prependseriesdata) | `void`                        |
 | [updateSeriesData](#updateseriesdata)   | `void`                        |
 | [removeSeries](#removeseries)           | `void`                        |
+| [setSeriesLegendVisible](#setserieslegendvisible) | `void` |
 | [setPaneHeight](#setpaneheight)         | `void`                        |
 | [setHistory](#sethistory)               | `void`                        |
 | [prependHistory](#prependhistory)       | `void`                        |
@@ -146,6 +147,14 @@ export function example(chartId: string) {
   TradingCharts.removeSeries(chartId, 'comparison');
 }
 ```
+
+## setSeriesLegendVisible {#setserieslegendvisible}
+
+```ts
+TradingCharts.setSeriesLegendVisible(chartId, seriesId, false);
+```
+
+Shows or hides the legend of an existing SMA, EMA, BOLL, OHLCV volume, RSI or MACD series. The plot and the selection event still include the series. The command can be queued after `addSeries` before the chart mounts. The next declarative configuration applies its own `legendVisible` value, which defaults to `true`.
 
 ## setPaneHeight {#setpaneheight}
 

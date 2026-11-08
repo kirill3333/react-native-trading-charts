@@ -80,6 +80,10 @@ class TradingChartsModule(context: ReactApplicationContext) : NativeTradingChart
     TradingChartsRegistry.removeSeries(chartId, seriesId)
   }
 
+  override fun setSeriesLegendVisible(chartId: String, seriesId: String, visible: Boolean) {
+    TradingChartsRegistry.setSeriesLegendVisible(chartId, seriesId, visible)
+  }
+
   override fun setPaneHeight(chartId: String, paneId: String, heightWeight: Double) {
     TradingChartsRegistry.setPaneHeight(chartId, paneId, heightWeight)
   }

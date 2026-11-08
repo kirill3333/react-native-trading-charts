@@ -2,6 +2,7 @@ import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { useAppTheme } from '../../../themeContext';
 import { HexColorSetting } from '../HexColorSetting';
 import { SettingSegments } from '../SettingSegments';
+import { LegendSetting } from '../LegendSetting';
 import { SettingsSection } from '../SettingsSection';
 import { INDICATOR_LINE_WIDTH_OPTIONS } from './settingsOptions';
 
@@ -14,6 +15,7 @@ export function RsiSettingsSection() {
 
   return (
     <SettingsSection title="RSI">
+      <LegendSetting indicator="rsi" />
       <SettingSegments
         label="Line width"
         onValueChange={(rsiLineWidth) => updateSettings({ rsiLineWidth })}

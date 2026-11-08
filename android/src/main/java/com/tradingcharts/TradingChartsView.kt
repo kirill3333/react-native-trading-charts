@@ -485,6 +485,11 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     }
   }
 
+  fun setSeriesLegendVisible(seriesId: String, visible: Boolean) {
+    if (ChartEngineNative.nativeSetSeriesLegendVisible(engineHandle, seriesId, visible))
+        scheduleFrame()
+  }
+
   fun setPaneHeight(paneId: String, heightWeight: Double) {
     if (ChartEngineNative.nativeSetPaneHeight(engineHandle, paneId, heightWeight)) {
       scheduleFrame()

@@ -240,6 +240,10 @@ using namespace facebook::react;
   [_host removeSeries:seriesId ?: @""];
 }
 
+- (void)setSeriesLegendVisible:(NSString *)seriesId visible:(BOOL)visible {
+  [_host setSeriesLegendVisible:seriesId visible:visible];
+}
+
 - (void)setPaneHeight:(NSString *)paneId weight:(double)weight {
   [_host setPaneHeight:paneId ?: @"" weight:weight];
 }

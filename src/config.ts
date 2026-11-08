@@ -1300,6 +1300,14 @@ function validateRsiAppearance(options: RsiSeriesOptions, name: string): void {
   }
 }
 
+function resolveLegendVisible(visible: boolean | undefined, name: string): boolean {
+  if (visible == null) return true;
+  if (visible !== true && visible !== false) {
+    throw new TypeError(`${name}.legendVisible must be a boolean`);
+  }
+  return visible;
+}
+
 function resolveMovingAverageSeriesOptions(
   options: MovingAverageSeriesOptions,
   name: string,
@@ -1319,6 +1327,7 @@ function resolveMovingAverageSeriesOptions(
   return {
     ...options,
     ...ids,
+    legendVisible: resolveLegendVisible(options.legendVisible, name),
     visible: options.visible ?? true,
     source: {
       ...options.source,
@@ -1360,6 +1369,7 @@ function resolveRsiSeriesOptions(
   return {
     ...options,
     ...ids,
+    legendVisible: resolveLegendVisible(options.legendVisible, name),
     visible: options.visible ?? true,
     source: {
       type: 'ohlcvRsi',
@@ -1451,6 +1461,7 @@ function resolveBollSeriesOptions(
   return {
     ...options,
     ...ids,
+    legendVisible: resolveLegendVisible(options.legendVisible, name),
     visible: options.visible ?? true,
     source: {
       type: 'ohlcvBoll',
@@ -1524,6 +1535,7 @@ function resolveMacdSeriesOptions(
   return {
     ...options,
     ...ids,
+    legendVisible: resolveLegendVisible(options.legendVisible, name),
     visible: options.visible ?? true,
     source: {
       type: 'ohlcvMacd',
@@ -1562,6 +1574,9 @@ function resolveHistogramSeriesOptions(
   return {
     ...options,
     ...ids,
+    ...(source.type === 'ohlcvVolume' && {
+      legendVisible: resolveLegendVisible(options.legendVisible, name),
+    }),
     visible: options.visible ?? true,
     source,
   };
@@ -1869,6 +1884,9 @@ function resolveConfiguredHistogramSeries(
   return {
     ...item,
     ...ids,
+    ...(source.type === 'ohlcvVolume' && {
+      legendVisible: resolveLegendVisible(item.legendVisible, name),
+    }),
     visible: item.visible ?? true,
     source,
     appearance: {

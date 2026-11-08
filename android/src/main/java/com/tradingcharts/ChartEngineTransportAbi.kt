@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 7
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 8
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v7"
+  const val STRING_MARKER = "TradingCharts.Series.v8"
 
   object NumberIndex {
     const val VERSION = 0
@@ -50,7 +50,8 @@ internal object SeriesTransportAbi {
     const val BASELINE_VISIBLE = 41
     const val BASELINE_DASHED = 42
     const val BASELINE_WIDTH = 43
-    const val SIZE = 44
+    const val LEGEND_VISIBLE = 44
+    const val SIZE = 45
   }
 
   object ColorIndex {
@@ -108,7 +109,7 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 40
+  const val ROUND_TRIP_NUMBER_COUNT = 41
   const val ROUND_TRIP_COLOR_COUNT = 152
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
@@ -177,6 +178,7 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
       }
   numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = visible.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.DECLARATIVE] = declarative.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.LEGEND_VISIBLE] = legendVisible.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_WIDTH] = lineWidthPx.toDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_SOURCE] = lineSource.nativeLineSource()
   numbers[SeriesTransportAbi.NumberIndex.LINE_GRADIENT_ENABLED] =
@@ -363,7 +365,7 @@ internal object SnapshotTransportAbi {
   const val HEADER_SIZE = 3
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
-  const val INDICATOR_LEGEND_RECORD_WIDTH = 31
+  const val INDICATOR_LEGEND_RECORD_WIDTH = 32
   const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 20
   const val PRICE_LINE_RECORD_WIDTH = 6
 
@@ -395,6 +397,7 @@ internal object SnapshotTransportAbi {
     const val VALUE_COUNT = 7
     const val TEXT_COLOR_SET = 8
     const val TEXT_COLOR = 9
+    const val STD_DEV_MULTIPLIER = 31
     const val VALUES = 13
     const val VALUE_RECORD_WIDTH = 6
   }
@@ -464,13 +467,14 @@ internal data class IndicatorLegendValueSnapshotRecord(
 internal data class IndicatorLegendSnapshotRecord(
     val paneIndex: Int,
     val kind: Int,
-    val period: Int,
-    val fastPeriod: Int,
-    val slowPeriod: Int,
-    val signalPeriod: Int,
+    val period: Long,
+    val fastPeriod: Long,
+    val slowPeriod: Long,
+    val signalPeriod: Long,
     val valueSource: Int,
     val textColor: Int,
     val textColorSet: Boolean,
+    val stdDevMultiplier: Double,
     val values: List<IndicatorLegendValueSnapshotRecord>,
 )
 
@@ -498,6 +502,14 @@ internal fun SnapshotRecordPayload.indicatorLegendRecord(
     check(raw == raw.toInt().toDouble()) { "Invalid native indicator legend $name: $raw" }
     return raw.toInt()
   }
+  fun period(field: Int): Long {
+    val raw = value(field)
+    val result = raw.toLong()
+    check(result in 0..UInt.MAX_VALUE.toLong() && raw == result.toDouble()) {
+      "Invalid native indicator legend period: $raw"
+    }
+    return result
+  }
   val valueCount = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.VALUE_COUNT, "value count")
   check(valueCount in 0..3) { "Invalid native indicator legend value count: $valueCount" }
   val legendValues =
@@ -514,15 +526,15 @@ internal fun SnapshotRecordPayload.indicatorLegendRecord(
   return IndicatorLegendSnapshotRecord(
       paneIndex = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.PANE_INDEX, "pane index"),
       kind = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.KIND, "kind"),
-      period = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.PERIOD, "period"),
-      fastPeriod = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.FAST_PERIOD, "fast period"),
-      slowPeriod = exactInt(SnapshotTransportAbi.IndicatorLegendIndex.SLOW_PERIOD, "slow period"),
-      signalPeriod =
-          exactInt(SnapshotTransportAbi.IndicatorLegendIndex.SIGNAL_PERIOD, "signal period"),
+      period = period(SnapshotTransportAbi.IndicatorLegendIndex.PERIOD),
+      fastPeriod = period(SnapshotTransportAbi.IndicatorLegendIndex.FAST_PERIOD),
+      slowPeriod = period(SnapshotTransportAbi.IndicatorLegendIndex.SLOW_PERIOD),
+      signalPeriod = period(SnapshotTransportAbi.IndicatorLegendIndex.SIGNAL_PERIOD),
       valueSource =
           exactInt(SnapshotTransportAbi.IndicatorLegendIndex.VALUE_SOURCE, "value source"),
       textColor = colorAt(offset, SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR),
       textColorSet = value(SnapshotTransportAbi.IndicatorLegendIndex.TEXT_COLOR_SET) != 0.0,
+      stdDevMultiplier = value(SnapshotTransportAbi.IndicatorLegendIndex.STD_DEV_MULTIPLIER),
       values = legendValues,
   )
 }
