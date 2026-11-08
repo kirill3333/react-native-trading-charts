@@ -550,6 +550,17 @@ export type ChartTheme = {
 ### ChartAppearance {#chartappearance}
 
 ```ts
+export type ChartPulseDotAppearance = {
+  enabled?: boolean;
+  color?: string;
+  /** Full pulses per second. Defaults to one cycle every 1.2 seconds. */
+  frequency?: number;
+  /** Radius of the solid dot in pt/dp. Defaults to 4. */
+  radius?: number;
+  /** Maximum halo radius in pt/dp. Defaults to 14. */
+  haloRadius?: number;
+};
+
 export type ChartAppearance = {
   backgroundColor?: string;
   grid?: {
@@ -566,9 +577,20 @@ export type ChartAppearance = {
     downColor?: string;
     lineWidth?: number;
   };
-  line?: ChartLineAppearance;
-  baseline?: ChartBaselineAppearance & { rounded?: boolean };
-  area?: ChartAreaAppearance;
+  line?: ChartLineAppearance & {
+    pulseDot?: ChartPulseDotAppearance;
+    /** Round caps and joins for the main chart only. Defaults to true. */
+    rounded?: boolean;
+  };
+  baseline?: ChartBaselineAppearance & {
+    rounded?: boolean;
+    pulseDot?: ChartPulseDotAppearance;
+  };
+  area?: ChartAreaAppearance & {
+    pulseDot?: ChartPulseDotAppearance;
+    /** Round outline caps and joins for the main chart only. Defaults to true. */
+    rounded?: boolean;
+  };
   xAxis?: { text?: ChartTextStyle };
   yAxis?: { text?: ChartTextStyle };
   priceExtremes?: {

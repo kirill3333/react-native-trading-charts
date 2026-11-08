@@ -38,6 +38,7 @@ Each group controls one part of the chart. For example, `candles` sets body colo
 | `candles.radius`                | Non-negative number           | `0`                         | Candlestick body corner radius.       |
 | `bars.*`                        | Bar appearance                | Candle colors, width `1`    | OHLC bar presentation.                |
 | `line.*`                        | Line appearance               | Theme up color, width `1.5` | Main line presentation.               |
+| `line.pulseDot`, `area.pulseDot`, `baseline.pulseDot` | `enabled`, `color`, `frequency`, `radius`, `haloRadius` | Off, inherits the active outline color | Highlights the latest point on the main series. On a baseline chart the color follows the endpoint across the base. [Pulse options](/docs/series-types#line). |
 | `area.*`                        | Area appearance               | Theme up color, width `1.5` | Main area outline and fill.           |
 | `xAxis.text` / `yAxis.text`     | `ChartTextStyle`              | `theme.axisTextColor`       | Native axis text styles.              |
 | `priceExtremes.*`               | Text and colors               | Axis/background colors      | Visible high/low label presentation.  |

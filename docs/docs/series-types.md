@@ -71,6 +71,8 @@ An OHLC bar uses a vertical low-to-high stem with a short open tick on the left 
 
 A line connects one selected price from each candle, usually the close. Use it for a price overview where individual candle bodies would add detail the screen does not need. Set `source` to choose the OHLC field, and `gapThresholdMs` to leave breaks across large time gaps.
 
+To highlight the latest value on a main line, area, or baseline chart, set `pulseDot.enabled` in `appearance.line`, `appearance.area`, or `appearance.baseline` respectively. The dot follows the latest candle's selected value as prices change. It disappears when that point moves outside the plot and reappears when it comes back into view. It works with the current-price badge shown or hidden.
+
 | Property                               | Type / values                          | Default         | Description                                                     |
 | -------------------------------------- | -------------------------------------- | --------------- | --------------------------------------------------------------- |
 | `series.type`                          | `'line'`                               | Not applicable  | Joins values from one OHLC field into a line.                   |
@@ -78,6 +80,11 @@ A line connects one selected price from each candle, usually the close. Use it f
 | `series.gapThresholdMs`                | Positive milliseconds                  | `undefined`     | Splits the line when a timestamp gap exceeds this value.        |
 | `appearance.line.width`                | Positive number                        | `1.5`           | Native stroke width.                                            |
 | `appearance.line.color`                | Color                                  | `theme.upColor` | Solid line color and fallback active-series color.              |
+| `appearance.line.pulseDot.enabled` | Boolean | `false` | Shows a dot with a pulsing halo on the main `line` series. |
+| `appearance.line.pulseDot.color` | Color | `appearance.line.color` | Sets the color of both the dot and its halo. |
+| `appearance.line.pulseDot.frequency` | Positive number | `1 / 1.2` | Full pulses per second. For example, `2` gives one pulse every 500 ms. |
+| `appearance.line.pulseDot.radius` | Positive number | `4` | Radius of the solid dot, in iOS points or Android dp. |
+| `appearance.line.pulseDot.haloRadius` | Positive number | `14` | Maximum radius of the fading halo, in the same units. Set it larger than `radius` to see the halo extend beyond the dot. |
 | `appearance.line.rounded` | Boolean | `true` | Round caps and joins on the main chart; `false` restores sharp joins and flat caps. |
 | `appearance.line.style`                | `'solid'` or `'dashed'`                | `'solid'`       | Solid or dashed stroke, drawn consistently on both platforms.   |
 | `appearance.line.gradient.topColor`    | Color                                  | `undefined`     | Top color of an optional vertical stroke gradient.              |
@@ -98,6 +105,7 @@ An area chart adds a fill beneath a price line. It works for the same price-over
 | `series.type`                      | `'area'`                               | Not applicable               | Renders an OHLC source line with a pane-wide fill. |
 | `series.source`                    | `'open'`, `'high'`, `'low'`, `'close'` | `'close'`                    | Value used by the series.                          |
 | `series.gapThresholdMs`            | Positive milliseconds                  | `undefined`                  | Splits line and fill across larger gaps.           |
+| `appearance.area.pulseDot` | [Pulse options](#line) | Off | Inherits the area outline color (`appearance.area.color`). |
 | `appearance.area.width`            | Positive number                        | `1.5`                        | Outline width.                                     |
 | `appearance.area.color`            | Color                                  | `theme.upColor`              | Outline color and base color for default fill.     |
 | `appearance.area.gradient`         | `{ topColor, bottomColor }`            | `undefined`                  | Optional vertical gradient for the outline.        |
@@ -134,6 +142,7 @@ A baseline chart fills the space between a price line and a reference level. Abo
 | `series.source` | `'close'` | `'open'`, `'high'`, `'low'`, or `'close'` |
 | `series.gapThresholdMs` | Unset | Break outline and fill across larger timestamp gaps |
 | `series.baseValue` | `{ type: 'percentage', value: 50 }` | Fixed `{ type: 'price', value }` or pane-height percentage |
+| `appearance.baseline.pulseDot` | Off | Accepts the same [pulse options](#line). The color follows `topLineColor` at or above the base and `bottomLineColor` below it. Set `pulseDot.color` to use one color on both sides. |
 | `appearance.baseline.width` | `1.5` | Positive outline width in points / dp |
 | `appearance.baseline.style` | `'solid'` | `'solid'` or `'dashed'`; fill remains continuous |
 | `appearance.baseline.rounded` | `true` | Round caps and joins, main series only |

@@ -1817,6 +1817,126 @@ describe('chart config', () => {
     expect(serialized.series).toEqual({ type: 'hollowCandlestick' });
   });
 
+  it('resolves the pulse for the active main series', () => {
+    const props = {
+      chartId: 'pulse',
+      series: { type: 'line' as const },
+      appearance: { line: { pulseDot: { enabled: true } } },
+    };
+    for (const upColor of ['#AA2244', '#2299FF']) {
+      expect(
+        resolveChartConfig({ ...props, theme: { upColor } }).appearance.pulseDot
+      ).toEqual({
+        enabled: true,
+        color: upColor,
+        frequency: 1 / 1.2,
+        radius: 4,
+        haloRadius: 14,
+      });
+    }
+    const withColor = (color: string) =>
+      resolveChartConfig({
+        ...props,
+        appearance: { line: { pulseDot: { enabled: true, color } } },
+      });
+    expect(withColor('#CA174A80').appearance.pulseDot.color).toBe('#CA174A80');
+    expect(() => withColor('invalid')).toThrow(
+      'appearance.line.pulseDot.color'
+    );
+    for (const type of [
+      'area',
+      'baseline',
+      'candlestick',
+      'bar',
+      'hollowCandlestick',
+    ] as const) {
+      expect(
+        resolveChartConfig({ ...props, series: { type } }).appearance.pulseDot
+          .enabled
+      ).toBe(false);
+    }
+  });
+
+  it('accepts fractional pulse frequencies and radii and validates each option', () => {
+    const resolvePulse = (
+      frequency: number,
+      radius?: number,
+      haloRadius?: number
+    ) =>
+      resolveChartConfig({
+        chartId: 'pulse',
+        series: { type: 'line' },
+        appearance: {
+          line: { pulseDot: { enabled: true, frequency, radius, haloRadius } },
+        },
+      }).appearance.pulseDot;
+
+    expect(resolvePulse(2.5, 6.5)).toMatchObject({
+      frequency: 2.5,
+      radius: 6.5,
+      haloRadius: 14,
+    });
+    expect(resolvePulse(1, undefined, 18.5)).toMatchObject({
+      radius: 4,
+      haloRadius: 18.5,
+    });
+    for (const invalid of [0, -1, NaN, Infinity]) {
+      expect(() => resolvePulse(invalid, 14)).toThrow(
+        'appearance.line.pulseDot.frequency'
+      );
+      expect(() => resolvePulse(1, invalid)).toThrow(
+        'appearance.line.pulseDot.radius'
+      );
+      expect(() => resolvePulse(1, 4, invalid)).toThrow(
+        'appearance.line.pulseDot.haloRadius'
+      );
+    }
+  });
+
+  it.each(['area', 'baseline'] as const)(
+    'resolves %s pulse options and outline colors',
+    (type) => {
+      const style = {
+        color: '#114488',
+        topLineColor: '#11AA66',
+        bottomLineColor: '#DD3344',
+      };
+      const resolve = (pulseDot?: {
+        enabled: boolean;
+        color?: string;
+        frequency?: number;
+        radius?: number;
+        haloRadius?: number;
+      }) =>
+        resolveChartConfig({
+          chartId: 'pulse',
+          series: { type },
+          appearance: { [type]: { ...style, pulseDot } },
+        }).appearance.pulseDot;
+      expect(resolve().enabled).toBe(false);
+      const inherited = resolve({ enabled: true });
+      expect(inherited.color).toBe(
+        type === 'baseline' ? style.topLineColor : style.color
+      );
+      if (type === 'baseline')
+        expect(inherited.belowBaseColor).toBe(style.bottomLineColor);
+      const options = {
+        enabled: true,
+        color: '#AABBCC80',
+        frequency: 2,
+        radius: 6,
+        haloRadius: 18,
+      };
+      const overridden = resolve(options);
+      expect(overridden).toMatchObject(options);
+      if (type === 'baseline')
+        expect(overridden.belowBaseColor).toBe(options.color);
+      expect(() => resolve({ enabled: true, color: 'invalid' })).toThrow(
+        `appearance.${type}.pulseDot.color`
+      );
+    }
+  );
+
   it('resolves a gradient line and its source semantics', () => {
     const resolved = resolveChartConfig({
       chartId: 'line',

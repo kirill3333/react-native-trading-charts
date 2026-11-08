@@ -113,7 +113,7 @@ export function buildChartViewConfig(
 
   const appearancePreset = APP_THEMES[settings.themeMode].chartAppearance;
   const mainColors = buildMainSeriesColors(settings);
-  const lineAppearance =
+  const lineAppearance: NonNullable<ChartAppearance['line']> =
     settings.mainLineColorOverride == null
       ? {
           ...appearancePreset.line,
@@ -125,7 +125,7 @@ export function buildChartViewConfig(
           rounded: settings.lineRounded,
           color: mainColors.lineColor,
         };
-  const areaAppearance = {
+  const areaAppearance: NonNullable<ChartAppearance['area']> = {
     ...(settings.mainLineColorOverride == null
       ? appearancePreset.area
       : { color: mainColors.lineColor }),
@@ -136,6 +136,29 @@ export function buildChartViewConfig(
       bottomColor: mainColors.areaFillBottomColor,
     },
   };
+
+  const baselineAppearance: NonNullable<ChartAppearance['baseline']> = {
+    ...buildBaselineAppearance(settings),
+    rounded: settings.baselineRounded,
+  };
+  const appearances = {
+    line: lineAppearance,
+    area: areaAppearance,
+    baseline: baselineAppearance,
+  };
+  const type = settings.seriesType;
+  if (
+    settings.pulseDotEnabled &&
+    (type === 'line' || type === 'area' || type === 'baseline')
+  ) {
+    appearances[type].pulseDot = {
+      enabled: true,
+      color: settings.pulseDotColor ?? undefined,
+      frequency: settings.pulseDotFrequency,
+      radius: settings.pulseDotRadius,
+      haloRadius: settings.pulseDotHaloRadius,
+    };
+  }
 
   return {
     series: buildMainSeriesOptions(settings),
@@ -151,12 +174,7 @@ export function buildChartViewConfig(
         upColor: mainColors.upColor,
         downColor: mainColors.downColor,
       },
-      baseline: {
-        ...buildBaselineAppearance(settings),
-        rounded: settings.baselineRounded,
-      },
-      line: lineAppearance,
-      area: areaAppearance,
+      ...appearances,
       tooltip: {
         ...appearancePreset.tooltip,
         backgroundOpacity: settings.crosshairTooltipOpacity,

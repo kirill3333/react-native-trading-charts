@@ -186,6 +186,10 @@ class RenderSnapshotHandle {
   }
   float Width() const { return snapshot_->width; }
   float Height() const { return snapshot_->height; }
+  bool LineEndpointVisible() const { return snapshot_->line_endpoint_visible; }
+  bool EndpointBelowBase() const { return snapshot_->line_endpoint_below_base; }
+  float LineEndpointX() const { return snapshot_->line_endpoint_x; }
+  float LineEndpointY() const { return snapshot_->line_endpoint_y; }
   float CurrentPriceY() const { return snapshot_->current_price_y; }
   float CrosshairX() const { return snapshot_->crosshair_x; }
   float CrosshairY() const { return snapshot_->crosshair_y; }

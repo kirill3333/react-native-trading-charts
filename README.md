@@ -345,7 +345,7 @@ The hollow outline uses the same native thickness as the wick.
 <TradingChartsView
   chartId="btc-1m"
   series={{ type: 'line', source: 'close', gapThresholdMs: 300_000 }}
-  appearance={{ line: { width: 2, color: '#2E90F5' } }}
+  appearance={{ line: { width: 2, color: '#2E90F5', pulseDot: { enabled: true } } }}
 />
 ```
 
@@ -356,9 +356,16 @@ The hollow outline uses the same native thickness as the wick.
 | `series.gapThresholdMs` | Positive milliseconds | `undefined` | Splits the line when a timestamp gap exceeds this value. |
 | `appearance.line.width` | Positive number | `1.5` | Native stroke width. |
 | `appearance.line.color` | Color | `theme.upColor` | Solid line color and fallback active-series color. |
+| `appearance.line.pulseDot.enabled` | Boolean | `false` | Pulse at the latest data point while it is in view. |
+| `appearance.line.pulseDot.color` | Color | `appearance.line.color` | Color of the dot and its fading halo. |
+| `appearance.line.pulseDot.frequency` | Positive number | `1 / 1.2` | Full pulses per second. For example, `2` gives one pulse every 500 ms. |
+| `appearance.line.pulseDot.radius` | Positive number | `4` | Radius of the solid dot, in iOS points or Android dp. |
+| `appearance.line.pulseDot.haloRadius` | Positive number | `14` | Maximum radius of the fading halo, in the same units. Set it larger than `radius` to see the halo extend beyond the dot. |
 | `appearance.line.style` | `'solid'` or `'dashed'` | `'solid'` | Shared C++ stroke tessellation style. |
 | `appearance.line.gradient.topColor` | Color | `undefined` | Top color of an optional vertical stroke gradient. |
 | `appearance.line.gradient.bottomColor` | Color | `undefined` | Bottom color of an optional vertical stroke gradient. |
+
+The same pulse options are available on the main area and baseline series. Set `appearance.area.pulseDot` to inherit the area outline color. Set `appearance.baseline.pulseDot` to inherit `topLineColor` at or above the base and `bottomLineColor` below it. An explicit `pulseDot.color` overrides both colors.
 
 ### Area
 
@@ -370,6 +377,7 @@ The hollow outline uses the same native thickness as the wick.
     area: {
       width: 2,
       color: '#2E90F5',
+      pulseDot: { enabled: true },
       fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
     },
   }}

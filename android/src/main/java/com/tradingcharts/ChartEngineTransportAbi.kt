@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 6
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 7
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v6"
+  const val STRING_MARKER = "TradingCharts.Series.v7"
 
   object NumberIndex {
     const val VERSION = 0
