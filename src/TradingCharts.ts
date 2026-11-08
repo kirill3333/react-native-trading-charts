@@ -277,6 +277,15 @@ export function createTradingCharts(
       nativeTradingCharts.removeSeries(chartId, seriesId);
     },
 
+    setSeriesLegendVisible(chartId: string, seriesId: string, visible: boolean) {
+      assertChartId(chartId);
+      assertIdentifier(seriesId, 'seriesId');
+      if (visible !== true && visible !== false) {
+        throw new TypeError('visible must be a boolean');
+      }
+      nativeTradingCharts.setSeriesLegendVisible(chartId, seriesId, visible);
+    },
+
     setPaneHeight(chartId: string, paneId: string, heightWeight: number) {
       assertChartId(chartId);
       assertIdentifier(paneId, 'paneId');

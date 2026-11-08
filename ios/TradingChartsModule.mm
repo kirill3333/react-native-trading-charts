@@ -82,6 +82,10 @@ RCT_EXPORT_MODULE(TradingCharts)
   [[TradingChartsRegistry shared] removeSeries:seriesId chartId:chartId];
 }
 
+- (void)setSeriesLegendVisible:(NSString *)chartId seriesId:(NSString *)seriesId visible:(BOOL)visible {
+  [[TradingChartsRegistry shared] setSeriesLegendVisible:seriesId visible:visible chartId:chartId];
+}
+
 - (void)setPaneHeight:(NSString *)chartId
                paneId:(NSString *)paneId
          heightWeight:(double)heightWeight {

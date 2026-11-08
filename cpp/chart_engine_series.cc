@@ -287,6 +287,20 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   return UpdateStatus::kApplied;
 }
 
+bool ChartEngine::SetSeriesLegendVisible(const std::string& series_id,
+                                         bool visible) {
+  MutationScope mutation(*this);
+  SeriesData* series = FindSeriesLocked(series_id);
+  if (series == nullptr || !IsDerivedOhlcvSource(series->config.source) ||
+      series->config.source == SeriesSource::kOhlcvSar ||
+      series->config.legend_visible == visible) {
+    return false;
+  }
+  mutation.OverlayChanged();
+  series->config.legend_visible = visible;
+  return true;
+}
+
 bool ChartEngine::RemoveSeries(const std::string& series_id) {
   if (series_id.empty() || series_id == "main") {
     return false;

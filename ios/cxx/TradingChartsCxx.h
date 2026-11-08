@@ -58,6 +58,9 @@ class ChartEngineHandle {
                                 bool histogram) {
     return engine_->UpdateSeriesData(series_id, values, value_count, histogram);
   }
+  bool SetSeriesLegendVisible(const std::string& series_id, bool visible) {
+    return engine_->SetSeriesLegendVisible(series_id, visible);
+  }
   bool SetPaneHeight(const std::string& pane_id, double height_weight) {
     return engine_->SetPaneHeight(pane_id, height_weight);
   }

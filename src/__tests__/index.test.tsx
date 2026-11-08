@@ -19,6 +19,7 @@ const mockNativeModule = {
   prependSeriesData: jest.fn<NativeTradingChartsSpec['prependSeriesData']>(),
   updateSeriesData: jest.fn<NativeTradingChartsSpec['updateSeriesData']>(),
   removeSeries: jest.fn<NativeTradingChartsSpec['removeSeries']>(),
+  setSeriesLegendVisible: jest.fn<NativeTradingChartsSpec['setSeriesLegendVisible']>(),
   setPaneHeight: jest.fn<NativeTradingChartsSpec['setPaneHeight']>(),
   setPriceLine: jest.fn<NativeTradingChartsSpec['setPriceLine']>(),
   removePriceLine: jest.fn<NativeTradingChartsSpec['removePriceLine']>(),
@@ -294,6 +295,7 @@ describe('TradingCharts data API', () => {
     expect(secondCall[0]).toBe('chart');
     expect(JSON.parse(secondCall[1])).toEqual({
       seriesId: 'volume',
+      legendVisible: true,
       type: 'histogram',
       paneId: 'volume',
       priceScaleId: 'volume',
@@ -334,6 +336,15 @@ describe('TradingCharts data API', () => {
     });
   });
 
+  it('forwards legend controls for a chart before mounting its view', () => {
+    TradingCharts.setSeriesLegendVisible('pending-chart', 'sma', false);
+    expect(mockNativeModule.setSeriesLegendVisible).toHaveBeenCalledWith(
+      'pending-chart',
+      'sma',
+      false
+    );
+  });
+
   it('normalizes an imperative derived RSI series', () => {
     TradingCharts.addSeries('chart', {
       seriesId: 'rsi',
@@ -346,6 +357,7 @@ describe('TradingCharts data API', () => {
     const call = mockNativeModule.addSeries.mock.calls[0]!;
     expect(JSON.parse(call[1])).toEqual({
       seriesId: 'rsi',
+      legendVisible: true,
       type: 'line',
       paneId: 'rsi',
       priceScaleId: 'rsi',
@@ -370,6 +382,7 @@ describe('TradingCharts data API', () => {
 
     expect(JSON.parse(mockNativeModule.addSeries.mock.calls[0]![1])).toEqual({
       seriesId: 'macd',
+      legendVisible: true,
       type: 'macd',
       paneId: 'macd',
       priceScaleId: 'macd',
@@ -447,6 +460,7 @@ describe('TradingCharts data API', () => {
 
     expect(JSON.parse(mockNativeModule.addSeries.mock.calls[0]![1])).toEqual({
       seriesId: 'sma-20',
+      legendVisible: true,
       type: 'line',
       paneId: 'main',
       priceScaleId: 'main',
@@ -461,6 +475,7 @@ describe('TradingCharts data API', () => {
     });
     expect(JSON.parse(mockNativeModule.addSeries.mock.calls[1]![1])).toEqual({
       seriesId: 'ema-50',
+      legendVisible: true,
       type: 'line',
       paneId: 'main',
       priceScaleId: 'main',
@@ -935,6 +950,7 @@ describe('chart config', () => {
 
     expect(resolved.additionalSeries[0]).toEqual({
       seriesId: 'macd',
+      legendVisible: true,
       type: 'macd',
       paneId: 'macd',
       priceScaleId: 'macd',
@@ -2295,6 +2311,7 @@ it('sends normalized BOLL options through the imperative API', () => {
         stdDevMultiplier: 1.5,
         valueSource: 'close',
       },
+      legendVisible: true,
       visible: true,
     })
   );

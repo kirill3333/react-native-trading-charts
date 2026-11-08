@@ -739,6 +739,7 @@ private fun seriesConfig(
           type = type,
           paneId = json.getString("paneId"),
           priceScaleId = json.getString("priceScaleId"),
+          legendVisible = json.optBoolean("legendVisible", true),
           visible = json.optBoolean("visible", true),
           sourceType = source?.optString("type", "data") ?: "data",
           sourceSeriesId = source?.optString("seriesId", "") ?: "",

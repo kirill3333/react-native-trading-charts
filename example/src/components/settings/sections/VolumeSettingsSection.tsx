@@ -1,6 +1,7 @@
 import { buildVolumeAppearance } from '../../../chartSettingsConfig';
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { HexColorSetting } from '../HexColorSetting';
+import { LegendSetting } from '../LegendSetting';
 import { SettingsSection } from '../SettingsSection';
 
 export function VolumeSettingsSection() {
@@ -12,6 +13,7 @@ export function VolumeSettingsSection() {
 
   return (
     <SettingsSection title="Volume">
+      <LegendSetting indicator="volume" />
       <HexColorSetting
         description="Volume bars for rising candles"
         label="Up color"

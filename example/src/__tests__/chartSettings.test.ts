@@ -202,6 +202,7 @@ describe('chart settings', () => {
 
     expect(series).toEqual([
       {
+        legendVisible: true,
         seriesId: 'sma',
         type: 'line',
         paneId: 'main',
@@ -220,6 +221,7 @@ describe('chart settings', () => {
         },
       },
       {
+        legendVisible: true,
         seriesId: 'ema',
         type: 'line',
         paneId: 'main',

@@ -51,12 +51,6 @@ constexpr size_t kRsiBandQuadCount = 1;
 constexpr size_t kRsiBoundaryLineCount = 2;
 constexpr size_t kSolidCrosshairLineCount = 2;
 constexpr double kPercentageScale = 100.0;
-constexpr size_t kRsiLegendValueIndex = 0;
-constexpr size_t kRsiLegendValueCount = 1;
-constexpr size_t kMacdHistogramLegendValueIndex = 0;
-constexpr size_t kMacdLineLegendValueIndex = 1;
-constexpr size_t kMacdSignalLegendValueIndex = 2;
-constexpr size_t kMacdLegendValueCount = 3;
 constexpr size_t kTimeStepCandidateCount = 19;
 
 constexpr double Seconds(double count) {
@@ -269,6 +263,7 @@ class RenderSnapshotBuilder {
     }
     InitializeSnapshot();
     if (!HasDrawableContent()) {
+      BuildIndicatorLegends();
       return snapshot_;
     }
 
@@ -278,7 +273,6 @@ class RenderSnapshotBuilder {
     CalculateYRange();
     CalculateAdditionalPaneRanges();
     BuildPriceLines();
-    BuildIndicatorLegends();
     AddExtrema();
     AddTicks();
     ReserveGeometry();
@@ -293,6 +287,7 @@ class RenderSnapshotBuilder {
     AddCurrentPriceGeometry();
     snapshot_->content_vertices = std::move(content_vertices_);
     AddCrosshair();
+    BuildIndicatorLegends();
     return snapshot_;
   }
 
@@ -324,13 +319,6 @@ class RenderSnapshotBuilder {
     snapshot_->selected_percentages_valid = false;
     snapshot_->active_pane_index = 0;
     snapshot_->crosshair_series_values.clear();
-    for (IndicatorLegend& legend : snapshot_->indicator_legends) {
-      for (size_t index = 0; index < legend.value_count; ++index) {
-        IndicatorLegendValue& value = legend.values[index];
-        value.value = value.latest_value;
-        value.has_value = value.has_latest_value;
-      }
-    }
     pane_y_min_.clear();
     pane_y_max_.clear();
     pane_y_min_.reserve(snapshot_->panes.size());
@@ -340,6 +328,7 @@ class RenderSnapshotBuilder {
       pane_y_max_.push_back(pane.visible_y_max);
     }
     AddCrosshair();
+    BuildIndicatorLegends();
     return true;
   }
 
@@ -1682,121 +1671,116 @@ class RenderSnapshotBuilder {
     }
   }
 
+  template <typename T>
+  static const T* AtTimestamp(const std::vector<T>& data,
+                              std::optional<double> timestamp) {
+    if (!timestamp) {
+      return nullptr;
+    }
+    const size_t index = LowerTimestampBound(data, *timestamp);
+    return index < data.size() && data[index].timestamp == *timestamp
+               ? &data[index]
+               : nullptr;
+  }
+
+  static IndicatorLegendValue LegendValue(const Candle* candle,
+                                          double Candle::* field, Color color) {
+    return {candle ? candle->*field : 0.0, color, candle != nullptr};
+  }
+
+  void BuildMacdLegend(const SeriesData& series,
+                       std::optional<double> timestamp,
+                       IndicatorLegend& legend) const {
+    const SeriesConfig& config = series.config;
+    legend.kind = IndicatorKind::kMacd;
+    legend.fast_period = config.macd_fast_period;
+    legend.slow_period = config.macd_slow_period;
+    legend.signal_period = config.macd_signal_period;
+    legend.value_source = config.line_source;
+    legend.text_color = config.macd_text_color;
+    legend.text_color_set = config.macd_text_color_set;
+    legend.value_count = legend.values.size();
+    const HistogramPoint* point = AtTimestamp(series.histogram, timestamp);
+    legend.values[0] = {
+        point ? point->value : 0.0,
+        point ? MacdHistogramColor(series, static_cast<size_t>(
+                                               point - series.histogram.data()))
+              : config.macd_positive_increasing,
+        point != nullptr};
+    legend.values[1] = LegendValue(AtTimestamp(series.candles, timestamp),
+                                   &Candle::close, config.color);
+    legend.values[2] =
+        LegendValue(AtTimestamp(series.signal_candles, timestamp),
+                    &Candle::close, config.macd_signal_color);
+  }
+
   void BuildIndicatorLegends() {
-    snapshot_->indicator_legends.clear();
+    auto& legends = snapshot_->indicator_legends;
+    legends.clear();
+    std::optional<double> timestamp;
+    if (snapshot_->crosshair_visible) {
+      timestamp = snapshot_->selected_candle.timestamp;
+    } else if (snapshot_->has_visible_candles) {
+      timestamp = input_.candles[snapshot_->last_visible_index].timestamp;
+    }
     for (const SeriesData& series : input_.additional_series) {
-      const std::optional<size_t> pane_index =
-          ValidPaneIndex(series, snapshot_->panes.size());
-      if (!series.config.visible ||
-          (series.config.source != SeriesSource::kOhlcvRsi &&
-           series.config.source != SeriesSource::kOhlcvMacd) ||
-          !pane_index.has_value()) {
+      const SeriesConfig& config = series.config;
+      const auto pane = ValidPaneIndex(series, snapshot_->panes.size());
+      if (!config.visible || !config.legend_visible || !pane) {
         continue;
       }
       IndicatorLegend legend;
-      legend.pane_id = series.config.pane_id;
-      legend.pane_index = *pane_index;
-      if (series.config.source == SeriesSource::kOhlcvRsi) {
-        legend.kind = IndicatorKind::kRsi;
-        legend.period = series.config.rsi_period;
-        legend.text_color = series.config.rsi_text_color;
-        legend.text_color_set = series.config.rsi_text_color_set;
-        legend.value_count = kRsiLegendValueCount;
-        legend.values[kRsiLegendValueIndex].color = series.config.color;
-        if (!series.candles.empty()) {
-          IndicatorLegendValue& value = legend.values[kRsiLegendValueIndex];
-          value.latest_value = series.candles.back().close;
-          value.value = value.latest_value;
-          value.has_latest_value = true;
-          value.has_value = true;
+      legend.pane_index = *pane;
+      legend.pane_id = config.pane_id;
+      legend.value_count = 1;
+      switch (config.source) {
+        case SeriesSource::kOhlcvBoll: {
+          const Candle* candle = AtTimestamp(series.candles, timestamp);
+          legend.kind = IndicatorKind::kBoll;
+          legend.period = config.boll_period;
+          legend.std_dev_multiplier = config.boll_std_dev_multiplier;
+          legend.value_count = legend.values.size();
+          legend.values = {
+              LegendValue(candle, &Candle::high, config.boll_upper.color),
+              LegendValue(candle, &Candle::close, config.boll_middle.color),
+              LegendValue(candle, &Candle::low, config.boll_lower.color)};
+          break;
         }
-      } else {
-        legend.kind = IndicatorKind::kMacd;
-        legend.fast_period = series.config.macd_fast_period;
-        legend.slow_period = series.config.macd_slow_period;
-        legend.signal_period = series.config.macd_signal_period;
-        legend.value_source = series.config.line_source;
-        legend.text_color = series.config.macd_text_color;
-        legend.text_color_set = series.config.macd_text_color_set;
-        legend.value_count = kMacdLegendValueCount;
-        legend.values[kMacdLineLegendValueIndex].color = series.config.color;
-        legend.values[kMacdSignalLegendValueIndex].color =
-            series.config.macd_signal_color;
-        if (!series.candles.empty()) {
-          IndicatorLegendValue& value =
-              legend.values[kMacdLineLegendValueIndex];
-          value.latest_value = series.candles.back().close;
-          value.value = value.latest_value;
-          value.has_latest_value = true;
-          value.has_value = true;
+        case SeriesSource::kOhlcvSma:
+        case SeriesSource::kOhlcvEma:
+          legend.kind = config.source == SeriesSource::kOhlcvSma
+                            ? IndicatorKind::kSma
+                            : IndicatorKind::kEma;
+          legend.period = config.moving_average_period;
+          legend.values[0] = LegendValue(AtTimestamp(series.candles, timestamp),
+                                         &Candle::close, config.color);
+          break;
+        case SeriesSource::kOhlcvVolume: {
+          const auto* source = SourceCandles(series);
+          const Candle* candle =
+              source ? AtTimestamp(*source, timestamp) : nullptr;
+          legend.kind = IndicatorKind::kVolume;
+          legend.values[0] = LegendValue(
+              candle, &Candle::volume,
+              candle && candle->close < candle->open ? config.down : config.up);
+          break;
         }
-        if (!series.signal_candles.empty()) {
-          IndicatorLegendValue& value =
-              legend.values[kMacdSignalLegendValueIndex];
-          value.latest_value = series.signal_candles.back().close;
-          value.value = value.latest_value;
-          value.has_latest_value = true;
-          value.has_value = true;
-        }
-        if (!series.histogram.empty()) {
-          IndicatorLegendValue& value =
-              legend.values[kMacdHistogramLegendValueIndex];
-          value.latest_value = series.histogram.back().value;
-          value.value = value.latest_value;
-          value.has_latest_value = true;
-          value.has_value = true;
-          value.color = MacdHistogramColor(series, series.histogram.size() - 1);
-        }
+        case SeriesSource::kOhlcvRsi:
+          legend.kind = IndicatorKind::kRsi;
+          legend.period = config.rsi_period;
+          legend.text_color = config.rsi_text_color;
+          legend.text_color_set = config.rsi_text_color_set;
+          legend.values[0] = LegendValue(AtTimestamp(series.candles, timestamp),
+                                         &Candle::close, config.color);
+          break;
+        case SeriesSource::kOhlcvMacd:
+          BuildMacdLegend(series, timestamp, legend);
+          break;
+        case SeriesSource::kData:
+        case SeriesSource::kOhlcvSar:
+          continue;
       }
-      snapshot_->indicator_legends.push_back(std::move(legend));
-    }
-  }
-
-  void SelectIndicatorLegendValues(double timestamp) {
-    size_t legend_index = 0;
-    for (const SeriesData& series : input_.additional_series) {
-      const std::optional<size_t> pane_index =
-          ValidPaneIndex(series, snapshot_->panes.size());
-      if (!series.config.visible ||
-          (series.config.source != SeriesSource::kOhlcvRsi &&
-           series.config.source != SeriesSource::kOhlcvMacd) ||
-          !pane_index.has_value()) {
-        continue;
-      }
-      IndicatorLegend& legend = snapshot_->indicator_legends[legend_index++];
-      const auto select_candle = [&](const std::vector<Candle>& values,
-                                     size_t value_index) {
-        const auto point =
-            std::lower_bound(values.begin(), values.end(), timestamp,
-                             [](const Candle& candle, double value) {
-                               return candle.timestamp < value;
-                             });
-        IndicatorLegendValue& value = legend.values[value_index];
-        value.has_value =
-            point != values.end() && point->timestamp == timestamp;
-        value.value = value.has_value ? point->close : 0.0;
-      };
-      if (series.config.source == SeriesSource::kOhlcvRsi) {
-        select_candle(series.candles, kRsiLegendValueIndex);
-        continue;
-      }
-      select_candle(series.candles, kMacdLineLegendValueIndex);
-      select_candle(series.signal_candles, kMacdSignalLegendValueIndex);
-      const auto point = std::lower_bound(
-          series.histogram.begin(), series.histogram.end(), timestamp,
-          [](const HistogramPoint& item, double value) {
-            return item.timestamp < value;
-          });
-      IndicatorLegendValue& value =
-          legend.values[kMacdHistogramLegendValueIndex];
-      value.has_value =
-          point != series.histogram.end() && point->timestamp == timestamp;
-      value.value = value.has_value ? point->value : 0.0;
-      if (value.has_value) {
-        value.color =
-            MacdHistogramColor(series, static_cast<size_t>(std::distance(
-                                           series.histogram.begin(), point)));
-      }
+      legends.push_back(std::move(legend));
     }
   }
 
@@ -1817,13 +1801,8 @@ class RenderSnapshotBuilder {
 
       if (series.config.source == SeriesSource::kOhlcvBoll) {
         selected.kind = CrosshairSeriesValueKind::kBoll;
-        const auto point =
-            std::lower_bound(series.candles.begin(), series.candles.end(),
-                             timestamp, [](const Candle& candle, double value) {
-                               return candle.timestamp < value;
-                             });
-        selected.has_value =
-            point != series.candles.end() && point->timestamp == timestamp;
+        const auto* point = AtTimestamp(series.candles, timestamp);
+        selected.has_value = point != nullptr;
         if (selected.has_value) {
           selected.upper = point->high;
           selected.middle = point->close;
@@ -1834,83 +1813,40 @@ class RenderSnapshotBuilder {
       }
       if (series.config.source == SeriesSource::kOhlcvMacd) {
         selected.kind = CrosshairSeriesValueKind::kMacd;
-        const auto macd =
-            std::lower_bound(series.candles.begin(), series.candles.end(),
-                             timestamp, [](const Candle& candle, double value) {
-                               return candle.timestamp < value;
-                             });
-        selected.has_macd =
-            macd != series.candles.end() && macd->timestamp == timestamp;
-        selected.macd = selected.has_macd ? macd->close : 0.0;
-        const auto signal = std::lower_bound(
-            series.signal_candles.begin(), series.signal_candles.end(),
-            timestamp, [](const Candle& candle, double value) {
-              return candle.timestamp < value;
-            });
-        selected.has_signal = signal != series.signal_candles.end() &&
-                              signal->timestamp == timestamp;
-        selected.signal = selected.has_signal ? signal->close : 0.0;
-        const auto histogram = std::lower_bound(
-            series.histogram.begin(), series.histogram.end(), timestamp,
-            [](const HistogramPoint& point, double value) {
-              return point.timestamp < value;
-            });
-        selected.has_histogram = histogram != series.histogram.end() &&
-                                 histogram->timestamp == timestamp;
-        selected.histogram = selected.has_histogram ? histogram->value : 0.0;
+        const auto* macd = AtTimestamp(series.candles, timestamp);
+        const auto* signal = AtTimestamp(series.signal_candles, timestamp);
+        const auto* histogram = AtTimestamp(series.histogram, timestamp);
+        selected.has_macd = macd != nullptr;
+        selected.has_signal = signal != nullptr;
+        selected.has_histogram = histogram != nullptr;
+        selected.macd = macd ? macd->close : 0.0;
+        selected.signal = signal ? signal->close : 0.0;
+        selected.histogram = histogram ? histogram->value : 0.0;
         snapshot_->crosshair_series_values.push_back(std::move(selected));
         continue;
       }
 
       if (series.config.source == SeriesSource::kOhlcvVolume) {
         selected.kind = CrosshairSeriesValueKind::kScalar;
-        const std::vector<Candle>* source = nullptr;
-        if (series.source_binding.kind == SeriesSourceBindingKind::kMain) {
-          source = &input_.candles;
-        } else if (series.source_binding.kind ==
-                       SeriesSourceBindingKind::kAdditional &&
-                   series.source_binding.additional_series_index <
-                       input_.additional_series.size()) {
-          source = &input_
-                        .additional_series[series.source_binding
-                                               .additional_series_index]
-                        .candles;
-        }
-        if (source != nullptr) {
-          const auto point =
-              std::lower_bound(source->begin(), source->end(), timestamp,
-                               [](const Candle& item, double value) {
-                                 return item.timestamp < value;
-                               });
-          selected.has_value =
-              point != source->end() && point->timestamp == timestamp;
-          selected.value = selected.has_value ? point->volume : 0.0;
-        }
+        const auto* source = SourceCandles(series);
+        const auto* point = source ? AtTimestamp(*source, timestamp) : nullptr;
+        selected.has_value = point != nullptr;
+        selected.value = point ? point->volume : 0.0;
         snapshot_->crosshair_series_values.push_back(std::move(selected));
         continue;
       }
 
       if (series.config.type == SeriesType::kHistogram) {
         selected.kind = CrosshairSeriesValueKind::kScalar;
-        const auto point = std::lower_bound(
-            series.histogram.begin(), series.histogram.end(), timestamp,
-            [](const HistogramPoint& item, double value) {
-              return item.timestamp < value;
-            });
-        selected.has_value =
-            point != series.histogram.end() && point->timestamp == timestamp;
+        const auto* point = AtTimestamp(series.histogram, timestamp);
+        selected.has_value = point != nullptr;
         selected.value = selected.has_value ? point->value : 0.0;
         snapshot_->crosshair_series_values.push_back(std::move(selected));
         continue;
       }
 
-      const auto candle =
-          std::lower_bound(series.candles.begin(), series.candles.end(),
-                           timestamp, [](const Candle& item, double value) {
-                             return item.timestamp < value;
-                           });
-      selected.has_value =
-          candle != series.candles.end() && candle->timestamp == timestamp;
+      const auto* candle = AtTimestamp(series.candles, timestamp);
+      selected.has_value = candle != nullptr;
       if (series.config.source == SeriesSource::kData &&
           !IsLineLikeSeries(series.config.type)) {
         selected.kind = CrosshairSeriesValueKind::kOhlc;
@@ -1978,7 +1914,6 @@ class RenderSnapshotBuilder {
 
     snapshot_->crosshair_visible = true;
     snapshot_->selected_candle = *nearest;
-    SelectIndicatorLegendValues(nearest->timestamp);
     SelectCrosshairSeriesValues(nearest->timestamp);
     snapshot_->crosshair_x =
         std::clamp(ProjectX(CandleX(nearest_index)), snapshot_->plot.left,

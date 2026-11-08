@@ -6,8 +6,8 @@
     "android": "react-native run-android --active-arch-only",
     "ios": "react-native run-ios",
     "start": "react-native start",
-    "build:android": "react-native build-android --extra-params \"--no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a\"",
-    "build:ios": "react-native build-ios --mode Debug",
+    "build:android": "react-native build-android --extra-params \"--build-cache --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a\"",
+    "build:ios": "react-native build-ios --force-pods --mode Debug --extra-params \"ARCHS=$(uname -m) COMPILATION_CACHE_ENABLE_CACHING=YES -showBuildTimingSummary\"",
     "lint": "yarn --cwd .. oxlint example/src"
   },
   "dependencies": {

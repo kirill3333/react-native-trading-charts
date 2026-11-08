@@ -594,7 +594,7 @@ void TestRealHistoryStateMutationContract() {
     assert(engine.AddSeries(macd) == UpdateStatus::kApplied);
   });
   const auto indicators = engine.Snapshot();
-  assert(indicators->indicator_legends.size() == 2);
+  assert(indicators->indicator_legends.size() == 5);
   ExpectContentMutation(engine,
                         [&] { assert(engine.RemoveSeries("comparison")); });
   ExpectNoMutation(engine, [&] { assert(!engine.RemoveSeries("comparison")); });

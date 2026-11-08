@@ -142,9 +142,6 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
 
-    env:
-      TURBO_CACHE_DIR: .turbo/android
-
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -152,60 +149,33 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Cache turborepo for Android
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: ${{ env.TURBO_CACHE_DIR }}
-          key: ${{ runner.os }}-turborepo-android-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-turborepo-android-
-
-      - name: Check turborepo cache for Android
-        run: |
-          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:android').cache.status")
-
-          if [[ $TURBO_CACHE_STATUS == "HIT" ]]; then
-            echo "turbo_cache_hit=1" >> $GITHUB_ENV
-          fi
-
       - name: Install JDK
-        if: env.turbo_cache_hit != 1
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Finalize Android SDK
-        if: env.turbo_cache_hit != 1
-        run: |
-          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
-
-
-      - name: Cache Gradle
-        if: env.turbo_cache_hit != 1
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      - name: Restore Android build result
+        id: build-cache
+        uses: ./.github/actions/native-build-cache
         with:
-          path: |
-            ~/.gradle/wrapper
-            ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          task: build:android
+
+      - name: Set up Gradle dependency and build caches
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+        with:
+          cache-read-only: false
+
+      - name: Finalize Android SDK
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: /bin/bash -c 'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null'
 
       - name: Build example for Android
-        env:
-          JAVA_OPTS: "-XX:MaxHeapSize=6g"
-        run: |
-          yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+        run: yarn turbo run build:android --env-mode=loose --output-logs=new-only --log-order=stream
 
   build-ios:
     runs-on: macos-latest
-
-    env:
-      XCODE_VERSION: 26
-      TURBO_CACHE_DIR: .turbo/ios
-      RCT_USE_RN_DEP: 1
-      RCT_USE_PREBUILT_RNCORE: 1
 
     steps:
       - name: Checkout
@@ -214,36 +184,41 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Cache turborepo for iOS
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: ${{ env.TURBO_CACHE_DIR }}
-          key: ${{ runner.os }}-turborepo-ios-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-turborepo-ios-
-
-      - name: Check turborepo cache for iOS
-        run: |
-          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:ios').cache.status")
-
-          if [[ $TURBO_CACHE_STATUS == "HIT" ]]; then
-            echo "turbo_cache_hit=1" >> $GITHUB_ENV
-          fi
-
-      - name: Use appropriate Xcode version
-        if: env.turbo_cache_hit != 1
+      - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
         with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+          xcode-version: '26'
 
-      - name: Install cocoapods
-        if: env.turbo_cache_hit != 1 && steps.cocoapods-cache.outputs.cache-hit != 'true'
-        run: |
-          cd example
-          bundle install
-          bundle exec pod repo update --verbose
-          bundle exec pod install --project-directory=ios
+      - name: Restore iOS build result
+        id: build-cache
+        uses: ./.github/actions/native-build-cache
+        with:
+          task: build:ios
+
+      - name: Cache Ruby gems
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: example/vendor/bundle
+          key: ${{ runner.os }}-${{ runner.arch }}-gems-${{ steps.build-cache.outputs.image-version }}-${{ hashFiles('example/Gemfile*', 'example/.bundle/config') }}
+
+      - name: Cache React Native and Hermes downloads
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            example/ios/Pods/ReactNativeCore-artifacts
+            example/ios/Pods/ReactNativeDependencies-artifacts
+            example/ios/Pods/hermes-engine-artifacts
+          key: ${{ runner.os }}-rn-archives-${{ hashFiles('example/ios/Podfile.lock', 'yarn.lock') }}
+
+      # Reuse compiled modules and object files even when chart sources change.
+      - name: Cache Xcode compilations
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: xcode-cas-${{ runner.arch }}-${{ steps.build-cache.outputs.image-version }}-${{ hashFiles('example/ios/Podfile.lock', 'yarn.lock') }}
 
       - name: Build example for iOS
-        run: |
-          yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+        run: yarn turbo run build:ios --env-mode=loose --output-logs=new-only --log-order=stream

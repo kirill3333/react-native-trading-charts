@@ -13,6 +13,18 @@ const boll: BollSeriesOptions = {
 };
 
 describe('BOLL', () => {
+  it('can hide only the legend through either configuration path', () => {
+    const options = { ...boll, legendVisible: false };
+    expect(resolveAdditionalSeriesOptions(options)).toMatchObject({
+      visible: true,
+      legendVisible: false,
+    });
+    expect(
+      resolveChartConfig({ chartId: 'chart', additionalSeries: [options] })
+        .additionalSeries[0]
+    ).toMatchObject({ visible: true, legendVisible: false });
+  });
+
   it('normalizes defaults and preserves component styles for both APIs', () => {
     const options: BollSeriesOptions = {
       ...boll,

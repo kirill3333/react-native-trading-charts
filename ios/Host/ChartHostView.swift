@@ -245,6 +245,14 @@ public final class ChartHostView: UIView {
     }
   }
 
+  @objc(setSeriesLegendVisible:visible:)
+  public func setSeriesLegendVisible(_ seriesId: String, visible: Bool) {
+    if engine.setSeriesLegendVisible(seriesId, visible: visible) {
+      overlay.invalidateLegendLayout()
+      requestFrame()
+    }
+  }
+
   @objc(setPaneHeight:weight:)
   public func setPaneHeight(_ paneId: String, weight: Double) {
     if engine.setPaneHeight(paneId, weight: weight) { requestFrame() }

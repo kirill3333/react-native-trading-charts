@@ -572,6 +572,12 @@ Derived volume follows its OHLC source automatically when history, candle, or
 trade updates arrive. Standalone series use `setSeriesData`,
 `prependSeriesData`, and `updateSeriesData`.
 
+### Indicator legends
+
+SMA, EMA, BOLL, OHLCV volume, RSI and MACD each show a native legend in their pane by default. Each moving average shows its period and value. BOLL lists the upper, middle and lower bands in their line colors. Volume uses the bar color and the pane’s volume formatter.
+
+Every legend follows the selected candle, or the last visible main candle when the crosshair is inactive. An em dash marks a missing value at that exact timestamp. Set `legendVisible: false` on a series to hide its label while keeping its plot and crosshair data. To toggle a mounted series, call `TradingCharts.setSeriesLegendVisible(chartId, seriesId, visible)`.
+
 ### Simple and Exponential Moving Averages (SMA/EMA)
 
 SMA and EMA are derived line series calculated by the shared C++ engine. They
@@ -679,7 +685,7 @@ const panes = [
 `period` defaults to `14`; oversold/overbought default to `30/70`. The first
 value is available after `period + 1` candles. An RSI pane is fixed to the
 `0–100` domain and ignores vertical scale gestures. Its native header shows the
-RSI value under the crosshair, or the latest value when the crosshair is not
+RSI value under the crosshair, or the last visible candle’s value when the crosshair is not
 active; warm-up and unmatched timestamps display `—`. Multiple RSI series may
 share a pane, with one header row per visible series. Derived-to-derived source
 chains are intentionally rejected.
@@ -770,7 +776,7 @@ strong color for its sign.
 
 The native legend reads `MACD 12 26 CLOSE 9`, followed by histogram, MACD and
 signal values in their component colors. It shows exact values at the selected
-crosshair timestamp, latest values without a crosshair, and `—` for unavailable
+crosshair timestamp, last visible candle values without a crosshair, and `—` for unavailable
 warm-up components. MACD must use a non-main pane and cannot share that pane
 with RSI. Its source must be `main` or another data-backed OHLC series;
 derived-to-derived sources are rejected. Data mutation commands are rejected
@@ -1060,6 +1066,7 @@ All commands use the stable `chartId` of a `TradingChartsView`.
 | `prependSeriesData` | `chartId, seriesId, points[]` | `void` | Prepends older runtime series data. |
 | `updateSeriesData` | `chartId, seriesId, point` | `void` | Updates the last runtime point or appends one. |
 | `removeSeries` | `chartId, seriesId` | `void` | Removes a non-`main` series. |
+| `setSeriesLegendVisible` | `chartId, seriesId, visible` | `void` | Shows or hides one indicator legend. |
 | `setPaneHeight` | `chartId, paneId, heightWeight` | `void` | Sets a positive pane height weight. |
 | `setHistory` | `chartId, OhlcCandle[]` | `void` | Replaces main history. |
 | `prependHistory` | `chartId, OhlcCandle[]` | `void` | Prepends main history. |

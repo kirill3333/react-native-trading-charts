@@ -1371,6 +1371,7 @@ void AppendBollGeometry(const SeriesGeometryInput& input,
   const auto append = [&](const IndicatorLineStyle& style,
                           OhlcValueSource source) {
     ChartConfig config = input.config;
+    config.series_type = SeriesType::kLine;
     config.line_source = source;
     config.line_width = style.width;
     config.line = style.color;

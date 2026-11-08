@@ -52,6 +52,7 @@ class ChartEngineTransportAbiTest {
                 priceScaleId = "main",
                 sourceType = "ohlcvBoll",
                 sourceSeriesId = "main",
+                legendVisible = false,
                 bollPeriod = UInt.MAX_VALUE.toLong(),
                 bollStdDevMultiplier = 1.25,
                 bollFillEnabled = false,
@@ -76,6 +77,7 @@ class ChartEngineTransportAbiTest {
         payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_PERIOD],
         0.0,
     )
+    assertEquals(0.0, payload.numbers[SeriesTransportAbi.NumberIndex.LEGEND_VISIBLE], 0.0)
     assertEquals(1.25, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_STD_DEV_MULTIPLIER], 0.0)
     assertEquals(0.0, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_FILL_ENABLED], 0.0)
     assertEquals(3.0, payload.numbers[SeriesTransportAbi.NumberIndex.BOLL_UPPER_WIDTH], 0.0)
@@ -326,11 +328,18 @@ class ChartEngineTransportAbiTest {
         )
 
     val legend = payload.indicatorLegendRecord(0)
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.KIND] = 2.0
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.STD_DEV_MULTIPLIER] = 2.5
+    values[offset + SnapshotTransportAbi.IndicatorLegendIndex.PERIOD] = UInt.MAX_VALUE.toDouble()
+    val boll = payload.indicatorLegendRecord(0)
+    assertEquals(UInt.MAX_VALUE.toLong(), boll.period)
+    assertEquals(2, boll.kind)
+    assertEquals(2.5, boll.stdDevMultiplier, 0.0)
     assertEquals(2, legend.paneIndex)
     assertEquals(1, legend.kind)
-    assertEquals(12, legend.fastPeriod)
-    assertEquals(26, legend.slowPeriod)
-    assertEquals(9, legend.signalPeriod)
+    assertEquals(12L, legend.fastPeriod)
+    assertEquals(26L, legend.slowPeriod)
+    assertEquals(9L, legend.signalPeriod)
     assertEquals(3, legend.valueSource)
     assertEquals(0x6619334c, legend.textColor)
     assertEquals(true, legend.textColorSet)
@@ -345,13 +354,13 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            44,
+            45,
             156,
             5,
             3,
             2,
             14,
-            31,
+            32,
             20,
         )
     )

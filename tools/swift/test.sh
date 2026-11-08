@@ -19,6 +19,8 @@ xcrun swiftc -swift-version 5 -D TRADING_CHARTS_EXAMPLE_DIAGNOSTICS -warnings-as
   "$repo_root/ios/Rendering/ChartPresentationDiagnostics.swift" \
   "$repo_root/example/ios/TradingChartsExample/Performance/PerformanceMeasurements.swift" \
   "$repo_root/example/ios/TradingChartsExample/Performance/PerformanceThreadReader.swift" \
+  "$repo_root/ios/Registry/TradingChartsRegistry.swift" \
+  "$repo_root/tools/swift/LegendRegistryTests.swift" \
   "$repo_root/tools/swift/PerformanceTests.swift" \
   "$repo_root/tools/swift/main.swift" \
   -o "$test_dir/buffer-tests"
