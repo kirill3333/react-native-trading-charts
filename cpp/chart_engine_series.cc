@@ -138,10 +138,7 @@ void ChartEngine::RefreshDerivedDependentsLocked(
     MutationScope& mutation) {
   for (SeriesData& series : additional_series_) {
     const SeriesSource source = series.config.source;
-    if ((source == SeriesSource::kOhlcvRsi ||
-         source == SeriesSource::kOhlcvMacd ||
-         source == SeriesSource::kOhlcvBoll ||
-         source == SeriesSource::kOhlcvSar || IsMovingAverageSource(source)) &&
+    if (IsDerivedOhlcvSource(source) && source != SeriesSource::kOhlcvVolume &&
         (series.config.source_series_id.empty()
              ? source_series_id == "main"
              : series.config.source_series_id == source_series_id)) {
@@ -162,12 +159,12 @@ void ChartEngine::RebuildAllDerivedSeriesLocked(MutationScope& mutation) {
   }
 }
 
-bool ChartEngine::PaneHasRsiLocked(size_t pane_index) const {
+bool ChartEngine::PaneHasFixedScaleLocked(size_t pane_index) const {
   return std::any_of(additional_series_.begin(), additional_series_.end(),
                      [&](const SeriesData& series) {
                        return series.pane_index.has_value() &&
                               *series.pane_index == pane_index &&
-                              series.config.source == SeriesSource::kOhlcvRsi;
+                              IsFixedOscillator(series.config.source);
                      });
 }
 
@@ -185,6 +182,22 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       !config.series_id.empty() && config.series_id != "main" &&
       !config.pane_id.empty() && !config.price_scale_id.empty();
   if (!has_valid_identifiers || !IsSupportedSeriesType(config.type)) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (RequiresDedicatedPane(config.source) &&
+      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
+       config.source_series_id == config.series_id)) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (config.source == SeriesSource::kOhlcvWilliamsR &&
+      (config.williams_period == 0 ||
+       !(config.williams_oversold >= -100.0 &&
+         config.williams_oversold < config.williams_overbought &&
+         config.williams_overbought <= 0.0))) {
+    return UpdateStatus::kInvalidInput;
+  }
+  if (config.source == SeriesSource::kOhlcvKdj &&
+      (config.kdj_period == 0 || config.kdj_m1 == 0 || config.kdj_m2 == 0)) {
     return UpdateStatus::kInvalidInput;
   }
   if (config.source == SeriesSource::kOhlcvRsi &&
@@ -228,8 +241,20 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   }
   const size_t pane_index =
       static_cast<size_t>(std::distance(panes_.begin(), pane));
+  if (RequiresDedicatedPane(normalized.source) && pane == panes_.begin()) {
+    return UpdateStatus::kInvalidInput;
+  }
+  for (const auto& other : additional_series_) {
+    if (other.config.pane_id == normalized.pane_id &&
+        other.config.series_id != normalized.series_id &&
+        other.config.source != normalized.source &&
+        (RequiresDedicatedPane(normalized.source) ||
+         RequiresDedicatedPane(other.config.source))) {
+      return UpdateStatus::kInvalidInput;
+    }
+  }
   if (normalized.source == SeriesSource::kOhlcvMacd &&
-      (pane == panes_.begin() || PaneHasRsiLocked(pane_index))) {
+      (pane == panes_.begin() || PaneHasFixedScaleLocked(pane_index))) {
     return UpdateStatus::kInvalidInput;
   }
   if (normalized.source == SeriesSource::kOhlcvRsi &&
@@ -257,7 +282,8 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       }
     }
   }
-  if (normalized.source == SeriesSource::kOhlcvMacd &&
+  if ((normalized.source == SeriesSource::kOhlcvMacd ||
+       RequiresDedicatedPane(normalized.source)) &&
       normalized.source_series_id != "main") {
     const SeriesData* source = FindSeriesLocked(normalized.source_series_id);
     if (source == nullptr) {

@@ -127,6 +127,18 @@ export function ChartControlMenu({
                   onValueChange={controls.toggleRsi}
                 />
                 <SettingSwitch
+                  label="Williams %R"
+                  description="Williams percent range"
+                  value={controls.showWilliamsR}
+                  onValueChange={controls.toggleWilliamsR}
+                />
+                <SettingSwitch
+                  label="KDJ"
+                  description="K, D and J oscillator"
+                  value={controls.showKdj}
+                  onValueChange={controls.toggleKdj}
+                />
+                <SettingSwitch
                   label="MACD"
                   description="Moving average convergence / divergence"
                   value={controls.showMacd}

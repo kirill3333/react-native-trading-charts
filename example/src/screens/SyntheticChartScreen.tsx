@@ -26,6 +26,8 @@ export function SyntheticChartScreen() {
   );
   const showVolume = useChartControlsStore((state) => state.showVolume);
   const showRsi = useChartControlsStore((state) => state.showRsi);
+  const showWilliamsR = useChartControlsStore((state) => state.showWilliamsR);
+  const showKdj = useChartControlsStore((state) => state.showKdj);
   const showMacd = useChartControlsStore((state) => state.showMacd);
   const feed = useSyntheticDataFeed(chartId, settings);
   const precision = Math.min(
@@ -74,6 +76,8 @@ export function SyntheticChartScreen() {
         minMove={10 ** -precision}
         showVolume={showVolume}
         showRsi={showRsi}
+        showWilliamsR={showWilliamsR}
+        showKdj={showKdj}
         showMacd={showMacd}
         allTimeExtremes={feed.allTimeExtremes}
       />

@@ -409,6 +409,84 @@ void RebuildMacdSeries(SeriesData& series, const std::vector<Candle>& source,
   }
 }
 
+// KDJ samples use the existing line geometry storage. High, close and low
+// carry K, D and J respectively and need not be ordered as OHLC prices.
+void RebuildRangeOscillator(SeriesData& series,
+                            const std::vector<Candle>* source,
+                            size_t first_changed) {
+  const bool kdj = series.config.source == SeriesSource::kOhlcvKdj;
+  const size_t period =
+      kdj ? series.config.kdj_period : series.config.williams_period;
+  const size_t warmup = kdj ? 0 : period - 1;
+  if (!source || source->size() <= warmup) {
+    series.oscillator_window.reset();
+    series.candles.clear();
+    return;
+  }
+  const size_t start =
+      std::clamp(first_changed, warmup,
+                 std::min(source->size(), warmup + series.candles.size()));
+  series.candles.resize(start - warmup);
+  if (start == source->size()) {
+    return;
+  }
+  double k = series.candles.empty() ? 50.0 : series.candles.back().high;
+  double d = series.candles.empty() ? 50.0 : series.candles.back().close;
+  if (!series.oscillator_window ||
+      first_changed < series.oscillator_window->next_index) {
+    series.oscillator_window.emplace();
+    series.oscillator_window->next_index =
+        start + 1 > period ? start + 1 - period : 0;
+  }
+  OscillatorWindow& window = *series.oscillator_window;
+  for (size_t i = start; i < source->size(); ++i) {
+    const Candle& candle = (*source)[i];
+    while (window.next_index < i) {
+      const size_t index = window.next_index++;
+      const Candle& previous = (*source)[index];
+      while (!window.highs.empty() &&
+             (*source)[window.highs.back()].high <= previous.high) {
+        window.highs.pop_back();
+      }
+      while (!window.lows.empty() &&
+             (*source)[window.lows.back()].low >= previous.low) {
+        window.lows.pop_back();
+      }
+      window.highs.push_back(index);
+      window.lows.push_back(index);
+    }
+    while (!window.highs.empty() && i - window.highs.front() >= period) {
+      window.highs.pop_front();
+    }
+    while (!window.lows.empty() && i - window.lows.front() >= period) {
+      window.lows.pop_front();
+    }
+    const double high =
+        window.highs.empty()
+            ? candle.high
+            : std::max(candle.high, (*source)[window.highs.front()].high);
+    const double low =
+        window.lows.empty()
+            ? candle.low
+            : std::min(candle.low, (*source)[window.lows.front()].low);
+    if (kdj) {
+      double j = 50.0;
+      if (i > 0) {
+        const double rsv =
+            high == low ? 50.0 : (candle.close - low) / (high - low) * 100.0;
+        k += (rsv - k) / series.config.kdj_m1;
+        d += (k - d) / series.config.kdj_m1;
+        j = series.config.kdj_m2 * k - 2.0 * d;
+      }
+      series.candles.push_back({candle.timestamp, k, k, j, d, 0.0});
+    } else {
+      const double wr =
+          high == low ? -50.0 : -(high - candle.close) / (high - low) * 100.0;
+      series.candles.push_back({candle.timestamp, wr, wr, wr, wr, 0.0});
+    }
+  }
+}
+
 }  // namespace
 
 void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,
@@ -420,6 +498,10 @@ void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,
       } else {
         RebuildRsiSeries(series, *source, first_changed_source_index);
       }
+      break;
+    case SeriesSource::kOhlcvWilliamsR:
+    case SeriesSource::kOhlcvKdj:
+      RebuildRangeOscillator(series, source, first_changed_source_index);
       break;
     case SeriesSource::kOhlcvSar:
       RebuildSarSeries(series, source, first_changed_source_index);

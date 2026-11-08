@@ -6,14 +6,36 @@ export type ChartPaneVisibility = {
   minMove: number;
   showVolume: boolean;
   showRsi: boolean;
+  showWilliamsR?: boolean;
+  showKdj?: boolean;
   showMacd: boolean;
 };
 
+export function hasChartPanels({
+  showVolume,
+  showRsi,
+  showMacd,
+  showWilliamsR,
+  showKdj,
+}: Omit<ChartPaneVisibility, 'minMove'>): boolean {
+  return [showVolume, showRsi, showMacd, showWilliamsR, showKdj].some(Boolean);
+}
+
 export function buildChartPanes(
   settings: ChartSettings,
-  { minMove, showVolume, showRsi, showMacd }: ChartPaneVisibility
+  {
+    minMove,
+    showVolume,
+    showRsi,
+    showWilliamsR,
+    showKdj,
+    showMacd,
+  }: ChartPaneVisibility
 ): ReadonlyArray<ChartPaneOptions> | undefined {
-  if (!showVolume && !showRsi && !showMacd) return undefined;
+  if (
+    !hasChartPanels({ showVolume, showRsi, showMacd, showWilliamsR, showKdj })
+  )
+    return undefined;
   const panes: ChartPaneOptions[] = [
     {
       paneId: 'main',
@@ -43,6 +65,38 @@ export function buildChartPanes(
           type: 'price',
           precision: 4,
           minMove: 0.0001,
+          useGrouping: false,
+        },
+      },
+    });
+  }
+  if (showWilliamsR) {
+    panes.push({
+      paneId: 'williamsR',
+      heightWeight: settings.williamsRPaneHeightWeight,
+      minHeight: 96,
+      priceScale: {
+        priceScaleId: 'williamsR',
+        valueFormat: {
+          type: 'price',
+          precision: 2,
+          minMove: 0.01,
+          useGrouping: false,
+        },
+      },
+    });
+  }
+  if (showKdj) {
+    panes.push({
+      paneId: 'kdj',
+      heightWeight: settings.kdjPaneHeightWeight,
+      minHeight: 96,
+      priceScale: {
+        priceScaleId: 'kdj',
+        valueFormat: {
+          type: 'price',
+          precision: 2,
+          minMove: 0.01,
           useGrouping: false,
         },
       },

@@ -100,6 +100,8 @@ export default withMermaid({
               text: 'Parabolic SAR',
               link: '/docs/parabolic-sar',
             },
+            { text: 'Williams %R', link: '/docs/williams-r' },
+            { text: 'KDJ', link: '/docs/kdj' },
             {
               text: 'MACD',
               link: '/docs/macd',

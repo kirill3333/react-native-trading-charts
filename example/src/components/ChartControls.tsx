@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { createThemedStyles } from '../createThemedStyles';
+import { hasChartPanels } from '../chartConfig/panes';
 import { ChartControlButton } from './ChartControlButton';
 import { CHART_INDICATORS } from '../chartIndicators';
 import {
@@ -30,9 +31,7 @@ export function ChartControls({
   const hasIndicators = useChartSettingsStore(({ settings }) =>
     CHART_INDICATORS.some(({ key }) => settings[key])
   );
-  const hasPanels = useChartControlsStore(
-    (state) => state.showMacd || state.showRsi || state.showVolume
-  );
+  const hasPanels = useChartControlsStore(hasChartPanels);
 
   return (
     <>

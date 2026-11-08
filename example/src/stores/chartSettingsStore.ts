@@ -15,7 +15,7 @@ export type CrosshairLineStyleSetting = 'solid' | 'dashed';
 export type ChartLocale = 'en-GB' | 'en-US';
 export type ChartTimeZone = 'utc' | 'device';
 export type SeriesLineWidth = 1 | 1.5 | 2.5;
-export type IndicatorLineWidth = 0.5 | SeriesLineWidth;
+export type IndicatorLineWidth = 0.25 | 0.5 | SeriesLineWidth;
 export type PaneHeightWeight = 0.5 | 1 | 2 | 3;
 export type MacdFastPeriod = 8 | 12 | 16;
 export type MacdSlowPeriod = 21 | 26 | 32;
@@ -36,6 +36,23 @@ export type ChartSettings = {
   bollLegendVisible: boolean;
   volumeLegendVisible: boolean;
   rsiLegendVisible: boolean;
+  williamsRLegendVisible: boolean;
+  williamsRPeriod: number;
+  williamsRPaneHeightWeight: PaneHeightWeight;
+  kdjLegendVisible: boolean;
+  kdjPeriod: number;
+  kdjM1: number;
+  kdjM2: number;
+  kdjKLine: BollLineSettings;
+  kdjDLine: BollLineSettings;
+  kdjJLine: BollLineSettings;
+  williamsRLine: BollLineSettings;
+  williamsROversold: number;
+  williamsROverbought: number;
+  williamsRBandColor: string;
+  williamsRLevelLineColor: string;
+  williamsRTextColor?: string;
+  kdjPaneHeightWeight: PaneHeightWeight;
   macdLegendVisible: boolean;
   sarEnabled: boolean;
   sarStep: number;
@@ -148,9 +165,9 @@ export type ChartSettings = {
   currencySymbol: string;
 };
 
-function bollLineDefaults(color: string): BollLineSettings {
+function indicatorLineDefaults(color: string): BollLineSettings {
   return {
-    width: 1,
+    width: 0.5,
     style: 'solid',
     color,
     gradientEnabled: false,
@@ -165,6 +182,22 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   bollLegendVisible: true,
   volumeLegendVisible: true,
   rsiLegendVisible: true,
+  williamsRLegendVisible: true,
+  williamsRPeriod: 14,
+  williamsRPaneHeightWeight: 1,
+  kdjLegendVisible: true,
+  kdjPeriod: 9,
+  kdjM1: 3,
+  kdjM2: 3,
+  kdjKLine: indicatorLineDefaults('#2E90F5'),
+  kdjDLine: indicatorLineDefaults('#F5A623'),
+  kdjJLine: indicatorLineDefaults('#AB75FA'),
+  williamsRLine: indicatorLineDefaults('#6C8CFF'),
+  williamsROversold: -80,
+  williamsROverbought: -20,
+  williamsRLevelLineColor: '#6C8CFF80',
+  williamsRBandColor: '#6C8CFF14',
+  kdjPaneHeightWeight: 1,
   macdLegendVisible: true,
   sarEnabled: false,
   sarStep: 0.02,
@@ -176,9 +209,9 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   bollPeriod: 20,
   bollStdDevMultiplier: 2,
   bollValueSource: 'close',
-  bollUpperLine: bollLineDefaults('#2E90F5'),
-  bollMiddleLine: bollLineDefaults('#F5A623'),
-  bollLowerLine: bollLineDefaults('#2E90F5'),
+  bollUpperLine: indicatorLineDefaults('#2E90F5'),
+  bollMiddleLine: indicatorLineDefaults('#F5A623'),
+  bollLowerLine: indicatorLineDefaults('#2E90F5'),
   bollFillEnabled: true,
   bollFillTopColor: '#2E90F533',
   bollFillBottomColor: '#2E90F50D',
@@ -208,7 +241,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   volumePaneHeightWeight: 1,
   rsiPaneHeightWeight: 1,
   macdPaneHeightWeight: 1,
-  rsiLineWidth: 0.5,
+  rsiLineWidth: 0.25,
   rsiLineColorOverride: null,
   rsiTextColorOverride: null,
   rsiBandColorOverride: null,
@@ -216,7 +249,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   smaEnabled: false,
   smaPeriod: 20,
   smaValueSource: 'close',
-  smaLineWidth: 0.5,
+  smaLineWidth: 0.25,
   smaLineStyle: 'solid',
   smaLineColor: '#2E90F5',
   smaGradientEnabled: false,
@@ -225,7 +258,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   emaEnabled: false,
   emaPeriod: 50,
   emaValueSource: 'close',
-  emaLineWidth: 0.5,
+  emaLineWidth: 0.25,
   emaLineStyle: 'dashed',
   emaLineColor: '#F5A623',
   emaGradientEnabled: false,
@@ -235,13 +268,13 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   macdSlowPeriod: 26,
   macdSignalPeriod: 9,
   macdValueSource: 'close',
-  macdLineWidth: 1,
+  macdLineWidth: 0.5,
   macdLineStyle: 'solid',
   macdLineColor: null,
   macdGradientEnabled: false,
   macdGradientTopColor: null,
   macdGradientBottomColor: null,
-  macdSignalLineWidth: 1,
+  macdSignalLineWidth: 0.5,
   macdSignalLineStyle: 'solid',
   macdSignalLineColor: null,
   macdSignalGradientEnabled: false,

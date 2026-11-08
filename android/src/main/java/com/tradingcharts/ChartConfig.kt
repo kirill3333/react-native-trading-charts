@@ -70,7 +70,7 @@ internal data class PaneConfig(
     val valueFormat: ValueFormat,
 )
 
-internal data class BollLineStyle(
+internal data class IndicatorLineStyle(
     val widthPx: Float = 1f,
     val color: Int = Color.rgb(46, 144, 245),
     val gradientTopColor: Int = color,
@@ -145,11 +145,20 @@ internal data class SeriesConfig(
     val sarStep: Double = 0.02,
     val sarMaximum: Double = 0.20,
     val sarReversalColor: Int = Color.rgb(151, 145, 165),
+    val williamsPeriod: Long = 14,
+    val williamsOversold: Double = -80.0,
+    val williamsOverbought: Double = -20.0,
+    val kdjPeriod: Long = 9,
+    val kdjM1: Long = 3,
+    val kdjM2: Long = 3,
+    val kdjK: IndicatorLineStyle = IndicatorLineStyle(),
+    val kdjD: IndicatorLineStyle = IndicatorLineStyle(color = Color.rgb(245, 166, 35)),
+    val kdjJ: IndicatorLineStyle = IndicatorLineStyle(color = Color.rgb(171, 117, 250)),
     val bollPeriod: Long = 20,
     val bollStdDevMultiplier: Double = 2.0,
-    val bollUpper: BollLineStyle = BollLineStyle(),
-    val bollMiddle: BollLineStyle = BollLineStyle(color = Color.rgb(245, 166, 35)),
-    val bollLower: BollLineStyle = BollLineStyle(),
+    val bollUpper: IndicatorLineStyle = IndicatorLineStyle(),
+    val bollMiddle: IndicatorLineStyle = IndicatorLineStyle(color = Color.rgb(245, 166, 35)),
+    val bollLower: IndicatorLineStyle = IndicatorLineStyle(),
     val bollFillEnabled: Boolean = true,
     val bollFillTopColor: Int = Color.argb(51, 46, 144, 245),
     val bollFillBottomColor: Int = Color.argb(13, 46, 144, 245),

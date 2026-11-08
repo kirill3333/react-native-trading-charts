@@ -45,7 +45,7 @@ cleared selection emits `null` once. Programmatic `zoom`, `scrollToRealTime`,
 
 ## Additional-series selection values
 
-The second argument to `onSelectedCandleChange` is a readonly array of `CrosshairSeriesValue`. Narrow on `kind`: `ohlc` carries `candle`; `scalar` carries `value`; `macd` carries `macd`, `signal`, and `histogram`. Every item includes `seriesId`, `paneId`, and `priceScaleId`. Unmatched timestamps and warm-up components return `null`; clearing selection delivers a null candle and an empty array.
+The second argument to `onSelectedCandleChange` is a readonly array of `CrosshairSeriesValue`. Narrow on `kind`: `ohlc` carries `candle`; `scalar` carries `value`; `macd` carries `macd`, `signal`, and `histogram`. Williams %R uses `kind: 'scalar'` and `sourceType: 'ohlcvWilliamsR'`. KDJ uses `kind: 'kdj'` with numeric or null `k`, `d` and `j` fields. Every item includes `seriesId`, `paneId`, and `priceScaleId`. Unmatched timestamps and warm-up components return `null`; clearing selection delivers a null candle and an empty array.
 
 Callbacks receive plain payloads, not React Native event wrappers. Do not access `event.nativeEvent`.
 

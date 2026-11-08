@@ -176,6 +176,21 @@ enum class SeriesNumberIndex : std::uint8_t {
   kBaselineDashed,
   kBaselineWidth,
   kLegendVisible,
+  kWilliamsPeriod,
+  kWilliamsOversold,
+  kWilliamsOverbought,
+  kKdjPeriod,
+  kKdjM1,
+  kKdjM2,
+  kKdjKWidth,
+  kKdjKGradientEnabled,
+  kKdjKDashed,
+  kKdjDWidth,
+  kKdjDGradientEnabled,
+  kKdjDDashed,
+  kKdjJWidth,
+  kKdjJGradientEnabled,
+  kKdjJDashed,
   kCount,
 };
 
@@ -222,7 +237,16 @@ enum class SeriesColorIndex : std::uint8_t {
   kBaselineBottomFillTop = 144,
   kBaselineBottomFillBottom = 148,
   kBaselineBaseLine = 152,
-  kCount = 156,
+  kKdjK = 156,
+  kKdjKGradientTop = 160,
+  kKdjKGradientBottom = 164,
+  kKdjD = 168,
+  kKdjDGradientTop = 172,
+  kKdjDGradientBottom = 176,
+  kKdjJ = 180,
+  kKdjJGradientTop = 184,
+  kKdjJGradientBottom = 188,
+  kCount = 192,
 };
 
 enum class SeriesStringIndex : std::uint8_t {
@@ -261,7 +285,7 @@ enum class PaneSnapshotRecordIndex : std::uint8_t {
   kScaleVisible,
   kVolumeFormat,
   kPrecision,
-  kRsiScale,
+  kFixedOscillatorScale,
   kCount,
 };
 
@@ -351,8 +375,8 @@ inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kBaselineConfigColorCount = 96;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 8.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v8";
+inline constexpr double kChartEngineTransportAbiVersion = 9.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v9";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -363,12 +387,12 @@ inline constexpr size_t kPaneSnapshotRecordWidth = 14;
 inline constexpr size_t kIndicatorLegendValueRecordWidth = 6;
 inline constexpr size_t kIndicatorLegendValueCapacity = 3;
 inline constexpr size_t kIndicatorLegendRecordWidth = 32;
-inline constexpr size_t kCrosshairSeriesValueRecordWidth = 20;
+inline constexpr size_t kCrosshairSeriesValueRecordWidth = 23;
 inline constexpr size_t kSnapshotMetaCount = ToIndex(SnapshotMetaIndex::kCount);
 
 static_assert(kConfigNumberCount == 51);
-static_assert(kSeriesNumberCount == 45);
-static_assert(kSeriesColorCount == 156);
+static_assert(kSeriesNumberCount == 60);
+static_assert(kSeriesColorCount == 192);
 static_assert(kSeriesStringCount == 5);
 static_assert(ToIndex(SnapshotRecordHeaderIndex::kCount) ==
               kSnapshotRecordHeaderCount);
@@ -377,7 +401,7 @@ static_assert(ToIndex(PaneSnapshotRecordIndex::kCount) ==
               kPaneSnapshotRecordWidth);
 static_assert(ToIndex(IndicatorLegendRecordIndex::kStdDevMultiplier) + 1 ==
               kIndicatorLegendRecordWidth);
-static_assert(kCrosshairSeriesValueRecordWidth == 20);
+static_assert(kCrosshairSeriesValueRecordWidth == 23);
 static_assert(ToIndex(IndicatorLegendRecordIndex::kStdDevMultiplier) ==
               ToIndex(IndicatorLegendRecordIndex::kValues) +
                   kIndicatorLegendValueRecordWidth *
@@ -1063,6 +1087,8 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
                   : source_value == 2.0 ? SeriesSource::kOhlcvRsi
                   : source_value == 3.0 ? SeriesSource::kOhlcvSma
                   : source_value == 4.0 ? SeriesSource::kOhlcvEma
+                  : source_value == 8.0 ? SeriesSource::kOhlcvWilliamsR
+                  : source_value == 9.0 ? SeriesSource::kOhlcvKdj
                   : source_value == 7.0 ? SeriesSource::kOhlcvSar
                   : source_value == 6.0 ? SeriesSource::kOhlcvBoll
                   : source_value == 5.0 ? SeriesSource::kOhlcvMacd
@@ -1138,14 +1164,40 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
       color_at(SeriesColorIndex::kMacdNegativeDecreasing);
   series.macd_zero_line = color_at(SeriesColorIndex::kMacdZeroLine);
   series.macd_text_color = color_at(SeriesColorIndex::kMacdText);
-  const double boll_period = number_at(SeriesNumberIndex::kBollPeriod);
-  series.boll_period =
-      std::isfinite(boll_period) && boll_period >= 1.0 &&
-              boll_period <= static_cast<double>(
-                                 std::numeric_limits<std::uint32_t>::max()) &&
-              std::floor(boll_period) == boll_period
-          ? static_cast<std::uint32_t>(boll_period)
-          : 0;
+  const auto period_at = [&](SeriesNumberIndex index) -> std::uint32_t {
+    const double period = number_at(index);
+    return period >= 1.0 &&
+                   period <= std::numeric_limits<std::uint32_t>::max() &&
+                   std::floor(period) == period
+               ? static_cast<std::uint32_t>(period)
+               : 0;
+  };
+  series.boll_period = period_at(SeriesNumberIndex::kBollPeriod);
+  series.williams_period = period_at(SeriesNumberIndex::kWilliamsPeriod);
+  series.williams_oversold = number_at(SeriesNumberIndex::kWilliamsOversold);
+  series.williams_overbought =
+      number_at(SeriesNumberIndex::kWilliamsOverbought);
+  series.kdj_period = period_at(SeriesNumberIndex::kKdjPeriod);
+  series.kdj_m1 = period_at(SeriesNumberIndex::kKdjM1);
+  series.kdj_m2 = period_at(SeriesNumberIndex::kKdjM2);
+  series.kdj_k = {static_cast<float>(number_at(SeriesNumberIndex::kKdjKWidth)),
+                  color_at(SeriesColorIndex::kKdjK),
+                  color_at(SeriesColorIndex::kKdjKGradientTop),
+                  color_at(SeriesColorIndex::kKdjKGradientBottom),
+                  number_at(SeriesNumberIndex::kKdjKGradientEnabled) != 0.0,
+                  number_at(SeriesNumberIndex::kKdjKDashed) != 0.0};
+  series.kdj_d = {static_cast<float>(number_at(SeriesNumberIndex::kKdjDWidth)),
+                  color_at(SeriesColorIndex::kKdjD),
+                  color_at(SeriesColorIndex::kKdjDGradientTop),
+                  color_at(SeriesColorIndex::kKdjDGradientBottom),
+                  number_at(SeriesNumberIndex::kKdjDGradientEnabled) != 0.0,
+                  number_at(SeriesNumberIndex::kKdjDDashed) != 0.0};
+  series.kdj_j = {static_cast<float>(number_at(SeriesNumberIndex::kKdjJWidth)),
+                  color_at(SeriesColorIndex::kKdjJ),
+                  color_at(SeriesColorIndex::kKdjJGradientTop),
+                  color_at(SeriesColorIndex::kKdjJGradientBottom),
+                  number_at(SeriesNumberIndex::kKdjJGradientEnabled) != 0.0,
+                  number_at(SeriesNumberIndex::kKdjJDashed) != 0.0};
   series.boll_std_dev_multiplier =
       number_at(SeriesNumberIndex::kBollStdDevMultiplier);
   series.boll_fill_enabled =
@@ -1764,7 +1816,8 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotPanes(JNIEnv* env,
           pane.volume_format ? 1.0 : 0.0);
       set(PaneSnapshotRecordIndex::kPrecision,
           static_cast<double>(pane.precision));
-      set(PaneSnapshotRecordIndex::kRsiScale, pane.rsi_scale ? 1.0 : 0.0);
+      set(PaneSnapshotRecordIndex::kFixedOscillatorScale,
+          (pane.rsi_scale || pane.williams_scale) ? 1.0 : 0.0);
     }
   }
   return NewDoubleArray(env, packed);
@@ -1860,6 +1913,9 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotCrosshairSeriesValues(
       packed[offset + 17] = value.upper;
       packed[offset + 18] = value.middle;
       packed[offset + 19] = value.lower;
+      packed[offset + 20] = value.k;
+      packed[offset + 21] = value.d;
+      packed[offset + 22] = value.j;
     }
   }
   return NewDoubleArray(env, packed);
