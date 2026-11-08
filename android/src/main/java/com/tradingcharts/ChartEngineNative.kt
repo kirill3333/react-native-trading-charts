@@ -124,7 +124,6 @@ internal data class ChartSnapshot(
     // Overlay (crosshair) remains small and follows every revision.
     val overlayVertices: FloatArray,
     val xTicks: List<AxisTick>,
-    val yTicks: List<AxisTick>,
     val panes: List<PaneSnapshot>,
     val indicatorLegends: List<IndicatorLegendSnapshot>,
     val priceLines: List<PriceLineSnapshot>,
@@ -253,17 +252,12 @@ internal object ChartEngineNative {
   @JvmStatic external fun nativeDestroy(handle: Long)
 
   @JvmStatic
-  external fun nativeSetConfig(
+  @Suppress("LongParameterList")
+  private external fun nativeApplyConfiguration(
       handle: Long,
       numbers: DoubleArray,
       colors: FloatArray,
       strings: Array<String>,
-  )
-
-  @JvmStatic
-  @Suppress("LongParameterList")
-  external fun nativeSetTradingCalendar(
-      handle: Long,
       configured: Boolean,
       timeZone: String,
       transitionRangeEndMs: Long,
@@ -275,15 +269,13 @@ internal object ChartEngineNative {
       overrideSessionOffsets: IntArray,
       overrideSessions: IntArray,
       weekStartsOn: Int,
-  )
-
-  @JvmStatic
-  external fun nativeSetPanes(
-      handle: Long,
-      strings: Array<String>,
-      numbers: DoubleArray,
+      paneStrings: Array<String>,
+      paneNumbers: DoubleArray,
       resizable: Boolean,
-  )
+      seriesStrings: Array<Array<String>>,
+      seriesNumbers: Array<DoubleArray>,
+      seriesColors: Array<FloatArray>,
+  ): Int
 
   @JvmStatic
   external fun nativeAddSeries(
@@ -416,8 +408,6 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotXTicks(handle: Long): DoubleArray
 
-  @JvmStatic private external fun nativeSnapshotYTicks(handle: Long): DoubleArray
-
   @JvmStatic private external fun nativeSnapshotPaneYTicks(handle: Long): DoubleArray
 
   @JvmStatic private external fun nativeSnapshotPanes(handle: Long): DoubleArray
@@ -436,11 +426,14 @@ internal object ChartEngineNative {
 
   @JvmStatic private external fun nativeSnapshotMeta(handle: Long): DoubleArray
 
-  fun setConfig(handle: Long, config: ChartConfig) {
-    nativeSetConfig(handle, config.nativeNumbers(), config.nativeColors(), config.nativeStrings())
+  fun setConfig(handle: Long, config: ChartConfig): Int {
     val calendar = config.tradeAggregation.calendar
-    nativeSetTradingCalendar(
+    val series = config.additionalSeries.map { it.nativeTransportPayload() }
+    return nativeApplyConfiguration(
         handle,
+        config.nativeNumbers(),
+        config.nativeColors(),
+        config.nativeStrings(),
         calendar.configured,
         calendar.timeZone,
         calendar.transitionRangeEndMs,
@@ -452,12 +445,12 @@ internal object ChartEngineNative {
         config.nativeOverrideSessionOffsets(),
         config.nativeOverrideSessions(),
         calendar.weekStartsOn,
-    )
-    nativeSetPanes(
-        handle,
         config.nativePaneStrings(),
         config.nativePaneNumbers(),
         config.panesResizable,
+        Array(series.size) { series[it].strings },
+        Array(series.size) { series[it].numbers },
+        Array(series.size) { series[it].colors },
     )
   }
 
@@ -593,7 +586,6 @@ internal object ChartEngineNative {
         yAxisScale = meta[SnapshotMetaIndex.Y_AXIS_SCALE],
         overlayVertices = overlayVertices,
         xTicks = ticks(nativeSnapshotXTicks(snapshot)),
-        yTicks = ticks(nativeSnapshotYTicks(snapshot)),
         panes = panes,
         indicatorLegends = snapshotIndicatorLegends(snapshot),
         priceLines = snapshotPriceLines(snapshot),

@@ -25,7 +25,6 @@ public final class ChartHostView: UIView {
   private let events = ChartEventCoordinator()
   private var interaction: ChartInteractionController!
   private var configuration: ResolvedChartConfiguration?
-  private var declarativeSeriesIds = Set<String>()
   private var lastDrawnRevision: UInt64 = 0
   private var forceNextDraw = true
 
@@ -139,38 +138,18 @@ public final class ChartHostView: UIView {
   @objc(applyConfigJson:)
   public func applyConfigJson(_ json: String) {
     guard let next = ChartConfigurationDecoder.decode(json) else { return }
+    let status = engine.applyConfiguration(next)
+    guard status == .applied else {
+      logUpdateStatus(status, operation: "additionalSeries")
+      return
+    }
     realTimeScroll.stop()
     events.priceScaleChanges.clear()
     configuration = next
     pulseDot.configure(next)
     overlay.apply(configuration: next)
-    engine.setConfig(next.native)
-    engine.setPanes(next.panes, resizable: next.panesResizable)
     interaction.apply(config: next.native, panesResizable: next.panesResizable)
 
-    let requestedIds = Set(next.additionalSeries.compactMap { item -> String? in
-      let id = item.string("seriesId")
-      return id.isEmpty ? nil : id
-    })
-    for id in declarativeSeriesIds.subtracting(requestedIds) {
-      _ = engine.removeSeries(id)
-    }
-    var acceptedIds = Set<String>()
-    for item in next.additionalSeries {
-      let series = SeriesConfigurationDecoder.decode(
-        item: item,
-        declarative: true,
-        chartConfig: next.native,
-        defaults: next.appearances
-      )
-      let status = engine.addSeries(series)
-      logUpdateStatus(status, operation: "additionalSeries")
-      if status == .applied {
-        let id = item.string("seriesId")
-        if !id.isEmpty { acceptedIds.insert(id) }
-      }
-    }
-    declarativeSeriesIds = acceptedIds
     requestFrame()
   }
 
@@ -240,7 +219,6 @@ public final class ChartHostView: UIView {
   @objc(removeSeries:)
   public func removeSeries(_ seriesId: String) {
     if engine.removeSeries(seriesId) {
-      declarativeSeriesIds.remove(seriesId)
       requestFrame()
     }
   }
@@ -337,7 +315,6 @@ public final class ChartHostView: UIView {
     engine.resetForReuse()
     pulseDot.hide()
     configuration = nil
-    declarativeSeriesIds.removeAll()
     events.reset()
     scheduler.suspend()
     forceNextDraw = true

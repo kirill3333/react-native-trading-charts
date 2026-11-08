@@ -16,6 +16,10 @@ struct SeriesData;
 
 namespace trading_charts::internal {
 
+#ifdef TRADING_CHARTS_TEST_REBUILDS
+size_t FullIndicatorRebuildCount();
+#endif
+
 // Rebuilds the derived output owned by `series` from `source`. The caller owns
 // both objects and keeps any required synchronization for the full call.
 void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,

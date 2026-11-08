@@ -78,6 +78,9 @@ export class MarketChartFeedSession<
   private liveHistoryApplied = false;
   private websocket: MarketWebSocketConnection | null = null;
   private liveSession: LiveSession | null = null;
+  // Streaming updates reach the chart between REST snapshots. Keep that tail
+  // until the next resync folds it into the paginated history cache.
+  private readonly liveCandles = new Map<number, OhlcCandle>();
   private hasBeenLive = false;
   private disposed = false;
 
@@ -212,35 +215,51 @@ export class MarketChartFeedSession<
     } = this.options;
     const queryKey = adapter.candlesQueryKey(symbol, interval);
     const cached = queryClient.getQueryData<CandlePages>(queryKey);
-    const firstTimestamp = snapshot[0]?.timestamp ?? Infinity;
-    const older = mergeCandles(
-      cached?.pages.slice(1) ?? [],
+    const merged = mergeCandles(
+      [...(cached?.pages ?? []), [...this.liveCandles.values()], snapshot],
       adapter.maxCandles
-    ).filter((candle) => candle.timestamp < firstTimestamp);
-    const merged = mergeCandles([older, snapshot], adapter.maxCandles);
-
-    this.liveHistoryApplied = true;
-    queryClient.setQueryData<CandlePages>(queryKey, (current) => ({
-      pages: [snapshot, ...(current?.pages.slice(1) ?? [])],
-      pageParams: current?.pageParams ?? [undefined],
-    }));
-    charts.setHistory(chartId, merged);
-    this.appliedPageCount =
-      queryClient.getQueryData<CandlePages>(queryKey)?.pages.length ?? 1;
-
-    const latestTimestamp = snapshot.at(-1)?.timestamp ?? 0;
+    );
+    const latestSnapshotTime = snapshot.at(-1)?.timestamp ?? -Infinity;
     const buffered = [...session.bufferedCandles.values()]
-      .filter((candle) => candle.timestamp >= latestTimestamp)
+      .filter((candle) => candle.timestamp >= latestSnapshotTime)
       .sort((left, right) => left.timestamp - right.timestamp);
-    buffered.forEach((candle) => charts.updateCandle(chartId, candle));
+    const history = buffered.length
+      ? mergeCandles([merged, buffered], adapter.maxCandles)
+      : merged;
+
+    // Pagination continues before the oldest retained candle. An empty last
+    // page records that the exchange has already exhausted its older history.
+    const exhausted = cached?.pages.at(-1)?.length === 0 && history.length > 0;
+    const pages = exhausted ? [history, []] : [history];
+    this.liveHistoryApplied = true;
+    queryClient.setQueryData<CandlePages>(queryKey, {
+      pages,
+      pageParams: exhausted ? [undefined, history[0]!.timestamp] : [undefined],
+    });
+    this.appliedPageCount = pages.length;
+    this.liveCandles.clear();
+    // Corrections inside retained history go through setHistory. Only newer
+    // candles can be appended by the engine's incremental update command.
+    const previousEnd = merged.at(-1)?.timestamp ?? -Infinity;
+    const firstAppend = history.findIndex(
+      (candle) => candle.timestamp > previousEnd
+    );
+    if (firstAppend < 0) {
+      charts.setHistory(chartId, history);
+    } else {
+      charts.setHistory(chartId, history.slice(0, firstAppend));
+      for (const candle of history.slice(firstAppend)) {
+        charts.updateCandle(chartId, candle);
+      }
+    }
     session.bufferedCandles.clear();
     session.synchronized = true;
     this.hasBeenLive = true;
     this.update({
       status: 'live',
       error: null,
-      lastPrice: latestPrice(buffered) ?? latestPrice(snapshot) ?? lastPrice,
-      allTimeExtremes: calculateAllTimeExtremes([...merged, ...buffered]),
+      lastPrice: latestPrice(history) ?? lastPrice,
+      allTimeExtremes: calculateAllTimeExtremes(history),
     });
   }
 
@@ -250,7 +269,14 @@ export class MarketChartFeedSession<
       const candles = adapter.parseMarketMessage(message);
       const session = this.sessionFor(generation);
       if (session.synchronized) {
-        candles.forEach((candle) => charts.updateCandle(chartId, candle));
+        for (const candle of candles) {
+          charts.updateCandle(chartId, candle);
+          this.liveCandles.set(candle.timestamp, candle);
+          if (this.liveCandles.size > adapter.maxCandles) {
+            const oldest = this.liveCandles.keys().next().value;
+            if (oldest !== undefined) this.liveCandles.delete(oldest);
+          }
+        }
         this.update({
           allTimeExtremes: extendAllTimeExtremes(
             this.snapshot.allTimeExtremes,

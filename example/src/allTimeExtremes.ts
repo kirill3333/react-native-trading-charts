@@ -43,10 +43,7 @@ export function calculateAllTimeExtremes(
   return extendAllTimeExtremes(null, candles);
 }
 
-export function removeAllTimePriceLines(
-  charts: PriceLineApi,
-  chartId: string
-) {
+export function removeAllTimePriceLines(charts: PriceLineApi, chartId: string) {
   charts.removePriceLine(chartId, ALL_TIME_HIGH_PRICE_LINE_ID);
   charts.removePriceLine(chartId, ALL_TIME_LOW_PRICE_LINE_ID);
 }

@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include "cpp/chart_engine.h"
@@ -13,6 +15,10 @@
 
 namespace trading_charts::internal {
 namespace {
+
+#ifdef TRADING_CHARTS_TEST_REBUILDS
+thread_local size_t full_rebuild_count = 0;
+#endif
 
 constexpr double kRsiNeutralValue = (kRsiMinimumValue + kRsiMaximumValue) / 2.0;
 constexpr double kExponentialSmoothingNumerator = 2.0;
@@ -489,8 +495,17 @@ void RebuildRangeOscillator(SeriesData& series,
 
 }  // namespace
 
+#ifdef TRADING_CHARTS_TEST_REBUILDS
+size_t FullIndicatorRebuildCount() { return full_rebuild_count; }
+#endif
+
 void RebuildDerivedSeries(SeriesData& series, const std::vector<Candle>* source,
                           size_t first_changed_source_index) {
+#ifdef TRADING_CHARTS_TEST_REBUILDS
+  if (first_changed_source_index == 0) {
+    ++full_rebuild_count;
+  }
+#endif
   switch (series.config.source) {
     case SeriesSource::kOhlcvRsi:
       if (source == nullptr) {

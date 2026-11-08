@@ -7,6 +7,14 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun yAxisTicksUseOneJniPayloadForAllPanes() {
+    val getters = ChartEngineNative::class.java.declaredMethods
+        .map { it.name }
+        .filter { it.startsWith("nativeSnapshot") && it.endsWith("YTicks") }
+    assertEquals(listOf("nativeSnapshotPaneYTicks"), getters)
+  }
+
+  @Test
   fun oscillatorTransportKeepsPeriodsAndComponentStylesIndependent() {
     val kdj = SeriesConfig(seriesId = "kdj", type = "kdj", paneId = "kdj", priceScaleId = "kdj",
       sourceType = "ohlcvKdj", sourceSeriesId = "main", kdjM1 = 2, kdjM2 = 4,

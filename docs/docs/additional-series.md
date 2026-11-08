@@ -14,6 +14,8 @@ There are two ways to supply those values. A comparison line has its own OHLC hi
 
 Declare series in the `additionalSeries` prop when they are part of the screen's layout. Use `TradingCharts.addSeries` and `removeSeries` when users need to add or remove them, for example from an indicator picker. Each series needs its own `seriesId` and a target pane. A price comparison can share the main pane; values with different units, such as volume, usually need a [separate pane](/docs/panes) and scale.
 
+The chart applies each new `additionalSeries` array as a single update. An indicator can reference a source that appears later in the array. Reordering entries or switching between OHLC render types preserves the history for each `seriesId`. Switching between OHLC and standalone histogram data starts an empty history. If the chart rejects a declaration, it keeps the previous configuration and series data.
+
 ## Configuration
 
 | Property         | Type / values                                                                                | Default        | Description                                          |

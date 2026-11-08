@@ -6,7 +6,7 @@ import android.util.Log
 import java.lang.ref.WeakReference
 
 internal object TradingChartsRegistry {
-  private sealed interface Command {
+  sealed interface Command {
     data class History(val values: DoubleArray) : Command
 
     data class PrependHistory(val values: DoubleArray) : Command
@@ -222,10 +222,13 @@ internal object TradingChartsRegistry {
   // Bound the backlog of a chartId whose view is not mounted: oldest
   // streaming updates are dropped first. If no streaming command remains,
   // drop the oldest command so the limit stays hard for every command mix.
-  private fun trimPending(chartId: String, pending: MutableList<Command>) {
+  fun trimPending(chartId: String, pending: MutableList<Command>) {
     while (pending.size > MAX_PENDING_COMMANDS) {
       val dropIndex = pending.indexOfFirst {
-        it is Command.Candle || it is Command.Trade || it is Command.Trades
+        it is Command.Candle ||
+            it is Command.Trade ||
+            it is Command.Trades ||
+            (it is Command.SeriesData && it.update)
       }
       val dropped = pending.removeAt(if (dropIndex >= 0) dropIndex else 0)
       Log.w(

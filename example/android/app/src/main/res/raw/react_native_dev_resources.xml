@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AndroidInfoHelpers in React Native reads the plugin-generated Metro host and port. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@integer/react_native_dev_server_port,@string/react_native_dev_server_ip" />

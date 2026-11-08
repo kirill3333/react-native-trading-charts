@@ -23,9 +23,7 @@ function ThemedApp() {
 }
 
 function AppThemeRoot() {
-  const themeMode = useChartSettingsStore(
-    (state) => state.settings.themeMode
-  );
+  const themeMode = useChartSettingsStore((state) => state.settings.themeMode);
 
   return (
     <AppThemeProvider mode={themeMode}>

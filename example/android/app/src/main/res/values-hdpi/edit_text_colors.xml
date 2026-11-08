@@ -1,0 +1,3 @@
+<resources>
+    <color name="edit_text_disabled_line">@android:color/black</color>
+</resources>

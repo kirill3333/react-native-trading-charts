@@ -1,7 +1,7 @@
 import NativeTradingCharts, {
   type Spec as NativeTradingChartsSpec,
 } from './NativeTradingCharts';
-import { resolveAdditionalSeriesOptions } from './config';
+import { assertBoolean, resolveAdditionalSeriesOptions } from './config';
 import {
   type AdditionalChartSeriesOptions,
   type ChartSeriesDataPoint,
@@ -109,6 +109,22 @@ function packCandle(candle: OhlcCandle, target: number[]) {
     candle.close,
     candle.volume ?? 0
   );
+}
+
+function packHistory(candles: ReadonlyArray<OhlcCandle>): number[] {
+  const packed: number[] = [];
+  let previousTimestamp = -Infinity;
+  for (let index = 0; index < candles.length; index++) {
+    const candle = candles[index];
+    if (candle == null) throw new TypeError(`candles[${index}] is missing`);
+    validateCandle(candle, index);
+    if (candle.timestamp <= previousTimestamp) {
+      throw new TypeError('candles must have strictly increasing timestamps');
+    }
+    previousTimestamp = candle.timestamp;
+    packCandle(candle, packed);
+  }
+  return packed;
 }
 
 function unpackCandles(values: ReadonlyArray<number>): OhlcCandle[] {
@@ -277,12 +293,14 @@ export function createTradingCharts(
       nativeTradingCharts.removeSeries(chartId, seriesId);
     },
 
-    setSeriesLegendVisible(chartId: string, seriesId: string, visible: boolean) {
+    setSeriesLegendVisible(
+      chartId: string,
+      seriesId: string,
+      visible: boolean
+    ) {
       assertChartId(chartId);
       assertIdentifier(seriesId, 'seriesId');
-      if (visible !== true && visible !== false) {
-        throw new TypeError('visible must be a boolean');
-      }
+      assertBoolean(visible, 'visible');
       nativeTradingCharts.setSeriesLegendVisible(chartId, seriesId, visible);
     },
 
@@ -298,36 +316,12 @@ export function createTradingCharts(
 
     setHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
       assertChartId(chartId);
-      const packed: number[] = [];
-      let previousTimestamp = -Infinity;
-      candles.forEach((candle, index) => {
-        validateCandle(candle, index);
-        if (candle.timestamp <= previousTimestamp) {
-          throw new TypeError(
-            'candles must have strictly increasing timestamps'
-          );
-        }
-        previousTimestamp = candle.timestamp;
-        packCandle(candle, packed);
-      });
-      nativeTradingCharts.setHistory(chartId, packed);
+      nativeTradingCharts.setHistory(chartId, packHistory(candles));
     },
 
     prependHistory(chartId: string, candles: ReadonlyArray<OhlcCandle>) {
       assertChartId(chartId);
-      const packed: number[] = [];
-      let previousTimestamp = -Infinity;
-      candles.forEach((candle, index) => {
-        validateCandle(candle, index);
-        if (candle.timestamp <= previousTimestamp) {
-          throw new TypeError(
-            'candles must have strictly increasing timestamps'
-          );
-        }
-        previousTimestamp = candle.timestamp;
-        packCandle(candle, packed);
-      });
-      nativeTradingCharts.prependHistory(chartId, packed);
+      nativeTradingCharts.prependHistory(chartId, packHistory(candles));
     },
 
     updateCandle(chartId: string, candle: OhlcCandle) {
@@ -370,11 +364,11 @@ export function createTradingCharts(
       );
     },
 
-  removePriceLine(chartId: string, priceLineId: string) {
-    assertChartId(chartId);
-    if (priceLineId.trim().length === 0) {
-      throw new TypeError('priceLineId must be a non-empty string');
-    }
+    removePriceLine(chartId: string, priceLineId: string) {
+      assertChartId(chartId);
+      if (priceLineId.trim().length === 0) {
+        throw new TypeError('priceLineId must be a non-empty string');
+      }
       nativeTradingCharts.removePriceLine(chartId, priceLineId);
     },
 

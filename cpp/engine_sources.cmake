@@ -13,6 +13,9 @@ set(
   ${CMAKE_CURRENT_LIST_DIR}/internal/packed_data.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/pane_layout.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/render_snapshot_builder.cc
+  ${CMAKE_CURRENT_LIST_DIR}/internal/render_snapshot_geometry.cc
+  ${CMAKE_CURRENT_LIST_DIR}/internal/render_snapshot_overlay.cc
+  ${CMAKE_CURRENT_LIST_DIR}/internal/render_snapshot_ranges.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/series_geometry.cc
   ${CMAKE_CURRENT_LIST_DIR}/internal/trading_time.cc
 )

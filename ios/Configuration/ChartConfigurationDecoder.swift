@@ -53,7 +53,11 @@ enum ChartConfigurationDecoder {
     guard
       let data = json.data(using: .utf8),
       let root = try? JSONSerialization.jsonObject(with: data),
-      let root = root as? JSONDictionary
+      let root = root as? JSONDictionary,
+      let additionalSeries = (root["additionalSeries"] ?? []) as? [JSONDictionary],
+      let count = root.number("initialVisibleCount"),
+      let initialVisibleCount = Int32(exactly: count.doubleValue),
+      initialVisibleCount > 0
     else { return nil }
 
     var config = NativeChartConfig()
@@ -118,7 +122,7 @@ enum ChartConfigurationDecoder {
       ? .tradingDateUtc : .bucketStart
     config.trade_aggregation.calendar = calendarConfig(tradeAggregation.dictionaryOrNil("calendar"))
 
-    config.initial_visible_count = Int32(root.int("initialVisibleCount"))
+    config.initial_visible_count = initialVisibleCount
     config.default_scale = root.number("defaultScale")?.doubleValue ?? 1
     config.default_y_scale = yAxis.number("defaultScale")?.doubleValue ?? 1
     config.background = colorFromHex(appearance.stringOrNil("backgroundColor"), fallback: config.background)
@@ -275,7 +279,7 @@ enum ChartConfigurationDecoder {
       panesResizable: root.bool("panesResizable") && paneItems.count > 1,
       presentation: root,
       appearances: defaults,
-      additionalSeries: root.array("additionalSeries").compactMap { $0 as? JSONDictionary }
+      additionalSeries: additionalSeries
     )
   }
 

@@ -213,16 +213,10 @@ extension ChartOverlayView {
     metrics: inout OverlayUpdateMetrics,
     visible: inout Int
   ) {
-    var active = Set<String>()
     let scaleId = frame.paneCount > 0 ? String(frame.pane(at: 0).price_scale_id) : "main"
     let formatter = formatters.valueFormatterToken(scaleId: scaleId)
-    for index in 0..<frame.priceLineCount {
-      let priceLine = frame.priceLine(at: index)
-      let id = String(priceLine.id)
-      active.insert(id)
-      let group = priceLineLayers[id]
-        ?? PriceLineLayerGroup(labelParent: priceLineContainer, badgeParent: badgeContainer)
-      priceLineLayers[id] = group
+
+    func apply(_ priceLine: NativePriceLineSnapshot, to group: PriceLineLayerGroup) {
       let color = uiColor(priceLine.color)
       let label = String(priceLine.label)
       let labelAttributes = replacingColor(style.yAxis, color: color)
@@ -289,11 +283,27 @@ extension ChartOverlayView {
       )
       visible += 2
     }
-    for (id, group) in priceLineLayers where !active.contains(id) {
-      setHidden(true, on: group.labelBackground)
-      setHidden(true, on: group.labelItem.layer)
-      hideBadge(group.badge)
-    }
+    priceLineLayers.reconcile(
+      (0..<frame.priceLineCount).lazy.map(frame.priceLine(at:)),
+      id: { String($0.id) },
+      acquire: { recycled in
+        if let recycled {
+          // A newly inserted line draws above earlier labels at the same price.
+          self.priceLineContainer.addSublayer(recycled.labelBackground)
+          self.priceLineContainer.addSublayer(recycled.labelItem.layer)
+          self.badgeContainer.addSublayer(recycled.badge.backgroundLayer)
+          self.badgeContainer.addSublayer(recycled.badge.textItem.layer)
+          return recycled
+        }
+        return PriceLineLayerGroup(labelParent: self.priceLineContainer, badgeParent: self.badgeContainer)
+      },
+      hide: { group in
+        self.setHidden(true, on: group.labelBackground)
+        self.setHidden(true, on: group.labelItem.layer)
+        self.hideBadge(group.badge)
+      },
+      apply: apply
+    )
   }
 
   private func colorKey(_ color: NativeColor) -> String {

@@ -1,6 +1,11 @@
 package com.tradingcharts
 
 import android.graphics.Color
+import android.util.DisplayMetrics
+import android.util.TypedValue
+
+internal fun DisplayMetrics.spToPx(sizeSp: Float): Float =
+    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sizeSp, this)
 
 internal data class ValueFormat(
     val type: String = "price",
@@ -516,8 +521,8 @@ internal data class ChartConfig(
   companion object {
     const val PANE_NUMBER_WIDTH = 8
 
-    fun fromJson(json: String, density: Float, scaledDensity: Float): ChartConfig =
-        ChartConfigJsonDecoder(json, density, scaledDensity).decode()
+    fun fromJson(json: String, metrics: DisplayMetrics): ChartConfig =
+        ChartConfigJsonDecoder(json, metrics).decode()
   }
 }
 

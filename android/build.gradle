@@ -19,7 +19,8 @@ buildscript {
   }
 
   dependencies {
-    classpath "com.android.tools.build:gradle:8.9.2"
+    // Use the Android Gradle Plugin version supplied by the host React Native build.
+    classpath "com.facebook.react:react-native-gradle-plugin"
     // noinspection DifferentKotlinGradleVersion
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
   }
@@ -32,15 +33,16 @@ apply plugin: "kotlin-android"
 apply plugin: "com.facebook.react"
 
 android {
-  namespace "com.tradingcharts"
+  namespace = "com.tradingcharts"
 
   compileSdkVersion getExtOrDefault("compileSdkVersion")
 
   buildFeatures {
-    buildConfig true
+    buildConfig = true
   }
 
   defaultConfig {
+    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField "boolean", "TRADING_CHARTS_EXAMPLE_DIAGNOSTICS",
         (findProperty("TRADING_CHARTS_EXAMPLE_DIAGNOSTICS") ?: "false").toString()
 
@@ -69,7 +71,14 @@ android {
   }
 }
 
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+  variant.androidTest?.packaging?.jniLibs?.pickFirsts?.add("**/libc++_shared.so")
+}
+
 dependencies {
   implementation "com.facebook.react:react-android"
+  implementation "org.threeten:threetenbp:1.7.5"
+  androidTestImplementation "androidx.test:runner:1.7.0"
+  androidTestImplementation "androidx.test.ext:junit:1.3.0"
   testImplementation "junit:junit:4.13.2"
 }

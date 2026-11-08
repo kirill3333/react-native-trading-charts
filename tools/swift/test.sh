@@ -20,8 +20,21 @@ xcrun swiftc -swift-version 5 -D TRADING_CHARTS_EXAMPLE_DIAGNOSTICS -warnings-as
   "$repo_root/example/ios/TradingChartsExample/Performance/PerformanceMeasurements.swift" \
   "$repo_root/example/ios/TradingChartsExample/Performance/PerformanceThreadReader.swift" \
   "$repo_root/ios/Registry/TradingChartsRegistry.swift" \
+  "$repo_root/ios/Overlay/PriceLineLayerPool.swift" \
+  "$repo_root/tools/swift/PriceLineLayerPoolTests.swift" \
   "$repo_root/tools/swift/LegendRegistryTests.swift" \
   "$repo_root/tools/swift/PerformanceTests.swift" \
   "$repo_root/tools/swift/main.swift" \
   -o "$test_dir/buffer-tests"
 "$test_dir/buffer-tests"
+
+xcrun swiftc -swift-version 5 -O -whole-module-optimization -cxx-interoperability-mode=default \
+  -module-cache-path "$test_dir/module-cache" \
+  -I "$repo_root/ios/cxx" -Xcc "-I$repo_root" -Xcc -std=c++17 \
+  "$repo_root/ios/Engine/ChartEngineClient.swift" \
+  "$repo_root/ios/Host/ChartPriceScaleChanges.swift" \
+  "$repo_root/ios/Configuration/ChartConfigurationDecoder.swift" \
+  "$repo_root/ios/Configuration/SeriesConfigurationDecoder.swift" \
+  "$repo_root/tools/swift/InitialVisibleCountTests.swift" \
+  -o "$test_dir/initial-visible-count-tests"
+"$test_dir/initial-visible-count-tests"

@@ -1,15 +1,19 @@
-import { defineRule } from "@oxlint/plugins";
-import type { ESTree } from "@oxlint/plugins";
+import { defineRule } from '@oxlint/plugins';
+import type { ESTree } from '@oxlint/plugins';
 
 type TypeAssertionExpression = ESTree.TSAsExpression | ESTree.TSTypeAssertion;
 
-function isTypeAssertionExpression(node: ESTree.Node): node is TypeAssertionExpression {
-  return node.type === "TSAsExpression" || node.type === "TSTypeAssertion";
+function isTypeAssertionExpression(
+  node: ESTree.Node
+): node is TypeAssertionExpression {
+  return node.type === 'TSAsExpression' || node.type === 'TSTypeAssertion';
 }
 
-function unwrapParenthesizedExpression(expression: ESTree.Expression): ESTree.Expression {
+function unwrapParenthesizedExpression(
+  expression: ESTree.Expression
+): ESTree.Expression {
   let current = expression;
-  while (current.type === "ParenthesizedExpression") {
+  while (current.type === 'ParenthesizedExpression') {
     current = current.expression;
   }
   return current;
@@ -18,9 +22,9 @@ function unwrapParenthesizedExpression(expression: ESTree.Expression): ESTree.Ex
 function isConstAssertion(node: TypeAssertionExpression): boolean {
   const { typeAnnotation } = node;
   return (
-    typeAnnotation.type === "TSTypeReference" &&
-    typeAnnotation.typeName.type === "Identifier" &&
-    typeAnnotation.typeName.name === "const"
+    typeAnnotation.type === 'TSTypeReference' &&
+    typeAnnotation.typeName.type === 'Identifier' &&
+    typeAnnotation.typeName.name === 'const'
   );
 }
 
@@ -28,7 +32,10 @@ function isOutermostAssertionInChain(node: TypeAssertionExpression): boolean {
   let current: ESTree.Expression = node;
   let parent = node.parent;
 
-  while (parent.type === "ParenthesizedExpression" && parent.expression === current) {
+  while (
+    parent.type === 'ParenthesizedExpression' &&
+    parent.expression === current
+  ) {
     current = parent;
     parent = parent.parent;
   }
@@ -53,20 +60,24 @@ function isForbiddenAssertionChain(node: TypeAssertionExpression): boolean {
 /** Disallow nested TypeScript type assertions, while permitting chains made only of const assertions. */
 export const noChainedTypeAssertionsRule = defineRule({
   meta: {
-    type: "problem",
+    type: 'problem',
     docs: {
       description:
-        "Disallow chained TypeScript as and angle-bracket assertions, including parenthesized chains.",
+        'Disallow chained TypeScript as and angle-bracket assertions, including parenthesized chains.',
     },
     messages: {
       chained:
-        "This assertion chain discards type evidence. Keep the original precise type, or parse untrusted input at its boundary before narrowing it.",
+        'This assertion chain discards type evidence. Keep the original precise type, or parse untrusted input at its boundary before narrowing it.',
     },
   },
   createOnce(context) {
     const checkTypeAssertion = (node: TypeAssertionExpression) => {
-      if (!isOutermostAssertionInChain(node) || !isForbiddenAssertionChain(node)) return;
-      context.report({ node, messageId: "chained" });
+      if (
+        !isOutermostAssertionInChain(node) ||
+        !isForbiddenAssertionChain(node)
+      )
+        return;
+      context.report({ node, messageId: 'chained' });
     };
 
     return {

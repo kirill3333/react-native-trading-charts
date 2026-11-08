@@ -28,9 +28,9 @@ iwyu_tool.py -p "$build_dir" \
   cpp/internal/config_normalization.cc \
   cpp/internal/indicator_series.cc \
   cpp/internal/packed_data.cc \
-  cpp/internal/render_snapshot_builder.cc \
+  cpp/internal/render_snapshot_*.cc \
   cpp/internal/series_geometry.cc \
-  cpp/tests/chart_engine_test.cc \
+  cpp/tests/chart_engine*.cc \
   -- \
   "${compiler_args[@]}" \
   -Xiwyu "--mapping_file=$script_dir/libcxx.imp" \

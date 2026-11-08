@@ -8,6 +8,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
 import android.view.View
+import androidx.core.graphics.withClip
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -73,13 +74,6 @@ internal class ChartOverlayView(context: Context) : View(context) {
       val width: Float,
   )
 
-  /** Everything drawBadge needs to place one badge without re-measuring. */
-  private data class BadgeContent(
-      val label: AxisLabel,
-      val y: Float,
-      val backgroundColor: Int,
-  )
-
   private data class PriceLineContent(
       val label: AxisLabel,
       val price: AxisLabel,
@@ -97,7 +91,6 @@ internal class ChartOverlayView(context: Context) : View(context) {
   }
 
   private val density = resources.displayMetrics.density
-  private val scaledDensity = resources.displayMetrics.scaledDensity
   private val xAxisPaint = textPaint(10.5f, false)
   private val yAxisPaint = textPaint(10.5f, false)
   private val extremaTextPaint = textPaint(10.5f, false)
@@ -160,7 +153,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private fun textPaint(sizeSp: Float, bold: Boolean) =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = sizeSp * scaledDensity
+        textSize = resources.displayMetrics.spToPx(sizeSp)
         typeface = Typeface.create(Typeface.MONOSPACE, if (bold) Typeface.BOLD else Typeface.NORMAL)
       }
 
@@ -243,7 +236,7 @@ internal class ChartOverlayView(context: Context) : View(context) {
       defaultBold: Boolean,
   ) {
     paint.color = style.color
-    paint.textSize = style.fontSizePx ?: defaultSizeSp * scaledDensity
+    paint.textSize = style.fontSizePx ?: resources.displayMetrics.spToPx(defaultSizeSp)
     val bold =
         when (style.fontWeight) {
           "medium",
@@ -400,14 +393,11 @@ internal class ChartOverlayView(context: Context) : View(context) {
     drawPriceLines(canvas, frame)
 
     if (frame.currentPriceVisible && config.showCurrentPriceLabel) {
-      drawBadge(
-          canvas,
+      canvas.drawBadge(
           frame,
-          BadgeContent(
-              currentPriceLabel(frame),
-              frame.currentPriceY,
-              colorFromFloats(frame.currentPriceLabelColor),
-          ),
+          currentPriceLabel(frame),
+          frame.currentPriceY,
+          colorFromFloats(frame.currentPriceLabelColor),
           currentPriceBadge = true,
       )
     }
@@ -534,14 +524,11 @@ internal class ChartOverlayView(context: Context) : View(context) {
               activePane?.let { paneValueFormats[it.priceScaleId] } ?: crosshairPriceValueFormat,
           )
         }
-    drawBadge(
-        canvas,
+    canvas.drawBadge(
         frame,
-        BadgeContent(
-            AxisLabel(priceText, crosshairPriceTextPaint.measureText(priceText)),
-            frame.crosshairY,
-            frame.config.crosshairPriceBackgroundColor,
-        ),
+        AxisLabel(priceText, crosshairPriceTextPaint.measureText(priceText)),
+        frame.crosshairY,
+        frame.config.crosshairPriceBackgroundColor,
         currentPriceBadge = false,
     )
     drawTimeBadge(canvas, frame)
@@ -634,22 +621,21 @@ internal class ChartOverlayView(context: Context) : View(context) {
       var top = nextLegendTop[legend.paneIndex]
       rsiTitlePaint.color =
           if (legend.textColorSet) legend.textColor else frame.config.yAxisTextStyle.color
-      val saved = canvas.save()
-      canvas.clipRect(left, pane.plotTop, right, pane.plotBottom)
-      for ((part, run) in label.withIndex()) {
-        val width = run.width
-        if (x > left && x + width > right) {
-          x = left
-          top += lineHeight + 2f * density
+      canvas.withClip(left, pane.plotTop, right, pane.plotBottom) {
+        for ((part, run) in label.withIndex()) {
+          val width = run.width
+          if (x > left && x + width > right) {
+            x = left
+            top += lineHeight + 2f * density
+          }
+          if (top + lineHeight > pane.plotBottom) break
+          val paint = if (part == 0) rsiTitlePaint else rsiValuePaint
+          if (part > 0) paint.color = legend.values[part - 1].color
+          canvas.drawText(run.text, x, top - paint.ascent(), paint)
+          legendBounds[legend.paneIndex].union(x, top, min(right, x + width), top + lineHeight)
+          x += width + 5f * density
         }
-        if (top + lineHeight > pane.plotBottom) break
-        val paint = if (part == 0) rsiTitlePaint else rsiValuePaint
-        if (part > 0) paint.color = legend.values[part - 1].color
-        canvas.drawText(run.text, x, top - paint.ascent(), paint)
-        legendBounds[legend.paneIndex].union(x, top, min(right, x + width), top + lineHeight)
-        x += width + 5f * density
       }
-      canvas.restoreToCount(saved)
       nextLegendTop[legend.paneIndex] = top + lineHeight + 2f * density
     }
   }
@@ -713,10 +699,11 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private fun centeredBaseline(y: Float, paint: Paint) = y - (paint.ascent() + paint.descent()) / 2f
 
-  private fun drawBadge(
-      canvas: Canvas,
+  private fun Canvas.drawBadge(
       frame: ChartSnapshot,
-      badge: BadgeContent,
+      label: AxisLabel,
+      y: Float,
+      backgroundColor: Int,
       currentPriceBadge: Boolean,
   ) {
     val config = frame.config
@@ -724,14 +711,14 @@ internal class ChartOverlayView(context: Context) : View(context) {
     val border = if (currentPriceBadge) config.currentPriceBorder else config.crosshairPriceBorder
     val height = max(20f * density, textPaint.descent() - textPaint.ascent() + 6f * density)
     val halfHeight = height / 2f
-    val badgeY = badge.y.coerceIn(halfHeight, max(halfHeight, frame.height - halfHeight))
-    val width = min(config.yAxisWidth, badge.label.width + 12f * density)
+    val badgeY = y.coerceIn(halfHeight, max(halfHeight, frame.height - halfHeight))
+    val width = min(config.yAxisWidth, label.width + 12f * density)
     val x = frame.plotRight
     val rect = scratchRect
     rect.set(x, badgeY - halfHeight, x + width, badgeY + halfHeight)
-    drawBackground(canvas, rect, badge.backgroundColor, border)
-    canvas.drawText(
-        badge.label.text,
+    drawBackground(this, rect, backgroundColor, border)
+    drawText(
+        label.text,
         rect.left + 6f * density,
         centeredBaseline(rect.centerY(), textPaint),
         textPaint,
