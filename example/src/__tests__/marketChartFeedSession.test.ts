@@ -35,7 +35,7 @@ const cleanups: Array<() => void> = [];
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup());
 });
-function harness() {
+function harness(maxCandles = binanceMarketData.maxCandles) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -67,6 +67,7 @@ function harness() {
   const session = new MarketChartFeedSession({
     adapter: {
       ...binanceMarketData,
+      maxCandles,
       fetchCandles,
       parseMarketMessage: (message: OhlcCandle) => [message],
       websocket: { connect },
@@ -218,14 +219,66 @@ describe('market chart feed sessions', () => {
       candle(100, 11),
       candle(101, 12),
     ]);
-    expect(h.queryClient.getQueryData<CandlePages>(h.key)?.pages[1]).toEqual([
-      candle(50),
-    ]);
+    expect(
+      h.queryClient.getQueryData<CandlePages>(h.key)?.pages.flat()
+    ).toEqual([candle(50), candle(100, 11), candle(101, 12), candle(102, 15)]);
     h.session.applyHistory(
       h.queryClient.getQueryData<CandlePages>(h.key)?.pages
     );
     expect(h.charts.prependHistory).toHaveBeenCalledTimes(1);
     expect(h.publish.mock.lastCall?.[0].lastPrice).toBe(15);
+  });
+  it('preserves cached and live candles across a rolling REST window', async () => {
+    const h = harness(6);
+    h.fetchCandles.mockResolvedValueOnce([candle(2), candle(3)]);
+    h.session.start();
+    h.ready();
+    await flush();
+    h.queryClient.setQueryData<CandlePages>(h.key, {
+      pages: [[candle(2), candle(3)], [candle(0), candle(1)], []],
+      pageParams: [undefined, 2, 0],
+    });
+    h.message(candle(4));
+    h.message(candle(4, 15));
+    h.message(candle(5));
+    h.emit({ type: 'state', state: 'reconnecting', error: 'closed' });
+    h.fetchCandles.mockResolvedValueOnce([candle(5, 20), candle(6)]);
+    h.ready(2);
+    h.message(candle(7), 2);
+    await flush();
+    const expected = [
+      candle(2),
+      candle(3),
+      candle(4, 15),
+      candle(5, 20),
+      candle(6),
+    ];
+    expect(h.charts.setHistory).toHaveBeenLastCalledWith('chart', expected);
+    expect(h.queryClient.getQueryData<CandlePages>(h.key)).toEqual({
+      pages: [[...expected, candle(7)], []],
+      pageParams: [undefined, 2],
+    });
+  });
+  it('keeps a buffered candle between a lagging REST snapshot and the latest live candle', async () => {
+    const h = harness();
+    h.session.start();
+    h.ready();
+    await flush();
+    h.message(candle(105));
+    h.emit({ type: 'state', state: 'reconnecting', error: 'closed' });
+    h.fetchCandles.mockResolvedValueOnce([candle(103)]);
+    h.ready(2);
+    h.message(candle(104), 2);
+    await flush();
+    const expected = [candle(100), candle(103), candle(104), candle(105)];
+    expect(h.charts.setHistory).toHaveBeenLastCalledWith('chart', expected);
+    expect(h.queryClient.getQueryData<CandlePages>(h.key)?.pages).toEqual([
+      expected,
+    ]);
+    h.session.applyHistory([expected, [candle(99)]]);
+    expect(h.charts.prependHistory).toHaveBeenLastCalledWith('chart', [
+      candle(99),
+    ]);
   });
   it('does not write to the cache or chart when a disposed REST request completes', async () => {
     const h = harness();

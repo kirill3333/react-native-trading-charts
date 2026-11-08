@@ -6,9 +6,7 @@ import { SettingsSection } from '../SettingsSection';
 
 export function VolumeSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const appearance = buildVolumeAppearance(settings);
 
   return (

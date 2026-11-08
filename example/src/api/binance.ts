@@ -8,14 +8,7 @@ import { binanceHttp, requestData } from './http';
 export const BINANCE_WEBSOCKET_URL = 'wss://stream.binance.com:9443/ws';
 
 export type BinanceInterval =
-  | '1s'
-  | '1m'
-  | '5m'
-  | '15m'
-  | '1h'
-  | '6h'
-  | '12h'
-  | '1d';
+  '1s' | '1m' | '5m' | '15m' | '1h' | '6h' | '12h' | '1d';
 
 type BinanceIntervalOption = {
   value: BinanceInterval;
@@ -222,12 +215,10 @@ export function mergeTickersWithInstruments(
   instruments: ReadonlyArray<BinanceInstrument>
 ): BinanceTicker[] {
   const instrumentsBySymbol = new Map(
-    instruments.map(
-      (instrument): [string, BinanceInstrument] => [
-        instrument.symbol,
-        instrument,
-      ]
-    )
+    instruments.map((instrument): [string, BinanceInstrument] => [
+      instrument.symbol,
+      instrument,
+    ])
   );
   return tickers.flatMap((ticker) => {
     const instrument = instrumentsBySymbol.get(ticker.symbol);

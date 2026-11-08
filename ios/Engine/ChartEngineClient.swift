@@ -154,15 +154,17 @@ struct ChartRenderFrame {
 final class ChartEngineClient {
   private var handle = trading_charts.swift_interop.ChartEngineHandle()
 
-  func setConfig(_ config: NativeChartConfig) {
-    handle.SetConfig(config)
-  }
-
-  func setPanes(
-    _ panes: NativePaneVector,
-    resizable: Bool
-  ) {
-    handle.SetPanes(panes, resizable)
+  func applyConfiguration(_ configuration: ResolvedChartConfiguration) -> NativeUpdateStatus {
+    var series = trading_charts.swift_interop.SeriesVector()
+    for item in configuration.additionalSeries {
+      let decoded = SeriesConfigurationDecoder.decode(
+        item: item, declarative: true, chartConfig: configuration.native,
+        defaults: configuration.appearances
+      )
+      trading_charts.swift_interop.AppendSeries(&series, decoded)
+    }
+    return handle.ApplyConfiguration(
+      configuration.native, configuration.panes, configuration.panesResizable, series)
   }
 
   @discardableResult

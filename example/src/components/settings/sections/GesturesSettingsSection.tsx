@@ -4,9 +4,7 @@ import { SettingSwitch } from '../SettingSwitch';
 
 export function GesturesSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
 
   return (
     <SettingsSection title="Gestures">

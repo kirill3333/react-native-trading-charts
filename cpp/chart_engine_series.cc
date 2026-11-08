@@ -8,6 +8,9 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -27,6 +30,25 @@ bool IsSupportedSeriesType(SeriesType type) {
          type == SeriesType::kHollowCandlestick || type == SeriesType::kBar ||
          type == SeriesType::kHistogram || type == SeriesType::kLine ||
          type == SeriesType::kArea || type == SeriesType::kBaseline;
+}
+
+bool IsRsiMacdPair(SeriesSource first, SeriesSource second) {
+  return (first == SeriesSource::kOhlcvRsi &&
+          second == SeriesSource::kOhlcvMacd) ||
+         (first == SeriesSource::kOhlcvMacd &&
+          second == SeriesSource::kOhlcvRsi);
+}
+
+// These fields determine source bindings and the values stored by the
+// indicator calculators. Styling can change without invalidating either.
+auto SeriesCalculationInputs(const SeriesConfig& config) {
+  return std::tie(
+      config.type, config.source, config.source_series_id, config.pane_id,
+      config.price_scale_id, config.line_source, config.rsi_period,
+      config.moving_average_period, config.macd_fast_period,
+      config.macd_slow_period, config.macd_signal_period, config.boll_period,
+      config.boll_std_dev_multiplier, config.sar_step, config.sar_maximum,
+      config.williams_period, config.kdj_period, config.kdj_m1, config.kdj_m2);
 }
 
 bool IsValidRsiSeriesConfig(const SeriesConfig& config) {
@@ -52,6 +74,114 @@ bool IsValidMacdSeriesConfig(const SeriesConfig& config) {
       config.macd_fast_period < config.macd_slow_period;
   return config.type == SeriesType::kLine && has_valid_periods &&
          !config.source_series_id.empty();
+}
+
+bool ValidSeriesParameters(const SeriesConfig& config) {
+  const bool has_valid_identifiers =
+      !config.series_id.empty() && config.series_id != "main" &&
+      !config.pane_id.empty() && !config.price_scale_id.empty();
+  if (!has_valid_identifiers || !IsSupportedSeriesType(config.type)) {
+    return false;
+  }
+  if (RequiresDedicatedPane(config.source) &&
+      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
+       config.source_series_id == config.series_id)) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvWilliamsR &&
+      (config.williams_period == 0 ||
+       !(config.williams_oversold >= -100.0 &&
+         config.williams_oversold < config.williams_overbought &&
+         config.williams_overbought <= 0.0))) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvKdj &&
+      (config.kdj_period == 0 || config.kdj_m1 == 0 || config.kdj_m2 == 0)) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvRsi &&
+      !IsValidRsiSeriesConfig(config)) {
+    return false;
+  }
+  if (IsMovingAverageSource(config.source) &&
+      !IsValidMovingAverageSeriesConfig(config)) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvMacd &&
+      !IsValidMacdSeriesConfig(config)) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvSar &&
+      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
+       !std::isfinite(config.sar_step) || !std::isfinite(config.sar_maximum) ||
+       config.sar_step <= 0.0 || config.sar_step > config.sar_maximum ||
+       config.sar_maximum > 1.0)) {
+    return false;
+  }
+  if (config.source == SeriesSource::kOhlcvBoll &&
+      (config.type != SeriesType::kLine || config.boll_period == 0 ||
+       !std::isfinite(config.boll_std_dev_multiplier) ||
+       config.boll_std_dev_multiplier <= 0.0 ||
+       config.source_series_id.empty())) {
+    return false;
+  }
+  return true;
+}
+
+bool ValidSeriesPlacement(const SeriesConfig& config,
+                          const std::vector<PaneConfig>& panes,
+                          const std::vector<SeriesData>& series,
+                          bool complete) {
+  const auto pane = std::find_if(
+      panes.begin(), panes.end(), [&](const PaneConfig& candidate) {
+        return candidate.pane_id == config.pane_id &&
+               candidate.price_scale_id == config.price_scale_id;
+      });
+  if (pane == panes.end()) {
+    return false;
+  }
+  if (pane == panes.begin() && (IsFixedOscillator(config.source) ||
+                                RequiresDedicatedPane(config.source) ||
+                                config.source == SeriesSource::kOhlcvMacd)) {
+    return false;
+  }
+  for (const auto& other : series) {
+    if (other.config.pane_id != config.pane_id ||
+        other.config.series_id == config.series_id ||
+        other.config.source == config.source) {
+      continue;
+    }
+    const auto other_source = other.config.source;
+    if (RequiresDedicatedPane(config.source) ||
+        RequiresDedicatedPane(other_source) ||
+        ((complete || other.pane_index.has_value()) &&
+         IsRsiMacdPair(config.source, other_source))) {
+      return false;
+    }
+  }
+  const bool same_pane = IsMovingAverageSource(config.source) ||
+                         config.source == SeriesSource::kOhlcvBoll ||
+                         config.source == SeriesSource::kOhlcvSar;
+  const bool needs_source = same_pane || RequiresDedicatedPane(config.source) ||
+                            config.source == SeriesSource::kOhlcvMacd;
+  if (!needs_source && !(complete && IsDerivedOhlcvSource(config.source))) {
+    return true;
+  }
+  if (config.source_series_id == "main" || config.source_series_id.empty()) {
+    return !same_pane || pane == panes.begin();
+  }
+  const auto source =
+      std::find_if(series.begin(), series.end(), [&](const SeriesData& item) {
+        return item.config.series_id == config.source_series_id;
+      });
+  if (source == series.end()) {
+    return !complete && config.declarative;
+  }
+  return source->config.source == SeriesSource::kData &&
+         source->config.type != SeriesType::kHistogram &&
+         (!same_pane ||
+          (source->config.pane_id == config.pane_id &&
+           source->config.price_scale_id == config.price_scale_id));
 }
 
 }  // namespace
@@ -168,132 +298,14 @@ bool ChartEngine::PaneHasFixedScaleLocked(size_t pane_index) const {
                      });
 }
 
-bool ChartEngine::PaneHasMacdLocked(size_t pane_index) const {
-  return std::any_of(additional_series_.begin(), additional_series_.end(),
-                     [&](const SeriesData& series) {
-                       return series.pane_index.has_value() &&
-                              *series.pane_index == pane_index &&
-                              series.config.source == SeriesSource::kOhlcvMacd;
-                     });
-}
-
 UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
-  const bool has_valid_identifiers =
-      !config.series_id.empty() && config.series_id != "main" &&
-      !config.pane_id.empty() && !config.price_scale_id.empty();
-  if (!has_valid_identifiers || !IsSupportedSeriesType(config.type)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (RequiresDedicatedPane(config.source) &&
-      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
-       config.source_series_id == config.series_id)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvWilliamsR &&
-      (config.williams_period == 0 ||
-       !(config.williams_oversold >= -100.0 &&
-         config.williams_oversold < config.williams_overbought &&
-         config.williams_overbought <= 0.0))) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvKdj &&
-      (config.kdj_period == 0 || config.kdj_m1 == 0 || config.kdj_m2 == 0)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvRsi &&
-      !IsValidRsiSeriesConfig(config)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (IsMovingAverageSource(config.source) &&
-      !IsValidMovingAverageSeriesConfig(config)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvMacd &&
-      !IsValidMacdSeriesConfig(config)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvSar &&
-      (config.type != SeriesType::kLine || config.source_series_id.empty() ||
-       !std::isfinite(config.sar_step) || !std::isfinite(config.sar_maximum) ||
-       config.sar_step <= 0.0 || config.sar_step > config.sar_maximum ||
-       config.sar_maximum > 1.0)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (config.source == SeriesSource::kOhlcvBoll &&
-      (config.type != SeriesType::kLine || config.boll_period == 0 ||
-       !std::isfinite(config.boll_std_dev_multiplier) ||
-       config.boll_std_dev_multiplier <= 0.0 ||
-       config.source_series_id.empty())) {
+  if (!ValidSeriesParameters(config)) {
     return UpdateStatus::kInvalidInput;
   }
   MutationScope mutation(*this);
   SeriesConfig normalized = internal::NormalizeSeriesConfig(config, config_);
-  const auto pane = std::find_if(
-      panes_.begin(), panes_.end(), [&](const PaneConfig& candidate) {
-        return candidate.pane_id == normalized.pane_id &&
-               candidate.price_scale_id == normalized.price_scale_id;
-      });
-  if (pane == panes_.end()) {
+  if (!ValidSeriesPlacement(normalized, panes_, additional_series_, false)) {
     return UpdateStatus::kInvalidInput;
-  }
-  if (normalized.source == SeriesSource::kOhlcvRsi && pane == panes_.begin()) {
-    return UpdateStatus::kInvalidInput;
-  }
-  const size_t pane_index =
-      static_cast<size_t>(std::distance(panes_.begin(), pane));
-  if (RequiresDedicatedPane(normalized.source) && pane == panes_.begin()) {
-    return UpdateStatus::kInvalidInput;
-  }
-  for (const auto& other : additional_series_) {
-    if (other.config.pane_id == normalized.pane_id &&
-        other.config.series_id != normalized.series_id &&
-        other.config.source != normalized.source &&
-        (RequiresDedicatedPane(normalized.source) ||
-         RequiresDedicatedPane(other.config.source))) {
-      return UpdateStatus::kInvalidInput;
-    }
-  }
-  if (normalized.source == SeriesSource::kOhlcvMacd &&
-      (pane == panes_.begin() || PaneHasFixedScaleLocked(pane_index))) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (normalized.source == SeriesSource::kOhlcvRsi &&
-      PaneHasMacdLocked(pane_index)) {
-    return UpdateStatus::kInvalidInput;
-  }
-  if (IsMovingAverageSource(normalized.source) ||
-      normalized.source == SeriesSource::kOhlcvBoll ||
-      normalized.source == SeriesSource::kOhlcvSar) {
-    if (normalized.source_series_id == "main") {
-      if (pane != panes_.begin()) {
-        return UpdateStatus::kInvalidInput;
-      }
-    } else {
-      const SeriesData* source = FindSeriesLocked(normalized.source_series_id);
-      if (source == nullptr) {
-        if (!normalized.declarative) {
-          return UpdateStatus::kInvalidInput;
-        }
-      } else if (source->config.source != SeriesSource::kData ||
-                 source->config.type == SeriesType::kHistogram ||
-                 source->config.pane_id != normalized.pane_id ||
-                 source->config.price_scale_id != normalized.price_scale_id) {
-        return UpdateStatus::kInvalidInput;
-      }
-    }
-  }
-  if ((normalized.source == SeriesSource::kOhlcvMacd ||
-       RequiresDedicatedPane(normalized.source)) &&
-      normalized.source_series_id != "main") {
-    const SeriesData* source = FindSeriesLocked(normalized.source_series_id);
-    if (source == nullptr) {
-      if (!normalized.declarative) {
-        return UpdateStatus::kInvalidInput;
-      }
-    } else if (source->config.source != SeriesSource::kData ||
-               source->config.type == SeriesType::kHistogram) {
-      return UpdateStatus::kInvalidInput;
-    }
   }
   SeriesData* existing = FindSeriesLocked(normalized.series_id);
   if (existing != nullptr) {
@@ -301,6 +313,14 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
       return UpdateStatus::kInvalidInput;
     }
     mutation.ContentChanged();
+    if (SeriesCalculationInputs(existing->config) ==
+        SeriesCalculationInputs(normalized)) {
+      existing->config = std::move(normalized);
+      return UpdateStatus::kApplied;
+    }
+    if (IsRsiMacdPair(existing->config.source, normalized.source)) {
+      *existing = SeriesData{};
+    }
     existing->config = normalized;
   } else {
     SeriesData series;
@@ -310,6 +330,137 @@ UpdateStatus ChartEngine::AddSeries(const SeriesConfig& config) {
   }
   RebuildSeriesIndicesLocked(mutation);
   RebuildAllDerivedSeriesLocked(mutation);
+  return UpdateStatus::kApplied;
+}
+
+UpdateStatus ChartEngine::ApplyConfiguration(
+    const ChartConfig& config, const std::vector<PaneConfig>& panes,
+    bool resizable, const std::vector<SeriesConfig>& declarations) {
+  auto normalized = internal::NormalizeChartConfig(config);
+  MutationScope mutation(*this);
+  auto next_panes = NormalizePanesLocked(panes, normalized);
+  std::vector<SeriesData> next;
+  next.reserve(declarations.size() + additional_series_.size());
+  std::unordered_set<std::string> requested;
+  for (const auto& declaration : declarations) {
+    if ((declaration.source == SeriesSource::kOhlcvVolume &&
+         declaration.type != SeriesType::kHistogram) ||
+        !ValidSeriesParameters(declaration) ||
+        !requested.insert(declaration.series_id).second) {
+      return UpdateStatus::kInvalidInput;
+    }
+  }
+
+  std::unordered_map<std::string, SeriesData*> previous_by_id;
+  for (auto& item : additional_series_) {
+    previous_by_id.emplace(item.config.series_id, &item);
+  }
+  auto declaration = declarations.begin();
+  const auto append_declaration = [&] {
+    auto& item = next.emplace_back();
+    item.config = internal::NormalizeSeriesConfig(*declaration, normalized);
+    ++declaration;
+    item.config.declarative = true;
+  };
+  // Fill surviving declarative slots in the new draw order. Runtime series
+  // retain their relative position and new declarations follow existing slots.
+  for (const auto& item : additional_series_) {
+    if (item.config.declarative) {
+      if (requested.count(item.config.series_id) != 0) {
+        append_declaration();
+      }
+      continue;
+    }
+    if (requested.count(item.config.series_id) != 0) {
+      return UpdateStatus::kInvalidInput;
+    }
+    const auto source = previous_by_id.find(item.config.source_series_id);
+    if (IsDerivedOhlcvSource(item.config.source) &&
+        source != previous_by_id.end() && source->second->config.declarative &&
+        !requested.count(item.config.source_series_id)) {
+      continue;  // Match RemoveSeries' cascade when a declared source
+                 // disappears.
+    }
+    next.emplace_back().config = item.config;
+  }
+  while (declaration != declarations.end()) {
+    append_declaration();
+  }
+  for (const auto& item : next) {
+    // A runtime series can outlive its pane. Keep it dormant until the pane
+    // returns, but check dependencies on replaced declarations in live panes.
+    const bool affected_runtime =
+        requested.count(item.config.source_series_id) != 0 &&
+        std::any_of(next_panes.begin(), next_panes.end(),
+                    [&](const PaneConfig& pane) {
+                      return pane.pane_id == item.config.pane_id &&
+                             pane.price_scale_id == item.config.price_scale_id;
+                    });
+    if ((item.config.declarative || affected_runtime) &&
+        !ValidSeriesPlacement(item.config, next_panes, next,
+                              item.config.declarative)) {
+      return UpdateStatus::kInvalidInput;
+    }
+  }
+
+  // Resolve every retained data store before building indicators. A forward
+  // reference can then use exactly the same input as a backward reference.
+  std::vector<SeriesData*> retained(next.size(), nullptr);
+  std::unordered_map<std::string, const std::vector<Candle>*> sources;
+  sources.emplace("main", &candles_);
+  for (size_t index = 0; index < next.size(); ++index) {
+    const auto& target = next[index].config;
+    const auto old = previous_by_id.find(target.series_id);
+    if (target.source != SeriesSource::kData || old == previous_by_id.end()) {
+      continue;
+    }
+    auto* data = old->second;
+    const bool histogram = target.type == SeriesType::kHistogram;
+    if (data->config.source == SeriesSource::kData &&
+        (data->config.type == SeriesType::kHistogram) == histogram) {
+      retained[index] = data;
+      if (!histogram) {
+        sources.emplace(target.series_id, &data->candles);
+      }
+    }
+  }
+  for (size_t index = 0; index < next.size(); ++index) {
+    auto& item = next[index];
+    if (!IsDerivedOhlcvSource(item.config.source) ||
+        item.config.source == SeriesSource::kOhlcvVolume) {
+      continue;
+    }
+    const auto source = sources.find(item.config.source_series_id.empty()
+                                         ? "main"
+                                         : item.config.source_series_id);
+    const auto* candles = source != sources.end() ? source->second : nullptr;
+    const auto old = previous_by_id.find(item.config.series_id);
+    if (old != previous_by_id.end() &&
+        SeriesCalculationInputs(old->second->config) ==
+            SeriesCalculationInputs(item.config) &&
+        SourceCandlesLocked(*old->second) == candles) {
+      retained[index] = old->second;
+    } else {
+      internal::RebuildDerivedSeries(item, candles, 0);
+    }
+  }
+
+  // Validation and indicator allocations have finished. Transfer ownership
+  // of compatible histories without copying them or publishing interim state.
+  mutation.ContentChanged();
+  for (size_t index = 0; index < next.size(); ++index) {
+    if (retained[index] != nullptr) {
+      auto updated = std::move(next[index].config);
+      next[index] = std::move(*retained[index]);
+      next[index].config = std::move(updated);
+    }
+  }
+  additional_series_ = std::move(next);
+  panes_ = std::move(next_panes);
+  panes_resizable_ =
+      resizable && panes_.size() >= internal::kMinimumResizablePaneCount;
+  SetConfigLocked(std::move(normalized), mutation);
+  RebuildSeriesIndicesLocked(mutation);
   return UpdateStatus::kApplied;
 }
 

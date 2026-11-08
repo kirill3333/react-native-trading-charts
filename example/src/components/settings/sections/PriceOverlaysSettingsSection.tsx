@@ -4,9 +4,7 @@ import { SettingSwitch } from '../SettingSwitch';
 
 export function PriceOverlaysSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const currentPriceDetailsDisabled = !settings.currentPriceVisible;
   const pinToEdgeDisabled =
     currentPriceDetailsDisabled || !settings.currentPriceShowLabel;

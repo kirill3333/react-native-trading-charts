@@ -22,6 +22,8 @@ target_include_directories(
 )
 
 target_compile_features(trading_charts_engine PUBLIC cxx_std_17)
+# Only the standalone engine harness counts indicator rebuilds.
+target_compile_definitions(trading_charts_engine PUBLIC TRADING_CHARTS_TEST_REBUILDS)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
   target_compile_options(
@@ -45,7 +47,16 @@ add_library(
 )
 target_link_libraries(chart_engine_header_test PRIVATE trading_charts_engine)
 
-add_executable(chart_engine_test tests/chart_engine_test.cc)
+add_executable(
+  chart_engine_test
+  tests/chart_engine_test.cc
+  tests/chart_engine_data_test.cc
+  tests/chart_engine_events_test.cc
+  tests/chart_engine_geometry_test.cc
+  tests/chart_engine_indicators_test.cc
+  tests/chart_engine_oscillators_test.cc
+  tests/chart_engine_panes_test.cc
+)
 target_link_libraries(chart_engine_test PRIVATE trading_charts_engine)
 
 add_executable(

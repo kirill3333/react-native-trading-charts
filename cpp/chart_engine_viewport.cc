@@ -368,7 +368,7 @@ std::optional<size_t> ChartEngine::SeparatorAt(float y, float hit_slop) const {
 bool ChartEngine::ResizePaneSeparator(size_t separator_index,
                                       float delta_pixels) {
   MutationScope mutation(*this);
-  if (!panes_resizable_ || separator_index + 1 >= panes_.size() ||
+  if (!panes_resizable_ || separator_index >= panes_.size() - 1 ||
       !std::isfinite(delta_pixels)) {
     return false;
   }
@@ -380,17 +380,26 @@ bool ChartEngine::ResizePaneSeparator(size_t separator_index,
   const float minimum_first_height = panes_[separator_index].min_height;
   const float maximum_first_height =
       combined_height - panes_[separator_index + 1].min_height;
-  const float height_limited_by_second_pane =
-      std::min(requested_first_height, maximum_first_height);
-  const float next_first =
-      std::max(minimum_first_height, height_limited_by_second_pane);
-  const float next_second = combined_height - next_first;
-  if (next_first == first_height || next_second <= 0.0F) {
+  if (maximum_first_height <= minimum_first_height || first_height <= 0.0F ||
+      second_height <= 0.0F) {
     return false;
   }
+  const float next_first = std::clamp(
+      requested_first_height, minimum_first_height, maximum_first_height);
+  if (next_first == first_height) {
+    return false;
+  }
+  // A pane held at its minimum has a smaller weight per pixel than a
+  // flexible pane. Use the flexible scale to keep the other panes in place.
+  const double weight_per_pixel = std::max(
+      panes_[separator_index].height_weight / static_cast<double>(first_height),
+      panes_[separator_index + 1].height_weight /
+          static_cast<double>(second_height));
   mutation.ContentChanged();
-  panes_[separator_index].height_weight = static_cast<double>(next_first);
-  panes_[separator_index + 1].height_weight = static_cast<double>(next_second);
+  panes_[separator_index].height_weight =
+      weight_per_pixel * static_cast<double>(next_first);
+  panes_[separator_index + 1].height_weight =
+      weight_per_pixel * static_cast<double>(combined_height - next_first);
   crosshair_active_ = false;
   return true;
 }

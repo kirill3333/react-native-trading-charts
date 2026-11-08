@@ -23,7 +23,7 @@ final class ChartOverlayView: UIView {
   private let tooltipBackgroundLayer = CALayer()
   private var extremaConnectorLayers: [CALayer] = []
   private var extremaBackgroundLayers: [CALayer] = []
-  var priceLineLayers: [String: PriceLineLayerGroup] = [:]
+  let priceLineLayers = PriceLineLayerPool<PriceLineLayerGroup>()
 
   let formatters = ChartFormatters()
   private let xAxisLayoutCache = NSCache<NSString, ChartTextLayout>()

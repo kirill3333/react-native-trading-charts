@@ -6,9 +6,7 @@ import { SPACING_OPTIONS } from './settingsOptions';
 
 export function XAxisSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
 
   return (
     <SettingsSection title="X axis">

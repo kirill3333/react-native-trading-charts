@@ -34,8 +34,9 @@ formatting, and React Native integration in the iOS and Android layers.
 - `cpp/internal/pane_layout.{h,cc}`: single source of truth for pane rects,
   shared by gesture hit-testing and the snapshot builder.
 - `cpp/internal/render_snapshot_builder.{h,cc}`: immutable snapshot
-  construction, visible-range computation, autoscale, ticks, and geometry
-  tessellation (split into content and overlay vertex buffers).
+  construction and content reuse. The range and tick calculations live in
+  `render_snapshot_ranges.cc`, content tessellation in `render_snapshot_geometry.cc`,
+  and crosshair selection and legends in `render_snapshot_overlay.cc`.
 - `cpp/internal/series_geometry.{h,cc}`: shared, allocation-free geometry
   strategies for candlestick, bar, and future price-series render types.
 - `ios/TradingChartsView.mm`: thin Objective-C++ Fabric adapter. It owns no
@@ -64,7 +65,8 @@ formatting, and React Native integration in the iOS and Android layers.
   badges, and tooltip overlay.
 - `android/src/main/java/com/tradingcharts/TradingChartsRegistry.kt`: Android
   equivalent of the iOS registry.
-- `cpp/tests/chart_engine_test.cc`: platform-independent behavior tests.
+- `cpp/tests/chart_engine_test.cc`: entry point for platform-independent data, pane,
+  event, indicator, oscillator, and geometry test suites in the same directory.
 
 ## End-to-end data and frame flow
 

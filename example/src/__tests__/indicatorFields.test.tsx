@@ -51,7 +51,8 @@ describe('shared indicator fields', () => {
     });
     expand('SMA');
     expand('EMA');
-    const legends = renderer.root.findAllByType(SettingSwitch)
+    const legends = renderer.root
+      .findAllByType(SettingSwitch)
       .filter((item) => item.props.label === 'Show legend');
     expect(legends.map((item) => item.props.value)).toEqual([true, true]);
     act(() => {

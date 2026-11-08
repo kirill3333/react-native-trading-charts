@@ -692,6 +692,11 @@ class ChartEngine {
   void SetConfig(const ChartConfig& config);
   void SetTradingCalendar(const TradingCalendarConfig& calendar);
   void SetPanes(const std::vector<PaneConfig>& panes, bool resizable);
+  // Apply one view configuration. Invalid declarations leave the live chart
+  // intact.
+  UpdateStatus ApplyConfiguration(
+      const ChartConfig& config, const std::vector<PaneConfig>& panes,
+      bool resizable, const std::vector<SeriesConfig>& declarations);
   UpdateStatus AddSeries(const SeriesConfig& config);
   bool RemoveSeries(const std::string& series_id);
   UpdateStatus SetSeriesData(const std::string& series_id, const double* values,
@@ -828,6 +833,9 @@ class ChartEngine {
   std::shared_ptr<const RenderSnapshot> snapshot_;
 
   // Methods suffixed with Locked require `mutex_` to be held by the caller.
+  void SetConfigLocked(ChartConfig normalized_config, MutationScope& mutation);
+  std::vector<PaneConfig> NormalizePanesLocked(
+      const std::vector<PaneConfig>& panes, const ChartConfig& config) const;
   void MarkDirtyLocked();
   void MarkCrosshairDirtyLocked();
   void ClearLocked(MutationScope& mutation);
@@ -854,7 +862,6 @@ class ChartEngine {
                                       MutationScope& mutation);
   void RebuildAllDerivedSeriesLocked(MutationScope& mutation);
   bool PaneHasFixedScaleLocked(size_t pane_index) const;
-  bool PaneHasMacdLocked(size_t pane_index) const;
   void ClampViewportValuesLocked(double* visible_x_min,
                                  double* visible_x_max) const;
   bool IsAtLiveEdgeLocked() const;

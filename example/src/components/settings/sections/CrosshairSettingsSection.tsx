@@ -6,9 +6,7 @@ import { LINE_OPTIONS, OPACITY_OPTIONS } from './settingsOptions';
 
 export function CrosshairSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const detailsDisabled = !settings.crosshairEnabled;
   const tooltipDetailsDisabled =
     detailsDisabled || !settings.crosshairShowTooltip;

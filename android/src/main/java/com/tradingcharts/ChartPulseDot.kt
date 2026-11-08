@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
+import androidx.core.view.isVisible
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -113,7 +114,7 @@ internal class ChartPulseDot(context: Context) : FrameLayout(context) {
 
   private fun updateAnimation() {
     if (hostActive && endpointVisible && hierarchyVisible) {
-      if (core.visibility != VISIBLE) {
+      if (!core.isVisible) {
         core.visibility = VISIBLE
         halo.visibility = VISIBLE
         pulse.start()
@@ -124,7 +125,7 @@ internal class ChartPulseDot(context: Context) : FrameLayout(context) {
   }
 
   private fun stopAnimation() {
-    if (core.visibility == VISIBLE) {
+    if (core.isVisible) {
       pulse.cancel()
       core.visibility = INVISIBLE
       halo.visibility = INVISIBLE

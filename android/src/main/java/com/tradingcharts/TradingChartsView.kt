@@ -87,7 +87,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private var pendingScaleChange = false
   private val priceScaleChanges = ChartPriceScaleChanges()
   private val scaleYResult = ChartScaleYResult()
-  private val declarativeSeriesIds = mutableSetOf<String>()
   private var activeSeparatorIndex = -1
   private var separatorLastY = 0f
   private var pendingPaneResizeIndex = -1
@@ -360,14 +359,15 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   fun setConfigJson(value: String?) {
     if (value.isNullOrBlank()) return
-    realTimeScroll.stop()
     try {
-      config =
-          ChartConfig.fromJson(
-              value,
-              resources.displayMetrics.density,
-              resources.displayMetrics.scaledDensity,
-          )
+      val next = ChartConfig.fromJson(value, resources.displayMetrics)
+      val status = ChartEngineNative.setConfig(engineHandle, next)
+      if (status != STATUS_APPLIED) {
+        logStatus("additionalSeries", status)
+        return
+      }
+      config = next
+      realTimeScroll.stop()
       if (!config.allowPan) stopFling()
       if (!config.crosshairEnabled) {
         crosshairPinned = false
@@ -375,8 +375,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
       }
       pendingScaleChange = false
       priceScaleChanges.clear()
-      ChartEngineNative.setConfig(engineHandle, config)
-      reconcileDeclarativeSeries()
       scheduleFrame()
     } catch (error: JSONException) {
       logInvalidConfig(error)
@@ -745,6 +743,8 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     scheduleFrame()
   }
 
+  // The gesture detector calls performClick in onSingleTapUp after ruling out drags.
+  @android.annotation.SuppressLint("ClickableViewAccessibility")
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
       realTimeScroll.stop()
@@ -899,21 +899,6 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
         override fun onHostDestroy() = Unit
       }
-
-  private fun reconcileDeclarativeSeries() {
-    val requestedIds = config.additionalSeries.mapTo(mutableSetOf()) { it.seriesId }
-    (declarativeSeriesIds - requestedIds).forEach {
-      ChartEngineNative.nativeRemoveSeries(engineHandle, it)
-    }
-    val nextIds = mutableSetOf<String>()
-    config.additionalSeries.forEach {
-      val status = ChartEngineNative.addSeries(engineHandle, it)
-      logStatus("additionalSeries", status)
-      if (status == 0) nextIds += it.seriesId
-    }
-    declarativeSeriesIds.clear()
-    declarativeSeriesIds.addAll(nextIds)
-  }
 
   companion object {
     private const val TAG = "TradingCharts"

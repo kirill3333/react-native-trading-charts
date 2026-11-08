@@ -5,9 +5,7 @@ import { PANE_HEIGHT_WEIGHT_OPTIONS } from './settingsOptions';
 
 export function PaneHeightsSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
 
   return (
     <SettingsSection title="Pane heights">

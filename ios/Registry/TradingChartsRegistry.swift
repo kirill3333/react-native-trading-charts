@@ -73,6 +73,7 @@ private enum PendingCommand {
   var isStreaming: Bool {
     switch self {
     case .candle, .trade, .trades: return true
+    case .seriesData(_, _, _, _, let update): return update
     default: return false
     }
   }

@@ -162,14 +162,30 @@ jobs:
           task: build:android
 
       - name: Set up Gradle dependency and build caches
-        if: steps.build-cache.outputs.cache-hit != 'true'
         uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
         with:
           cache-read-only: false
 
       - name: Finalize Android SDK
-        if: steps.build-cache.outputs.cache-hit != 'true'
         run: /bin/bash -c 'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null'
+
+      - name: Run Android unit tests
+        working-directory: example/android
+        run: ./gradlew :react-native-trading-charts:testDebugUnitTest :app:testDebugUnitTest
+
+      - name: Check Android unit test results
+        shell: python
+        run: |
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          for module in ("android", "example/android/app"):
+              reports = Path(module, "build/test-results/testDebugUnitTest")
+              suites = [ElementTree.parse(path).getroot() for path in reports.glob("TEST-*.xml")]
+              executed = sum(int(s.attrib["tests"]) - int(s.attrib["skipped"]) for s in suites)
+              if executed == 0:
+                  raise SystemExit(f"{module}: no Android unit tests executed")
+              print(f"{module}: {executed} Android unit tests")
 
       - name: Build example for Android
         run: yarn turbo run build:android --env-mode=loose --output-logs=new-only --log-order=stream

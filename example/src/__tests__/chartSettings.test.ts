@@ -108,35 +108,32 @@ describe('chart settings', () => {
         macdLine: { color: APP_THEMES.dark.macd.lineColor },
         signalLine: { color: APP_THEMES.dark.macd.signalLineColor },
         histogram: {
-          positiveIncreasingColor:
-            APP_THEMES.dark.macd.positiveIncreasingColor,
-          negativeDecreasingColor:
-            APP_THEMES.dark.macd.negativeDecreasingColor,
+          positiveIncreasingColor: APP_THEMES.dark.macd.positiveIncreasingColor,
+          negativeDecreasingColor: APP_THEMES.dark.macd.negativeDecreasingColor,
         },
         textColor: APP_THEMES.dark.macd.textColor,
         zeroLineColor: APP_THEMES.dark.macd.zeroLineColor,
       },
     });
 
-    const custom =
-      buildMacdSeries(
-        settingsWith({
-          themeMode: 'light',
-          macdFastPeriod: 8,
-          macdSlowPeriod: 21,
-          macdSignalPeriod: 5,
-          macdValueSource: 'high',
-          macdLineStyle: 'dashed',
-          macdLineColor: '#112233',
-          macdGradientEnabled: true,
-          macdGradientTopColor: '#223344',
-          macdGradientBottomColor: '#334455',
-          macdSignalLineWidth: 2.5,
-          macdSignalLineColor: '#445566',
-          macdPositiveIncreasingColor: '#556677',
-          macdZeroLineColor: '#66778880',
-        })
-      );
+    const custom = buildMacdSeries(
+      settingsWith({
+        themeMode: 'light',
+        macdFastPeriod: 8,
+        macdSlowPeriod: 21,
+        macdSignalPeriod: 5,
+        macdValueSource: 'high',
+        macdLineStyle: 'dashed',
+        macdLineColor: '#112233',
+        macdGradientEnabled: true,
+        macdGradientTopColor: '#223344',
+        macdGradientBottomColor: '#334455',
+        macdSignalLineWidth: 2.5,
+        macdSignalLineColor: '#445566',
+        macdPositiveIncreasingColor: '#556677',
+        macdZeroLineColor: '#66778880',
+      })
+    );
     expect(custom).toMatchObject({
       source: {
         fastPeriod: 8,

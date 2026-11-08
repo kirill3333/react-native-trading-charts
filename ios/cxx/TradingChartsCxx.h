@@ -15,6 +15,7 @@
 
 namespace trading_charts::swift_interop {
 
+using SeriesVector = std::vector<SeriesConfig>;
 using PaneVector = std::vector<PaneConfig>;
 using SessionVector = std::vector<TradingSessionConfig>;
 using TransitionVector = std::vector<TimeZoneTransition>;
@@ -32,9 +33,10 @@ class ChartEngineHandle {
  public:
   ChartEngineHandle() : engine_(std::make_shared<ChartEngine>()) {}
 
-  void SetConfig(const ChartConfig& config) { engine_->SetConfig(config); }
-  void SetPanes(const std::vector<PaneConfig>& panes, bool resizable) {
-    engine_->SetPanes(panes, resizable);
+  UpdateStatus ApplyConfiguration(const ChartConfig& config,
+                                  const PaneVector& panes, bool resizable,
+                                  const SeriesVector& series) {
+    return engine_->ApplyConfiguration(config, panes, resizable, series);
   }
   UpdateStatus AddSeries(const SeriesConfig& config) {
     return engine_->AddSeries(config);
@@ -260,6 +262,10 @@ inline const float* ContentVerticesData(const RenderSnapshotHandle& snapshot) {
 
 inline const float* OverlayVerticesData(const RenderSnapshotHandle& snapshot) {
   return snapshot.OverlayVerticesData();
+}
+
+inline void AppendSeries(SeriesVector& series, const SeriesConfig& item) {
+  series.push_back(item);
 }
 
 inline void AppendPane(std::vector<PaneConfig>& panes,

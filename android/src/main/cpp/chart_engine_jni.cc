@@ -689,14 +689,16 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeDestroy(
   delete EngineFromHandle(handle);
 }
 
-JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
-    JNIEnv* env, jclass, jlong handle, jdoubleArray numbers, jfloatArray colors,
-    jobjectArray strings) {
-  ChartEngine* instance = EngineFromHandle(handle);
-  if (!instance || !numbers ||
-      env->GetArrayLength(numbers) < kLegacyConfigNumberCount || !colors ||
-      env->GetArrayLength(colors) < kLegacyConfigColorCount) {
-    return;
+}  // extern "C"
+
+namespace {
+
+std::optional<ChartConfig> ReadChartConfig(JNIEnv* env, jdoubleArray numbers,
+                                           jfloatArray colors,
+                                           jobjectArray strings) {
+  if (!numbers || env->GetArrayLength(numbers) < kLegacyConfigNumberCount ||
+      !colors || env->GetArrayLength(colors) < kLegacyConfigColorCount) {
+    return std::nullopt;
   }
   const jsize number_count = env->GetArrayLength(numbers);
   const jsize color_count = env->GetArrayLength(colors);
@@ -918,20 +920,15 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetConfig(
         color_at(ConfigColorIndex::kBaselineBottomFillBottom);
     config.baseline.line_color = color_at(ConfigColorIndex::kBaselineBaseLine);
   }
-  instance->SetConfig(config);
+  return config;
 }
 
-JNIEXPORT void JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeSetTradingCalendar(
-    JNIEnv* env, jclass, jlong handle, jboolean configured, jstring time_zone,
+std::optional<TradingCalendarConfig> ReadTradingCalendar(
+    JNIEnv* env, jboolean configured, jstring time_zone,
     jlong transition_range_end_ms, jlongArray transition_times,
     jintArray transition_offsets, jintArray sessions, jlongArray holiday_days,
     jlongArray override_days, jintArray override_session_offsets,
     jintArray override_sessions, jint week_starts_on) {
-  ChartEngine* instance = EngineFromHandle(handle);
-  if (!instance) {
-    return;
-  }
   const std::vector<jlong> times = CopyLongs(env, transition_times);
   const std::vector<jint> offsets = CopyInts(env, transition_offsets);
   const std::vector<jint> session_values = CopyInts(env, sessions);
@@ -946,7 +943,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetTradingCalendar(
       session_values.size() % kSessionWidth != 0 ||
       override_offsets.size() != override_dates.size() + 1 ||
       override_values.size() % kOverrideSessionWidth != 0) {
-    return;
+    return std::nullopt;
   }
 
   TradingCalendarConfig calendar;
@@ -986,7 +983,7 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetTradingCalendar(
     const size_t session_count = override_values.size() / kOverrideSessionWidth;
     if (first < 0 || last < first ||
         static_cast<size_t>(last) > session_count) {
-      return;
+      return std::nullopt;
     }
     TradingCalendarOverrideConfig override_config;
     override_config.date = trading_charts::internal::CivilFromDays(
@@ -1005,20 +1002,21 @@ Java_com_tradingcharts_ChartEngineNative_nativeSetTradingCalendar(
     }
     calendar.overrides.push_back(std::move(override_config));
   }
-  instance->SetTradingCalendar(calendar);
+  return calendar;
 }
 
-JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetPanes(
-    JNIEnv* env, jclass, jlong handle, jobjectArray strings,
-    jdoubleArray numbers, jboolean resizable) {
-  auto* instance = EngineFromHandle(handle);
-  if (!instance || !strings || !numbers) {
-    return;
+std::optional<std::vector<PaneConfig>> ReadPanes(JNIEnv* env,
+                                                 jobjectArray strings,
+                                                 jdoubleArray numbers) {
+  if (!strings || !numbers || env->GetArrayLength(strings) % 2 != 0) {
+    return std::nullopt;
   }
   constexpr jsize kNumberWidth = 8;
   const jsize pane_count = env->GetArrayLength(strings) / 2;
-  if (env->GetArrayLength(numbers) < pane_count * kNumberWidth) {
-    return;
+  const jsize number_count = env->GetArrayLength(numbers);
+  if (number_count % kNumberWidth != 0 ||
+      number_count / kNumberWidth != pane_count) {
+    return std::nullopt;
   }
   const auto values = CopyDoubles(env, numbers);
   std::vector<PaneConfig> panes;
@@ -1039,19 +1037,15 @@ JNIEXPORT void JNICALL Java_com_tradingcharts_ChartEngineNative_nativeSetPanes(
     pane.min_move = values[offset + 7];
     panes.push_back(std::move(pane));
   }
-  instance->SetPanes(panes, resizable == JNI_TRUE);
+  return panes;
 }
 
-JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
-    JNIEnv* env, jclass, jlong handle, jobjectArray strings,
-    jdoubleArray numbers, jfloatArray colors) {
-  auto* instance = EngineFromHandle(handle);
-  if (!instance) {
-    return 2;
-  }
+std::optional<SeriesConfig> ReadSeries(JNIEnv* env, jobjectArray strings,
+                                       jdoubleArray numbers,
+                                       jfloatArray colors) {
   SeriesTransportPayload payload;
   if (!ReadSeriesTransportPayload(env, strings, numbers, colors, &payload)) {
-    return 2;
+    return std::nullopt;
   }
   const auto number_at = [&](SeriesNumberIndex index) {
     return payload.numbers[ToIndex(index)];
@@ -1261,7 +1255,81 @@ JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
       color_at(SeriesColorIndex::kBaselineBottomFillBottom);
   series.baseline.line_color = color_at(SeriesColorIndex::kBaselineBaseLine);
 
-  return StatusValue(instance->AddSeries(series));
+  return series;
+}
+
+std::optional<std::vector<SeriesConfig>> ReadSeriesBatch(JNIEnv* env,
+                                                         jobjectArray strings,
+                                                         jobjectArray numbers,
+                                                         jobjectArray colors) {
+  if (!strings || !numbers || !colors) {
+    return std::nullopt;
+  }
+  const jsize count = env->GetArrayLength(strings);
+  if (env->GetArrayLength(numbers) != count ||
+      env->GetArrayLength(colors) != count) {
+    return std::nullopt;
+  }
+  std::vector<SeriesConfig> result;
+  result.reserve(static_cast<size_t>(count));
+  for (jsize index = 0; index < count; ++index) {
+    auto keys =
+        static_cast<jobjectArray>(env->GetObjectArrayElement(strings, index));
+    auto values =
+        static_cast<jdoubleArray>(env->GetObjectArrayElement(numbers, index));
+    auto palette =
+        static_cast<jfloatArray>(env->GetObjectArrayElement(colors, index));
+    auto item = ReadSeries(env, keys, values, palette);
+    env->DeleteLocalRef(keys);
+    env->DeleteLocalRef(values);
+    env->DeleteLocalRef(palette);
+    if (!item || env->ExceptionCheck()) {
+      return std::nullopt;
+    }
+    result.push_back(std::move(*item));
+  }
+  return result;
+}
+
+}  // namespace
+
+extern "C" {
+
+JNIEXPORT jint JNICALL
+Java_com_tradingcharts_ChartEngineNative_nativeApplyConfiguration(
+    JNIEnv* env, jclass, jlong handle, jdoubleArray numbers, jfloatArray colors,
+    jobjectArray strings, jboolean configured, jstring time_zone,
+    jlong transition_range_end_ms, jlongArray transition_times,
+    jintArray transition_offsets, jintArray sessions, jlongArray holiday_days,
+    jlongArray override_days, jintArray override_session_offsets,
+    jintArray override_sessions, jint week_starts_on, jobjectArray pane_strings,
+    jdoubleArray pane_numbers, jboolean resizable, jobjectArray series_strings,
+    jobjectArray series_numbers, jobjectArray series_colors) {
+  auto* instance = EngineFromHandle(handle);
+  auto config = ReadChartConfig(env, numbers, colors, strings);
+  auto calendar = ReadTradingCalendar(
+      env, configured, time_zone, transition_range_end_ms, transition_times,
+      transition_offsets, sessions, holiday_days, override_days,
+      override_session_offsets, override_sessions, week_starts_on);
+  auto panes = ReadPanes(env, pane_strings, pane_numbers);
+  auto series =
+      ReadSeriesBatch(env, series_strings, series_numbers, series_colors);
+  if (!instance || !config || !calendar || !panes || !series ||
+      env->ExceptionCheck()) {
+    return StatusValue(UpdateStatus::kInvalidInput);
+  }
+  config->trade_aggregation.calendar = std::move(*calendar);
+  return StatusValue(instance->ApplyConfiguration(
+      *config, *panes, resizable == JNI_TRUE, *series));
+}
+
+JNIEXPORT jint JNICALL Java_com_tradingcharts_ChartEngineNative_nativeAddSeries(
+    JNIEnv* env, jclass, jlong handle, jobjectArray strings,
+    jdoubleArray numbers, jfloatArray colors) {
+  auto* instance = EngineFromHandle(handle);
+  auto series = ReadSeries(env, strings, numbers, colors);
+  return instance && series ? StatusValue(instance->AddSeries(*series))
+                            : StatusValue(UpdateStatus::kInvalidInput);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1739,26 +1807,6 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotXTicks(JNIEnv* env,
           value->x_ticks[index].value;
       packed[offset + ToIndex(TickRecordIndex::kPosition)] =
           value->x_ticks[index].position;
-    }
-  }
-  return NewDoubleArray(env, packed);
-}
-
-JNIEXPORT jdoubleArray JNICALL
-Java_com_tradingcharts_ChartEngineNative_nativeSnapshotYTicks(JNIEnv* env,
-                                                              jclass,
-                                                              jlong handle) {
-  auto* holder = SnapshotFromHandle(handle);
-  const auto* value = holder && *holder ? holder->get() : nullptr;
-  const size_t count = value ? value->y_ticks.size() : 0;
-  auto packed = VersionedRecordPayload(kTickRecordWidth, count);
-  if (value) {
-    for (size_t index = 0; index < count; ++index) {
-      const size_t offset = RecordOffset(kTickRecordWidth, index);
-      packed[offset + ToIndex(TickRecordIndex::kValue)] =
-          value->y_ticks[index].value;
-      packed[offset + ToIndex(TickRecordIndex::kPosition)] =
-          value->y_ticks[index].position;
     }
   }
   return NewDoubleArray(env, packed);

@@ -8,9 +8,7 @@ import { INDICATOR_LINE_WIDTH_OPTIONS } from './settingsOptions';
 
 export function RsiSettingsSection() {
   const settings = useChartSettingsStore((state) => state.settings);
-  const updateSettings = useChartSettingsStore(
-    (state) => state.updateSettings
-  );
+  const updateSettings = useChartSettingsStore((state) => state.updateSettings);
   const theme = useAppTheme();
 
   return (
@@ -52,9 +50,7 @@ export function RsiSettingsSection() {
         onValueChange={(rsiLevelLineColorOverride) =>
           updateSettings({ rsiLevelLineColorOverride })
         }
-        value={
-          settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor
-        }
+        value={settings.rsiLevelLineColorOverride ?? theme.rsiLevelLineColor}
       />
     </SettingsSection>
   );
