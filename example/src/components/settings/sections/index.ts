@@ -5,6 +5,8 @@ export { GesturesSettingsSection } from './GesturesSettingsSection';
 export { MacdSettingsSection } from './MacdSettingsSection';
 export { PaneHeightsSettingsSection } from './PaneHeightsSettingsSection';
 export { PriceOverlaysSettingsSection } from './PriceOverlaysSettingsSection';
+export { KdjSettingsSection } from './KdjSettingsSection';
+export { WilliamsRSettingsSection } from './WilliamsRSettingsSection';
 export { RsiSettingsSection } from './RsiSettingsSection';
 export { SeriesSettingsSection } from './SeriesSettingsSection';
 export { SmaSettingsSection } from './SmaSettingsSection';

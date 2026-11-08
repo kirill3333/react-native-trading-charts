@@ -116,9 +116,7 @@ An area chart adds a fill beneath a price line. It works for the same price-over
 
 <<< ../examples/area.tsx
 
-The `rounded` options apply only to the main line or area chart, not to indicators,
-additional series, price lines, or crosshair lines. Edge antialiasing stays enabled
-in both modes. Rounded caps extend half the stroke width past each endpoint,
+The `rounded` options control the main line or area chart. Indicator curves (SMA, EMA, RSI, Williams %R, KDJ, MACD and Bollinger Bands) always use round caps and joins. Edge antialiasing stays enabled in both modes. Rounded caps extend half the stroke width past each endpoint,
 including dash endpoints, so wide dashed strokes have smaller visible gaps.
 
 ```tsx
@@ -163,6 +161,6 @@ Current-price line and badge colors follow the selected value relative to the ba
 
 <<< ../examples/baseline.tsx
 
-Baseline is also available through `additionalSeries` and `addSeries()`. Each series has its own `baseValue`; omitted appearance fields inherit the chart's `appearance.baseline`, including when the main chart uses another type. Additional series do not support rounded caps/joins.
+Baseline is also available through `additionalSeries` and `addSeries()`. Each series has its own `baseValue`; omitted appearance fields inherit the chart's `appearance.baseline`, including when the main chart uses another type. Additional baseline series use flat caps and sharp joins.
 
 <<< ../examples/baseline-additional.tsx

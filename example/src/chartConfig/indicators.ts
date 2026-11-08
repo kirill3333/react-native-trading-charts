@@ -177,7 +177,13 @@ export function buildLineAppearance(value: LineSettings): ChartLineAppearance {
 
 export function buildAdditionalSeries(
   settings: ChartSettings,
-  { showVolume, showRsi, showMacd }: Omit<ChartPaneVisibility, 'minMove'>
+  {
+    showVolume,
+    showRsi,
+    showWilliamsR,
+    showKdj,
+    showMacd,
+  }: Omit<ChartPaneVisibility, 'minMove'>
 ): ReadonlyArray<AdditionalChartSeriesOptions> | undefined {
   const result: AdditionalChartSeriesOptions[] =
     buildMovingAverageSeries(settings);
@@ -204,6 +210,51 @@ export function buildAdditionalSeries(
       source: { type: 'ohlcvRsi', seriesId: 'main', period: 14 },
       levels: { oversold: 30, overbought: 70 },
       appearance: buildRsiAppearance(settings),
+    });
+  }
+  if (showWilliamsR) {
+    result.push({
+      seriesId: 'williamsR',
+      type: 'line',
+      paneId: 'williamsR',
+      priceScaleId: 'williamsR',
+      source: {
+        type: 'ohlcvWilliamsR',
+        seriesId: 'main',
+        period: settings.williamsRPeriod,
+      },
+      levels: {
+        oversold: settings.williamsROversold,
+        overbought: settings.williamsROverbought,
+      },
+      legendVisible: settings.williamsRLegendVisible,
+      appearance: {
+        ...buildLineAppearance(settings.williamsRLine),
+        bandColor: settings.williamsRBandColor,
+        levelLineColor: settings.williamsRLevelLineColor,
+        textColor: settings.williamsRTextColor,
+      },
+    });
+  }
+  if (showKdj) {
+    result.push({
+      seriesId: 'kdj',
+      type: 'kdj',
+      paneId: 'kdj',
+      priceScaleId: 'kdj',
+      source: {
+        type: 'ohlcvKdj',
+        seriesId: 'main',
+        period: settings.kdjPeriod,
+        m1: settings.kdjM1,
+        m2: settings.kdjM2,
+      },
+      legendVisible: settings.kdjLegendVisible,
+      appearance: {
+        kLine: buildLineAppearance(settings.kdjKLine),
+        dLine: buildLineAppearance(settings.kdjDLine),
+        jLine: buildLineAppearance(settings.kdjJLine),
+      },
     });
   }
   if (showMacd) {

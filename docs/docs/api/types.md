@@ -86,6 +86,14 @@ export type PriceLineOptions = Readonly<{
 ```ts
 export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity & Readonly<{
+      kind: 'kdj';
+      seriesType: 'kdj';
+      sourceType: 'ohlcvKdj';
+      k: number | null;
+      d: number | null;
+      j: number | null;
+    }>)
+  | (CrosshairSeriesIdentity & Readonly<{
       kind: 'boll';
       seriesType: 'boll';
       sourceType: 'ohlcvBoll';
@@ -104,7 +112,7 @@ export type CrosshairSeriesValue =
         kind: 'scalar';
         seriesType: 'line' | 'area' | 'baseline' | 'histogram' | 'sar';
         sourceType:
-          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvSma' | 'ohlcvEma' | 'ohlcvSar';
+          'data' | 'ohlcvVolume' | 'ohlcvRsi' | 'ohlcvWilliamsR' | 'ohlcvSma' | 'ohlcvEma' | 'ohlcvSar';
         value: number | null;
       }>)
   | (CrosshairSeriesIdentity &
@@ -234,6 +242,8 @@ export type AdditionalChartSeriesOptions =
   | AdditionalOhlcSeriesOptions
   | HistogramSeriesOptions
   | RsiSeriesOptions
+  | WilliamsRSeriesOptions
+  | KdjSeriesOptions
   | MovingAverageSeriesOptions
   | MacdSeriesOptions
   | BollSeriesOptions;
@@ -310,6 +320,30 @@ export type RsiSeriesOptions = AdditionalSeriesBase & {
   levels?: RsiLevels;
   gapThresholdMs?: number;
   appearance?: RsiSeriesAppearance;
+};
+```
+
+### WilliamsRSeriesOptions and KdjSeriesOptions
+
+Both oscillators require a dedicated pane and a data-backed OHLC source. See [Williams %R](/docs/williams-r) and [KDJ](/docs/kdj) for defaults and complete examples.
+
+```ts
+export type WilliamsRSeriesOptions = Omit<RsiSeriesOptions, 'source'> & {
+  source: { type: 'ohlcvWilliamsR'; seriesId: string; period?: number };
+};
+
+export type KdjSeriesAppearance = {
+  kLine?: ChartLineAppearance;
+  dLine?: ChartLineAppearance;
+  jLine?: ChartLineAppearance;
+};
+
+export type KdjSeriesOptions = AdditionalSeriesBase & {
+  type: 'kdj';
+  source: { type: 'ohlcvKdj'; seriesId: string; period?: number; m1?: number; m2?: number };
+  legendVisible?: boolean;
+  gapThresholdMs?: number;
+  appearance?: KdjSeriesAppearance;
 };
 ```
 
@@ -403,6 +437,8 @@ Describes the normalized shape used by `addSeries`: visibility and source defaul
 
 ```ts
 export type NormalizedAdditionalChartSeriesOptions =
+  | (KdjSeriesOptions & { visible: boolean; legendVisible: boolean; source: Required<KdjSeriesOptions['source']> })
+  | (WilliamsRSeriesOptions & { visible: boolean; legendVisible: boolean; source: Required<WilliamsRSeriesOptions['source']>; levels: Required<RsiLevels> })
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
       visible: boolean;

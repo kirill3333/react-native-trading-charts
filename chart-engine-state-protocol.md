@@ -86,7 +86,7 @@ condition in the command table.
 | `Pan` | Applies a finite permitted horizontal movement and clears an active crosshair. | `true` for any content or overlay change. |
 | `Zoom` | Applies a finite positive permitted zoom around the focus and clears an active crosshair. | `true` for any content or overlay change. |
 | `ZoomAtRightEdge` | Accepts a finite positive scale when a non-empty viewport exists. | Accepted calls publish content. |
-| `ScaleY` / `ScaleYAt` | Applies permitted finite Y scaling to a non-RSI pane and clears an active crosshair. | `true` for any content or overlay change. |
+| `ScaleY` / `ScaleYAt` | Applies permitted finite Y scaling to a pane with an adjustable scale (RSI and Williams %R have fixed ranges) and clears an active crosshair. | `true` for any content or overlay change. |
 | `ResetViewport` | Restores configured viewport and Y scales and clears the crosshair. | Always content. |
 | `FitContent` | Fits the complete main store, restores Y scales, and clears the crosshair. | Always content. |
 | `SetCrosshair` | Applies enabled, non-empty selection state and coordinates; an identical state is a no-op. | Changed state publishes overlay only. |

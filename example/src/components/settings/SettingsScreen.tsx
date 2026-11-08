@@ -19,6 +19,8 @@ import {
   MacdSettingsSection,
   PaneHeightsSettingsSection,
   PriceOverlaysSettingsSection,
+  KdjSettingsSection,
+  WilliamsRSettingsSection,
   RsiSettingsSection,
   SeriesSettingsSection,
   SmaSettingsSection,
@@ -88,6 +90,8 @@ function SettingsContent() {
         <BollSettingsSection />
         <SarSettingsSection />
         <RsiSettingsSection />
+        <KdjSettingsSection />
+        <WilliamsRSettingsSection />
         <MacdSettingsSection />
 
         <Text accessibilityRole="header" style={styles.groupTitle}>

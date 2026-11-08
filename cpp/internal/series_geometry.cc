@@ -1388,7 +1388,8 @@ void AppendBollGeometry(const SeriesGeometryInput& input,
                                         input.visible_x_max,
                                         input.visible_y_min,
                                         input.visible_y_max,
-                                        input.logical_reference};
+                                        input.logical_reference,
+                                        input.rounded};
     BollPathBuilder builder(component, series, false, vertices);
     AppendLinePath(shared, builder, bucket_width);
   };

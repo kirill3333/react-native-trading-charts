@@ -16,7 +16,7 @@ Your app supplies the data and React configuration. The native chart stores the 
 
 Start with a main price series. Candlesticks and OHLC bars show prices within each interval; line and area series give a simpler view of one price field. You can change the main display type without replacing its history.
 
-Add a comparison series when you have another set of OHLC data. For volume, SMA, EMA, RSI or MACD, the native engine can calculate values from an existing series. Separate panes give indicators their own vertical scales while keeping timestamps aligned. You can also supply your own histogram values.
+Add a comparison series when you have another set of OHLC data. For volume, SMA, EMA, RSI, MACD, Williams %R or KDJ, the native engine can calculate values from an existing series. Separate panes give indicators their own vertical scales while keeping timestamps aligned. You can also supply your own histogram values.
 
 Use theme colors for the overall appearance, then style individual axes, badges and tooltips where needed. Native date and number formatting controls the labels. Users can pan, pinch, resize panes, adjust vertical scales and select candles with a crosshair. The chart also displays the latest price and visible high and low values.
 

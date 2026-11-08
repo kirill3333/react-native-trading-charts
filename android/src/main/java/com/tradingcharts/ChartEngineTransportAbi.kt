@@ -1,9 +1,9 @@
 package com.tradingcharts
 
-internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 8
+internal const val CHART_ENGINE_TRANSPORT_ABI_VERSION = 9
 
 internal object SeriesTransportAbi {
-  const val STRING_MARKER = "TradingCharts.Series.v8"
+  const val STRING_MARKER = "TradingCharts.Series.v9"
 
   object NumberIndex {
     const val VERSION = 0
@@ -51,7 +51,22 @@ internal object SeriesTransportAbi {
     const val BASELINE_DASHED = 42
     const val BASELINE_WIDTH = 43
     const val LEGEND_VISIBLE = 44
-    const val SIZE = 45
+    const val WILLIAMS_PERIOD = 45
+    const val WILLIAMS_OVERSOLD = 46
+    const val WILLIAMS_OVERBOUGHT = 47
+    const val KDJ_PERIOD = 48
+    const val KDJ_M1 = 49
+    const val KDJ_M2 = 50
+    const val KDJ_K_WIDTH = 51
+    const val KDJ_K_GRADIENT_ENABLED = 52
+    const val KDJ_K_DASHED = 53
+    const val KDJ_D_WIDTH = 54
+    const val KDJ_D_GRADIENT_ENABLED = 55
+    const val KDJ_D_DASHED = 56
+    const val KDJ_J_WIDTH = 57
+    const val KDJ_J_GRADIENT_ENABLED = 58
+    const val KDJ_J_DASHED = 59
+    const val SIZE = 60
   }
 
   object ColorIndex {
@@ -97,7 +112,16 @@ internal object SeriesTransportAbi {
     const val BASELINE_BOTTOM_FILL_TOP = 144
     const val BASELINE_BOTTOM_FILL_BOTTOM = 148
     const val BASELINE_BASE_LINE = 152
-    const val SIZE = 156
+    const val KDJ_K = 156
+    const val KDJ_K_GRADIENT_TOP = 160
+    const val KDJ_K_GRADIENT_BOTTOM = 164
+    const val KDJ_D = 168
+    const val KDJ_D_GRADIENT_TOP = 172
+    const val KDJ_D_GRADIENT_BOTTOM = 176
+    const val KDJ_J = 180
+    const val KDJ_J_GRADIENT_TOP = 184
+    const val KDJ_J_GRADIENT_BOTTOM = 188
+    const val SIZE = 192
   }
 
   object StringIndex {
@@ -109,8 +133,8 @@ internal object SeriesTransportAbi {
     const val SIZE = 5
   }
 
-  const val ROUND_TRIP_NUMBER_COUNT = 41
-  const val ROUND_TRIP_COLOR_COUNT = 152
+  const val ROUND_TRIP_NUMBER_COUNT = NumberIndex.SIZE - NumberIndex.TYPE
+  const val ROUND_TRIP_COLOR_COUNT = ColorIndex.SIZE - ColorIndex.COLOR
   const val ROUND_TRIP_STRING_COUNT = 4
   const val ROUND_TRIP_HEADER_SIZE = 4
   const val ROUND_TRIP_SIZE =
@@ -134,6 +158,7 @@ private fun String.nativeSeriesType() =
       "line" -> 4.0
       "macd",
       "boll",
+      "kdj",
       "sar" -> 4.0
       "area" -> 5.0
       "baseline" -> 6.0
@@ -174,6 +199,8 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
         "ohlcvMacd" -> 5.0
         "ohlcvBoll" -> 6.0
         "ohlcvSar" -> 7.0
+        "ohlcvWilliamsR" -> 8.0
+        "ohlcvKdj" -> 9.0
         else -> 0.0
       }
   numbers[SeriesTransportAbi.NumberIndex.VISIBLE] = visible.transportDouble()
@@ -184,6 +211,7 @@ private fun SeriesConfig.nativeSeriesNumbers(): DoubleArray {
   numbers[SeriesTransportAbi.NumberIndex.LINE_GRADIENT_ENABLED] =
       lineGradientEnabled.transportDouble()
   numbers[SeriesTransportAbi.NumberIndex.LINE_GAP_THRESHOLD_MS] = lineGapThresholdMs
+  putOscillatorNumbers(numbers)
   numbers[SeriesTransportAbi.NumberIndex.RSI_PERIOD] = rsiPeriod.toDouble()
   numbers[SeriesTransportAbi.NumberIndex.RSI_OVERSOLD] = rsiOversold
   numbers[SeriesTransportAbi.NumberIndex.RSI_OVERBOUGHT] = rsiOverbought
@@ -299,8 +327,42 @@ private fun SeriesConfig.nativeSeriesColors(numbers: DoubleArray): FloatArray {
   )
   putColor(colors, SeriesTransportAbi.ColorIndex.BASELINE_BASE_LINE, baseline.baseLineColor)
 
+  putKdjColors(colors)
   putBollColors(colors)
   return colors
+}
+
+private fun SeriesConfig.putOscillatorNumbers(numbers: DoubleArray) {
+  numbers[SeriesTransportAbi.NumberIndex.WILLIAMS_PERIOD] = williamsPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.WILLIAMS_OVERSOLD] = williamsOversold
+  numbers[SeriesTransportAbi.NumberIndex.WILLIAMS_OVERBOUGHT] = williamsOverbought
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_PERIOD] = kdjPeriod.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_M1] = kdjM1.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_M2] = kdjM2.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_K_WIDTH] = kdjK.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_K_GRADIENT_ENABLED] =
+      kdjK.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_K_DASHED] = kdjK.dashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_D_WIDTH] = kdjD.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_D_GRADIENT_ENABLED] =
+      kdjD.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_D_DASHED] = kdjD.dashed.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_J_WIDTH] = kdjJ.widthPx.toDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_J_GRADIENT_ENABLED] =
+      kdjJ.gradientEnabled.transportDouble()
+  numbers[SeriesTransportAbi.NumberIndex.KDJ_J_DASHED] = kdjJ.dashed.transportDouble()
+}
+
+private fun SeriesConfig.putKdjColors(colors: FloatArray) {
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_K, kdjK.color)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_K_GRADIENT_TOP, kdjK.gradientTopColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_K_GRADIENT_BOTTOM, kdjK.gradientBottomColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_D, kdjD.color)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_D_GRADIENT_TOP, kdjD.gradientTopColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_D_GRADIENT_BOTTOM, kdjD.gradientBottomColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_J, kdjJ.color)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_J_GRADIENT_TOP, kdjJ.gradientTopColor)
+  putColor(colors, SeriesTransportAbi.ColorIndex.KDJ_J_GRADIENT_BOTTOM, kdjJ.gradientBottomColor)
 }
 
 private fun SeriesConfig.putBollColors(colors: FloatArray) {
@@ -366,7 +428,7 @@ internal object SnapshotTransportAbi {
   const val TICK_RECORD_WIDTH = 2
   const val PANE_RECORD_WIDTH = 14
   const val INDICATOR_LEGEND_RECORD_WIDTH = 32
-  const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 20
+  const val CROSSHAIR_SERIES_VALUE_RECORD_WIDTH = 23
   const val PRICE_LINE_RECORD_WIDTH = 6
 
   object PaneIndex {
@@ -383,7 +445,7 @@ internal object SnapshotTransportAbi {
     const val SCALE_VISIBLE = 10
     const val VOLUME_FORMAT = 11
     const val PRECISION = 12
-    const val RSI_SCALE = 13
+    const val FIXED_OSCILLATOR_SCALE = 13
   }
 
   object IndicatorLegendIndex {
@@ -425,7 +487,7 @@ internal data class PaneSnapshotRecord(
     val scaleVisible: Boolean,
     val volumeFormat: Boolean,
     val precision: Int,
-    val rsiScale: Boolean,
+    val fixedOscillatorScale: Boolean,
 )
 
 internal fun SnapshotRecordPayload.paneRecord(index: Int): PaneSnapshotRecord {
@@ -454,7 +516,7 @@ internal fun SnapshotRecordPayload.paneRecord(index: Int): PaneSnapshotRecord {
       scaleVisible = value(SnapshotTransportAbi.PaneIndex.SCALE_VISIBLE) != 0.0,
       volumeFormat = value(SnapshotTransportAbi.PaneIndex.VOLUME_FORMAT) != 0.0,
       precision = exactInt(SnapshotTransportAbi.PaneIndex.PRECISION, "precision"),
-      rsiScale = value(SnapshotTransportAbi.PaneIndex.RSI_SCALE) != 0.0,
+      fixedOscillatorScale = value(SnapshotTransportAbi.PaneIndex.FIXED_OSCILLATOR_SCALE) != 0.0,
   )
 }
 

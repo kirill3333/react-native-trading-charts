@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -85,14 +86,27 @@ enum class SeriesSource : std::uint8_t {
   kOhlcvMacd = 5,
   kOhlcvBoll = 6,
   kOhlcvSar = 7,
+  kOhlcvWilliamsR = 8,
+  kOhlcvKdj = 9,
 };
 
 inline bool IsMovingAverageSource(SeriesSource source) {
   return source == SeriesSource::kOhlcvSma || source == SeriesSource::kOhlcvEma;
 }
 
+inline bool IsFixedOscillator(SeriesSource source) {
+  return source == SeriesSource::kOhlcvRsi ||
+         source == SeriesSource::kOhlcvWilliamsR;
+}
+
+inline bool RequiresDedicatedPane(SeriesSource source) {
+  return source == SeriesSource::kOhlcvWilliamsR ||
+         source == SeriesSource::kOhlcvKdj;
+}
+
 inline bool IsDerivedOhlcvSource(SeriesSource source) {
-  return source == SeriesSource::kOhlcvVolume ||
+  return RequiresDedicatedPane(source) ||
+         source == SeriesSource::kOhlcvVolume ||
          source == SeriesSource::kOhlcvRsi ||
          source == SeriesSource::kOhlcvMacd ||
          source == SeriesSource::kOhlcvBoll ||
@@ -201,6 +215,17 @@ struct SeriesConfig {
   Color boll_fill_top{46.0f / 255.0f, 144.0f / 255.0f, 245.0f / 255.0f, 0.2f};
   Color boll_fill_bottom{46.0f / 255.0f, 144.0f / 255.0f, 245.0f / 255.0f,
                          13.0f / 255.0f};
+  std::uint32_t williams_period = 14;
+  double williams_oversold = -80.0;
+  double williams_overbought = -20.0;
+  std::uint32_t kdj_period = 9;
+  std::uint32_t kdj_m1 = 3;
+  std::uint32_t kdj_m2 = 3;
+  IndicatorLineStyle kdj_k;
+  IndicatorLineStyle kdj_d{
+      1.0f, Color{245.0f / 255.0f, 166.0f / 255.0f, 35.0f / 255.0f, 1.0f}};
+  IndicatorLineStyle kdj_j{
+      1.0f, Color{171.0f / 255.0f, 117.0f / 255.0f, 250.0f / 255.0f, 1.0f}};
   std::uint32_t moving_average_period = 1;
   std::uint32_t rsi_period = 14;
   double rsi_oversold = 30.0;
@@ -210,6 +235,14 @@ struct SeriesConfig {
   Color rsi_level_line{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f, 0.5f};
   Color rsi_band{151.0f / 255.0f, 145.0f / 255.0f, 165.0f / 255.0f,
                  20.0f / 255.0f};
+  double Oversold() const {
+    return source == SeriesSource::kOhlcvWilliamsR ? williams_oversold
+                                                   : rsi_oversold;
+  }
+  double Overbought() const {
+    return source == SeriesSource::kOhlcvWilliamsR ? williams_overbought
+                                                   : rsi_overbought;
+  }
   std::uint32_t macd_fast_period = 12;
   std::uint32_t macd_slow_period = 26;
   std::uint32_t macd_signal_period = 9;
@@ -261,6 +294,14 @@ struct SeriesSourceBinding {
   size_t additional_series_index = 0;
 };
 
+// Extrema of completed bars. The current live bar stays outside the queues
+// so replacing its high or low can reveal the previous window extreme.
+struct OscillatorWindow {
+  std::deque<size_t> highs;
+  std::deque<size_t> lows;
+  size_t next_index = 0;
+};
+
 struct SeriesData {
   SeriesConfig config;
   std::vector<Candle> candles;
@@ -269,6 +310,7 @@ struct SeriesData {
   // SMA stores the rolling window sum; EMA stores the published EMA value.
   std::vector<double> moving_average_states;
   std::vector<BollRollingState> boll_states;
+  std::optional<OscillatorWindow> oscillator_window;
   // One state per published SAR point; the first source candle has no output.
   std::vector<SarState> sar_states;
   std::vector<RsiSmoothingState> rsi_states;
@@ -508,6 +550,7 @@ struct PaneSnapshot {
   bool scale_visible = true;
   bool volume_format = false;
   bool rsi_scale = false;
+  bool williams_scale = false;
   int precision = 2;
 };
 
@@ -518,6 +561,8 @@ enum class IndicatorKind : std::uint8_t {
   kSma = 3,
   kEma = 4,
   kVolume = 5,
+  kWilliamsR = 6,
+  kKdj = 7,
 };
 
 struct IndicatorLegendValue {
@@ -547,6 +592,7 @@ enum class CrosshairSeriesValueKind : std::uint8_t {
   kScalar = 1,
   kMacd = 2,
   kBoll = 3,
+  kKdj = 4,
 };
 
 struct CrosshairSeriesValue {
@@ -561,6 +607,9 @@ struct CrosshairSeriesValue {
   double macd = 0.0;
   double signal = 0.0;
   double histogram = 0.0;
+  double k = 0.0;
+  double d = 0.0;
+  double j = 0.0;
   double upper = 0.0;
   double middle = 0.0;
   double lower = 0.0;
@@ -804,7 +853,7 @@ class ChartEngine {
                                       size_t first_changed_source_index,
                                       MutationScope& mutation);
   void RebuildAllDerivedSeriesLocked(MutationScope& mutation);
-  bool PaneHasRsiLocked(size_t pane_index) const;
+  bool PaneHasFixedScaleLocked(size_t pane_index) const;
   bool PaneHasMacdLocked(size_t pane_index) const;
   void ClampViewportValuesLocked(double* visible_x_min,
                                  double* visible_x_max) const;

@@ -37,6 +37,22 @@ export function PaneHeightsSettingsSection() {
         value={settings.rsiPaneHeightWeight}
       />
       <SettingSegments
+        label="Williams %R"
+        value={settings.williamsRPaneHeightWeight}
+        options={PANE_HEIGHT_WEIGHT_OPTIONS}
+        onValueChange={(williamsRPaneHeightWeight) =>
+          updateSettings({ williamsRPaneHeightWeight })
+        }
+      />
+      <SettingSegments
+        label="KDJ"
+        value={settings.kdjPaneHeightWeight}
+        options={PANE_HEIGHT_WEIGHT_OPTIONS}
+        onValueChange={(kdjPaneHeightWeight) =>
+          updateSettings({ kdjPaneHeightWeight })
+        }
+      />
+      <SettingSegments
         label="MACD"
         onValueChange={(macdPaneHeightWeight) =>
           updateSettings({ macdPaneHeightWeight })

@@ -602,7 +602,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
   private fun yAxisBaseline(tick: AxisTick, pane: PaneSnapshot): Float {
     val centered = centeredBaseline(tick.position, yAxisPaint)
     val keepInside =
-        pane.volumeFormat || (pane.rsiScale && (tick.value == 0.0 || tick.value == 100.0))
+        pane.volumeFormat ||
+            (pane.fixedOscillatorScale &&
+                (tick.value == pane.visibleYMin || tick.value == pane.visibleYMax))
     if (!keepInside) return centered
     // Volume labels and fixed RSI endpoints stay readable inside the clipped pane.
     return max(
@@ -674,7 +676,11 @@ internal class ChartOverlayView(context: Context) : View(context) {
                       )
                 }
             val text =
-                if (legend.kind == INDICATOR_KIND_BOLL) BOLL_PREFIXES[index] + number else number
+                when (legend.kind) {
+                  INDICATOR_KIND_BOLL -> BOLL_PREFIXES[index] + number
+                  INDICATOR_KIND_KDJ -> KDJ_PREFIXES[index] + number
+                  else -> number
+                }
             add(AxisLabel(text, rsiValuePaint.measureText(text)))
           }
         }
@@ -687,6 +693,8 @@ internal class ChartOverlayView(context: Context) : View(context) {
       INDICATOR_KIND_EMA -> "EMA ${legend.period}"
       INDICATOR_KIND_BOLL ->
           "BOLL (${legend.period}, ${legend.stdDevMultiplier.toString().removeSuffix(".0")})"
+      INDICATOR_KIND_WILLIAMS_R -> "Williams %R ${legend.period}"
+      INDICATOR_KIND_KDJ -> "KDJ ${legend.period} ${legend.fastPeriod} ${legend.slowPeriod}"
       INDICATOR_KIND_VOLUME -> "VOL"
       else -> macdTitle(legend)
     }
@@ -1055,6 +1063,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
     private const val INDICATOR_KIND_SMA = 3
     private const val INDICATOR_KIND_EMA = 4
     private const val INDICATOR_KIND_VOLUME = 5
+    private const val INDICATOR_KIND_WILLIAMS_R = 6
+    private const val INDICATOR_KIND_KDJ = 7
+    private val KDJ_PREFIXES = listOf("K ", "D ", "J ")
     private val BOLL_PREFIXES = listOf("UP ", "MID ", "LOW ")
     private const val MIN_CRYPTO_ZERO_COUNT = 1
     private const val MAX_X_LABEL_CACHE_SIZE = 1024

@@ -59,6 +59,6 @@ class ChartGestureHitTestTest {
           scaleVisible = true,
           volumeFormat = id == "volume",
           precision = 2,
-          rsiScale = id == "rsi",
+          fixedOscillatorScale = id == "rsi",
       )
 }

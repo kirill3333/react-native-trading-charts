@@ -362,12 +362,17 @@ class RenderSnapshotBuilder {
       pane_snapshot.height_weight = pane.height_weight;
       pane_snapshot.scale_visible = pane.scale_visible;
       pane_snapshot.volume_format = pane.volume_format;
-      pane_snapshot.rsi_scale = std::any_of(
-          input_.additional_series.begin(), input_.additional_series.end(),
-          [&](const SeriesData& series) {
-            return IsSeriesInPane(series, index) &&
-                   series.config.source == SeriesSource::kOhlcvRsi;
-          });
+      for (const auto& series : input_.additional_series) {
+        if (!IsSeriesInPane(series, index)) {
+          continue;
+        }
+        if (series.config.source == SeriesSource::kOhlcvRsi) {
+          pane_snapshot.rsi_scale = true;
+        }
+        if (series.config.source == SeriesSource::kOhlcvWilliamsR) {
+          pane_snapshot.williams_scale = true;
+        }
+      }
       pane_snapshot.precision = pane.precision;
       snapshot_->panes.push_back(std::move(pane_snapshot));
     }
@@ -761,11 +766,12 @@ class RenderSnapshotBuilder {
   void CalculateAdditionalPaneRanges() {
     for (size_t pane_index = 1; pane_index < snapshot_->panes.size();
          ++pane_index) {
-      if (snapshot_->panes[pane_index].rsi_scale) {
-        pane_y_min_[pane_index] = kRsiMinimumValue;
-        pane_y_max_[pane_index] = kRsiMaximumValue;
-        snapshot_->panes[pane_index].visible_y_min = kRsiMinimumValue;
-        snapshot_->panes[pane_index].visible_y_max = kRsiMaximumValue;
+      const bool williams = snapshot_->panes[pane_index].williams_scale;
+      if (williams || snapshot_->panes[pane_index].rsi_scale) {
+        pane_y_min_[pane_index] = williams ? -100.0 : kRsiMinimumValue;
+        pane_y_max_[pane_index] = williams ? 0.0 : kRsiMaximumValue;
+        snapshot_->panes[pane_index].visible_y_min = pane_y_min_[pane_index];
+        snapshot_->panes[pane_index].visible_y_max = pane_y_max_[pane_index];
         snapshot_->panes[pane_index].y_axis_scale = 1.0;
         continue;
       }
@@ -809,8 +815,13 @@ class RenderSnapshotBuilder {
         } else {
           const auto include_candle = [&](const Candle& candle) {
             has_value = true;
-            if (IsLineLikeSeries(series.config.type) &&
-                series.config.source != SeriesSource::kOhlcvBoll) {
+            if (series.config.source == SeriesSource::kOhlcvKdj) {
+              raw_min =
+                  std::min({raw_min, candle.high, candle.close, candle.low});
+              raw_max =
+                  std::max({raw_max, candle.high, candle.close, candle.low});
+            } else if (IsLineLikeSeries(series.config.type) &&
+                       series.config.source != SeriesSource::kOhlcvBoll) {
               const double value =
                   CandleValue(candle, series.config.line_source);
               raw_min = std::min(raw_min, value);
@@ -1005,17 +1016,17 @@ class RenderSnapshotBuilder {
                 pane.plot.Height();
         snapshot_->pane_y_ticks.push_back(AxisTick{value, position});
       }
-      if (pane.rsi_scale) {
+      if (pane.rsi_scale || pane.williams_scale) {
         // Keep the generated 0...100 ticks; native overlays clip boundary
         // labels to their pane. Add each RSI series' configured levels without
         // duplicating their dashed grid geometry.
         for (const SeriesData& series : input_.additional_series) {
           if (!IsSeriesInPane(series, pane_index) ||
-              series.config.source != SeriesSource::kOhlcvRsi) {
+              !IsFixedOscillator(series.config.source)) {
             continue;
           }
           for (double value :
-               {series.config.rsi_oversold, series.config.rsi_overbought}) {
+               {series.config.Oversold(), series.config.Overbought()}) {
             const auto begin = snapshot_->pane_y_ticks.begin() +
                                static_cast<std::ptrdiff_t>(pane.y_tick_offset);
             const bool exists = std::any_of(
@@ -1038,6 +1049,34 @@ class RenderSnapshotBuilder {
       }
       pane.y_tick_count = snapshot_->pane_y_ticks.size() - pane.y_tick_offset;
     }
+  }
+
+  template <typename Callback>
+  void VisitKdjLines(size_t index, size_t pane, Callback&& visit) const {
+    const SeriesData& series = input_.additional_series[index];
+    const auto& window = series_windows_[index];
+    const auto line = [&](const IndicatorLineStyle& style,
+                          OhlcValueSource field) {
+      ChartConfig config = input_.config;
+      config.series_type = SeriesType::kLine;
+      config.line_source = field;
+      config.line = style.color;
+      config.line_width = style.width;
+      config.line_dashed = style.dashed;
+      config.line_gradient_enabled = style.gradient_enabled;
+      config.line_gradient_top = style.gradient_top;
+      config.line_gradient_bottom = style.gradient_bottom;
+      config.line_gap_threshold_ms = series.config.line_gap_threshold_ms;
+      visit(SeriesGeometryInput{
+          config, series.candles, window.first > 0 ? window.first - 1 : 0,
+          std::min(window.last + 1, series.candles.size()),
+          snapshot_->panes[pane].plot, input_.visible_x_min,
+          input_.visible_x_max, pane_y_min_[pane], pane_y_max_[pane],
+          input_.config.logical_spacing ? &input_.candles : nullptr, true});
+    };
+    line(series.config.kdj_k, OhlcValueSource::kHigh);
+    line(series.config.kdj_d, OhlcValueSource::kClose);
+    line(series.config.kdj_j, OhlcValueSource::kLow);
   }
 
   void ReserveGeometry() {
@@ -1073,7 +1112,14 @@ class RenderSnapshotBuilder {
       }
       const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
-      if (series.config.source == SeriesSource::kOhlcvRsi) {
+      if (series.config.source == SeriesSource::kOhlcvKdj) {
+        VisitKdjLines(index, resolved_pane_index,
+                      [&](const SeriesGeometryInput& line) {
+                        float_count += SeriesGeometryFloatCapacity(line);
+                      });
+        continue;
+      }
+      if (IsFixedOscillator(series.config.source)) {
         const Rect& pane_plot = snapshot_->panes[resolved_pane_index].plot;
         const float step =
             (kDashLength + kDashGap) * input_.config.display_scale;
@@ -1116,6 +1162,7 @@ class RenderSnapshotBuilder {
             pane_y_min_[resolved_pane_index],
             pane_y_max_[resolved_pane_index],
             input_.config.logical_spacing ? &input_.candles : nullptr,
+            true,
         });
       }
       if (series.config.type == SeriesType::kHistogram) {
@@ -1142,7 +1189,7 @@ class RenderSnapshotBuilder {
               snapshot_->panes[resolved_pane_index].plot, input_.visible_x_min,
               input_.visible_x_max, pane_y_min_[resolved_pane_index],
               pane_y_max_[resolved_pane_index],
-              input_.config.logical_spacing ? &input_.candles : nullptr});
+              input_.config.logical_spacing ? &input_.candles : nullptr, true});
         }
         float_count += (last - first) * kFloatsPerQuad;
         continue;
@@ -1176,6 +1223,7 @@ class RenderSnapshotBuilder {
           pane_y_min_[resolved_pane_index],
           pane_y_max_[resolved_pane_index],
           input_.config.logical_spacing ? &input_.candles : nullptr,
+          IsDerivedOhlcvSource(series.config.source),
       });
     }
     content_vertices_->reserve(float_count);
@@ -1224,17 +1272,16 @@ class RenderSnapshotBuilder {
     for (const SeriesData& series : input_.additional_series) {
       const std::optional<size_t> pane_index =
           ValidPaneIndex(series, snapshot_->panes.size());
-      if (!series.config.visible ||
-          series.config.source != SeriesSource::kOhlcvRsi ||
+      if (!series.config.visible || !IsFixedOscillator(series.config.source) ||
           !pane_index.has_value()) {
         continue;
       }
       const size_t resolved_pane_index = *pane_index;
       const Rect& plot = snapshot_->panes[resolved_pane_index].plot;
       const float overbought_y =
-          ProjectPaneY(resolved_pane_index, series.config.rsi_overbought);
+          ProjectPaneY(resolved_pane_index, series.config.Overbought());
       const float oversold_y =
-          ProjectPaneY(resolved_pane_index, series.config.rsi_oversold);
+          ProjectPaneY(resolved_pane_index, series.config.Oversold());
       AppendClippedQuad(*content_vertices_, plot.left, overbought_y, plot.right,
                         oversold_y, plot, series.config.rsi_band);
       EmitDashedHorizontal(*content_vertices_, overbought_y, plot.left,
@@ -1412,6 +1459,7 @@ class RenderSnapshotBuilder {
             pane_y_min_[resolved_pane_index],
             pane_y_max_[resolved_pane_index],
             input_.config.logical_spacing ? &input_.candles : nullptr,
+            true,
         },
         *content_vertices_);
   }
@@ -1447,7 +1495,7 @@ class RenderSnapshotBuilder {
             config, series.candles, first, last, snapshot_->panes[*pane].plot,
             input_.visible_x_min, input_.visible_x_max, pane_y_min_[*pane],
             pane_y_max_[*pane],
-            input_.config.logical_spacing ? &input_.candles : nullptr},
+            input_.config.logical_spacing ? &input_.candles : nullptr, true},
         series.config, fill, *content_vertices_);
   }
 
@@ -1473,6 +1521,13 @@ class RenderSnapshotBuilder {
       }
       const size_t resolved_pane_index = *pane_index;
       const SeriesWindow& window = series_windows_[index];
+      if (series.config.source == SeriesSource::kOhlcvKdj) {
+        VisitKdjLines(index, resolved_pane_index,
+                      [&](const SeriesGeometryInput& line) {
+                        AppendSeriesGeometry(line, *content_vertices_);
+                      });
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvSar) {
         AppendSarGeometry(BuildSarGeometryInput(index, resolved_pane_index),
                           series, *content_vertices_);
@@ -1549,6 +1604,7 @@ class RenderSnapshotBuilder {
               pane_y_min_[resolved_pane_index],
               pane_y_max_[resolved_pane_index],
               input_.config.logical_spacing ? &input_.candles : nullptr,
+              IsDerivedOhlcvSource(series.config.source),
           },
           *content_vertices_);
     }
@@ -1765,9 +1821,27 @@ class RenderSnapshotBuilder {
               candle && candle->close < candle->open ? config.down : config.up);
           break;
         }
+        case SeriesSource::kOhlcvKdj: {
+          const Candle* point = AtTimestamp(series.candles, timestamp);
+          legend.kind = IndicatorKind::kKdj;
+          legend.period = config.kdj_period;
+          legend.fast_period = config.kdj_m1;
+          legend.slow_period = config.kdj_m2;
+          legend.value_count = legend.values.size();
+          legend.values = {
+              LegendValue(point, &Candle::high, config.kdj_k.color),
+              LegendValue(point, &Candle::close, config.kdj_d.color),
+              LegendValue(point, &Candle::low, config.kdj_j.color)};
+          break;
+        }
         case SeriesSource::kOhlcvRsi:
-          legend.kind = IndicatorKind::kRsi;
-          legend.period = config.rsi_period;
+        case SeriesSource::kOhlcvWilliamsR:
+          legend.kind = config.source == SeriesSource::kOhlcvRsi
+                            ? IndicatorKind::kRsi
+                            : IndicatorKind::kWilliamsR;
+          legend.period = config.source == SeriesSource::kOhlcvRsi
+                              ? config.rsi_period
+                              : config.williams_period;
           legend.text_color = config.rsi_text_color;
           legend.text_color_set = config.rsi_text_color_set;
           legend.values[0] = LegendValue(AtTimestamp(series.candles, timestamp),
@@ -1799,6 +1873,18 @@ class RenderSnapshotBuilder {
       selected.series_type = series.config.type;
       selected.source_type = series.config.source;
 
+      if (series.config.source == SeriesSource::kOhlcvKdj) {
+        selected.kind = CrosshairSeriesValueKind::kKdj;
+        const auto* point = AtTimestamp(series.candles, timestamp);
+        selected.has_value = point != nullptr;
+        if (point) {
+          selected.k = point->high;
+          selected.d = point->close;
+          selected.j = point->low;
+        }
+        snapshot_->crosshair_series_values.push_back(std::move(selected));
+        continue;
+      }
       if (series.config.source == SeriesSource::kOhlcvBoll) {
         selected.kind = CrosshairSeriesValueKind::kBoll;
         const auto* point = AtTimestamp(series.candles, timestamp);
