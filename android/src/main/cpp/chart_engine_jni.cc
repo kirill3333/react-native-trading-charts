@@ -335,6 +335,10 @@ enum class SnapshotMetaIndex : std::uint8_t {
   kCurrentPriceLabelColorA,
   kHorizontalScale,
   kYAxisScale,
+  kLineEndpointVisible,
+  kLineEndpointX,
+  kLineEndpointY,
+  kLineEndpointBelowBase,
   kCount,
 };
 
@@ -345,8 +349,8 @@ inline constexpr jsize kLineConfigColorCount = 60;
 inline constexpr jsize kAreaConfigColorCount = 68;
 inline constexpr jsize kBaselineConfigColorCount = 96;
 inline constexpr jsize kColorChannelCount = 4;
-inline constexpr double kChartEngineTransportAbiVersion = 6.0;
-inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v6";
+inline constexpr double kChartEngineTransportAbiVersion = 7.0;
+inline constexpr char kSeriesTransportMarker[] = "TradingCharts.Series.v7";
 inline constexpr size_t kConfigNumberCount = ToIndex(ConfigNumberIndex::kCount);
 inline constexpr size_t kSeriesNumberCount = ToIndex(SeriesNumberIndex::kCount);
 inline constexpr size_t kSeriesColorCount = ToIndex(SeriesColorIndex::kCount);
@@ -375,7 +379,7 @@ static_assert(kIndicatorLegendRecordWidth ==
               ToIndex(IndicatorLegendRecordIndex::kValues) +
                   kIndicatorLegendValueRecordWidth *
                       kIndicatorLegendValueCapacity);
-static_assert(kSnapshotMetaCount == 53);
+static_assert(kSnapshotMetaCount == 57);
 static_assert(ToIndex(ConfigColorIndex::kCurrentPriceLabelDown) +
                   kColorChannelCount ==
               kExtendedConfigColorCount);
@@ -1936,6 +1940,12 @@ Java_com_tradingcharts_ChartEngineNative_nativeSnapshotMeta(JNIEnv* env, jclass,
     set_meta(SnapshotMetaIndex::kCurrentPriceVisible,
              snapshot->current_price_visible ? 1.0 : 0.0);
     set_meta(SnapshotMetaIndex::kCurrentPrice, snapshot->current_price);
+    set_meta(SnapshotMetaIndex::kLineEndpointVisible,
+             snapshot->line_endpoint_visible);
+    set_meta(SnapshotMetaIndex::kLineEndpointX, snapshot->line_endpoint_x);
+    set_meta(SnapshotMetaIndex::kLineEndpointY, snapshot->line_endpoint_y);
+    set_meta(SnapshotMetaIndex::kLineEndpointBelowBase,
+             snapshot->line_endpoint_below_base ? 1.0 : 0.0);
     set_meta(SnapshotMetaIndex::kCurrentPriceY, snapshot->current_price_y);
     set_meta(SnapshotMetaIndex::kCurrentPriceColorR,
              snapshot->current_price_color.r);

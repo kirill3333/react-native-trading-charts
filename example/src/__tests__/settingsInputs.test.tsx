@@ -80,6 +80,31 @@ describe('settings input drafts', () => {
     expect(input().value).toBe('20');
   });
 
+  it('publishes a valid pulse value before the settings screen closes', () => {
+    const onValueChange = jest.fn();
+    act(() => {
+      renderer = create(
+        <AppThemeProvider mode="dark">
+          <NumberSetting
+            label="Radius"
+            description="Radius"
+            value={14}
+            updateWhileEditing
+            onValueChange={onValueChange}
+          />
+        </AppThemeProvider>
+      );
+    });
+    act(() => {
+      input().onChangeText?.('0');
+    });
+    expect(onValueChange).not.toHaveBeenCalled();
+    act(() => {
+      input().onChangeText?.('28,5');
+    });
+    expect(onValueChange).toHaveBeenLastCalledWith(28.5);
+  });
+
   it('keeps the color input mounted across valid edits and resets incomplete drafts', () => {
     const committed: Array<string | undefined> = [];
     const onValueChange = jest.fn();

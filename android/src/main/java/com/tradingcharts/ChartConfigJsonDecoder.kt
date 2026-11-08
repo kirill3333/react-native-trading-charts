@@ -19,6 +19,7 @@ internal class ChartConfigJsonDecoder(
   private val candlesAppearance = appearance.getJSONObject("candles")
   private val barsAppearance = appearance.optJSONObject("bars") ?: candlesAppearance
   private val lineAppearance = appearance.optJSONObject("line") ?: JSONObject()
+  private val pulseDot = appearance.optJSONObject("pulseDot")?.takeIf { it.optBoolean("enabled") }
   private val lineGradient = lineAppearance.optJSONObject("gradient")
   private val areaAppearance = appearance.optJSONObject("area") ?: JSONObject()
   private val areaGradient = areaAppearance.optJSONObject("gradient")
@@ -224,6 +225,12 @@ internal class ChartConfigJsonDecoder(
           axisTextColor = chartColor(theme.getString("axisTextColor")),
           upColor = chartColor(seriesAppearance.getString("upColor")),
           downColor = chartColor(seriesAppearance.getString("downColor")),
+          pulseDotFrequency = pulseDot?.optDouble("frequency", 1 / 1.2) ?: 1 / 1.2,
+          pulseDotRadius = pulseDot?.optDouble("radius", 4.0) ?: 4.0,
+          pulseDotHaloRadius = pulseDot?.optDouble("haloRadius", 14.0) ?: 14.0,
+          pulseDotColor = pulseDot?.let { chartColor(it.getString("color")) },
+          pulseDotBelowBaseColor =
+              pulseDot?.optString("belowBaseColor")?.takeIf { it.isNotEmpty() }?.let(::chartColor),
           lineColor = chartColor(lineAppearance.optString("color", theme.getString("upColor"))),
           lineGradientTopColor =
               chartColor(

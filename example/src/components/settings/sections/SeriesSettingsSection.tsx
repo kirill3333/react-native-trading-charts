@@ -1,6 +1,8 @@
+import { buildBaselineAppearance } from '../../../baselineSettings';
 import { BaselineSettingsFields } from './BaselineSettingsFields';
 import { buildMainSeriesColors } from '../../../chartSettingsConfig';
 import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
+import { NumberSetting } from '../NumberSetting';
 import { HexColorSetting } from '../HexColorSetting';
 import { SettingSegments } from '../SettingSegments';
 import { SettingSwitch } from '../SettingSwitch';
@@ -63,6 +65,65 @@ export function SeriesSettingsSection() {
           />
         </>
       ) : null}
+      {(lineSeries || settings.seriesType === 'baseline') && (
+        <>
+          <SettingSwitch
+            label="Pulse dot"
+            value={settings.pulseDotEnabled}
+            onValueChange={(pulseDotEnabled) =>
+              updateSettings({ pulseDotEnabled })
+            }
+          />
+          {settings.pulseDotEnabled && (
+            <>
+              <HexColorSetting
+                label="Pulse dot color"
+                description={
+                  settings.seriesType === 'baseline'
+                    ? 'Defaults to the outline color on each side of the base.'
+                    : undefined
+                }
+                value={
+                  settings.pulseDotColor ??
+                  (settings.seriesType === 'baseline'
+                    ? buildBaselineAppearance(settings).topLineColor
+                    : colors.lineColor)
+                }
+                onValueChange={(pulseDotColor) =>
+                  updateSettings({ pulseDotColor })
+                }
+              />
+              <NumberSetting
+                updateWhileEditing
+                label="Pulse frequency (Hz)"
+                description="Full pulses per second"
+                value={settings.pulseDotFrequency}
+                onValueChange={(pulseDotFrequency) =>
+                  updateSettings({ pulseDotFrequency })
+                }
+              />
+              <NumberSetting
+                updateWhileEditing
+                label="Dot radius (pt/dp)"
+                description="Radius of the solid dot"
+                value={settings.pulseDotRadius}
+                onValueChange={(pulseDotRadius) =>
+                  updateSettings({ pulseDotRadius })
+                }
+              />
+              <NumberSetting
+                updateWhileEditing
+                label="Halo radius (pt/dp)"
+                description="Outer radius of the halo at its largest"
+                value={settings.pulseDotHaloRadius}
+                onValueChange={(pulseDotHaloRadius) =>
+                  updateSettings({ pulseDotHaloRadius })
+                }
+              />
+            </>
+          )}
+        </>
+      )}
       {ohlcSeries ? (
         <>
           <HexColorSetting

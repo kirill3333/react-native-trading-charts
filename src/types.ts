@@ -522,6 +522,17 @@ export type ChartDirectionalBadgeStyle = Omit<
   downBackgroundColor?: string;
 };
 
+export type ChartPulseDotAppearance = {
+  enabled?: boolean;
+  color?: string;
+  /** Full pulses per second. Defaults to one cycle every 1.2 seconds. */
+  frequency?: number;
+  /** Radius of the solid dot in pt/dp. Defaults to 4. */
+  radius?: number;
+  /** Maximum halo radius in pt/dp. Defaults to 14. */
+  haloRadius?: number;
+};
+
 export type ChartAppearance = {
   backgroundColor?: string;
   grid?: {
@@ -539,11 +550,16 @@ export type ChartAppearance = {
     lineWidth?: number;
   };
   line?: ChartLineAppearance & {
+    pulseDot?: ChartPulseDotAppearance;
     /** Round caps and joins for the main chart only. Defaults to true. */
     rounded?: boolean;
   };
-  baseline?: ChartBaselineAppearance & { rounded?: boolean };
+  baseline?: ChartBaselineAppearance & {
+    rounded?: boolean;
+    pulseDot?: ChartPulseDotAppearance;
+  };
   area?: ChartAreaAppearance & {
+    pulseDot?: ChartPulseDotAppearance;
     /** Round outline caps and joins for the main chart only. Defaults to true. */
     rounded?: boolean;
   };
@@ -881,6 +897,7 @@ export type ResolvedChartTextStyle = {
 export type ResolvedChartBorderStyle = Required<ChartBorderStyle>;
 
 export type ResolvedChartAppearance = {
+  pulseDot: Required<ChartPulseDotAppearance> & { belowBaseColor?: string };
   baseline: ResolvedBaselineAppearance & { rounded: boolean };
   backgroundColor: string;
   grid: { color: string; opacity: number };

@@ -454,6 +454,52 @@ describe('chart settings', () => {
     });
   });
 
+  it('shares pulse settings across line, area and baseline', () => {
+    const { updateSettings } = useChartSettingsStore.getState();
+    const pulse = () => {
+      const settings = useChartSettingsStore.getState().settings;
+      const { appearance } = buildChartViewConfig(settings, {
+        useSignificantPriceFormat: false,
+        minMove: 0.01,
+        precision: 2,
+      });
+      const type = settings.seriesType;
+      if (type === 'line' || type === 'area' || type === 'baseline') {
+        return appearance[type]?.pulseDot;
+      }
+      return (
+        appearance.line?.pulseDot ??
+        appearance.area?.pulseDot ??
+        appearance.baseline?.pulseDot
+      );
+    };
+    updateSettings({ seriesType: 'line' });
+    expect(pulse()).toBeUndefined();
+    updateSettings({
+      pulseDotEnabled: true,
+      pulseDotColor: '#CA174A',
+      pulseDotFrequency: 1.5,
+      pulseDotRadius: 5,
+      pulseDotHaloRadius: 20,
+    });
+    const expected = {
+      enabled: true,
+      color: '#CA174A',
+      frequency: 1.5,
+      radius: 5,
+      haloRadius: 20,
+    };
+    expect(pulse()).toEqual(expected);
+    for (const seriesType of ['area', 'baseline'] as const) {
+      updateSettings({ seriesType });
+      expect(pulse()).toEqual(expected);
+    }
+    updateSettings({ seriesType: 'bar' });
+    expect(pulse()).toBeUndefined();
+    updateSettings({ seriesType: 'line' });
+    expect(pulse()).toEqual(expected);
+  });
+
   it('keeps line and area rounding settings independent', () => {
     const config = buildChartViewConfig(
       settingsWith({ lineRounded: false, areaRounded: true }),

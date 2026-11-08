@@ -604,6 +604,10 @@ struct RenderSnapshot {
   ChartConfig config;
   float width = 0.0f;
   float height = 0.0f;
+  bool line_endpoint_visible = false;
+  bool line_endpoint_below_base = false;
+  float line_endpoint_x = 0.0f;
+  float line_endpoint_y = 0.0f;
   float current_price_y = 0.0f;
   float crosshair_x = 0.0f;
   float crosshair_y = 0.0f;

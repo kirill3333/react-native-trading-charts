@@ -56,6 +56,11 @@ export type ChartSettings = {
   baselineAppearance: ChartBaselineAppearance;
   seriesLineWidth: SeriesLineWidth;
   lineRounded: boolean;
+  pulseDotEnabled: boolean;
+  pulseDotColor: string | null;
+  pulseDotFrequency: number;
+  pulseDotRadius: number;
+  pulseDotHaloRadius: number;
   areaRounded: boolean;
   mainUpColorOverride: string | null;
   mainDownColorOverride: string | null;
@@ -174,6 +179,11 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   baselineAppearance: {},
   seriesLineWidth: 1.5,
   lineRounded: true,
+  pulseDotEnabled: false,
+  pulseDotColor: null,
+  pulseDotFrequency: 1 / 1.2,
+  pulseDotRadius: 4,
+  pulseDotHaloRadius: 14,
   areaRounded: true,
   mainUpColorOverride: null,
   mainDownColorOverride: null,

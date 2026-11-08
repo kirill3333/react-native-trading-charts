@@ -4542,6 +4542,58 @@ void TestPaneLayoutEdgeCasesMatchHitTesting() {
               .has_value());
 }
 
+void TestMainLineEndpoint() {
+  std::vector<double> history;
+  for (int i = 0; i < 100; ++i) {
+    const double value = 100.0 + i;
+    history.insert(history.end(),
+                   {i * 60000.0, value, value + 2.0, value - 1.0, value, 1.0});
+  }
+  for (const bool logical : {false, true}) {
+    for (const auto type :
+         {SeriesType::kLine, SeriesType::kArea, SeriesType::kBaseline}) {
+      ChartEngine engine;
+      ChartConfig config;
+      config.logical_spacing = logical;
+      config.initial_visible_count = 20;
+      config.show_current_price = false;
+      config.series_type = type;
+      engine.SetConfig(config);
+      engine.SetSize(600.0f, 300.0f);
+      assert(engine.SetHistory(history.data(), history.size()) ==
+             UpdateStatus::kApplied);
+      const auto last = engine.Snapshot();
+      assert(last->line_endpoint_visible);
+      assert(last->visible_maximum.visible);
+      ExpectNear(last->line_endpoint_x, last->visible_maximum.x);
+      const double update[] = {99.0 * 60000.0, 199.0, 201.0, 180.0, 183.0, 2.0};
+      assert(engine.UpdateCandle(update, std::size(update)) ==
+             UpdateStatus::kApplied);
+      const auto replaced = engine.Snapshot();
+      assert(replaced->line_endpoint_visible &&
+             replaced->line_endpoint_y > last->line_endpoint_y);
+      assert(engine.ScaleY(-1000.0f));
+      assert(!engine.Snapshot()->line_endpoint_visible);
+      engine.ResetViewport();
+      assert(engine.Pan(2000.0f));
+      assert(!engine.Snapshot()->line_endpoint_visible);
+      engine.ResetViewport();
+      for (const auto unsupported :
+           {SeriesType::kCandlestick, SeriesType::kHollowCandlestick,
+            SeriesType::kBar}) {
+        config.series_type = unsupported;
+        engine.SetConfig(config);
+        assert(!engine.Snapshot()->line_endpoint_visible);
+      }
+      config.series_type = type;
+      engine.SetConfig(config);
+      assert(engine.Snapshot()->line_endpoint_visible);
+      engine.Clear();
+      assert(!engine.Snapshot()->line_endpoint_visible);
+    }
+  }
+}
+
 void TestLineSourceAutoscaleCurrentPriceAndGradient() {
   const double history[] = {
       0.0, 10.0, 100.0, 1.0,      20.0, 1.0,   60000.0, 30.0, 110.0,
@@ -4580,6 +4632,8 @@ void TestLineSourceAutoscaleCurrentPriceAndGradient() {
     ExpectNear(snapshot->visible_minimum.value, test.minimum);
     ExpectNear(snapshot->visible_maximum.value, test.maximum);
     ExpectNear(snapshot->current_price, test.current);
+    assert(snapshot->line_endpoint_visible);
+    ExpectNear(snapshot->line_endpoint_y, snapshot->current_price_y);
     assert(snapshot->visible_y_min < test.minimum);
     assert(snapshot->visible_y_max > test.maximum);
 
@@ -4846,6 +4900,8 @@ void TestBaselineEngineSemantics() {
   ExpectNear(initial->visible_minimum.value, 5.0);
   ExpectNear(initial->visible_maximum.value, 7.0);
   ExpectNear(initial->current_price, 7.0);
+  assert(initial->line_endpoint_visible && initial->line_endpoint_below_base);
+  ExpectNear(initial->line_endpoint_y, initial->current_price_y);
   ExpectNear(initial->current_price_color.r, 1.0);
   assert(initial->visible_y_max < 100.0);
   engine.SetCrosshair(true, initial->plot.left, initial->plot.top);
@@ -4861,12 +4917,14 @@ void TestBaselineEngineSemantics() {
     const bool up = 7.0 >= trading_charts::BaselinePrice(
                                config.baseline, snapshot->visible_y_min,
                                snapshot->visible_y_max);
+    assert(snapshot->line_endpoint_below_base == !up);
     ExpectNear(snapshot->current_price_color.g, up ? 1.0 : 0.0);
   }
   config.baseline.percentage = false;
   config.baseline.value = 7.0;
   engine.SetConfig(config);
   ExpectNear(engine.Snapshot()->current_price_color.g, 1.0);
+  assert(!engine.Snapshot()->line_endpoint_below_base);
   SeriesConfig series;
   series.series_id = "baseline-comparison";
   series.type = SeriesType::kBaseline;
@@ -5475,6 +5533,7 @@ int main() noexcept {
     TestSetConfigWithEquivalentValuesKeepsViewport();
     TestCrosshairOnlySnapshotReusesContent();
     TestPaneLayoutEdgeCasesMatchHitTesting();
+    TestMainLineEndpoint();
     TestLineSourceAutoscaleCurrentPriceAndGradient();
     TestAreaFillAndLineLikeSemantics();
     TestBaselineGeometry();

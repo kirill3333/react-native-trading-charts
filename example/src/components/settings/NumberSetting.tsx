@@ -16,6 +16,7 @@ type NumberSettingProps = {
   value: number;
   integer?: boolean;
   allowNonPositive?: boolean;
+  updateWhileEditing?: boolean;
   validate?: (value: number) => string | undefined;
   onValueChange: (value: number) => void;
 };
@@ -26,6 +27,7 @@ export function NumberSetting({
   value,
   integer = false,
   allowNonPositive = false,
+  updateWhileEditing = false,
   validate,
   onValueChange,
 }: NumberSettingProps) {
@@ -47,24 +49,31 @@ export function NumberSetting({
   const decimalKeyboard = allowNonPositive
     ? 'numbers-and-punctuation'
     : 'decimal-pad';
-  const commit = () => {
-    const parsed = parseSettingNumber(draft.text, integer, allowNonPositive);
-    if (parsed == null) {
+  const update = (text: string, endEditing: boolean) => {
+    if (!endEditing && !updateWhileEditing) {
+      setDraft({ value, text, error: undefined });
+      return;
+    }
+    const parsed = parseSettingNumber(text, integer, allowNonPositive);
+    const invalidNumberError = integer
+      ? `Enter an integer from 1 to ${MAX_INTEGER_SETTING_VALUE}`
+      : decimalError;
+    const validationError =
+      parsed == null ? invalidNumberError : validate?.(parsed);
+    if (parsed == null || validationError != null) {
       setDraft({
-        ...draft,
-        error: integer
-          ? `Enter an integer from 1 to ${MAX_INTEGER_SETTING_VALUE}`
-          : decimalError,
+        value,
+        text,
+        error: endEditing ? validationError : undefined,
       });
       return;
     }
-    const validationError = validate?.(parsed);
-    if (validationError != null) {
-      setDraft({ ...draft, error: validationError });
-      return;
-    }
-    setDraft({ value, text: String(parsed), error: undefined });
-    onValueChange(parsed);
+    setDraft({
+      value: updateWhileEditing ? parsed : value,
+      text: endEditing ? String(parsed) : text,
+      error: undefined,
+    });
+    if (!updateWhileEditing || value !== parsed) onValueChange(parsed);
   };
   return (
     <SettingsRow label={label} description={description}>
@@ -77,8 +86,8 @@ export function NumberSetting({
           keyboardType={integer ? 'number-pad' : decimalKeyboard}
           selectTextOnFocus
           value={draft.text}
-          onChangeText={(text) => setDraft({ ...draft, text })}
-          onEndEditing={commit}
+          onChangeText={(text) => update(text, false)}
+          onEndEditing={() => update(draft.text, true)}
           style={[styles.input, error != null && styles.invalidInput]}
         />
         {error != null ? (

@@ -65,6 +65,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
           )
         }
       }
+  private val pulseDot = ChartPulseDot(context)
   private val overlay = ChartOverlayView(context)
   private val frameScheduled = AtomicBoolean(false)
   private val flingScroller = OverScroller(context)
@@ -128,6 +129,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     lastSnapshot = snapshot
     lastAppliedRevision = snapshot.revision
     renderer.submit(frame)
+    pulseDot.apply(snapshot)
     overlay.snapshot = snapshot
     plotView.requestRender()
     emitVisibleRangeChange(snapshot)
@@ -337,6 +339,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
 
   init {
     addView(plotView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    addView(pulseDot, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     addView(overlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     ChartEngineNative.setConfig(engineHandle, config)
     isClickable = true
@@ -851,6 +854,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
     stopFling()
     priceScaleChanges.clear()
     disposed = true
+    pulseDot.setHostActive(false)
     renderer.diagnostics?.let(ChartRenderingDiagnostics::dispose)
     renderer.clearPending()
     (context as? ReactContext)?.removeLifecycleEventListener(lifecycleListener)
@@ -872,6 +876,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
   private val lifecycleListener =
       object : LifecycleEventListener {
         override fun onHostResume() {
+          pulseDot.setHostActive(!disposed)
           diagnosticsResumed = true
           updateDiagnostics()
           plotView.onResume()
@@ -879,6 +884,7 @@ class TradingChartsView(context: Context) : FrameLayout(context) {
         }
 
         override fun onHostPause() {
+          pulseDot.setHostActive(false)
           diagnosticsResumed = false
           updateDiagnostics()
           stopFling()
