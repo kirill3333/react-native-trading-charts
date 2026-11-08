@@ -19,8 +19,8 @@ its first value. The horizontal reference levels default to `30` and `70`;
 change `levels.oversold` and `levels.overbought` to move them. The pane keeps
 its range at 0 to 100 and ignores vertical scale gestures.
 
-The pane header shows the RSI value at the selected candle, or the latest
-value when there is no crosshair. It displays an em dash when there is not
+The pane header shows the RSI value at the selected candle, or the last visible candle’s
+value when there is no crosshair. Set `legendVisible: false` to hide the header. It displays an em dash when there is not
 enough history or no value matches the selected timestamp. Multiple RSI
 series can share a pane, with one header row per visible series. A source
 must contain OHLC data; derived indicators cannot serve as RSI sources.

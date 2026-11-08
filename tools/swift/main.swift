@@ -331,8 +331,9 @@ suite.addTest(BufferOwnershipTests.defaultTestSuite)
 suite.addTest(FrameSchedulingTests.defaultTestSuite)
 suite.addTest(PriceScaleChangeTests.defaultTestSuite)
 suite.addTest(ExamplePerformanceTests.defaultTestSuite)
+suite.addTest(LegendRegistryTests.defaultTestSuite)
 suite.run()
-guard let result = suite.testRun, result.executionCount == 19 else {
-  fatalError("Expected all nineteen regression tests to run")
+guard let result = suite.testRun, result.executionCount == 20 else {
+  fatalError("Expected all twenty regression tests to run")
 }
 exit(result.hasSucceeded ? 0 : 1)

@@ -298,6 +298,8 @@ export type AdditionalOhlcSeriesOptions = AdditionalSeriesBase &
   );
 
 export type HistogramSeriesOptions = AdditionalSeriesBase & {
+  /** Show the OHLCV volume legend. Defaults to true for a volume source. */
+  legendVisible?: boolean;
   type: 'histogram';
   source?: { type: 'ohlcvVolume'; seriesId: string } | { type: 'data' };
   appearance?: {
@@ -319,6 +321,7 @@ export type RsiSeriesAppearance = ChartLineAppearance & {
 };
 
 export type RsiSeriesOptions = AdditionalSeriesBase & {
+  legendVisible?: boolean;
   type: 'line';
   source: {
     type: 'ohlcvRsi';
@@ -331,6 +334,7 @@ export type RsiSeriesOptions = AdditionalSeriesBase & {
 };
 
 export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
+  legendVisible?: boolean;
   type: 'line';
   source: {
     type: 'ohlcvSma' | 'ohlcvEma';
@@ -378,6 +382,7 @@ export type BollSeriesAppearance = {
 };
 
 export type BollSeriesOptions = AdditionalSeriesBase & {
+  legendVisible?: boolean;
   type: 'boll';
   source: {
     type: 'ohlcvBoll';
@@ -395,6 +400,7 @@ export type NormalizedBollSeriesOptions = Omit<
   'visible' | 'source'
 > & {
   visible: boolean;
+  legendVisible: boolean;
   source: Required<BollSeriesOptions['source']>;
 };
 
@@ -414,6 +420,7 @@ export type MacdSeriesAppearance = {
 };
 
 export type MacdSeriesOptions = AdditionalSeriesBase & {
+  legendVisible?: boolean;
   type: 'macd';
   source: {
     type: 'ohlcvMacd';
@@ -448,6 +455,7 @@ export type NormalizedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvRsi';
         seriesId: string;
@@ -457,6 +465,7 @@ export type NormalizedAdditionalChartSeriesOptions =
     })
   | (Omit<MovingAverageSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvSma' | 'ohlcvEma';
         seriesId: string;
@@ -466,6 +475,7 @@ export type NormalizedAdditionalChartSeriesOptions =
     })
   | (Omit<MacdSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvMacd';
         seriesId: string;
@@ -830,6 +840,7 @@ export type ResolvedAdditionalChartSeriesOptions =
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
   | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels' | 'appearance'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvRsi';
         seriesId: string;
@@ -846,6 +857,7 @@ export type ResolvedAdditionalChartSeriesOptions =
     })
   | (Omit<MovingAverageSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvSma' | 'ohlcvEma';
         seriesId: string;
@@ -855,6 +867,7 @@ export type ResolvedAdditionalChartSeriesOptions =
     })
   | (Omit<MacdSeriesOptions, 'visible' | 'source' | 'appearance'> & {
       visible: boolean;
+      legendVisible: boolean;
       source: {
         type: 'ohlcvMacd';
         seriesId: string;

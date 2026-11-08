@@ -14,6 +14,8 @@ The panes share one time axis. Panning or zooming changes the visible time range
 
 Define the layout with `panes`, then assign each additional series to a `paneId` and its `priceScaleId`. Include the reserved `main` pane and `main` price scale whenever you supply this prop. Each pane supports one visible price scale. Price and volume panes calculate their ranges independently; RSI uses a fixed range of 0 to 100.
 
+An OHLCV volume series displays `VOL` in its pane with the selected or last visible candle’s volume and bar color. A zero displays as `0`. Set `legendVisible: false` on the volume series to hide its label.
+
 ## Pane properties
 
 Give the price pane more space with a larger `heightWeight`, and use `minHeight` to keep smaller panes readable. Configure each scale with a format appropriate to its values.

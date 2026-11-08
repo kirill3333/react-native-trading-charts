@@ -17,6 +17,8 @@ internal object TradingChartsRegistry {
 
     data class Trades(val values: DoubleArray) : Command
 
+    data class SeriesLegendVisible(val seriesId: String, val visible: Boolean) : Command
+
     data class AddSeries(val json: String) : Command
 
     data class SeriesData(
@@ -116,6 +118,9 @@ internal object TradingChartsRegistry {
 
   fun removeSeries(chartId: String, seriesId: String) =
       enqueue(chartId, Command.RemoveSeries(seriesId))
+
+  fun setSeriesLegendVisible(chartId: String, seriesId: String, visible: Boolean) =
+      enqueue(chartId, Command.SeriesLegendVisible(seriesId, visible))
 
   fun setPaneHeight(chartId: String, paneId: String, heightWeight: Double) =
       enqueue(chartId, Command.PaneHeight(paneId, heightWeight))
@@ -248,6 +253,8 @@ internal object TradingChartsRegistry {
               command.update,
           )
       is Command.RemoveSeries -> view.removeSeries(command.seriesId)
+      is Command.SeriesLegendVisible ->
+          view.setSeriesLegendVisible(command.seriesId, command.visible)
       is Command.PaneHeight -> view.setPaneHeight(command.paneId, command.heightWeight)
       is Command.SetPriceLine ->
           view.setPriceLine(command.id, command.price, command.label, command.color)

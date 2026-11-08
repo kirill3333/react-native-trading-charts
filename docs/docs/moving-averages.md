@@ -30,6 +30,8 @@ Each line accepts `width`, `color`, an optional vertical `gradient`, and
 `style: 'solid' | 'dashed'`. Dashed strokes use a density-aware 4/3 dash-gap
 pattern on both platforms.
 
+Each series shows its own period and a value in the line color. The value follows the selected candle or the last visible candle. Set `legendVisible: false` to hide one moving average’s label.
+
 ## Complete example
 
 This example overlays a blue SMA with period 20 and a dashed orange EMA with period 50. Its 80 sample candles let both lines finish warming up. Replace the history with your feed; updates to the source candles recalculate both averages.

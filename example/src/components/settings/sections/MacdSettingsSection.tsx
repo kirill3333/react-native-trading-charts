@@ -4,6 +4,7 @@ import { useChartSettingsStore } from '../../../stores/chartSettingsStore';
 import { useAppTheme } from '../../../themeContext';
 import { HexColorSetting } from '../HexColorSetting';
 import { SettingSegments } from '../SettingSegments';
+import { LegendSetting } from '../LegendSetting';
 import { SettingsSection } from '../SettingsSection';
 import {
   MACD_FAST_PERIOD_OPTIONS,
@@ -19,6 +20,7 @@ export function MacdSettingsSection() {
 
   return (
     <SettingsSection title="MACD">
+      <LegendSetting indicator="macd" />
       <SettingSegments
         label="Fast period"
         onValueChange={(macdFastPeriod) => updateSettings({ macdFastPeriod })}

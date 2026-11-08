@@ -69,6 +69,6 @@ The source must be `main` or a data-backed OHLC series with the same `paneId` an
 
 ## Crosshair values
 
-`onSelectedCandleChange` includes a `CrosshairSeriesValue` with `kind: 'boll'`, `seriesType: 'boll'`, `sourceType: 'ohlcvBoll'`, and `upper`, `middle`, `lower`. Values are `null` during warmup or when the source has no candle at the selected timestamp. Hidden BOLL series are omitted. The chart does not draw a BOLL legend.
+`onSelectedCandleChange` includes a `CrosshairSeriesValue` with `kind: 'boll'`, `seriesType: 'boll'`, `sourceType: 'ohlcvBoll'`, and `upper`, `middle`, `lower`. Values are `null` during warmup or when the source has no candle at the selected timestamp. Hidden BOLL series are omitted. The legend shows the period and deviation multiplier followed by `UP`, `MID` and `LOW` in their line colors. It follows the selected candle or the last visible candle. Set `legendVisible: false` to hide the legend.
 
 In the example, open **Chart settings → BOLL**. Enable the indicator, edit its period and deviation multiplier, choose the price source, and adjust each line and the fill. Numeric changes apply when editing ends; invalid input leaves the previous configuration active. **Restore defaults** disables BOLL and restores its defaults.

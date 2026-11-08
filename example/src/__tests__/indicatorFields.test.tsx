@@ -6,6 +6,7 @@ import { AppThemeProvider } from '../themeContext';
 import { APP_THEMES } from '../theme';
 import { useChartSettingsStore } from '../stores/chartSettingsStore';
 import { LineAppearanceFields } from '../components/settings/LineAppearanceFields';
+import { SettingSwitch } from '../components/settings/SettingSwitch';
 import { MovingAverageSettingsSection } from '../components/settings/sections/MovingAverageSettingsSection';
 import { MacdSettingsSection } from '../components/settings/sections/MacdSettingsSection';
 import { BollSettingsSection } from '../components/settings/sections/BollSettingsSection';
@@ -50,16 +51,26 @@ describe('shared indicator fields', () => {
     });
     expand('SMA');
     expand('EMA');
+    const legends = renderer.root.findAllByType(SettingSwitch)
+      .filter((item) => item.props.label === 'Show legend');
+    expect(legends.map((item) => item.props.value)).toEqual([true, true]);
+    act(() => {
+      // SAFETY: findAllByType selected the SettingSwitch component.
+      const toggle = legends[0]!.props as ComponentProps<typeof SettingSwitch>;
+      toggle.onValueChange(false);
+    });
     act(() => line(0).onChange({ width: 2.5, gradientEnabled: true }));
     act(() => line(1).onChange({ color: '#123456' }));
     const series = buildMovingAverageSeries(
       useChartSettingsStore.getState().settings
     );
     expect(series[0]).toMatchObject({
+      legendVisible: false,
       seriesId: 'sma',
       appearance: { width: 2.5, gradient: expect.any(Object) },
     });
     expect(series[1]).toMatchObject({
+      legendVisible: true,
       seriesId: 'ema',
       appearance: { color: '#123456' },
     });

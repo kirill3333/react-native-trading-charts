@@ -18,6 +18,7 @@ import Foundation
     update: Bool
   )
   func removeSeries(_ seriesId: String)
+  func setSeriesLegendVisible(_ seriesId: String, visible: Bool)
   func setPaneHeight(_ paneId: String, weight: Double)
   func setPriceLine(_ id: String, price: Double, label: String, color: String)
   func removePriceLine(_ id: String)
@@ -39,6 +40,7 @@ private enum PendingCommand {
   case addSeries(String)
   case seriesData([NSNumber], seriesId: String, dataType: String, prepend: Bool, update: Bool)
   case removeSeries(String)
+  case seriesLegendVisible(String, Bool)
   case paneHeight(String, Double)
   case setPriceLine(String, Double, String, String)
   case removePriceLine(String)
@@ -57,6 +59,7 @@ private enum PendingCommand {
     case .addSeries: return "addSeries"
     case .seriesData: return "seriesData"
     case .removeSeries: return "removeSeries"
+    case .seriesLegendVisible: return "setSeriesLegendVisible"
     case .paneHeight: return "paneHeight"
     case .setPriceLine: return "setPriceLine"
     case .removePriceLine: return "removePriceLine"
@@ -91,6 +94,7 @@ private enum PendingCommand {
         update: update
       )
     case .removeSeries(let seriesId): target.removeSeries(seriesId)
+    case .seriesLegendVisible(let id, let visible): target.setSeriesLegendVisible(id, visible: visible)
     case .paneHeight(let paneId, let weight): target.setPaneHeight(paneId, weight: weight)
     case .setPriceLine(let id, let price, let label, let color):
       target.setPriceLine(id, price: price, label: label, color: color)
@@ -209,6 +213,12 @@ public final class TradingChartsRegistry: NSObject {
   public func removeSeries(_ seriesId: String, chartId: String) {
     guard !seriesId.isEmpty else { return }
     enqueue(.removeSeries(seriesId), chartId: chartId)
+  }
+
+  @objc(setSeriesLegendVisible:visible:chartId:)
+  public func setSeriesLegendVisible(_ seriesId: String, visible: Bool, chartId: String) {
+    guard !seriesId.isEmpty else { return }
+    enqueue(.seriesLegendVisible(seriesId, visible), chartId: chartId)
   }
 
   @objc(setPaneHeight:weight:chartId:)

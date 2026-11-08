@@ -44,29 +44,6 @@ internal class ChartOverlayView(context: Context) : View(context) {
 
   private data class TooltipRow(val label: String, val value: String, val valueColor: Int)
 
-  private data class IndicatorLegendKey(
-      val paneIndex: Int,
-      val kind: Int,
-      val period: Int,
-      val fastPeriod: Int,
-      val slowPeriod: Int,
-      val signalPeriod: Int,
-      val valueSource: Int,
-      val value0Bits: Long,
-      val hasValue0: Boolean,
-      val value1Bits: Long,
-      val hasValue1: Boolean,
-      val value2Bits: Long,
-      val hasValue2: Boolean,
-  )
-
-  private data class IndicatorLegendLabel(
-      val title: String,
-      val values: List<String>,
-      val titleWidth: Float,
-      val valueWidths: List<Float>,
-  )
-
   private data class TooltipLayout(
       val header: String,
       val showHeader: Boolean,
@@ -165,7 +142,9 @@ internal class ChartOverlayView(context: Context) : View(context) {
   // invalidated in prepare() on any config change.
   private val xLabelCache = BoundedCache<Long, AxisLabel>(MAX_X_LABEL_CACHE_SIZE)
   private val yLabelCache = HashMap<String, BoundedCache<Long, AxisLabel>>()
-  private val indicatorLegendCache = BoundedCache<IndicatorLegendKey, IndicatorLegendLabel>(64)
+  private var legendBounds = emptyArray<RectF>()
+  private var nextLegendTop = FloatArray(0)
+  private val indicatorLegendCache = BoundedCache<IndicatorLegendSnapshot, List<AxisLabel>>(64)
   private val priceLineCache = BoundedCache<String, PriceLineContent>(256)
   private var timeBadgeLabel: AxisLabel? = null
   private var timeBadgeBits = 0L
@@ -633,62 +612,87 @@ internal class ChartOverlayView(context: Context) : View(context) {
   }
 
   private fun drawIndicatorLegends(canvas: Canvas, frame: ChartSnapshot) {
-    frame.indicatorLegends.forEachIndexed { index, legend ->
-      val pane = frame.panes.getOrNull(legend.paneIndex) ?: return@forEachIndexed
-      var row = 0
-      for (previous in 0 until index) {
-        if (frame.indicatorLegends[previous].paneIndex == legend.paneIndex) row += 1
-      }
-      val value0 = legend.values.getOrNull(0)
-      val value1 = legend.values.getOrNull(1)
-      val value2 = legend.values.getOrNull(2)
-      val key =
-          IndicatorLegendKey(
-              legend.paneIndex,
-              legend.kind,
-              legend.period,
-              legend.fastPeriod,
-              legend.slowPeriod,
-              legend.signalPeriod,
-              legend.valueSource,
-              value0?.value?.toBits() ?: 0L,
-              value0?.hasValue == true,
-              value1?.value?.toBits() ?: 0L,
-              value1?.hasValue == true,
-              value2?.value?.toBits() ?: 0L,
-              value2?.hasValue == true,
-          )
-      val label =
-          indicatorLegendCache.getOrPut(key) {
-            val title = indicatorLegendTitle(legend)
-            val formatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
-            val values =
-                legend.values.map { value ->
-                  if (value.hasValue) formatValue(value.value, formatter) else "—"
-                }
-            IndicatorLegendLabel(
-                title,
-                values,
-                rsiTitlePaint.measureText(title),
-                values.map(rsiValuePaint::measureText),
-            )
-          }
-      val baseline = pane.plotTop + (16f + row * 15f) * density
+    if (nextLegendTop.size != frame.panes.size) {
+      nextLegendTop = FloatArray(frame.panes.size)
+      legendBounds = Array(frame.panes.size) { RectF() }
+    }
+    frame.panes.forEachIndexed { index, pane ->
+      nextLegendTop[index] = pane.plotTop + 5f * density
+      legendBounds[index].setEmpty()
+    }
+    frame.indicatorLegends.forEach { legend ->
+      val pane = frame.panes.getOrNull(legend.paneIndex) ?: return@forEach
+      val label = indicatorLegendLabel(legend, pane)
       val left = pane.plotLeft + 8f * density
+      val right = pane.plotRight - 4f * density
+      val lineHeight =
+          max(rsiTitlePaint.descent(), rsiValuePaint.descent()) -
+              min(rsiTitlePaint.ascent(), rsiValuePaint.ascent())
+      var x = left
+      var top = nextLegendTop[legend.paneIndex]
       rsiTitlePaint.color =
           if (legend.textColorSet) legend.textColor else frame.config.yAxisTextStyle.color
-      canvas.drawText(label.title, left, baseline, rsiTitlePaint)
-      var valueLeft = left + label.titleWidth + 6f * density
-      legend.values.forEachIndexed { valueIndex, value ->
-        rsiValuePaint.color = value.color
-        canvas.drawText(label.values[valueIndex], valueLeft, baseline, rsiValuePaint)
-        valueLeft += label.valueWidths[valueIndex] + 6f * density
+      val saved = canvas.save()
+      canvas.clipRect(left, pane.plotTop, right, pane.plotBottom)
+      for ((part, run) in label.withIndex()) {
+        val width = run.width
+        if (x > left && x + width > right) {
+          x = left
+          top += lineHeight + 2f * density
+        }
+        if (top + lineHeight > pane.plotBottom) break
+        val paint = if (part == 0) rsiTitlePaint else rsiValuePaint
+        if (part > 0) paint.color = legend.values[part - 1].color
+        canvas.drawText(run.text, x, top - paint.ascent(), paint)
+        legendBounds[legend.paneIndex].union(x, top, min(right, x + width), top + lineHeight)
+        x += width + 5f * density
       }
+      canvas.restoreToCount(saved)
+      nextLegendTop[legend.paneIndex] = top + lineHeight + 2f * density
     }
   }
 
+  private fun indicatorLegendLabel(
+      legend: IndicatorLegendSnapshot,
+      pane: PaneSnapshot,
+  ): List<AxisLabel> =
+      indicatorLegendCache.getOrPut(legend) {
+        val title = indicatorLegendTitle(legend)
+        val formatter = paneValueFormats[pane.priceScaleId] ?: yAxisValueFormat
+        buildList {
+          add(AxisLabel(title, rsiTitlePaint.measureText(title)))
+          legend.values.forEachIndexed { index, value ->
+            val number =
+                when {
+                  !value.hasValue -> "—"
+                  legend.kind != INDICATOR_KIND_VOLUME -> formatValue(value.value, formatter)
+                  value.value == 0.0 -> "0"
+                  else ->
+                      formatVolume(
+                          value.value,
+                          paneVolumeFormats[pane.priceScaleId] ?: volumeFormat,
+                      )
+                }
+            val text =
+                if (legend.kind == INDICATOR_KIND_BOLL) BOLL_PREFIXES[index] + number else number
+            add(AxisLabel(text, rsiValuePaint.measureText(text)))
+          }
+        }
+      }
+
   private fun indicatorLegendTitle(legend: IndicatorLegendSnapshot): String {
-    if (legend.kind == INDICATOR_KIND_RSI) return "RSI ${legend.period}"
+    return when (legend.kind) {
+      INDICATOR_KIND_RSI -> "RSI ${legend.period}"
+      INDICATOR_KIND_SMA -> "SMA ${legend.period}"
+      INDICATOR_KIND_EMA -> "EMA ${legend.period}"
+      INDICATOR_KIND_BOLL ->
+          "BOLL (${legend.period}, ${legend.stdDevMultiplier.toString().removeSuffix(".0")})"
+      INDICATOR_KIND_VOLUME -> "VOL"
+      else -> macdTitle(legend)
+    }
+  }
+
+  private fun macdTitle(legend: IndicatorLegendSnapshot): String {
     val source =
         when (legend.valueSource) {
           0 -> "OPEN"
@@ -834,20 +838,39 @@ internal class ChartOverlayView(context: Context) : View(context) {
     canvas.drawText(cache.text, x, baseline, extremaTextPaint)
   }
 
+  private fun tooltipRect(frame: ChartSnapshot, layout: TooltipLayout): RectF {
+    val left = frame.plotLeft + 8f * density
+    val right = max(left, frame.plotRight - layout.width - 8f * density)
+    val preferLeft = frame.crosshairX > (frame.plotLeft + frame.plotRight) / 2f
+    val top = frame.plotTop + 8f * density
+    val bottom = frame.panes.lastOrNull()?.plotBottom ?: frame.height
+    var leastOverlap = Float.POSITIVE_INFINITY
+    for (row in -1 until legendBounds.size) {
+      if (row >= 0 && legendBounds[row].isEmpty) continue
+      val y =
+          if (row < 0) top
+          else max(top, min(legendBounds[row].bottom + 4f * density, bottom - layout.height))
+      for (side in 0..1) {
+        val x = if ((side == 0) == preferLeft) left else right
+        var overlap = 0f
+        for (bounds in legendBounds) {
+          val width = min(x + layout.width, bounds.right) - max(x, bounds.left)
+          val height = min(y + layout.height, bounds.bottom) - max(y, bounds.top)
+          overlap += max(0f, width) * max(0f, height)
+        }
+        if (overlap >= leastOverlap) continue
+        scratchRect.set(x, y, x + layout.width, y + layout.height)
+        if (overlap == 0f) return scratchRect
+        leastOverlap = overlap
+      }
+    }
+    return scratchRect
+  }
+
   private fun drawTooltip(canvas: Canvas, frame: ChartSnapshot) {
     val layout = prepareTooltipLayout(frame)
     val config = frame.config
-    val plotMidX = (frame.plotLeft + frame.plotRight) / 2f
-    val left =
-        if (frame.crosshairX > plotMidX) frame.plotLeft + 8f * density
-        else frame.plotRight - layout.width - 8f * density
-    val rect = scratchRect
-    rect.set(
-        left,
-        frame.plotTop + 8f * density,
-        left + layout.width,
-        frame.plotTop + 8f * density + layout.height,
-    )
+    val rect = tooltipRect(frame, layout)
     val background = config.tooltipBackgroundColor
     val alpha = (Color.alpha(background) * config.tooltipBackgroundOpacity).roundToInt()
     drawBackground(
@@ -1028,6 +1051,11 @@ internal class ChartOverlayView(context: Context) : View(context) {
   companion object {
     private const val TAG = "TradingCharts"
     private const val INDICATOR_KIND_RSI = 0
+    private const val INDICATOR_KIND_BOLL = 2
+    private const val INDICATOR_KIND_SMA = 3
+    private const val INDICATOR_KIND_EMA = 4
+    private const val INDICATOR_KIND_VOLUME = 5
+    private val BOLL_PREFIXES = listOf("UP ", "MID ", "LOW ")
     private const val MIN_CRYPTO_ZERO_COUNT = 1
     private const val MAX_X_LABEL_CACHE_SIZE = 1024
     private const val MAX_Y_LABEL_CACHE_SIZE = 256

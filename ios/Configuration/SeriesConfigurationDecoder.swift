@@ -84,6 +84,7 @@ enum SeriesConfigurationDecoder {
     config.pane_id = nativeString(item.string("paneId"))
     config.price_scale_id = nativeString(item.string("priceScaleId"))
     config.visible = item.number("visible")?.boolValue ?? true
+    config.legend_visible = item.number("legendVisible")?.boolValue ?? true
     config.declarative = declarative
     config.type = seriesType(type)
 

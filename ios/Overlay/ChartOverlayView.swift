@@ -16,7 +16,7 @@ final class ChartOverlayView: UIView {
   private lazy var extremaPool = TextLayerPool(parentLayer: extremaContainer)
   private lazy var tooltipLinePool = TextLayerPool(parentLayer: tooltipContainer)
   private lazy var tooltipValuePool = TextLayerPool(parentLayer: tooltipContainer)
-  private lazy var legendPool = TextLayerPool(parentLayer: axisContainer)
+  lazy var legendPool = TextLayerPool(parentLayer: axisContainer)
   private lazy var currentPriceBadge = BadgeLayerGroup(parentLayer: badgeContainer, cornerRadius: 4)
   private lazy var crosshairPriceBadge = BadgeLayerGroup(parentLayer: badgeContainer, cornerRadius: 4)
   private lazy var crosshairTimeBadge = BadgeLayerGroup(parentLayer: badgeContainer, cornerRadius: 4)
@@ -29,7 +29,7 @@ final class ChartOverlayView: UIView {
   private let xAxisLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let yAxisLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let extremaLayoutCache = NSCache<NSString, ChartTextLayout>()
-  private let indicatorLayoutCache = NSCache<NSString, ChartTextLayout>()
+  let indicatorLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let currentPriceLayoutCache = NSCache<NSString, ChartTextLayout>()
   let priceLineLayoutCache = NSCache<NSString, ChartTextLayout>()
   private let crosshairPriceLayoutCache = NSCache<NSString, ChartTextLayout>()
@@ -52,7 +52,8 @@ final class ChartOverlayView: UIView {
   private var hasAppliedSelection = false
   private var visibleStaticLabels = 0
   private var visibleSelectionLabels = 0
-  private var visibleLegendLabels = 0
+  var legendBounds: [CGRect] = []
+  var visibleLegendLabels = 0
   private var tooltipFields = ["open", "close", "high", "low", "amplitude", "changePercent", "change", "volume"]
   private var showTooltipHeader = true
 
@@ -130,6 +131,11 @@ final class ChartOverlayView: UIView {
     tooltipUpLayoutCache.removeAllObjects()
     tooltipDownLayoutCache.removeAllObjects()
     hasAppliedContentRevision = false
+    hasAppliedSelection = false
+  }
+
+  func invalidateLegendLayout() {
+    // The tooltip also uses the occupied legend rows for positioning.
     hasAppliedSelection = false
   }
 
@@ -380,59 +386,6 @@ final class ChartOverlayView: UIView {
     }
   }
 
-  private func applyLegends(frame: ChartRenderFrame, style: OverlayStyle, metrics: inout OverlayUpdateMetrics) {
-    var rows = Array(repeating: 0, count: frame.paneCount)
-    var next = 0
-    for legendIndex in 0..<frame.indicatorLegendCount {
-      let legend = frame.indicatorLegend(at: legendIndex)
-      let paneIndex = Int(legend.pane_index)
-      guard paneIndex < frame.paneCount else { continue }
-      let pane = frame.pane(at: paneIndex)
-      let scaleId = String(pane.price_scale_id)
-      let valueFormatter = formatters.valueFormatterToken(scaleId: scaleId)
-      let title: String
-      if legend.kind == .macd {
-        let source: String
-        switch legend.value_source {
-        case .open: source = "OPEN"
-        case .high: source = "HIGH"
-        case .low: source = "LOW"
-        default: source = "CLOSE"
-        }
-        title = "MACD \(legend.fast_period) \(legend.slow_period) \(source) \(legend.signal_period)"
-      } else { title = "RSI \(legend.period)" }
-      let attributed = NSMutableAttributedString(string: title, attributes: legend.text_color_set
-        ? replacingColor(style.yAxis, color: uiColor(legend.text_color)) : style.yAxis)
-      var cacheKey = "indicator\u{1f}\(paneIndex)\u{1f}\(legend.kind.rawValue)\u{1f}\(title)"
-      for valueIndex in 0..<Int(legend.value_count) {
-        let value = frame.indicatorLegendValue(legendIndex: legendIndex, valueIndex: valueIndex)
-        let text = value.has_value
-          ? formatters.formatValue(value.value, using: valueFormatter) : "—"
-        cacheKey.append(contentsOf: "\u{1f}\(text)")
-        cacheKey.append(contentsOf: "\u{1f}\(value.color.r)\u{1f}\(value.color.g)")
-        cacheKey.append(contentsOf: "\u{1f}\(value.color.b)\u{1f}\(value.color.a)")
-        attributed.append(NSAttributedString(
-          string: " " + text,
-          attributes: replacingColor(style.yAxis, color: uiColor(value.color))
-        ))
-      }
-      let layout: ChartTextLayout
-      if let cached = indicatorLayoutCache.object(forKey: cacheKey as NSString) {
-        metrics.layoutCacheHits += 1; layout = cached
-      } else {
-        metrics.layoutCacheMisses += 1; layout = ChartTextLayout(attributedString: attributed)
-        indicatorLayoutCache.setObject(layout, forKey: cacheKey as NSString)
-      }
-      let row = rows[paneIndex]; rows[paneIndex] += 1
-      _ = legendPool.apply(layout: layout, to: legendPool.item(at: next), frame: CGRect(
-        x: CGFloat(pane.plot.left) + 8, y: CGFloat(pane.plot.top) + 5 + CGFloat(row * 15),
-        width: layout.size.width, height: layout.size.height), metrics: &metrics)
-      next += 1
-    }
-    legendPool.hide(from: next)
-    visibleLegendLabels = next
-  }
-
   private func applyCrosshairPrice(
     frame: ChartRenderFrame, configuration: ResolvedChartConfiguration,
     style: OverlayStyle, metrics: inout OverlayUpdateMetrics
@@ -552,11 +505,7 @@ final class ChartOverlayView: UIView {
     let width = max(showTooltipHeader ? headerLayout.size.width : 0, rowsWidth) + 20
     let rowsHeight = CGFloat(values.count) * rowHeight
     let height = headerHeight + rowsHeight + 18
-    let midX = (CGFloat(frame.plot.left) + CGFloat(frame.plot.right)) / 2
-    let x = CGFloat(frame.crosshairX) > midX
-      ? CGFloat(frame.plot.left) + 8
-      : CGFloat(frame.plot.right) - width - 8
-    let box = CGRect(x: x, y: CGFloat(frame.plot.top) + 8, width: width, height: height)
+    let box = tooltipFrame(frame: frame, size: CGSize(width: width, height: height))
     if tooltipBackgroundLayer.frame != box { tooltipBackgroundLayer.frame = box; metrics.frameUpdates += 1 }
     var background = style.tooltipBackground
     background.a *= configuration!.native.tooltip_background_opacity

@@ -3,6 +3,7 @@ import { patchLineSettings, readLineSettings } from '../../../lineSettings';
 import { LineAppearanceFields } from '../LineAppearanceFields';
 import { NumberSetting } from '../NumberSetting';
 import { SettingSegments } from '../SettingSegments';
+import { LegendSetting } from '../LegendSetting';
 import { SettingsSection } from '../SettingsSection';
 import { SettingSwitch } from '../SettingSwitch';
 import { VALUE_SOURCE_OPTIONS } from './settingsOptions';
@@ -53,6 +54,7 @@ export function MovingAverageSettingsSection({
       />
       {settings[config.enabled] && (
         <>
+          <LegendSetting indicator={kind} />
           <NumberSetting
             label={`${config.title} period`}
             description={config.periodDescription}
