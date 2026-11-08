@@ -1,7 +1,7 @@
 import NativeTradingCharts, {
   type Spec as NativeTradingChartsSpec,
 } from './NativeTradingCharts';
-import { resolveAdditionalSeriesOptions } from './config';
+import { assertBoolean, resolveAdditionalSeriesOptions } from './config';
 import {
   type AdditionalChartSeriesOptions,
   type ChartSeriesDataPoint,
@@ -300,9 +300,7 @@ export function createTradingCharts(
     ) {
       assertChartId(chartId);
       assertIdentifier(seriesId, 'seriesId');
-      if (visible !== true && visible !== false) {
-        throw new TypeError('visible must be a boolean');
-      }
+      assertBoolean(visible, 'visible');
       nativeTradingCharts.setSeriesLegendVisible(chartId, seriesId, visible);
     },
 

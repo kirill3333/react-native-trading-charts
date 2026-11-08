@@ -1306,14 +1306,21 @@ function validateOscillatorAppearance(
   }
 }
 
+export function assertBoolean(
+  value: boolean | undefined,
+  name: string
+): asserts value is boolean {
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${name} must be a boolean`);
+  }
+}
+
 function resolveLegendVisible(
   visible: boolean | undefined,
   name: string
 ): boolean {
   if (visible == null) return true;
-  if (visible !== true && visible !== false) {
-    throw new TypeError(`${name}.legendVisible must be a boolean`);
-  }
+  assertBoolean(visible, `${name}.legendVisible`);
   return visible;
 }
 
@@ -1460,12 +1467,8 @@ function resolveBollSeriesOptions(
   for (const key of ['topColor', 'bottomColor'] as const) {
     if (fill?.[key] != null) color(fill[key], `${name}.appearance.fill.${key}`);
   }
-  if (
-    fill?.enabled != null &&
-    fill.enabled !== true &&
-    fill.enabled !== false
-  ) {
-    throw new TypeError(`${name}.appearance.fill.enabled must be a boolean`);
+  if (fill?.enabled != null) {
+    assertBoolean(fill.enabled, `${name}.appearance.fill.enabled`);
   }
   return {
     ...options,

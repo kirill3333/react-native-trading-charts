@@ -85,6 +85,16 @@ describe('additional series normalization', () => {
   });
 
   const invalid = [
+    [
+      {
+        ...main,
+        type: 'boll',
+        source: { type: 'ohlcvBoll', seriesId: 'main' },
+        // SAFETY: JavaScript callers can pass a string despite the TypeScript signature.
+        legendVisible: 'false' as never,
+      },
+      '.legendVisible must be a boolean',
+    ],
     [{ ...main, type: 'bar', seriesId: 'main' }, '.seriesId'],
     [{ ...main, type: 'candlestick', priceScaleId: 'a b' }, '.priceScaleId'],
     [{ ...main, type: 'line', gapThresholdMs: 0 }, '.gapThresholdMs'],

@@ -303,6 +303,12 @@
       }
     },
     {
+      "files": ["src/config.ts"],
+      "rules": {
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
       "files": ["example/src/navigation.tsx"],
       "rules": {
         "typescript/no-namespace": "off",
