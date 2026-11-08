@@ -19,6 +19,6 @@ features:
     details: Load an initial history, then send new candles or raw trades as they arrive. The trade batcher groups frequent messages into fewer native calls.
     link: /docs/data
   - title: Flexible chart layouts
-    details: Keep price in the main pane and give volume or indicators their own scales. Add SMA, EMA, RSI or MACD, then choose the colors and labels your screen needs.
+    details: Keep price in the main pane and give volume or indicators their own scales. Add SMA, EMA, RSI, MACD, Williams %R or KDJ, then choose the colors and labels your screen needs.
     link: /docs/panes
 ---

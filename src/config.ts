@@ -35,6 +35,9 @@ import {
   type ResolvedTradeAggregationOptions,
   type ResolvedTradingSessionSegment,
   type ResolutionUnit,
+  type WilliamsRSeriesOptions,
+  type KdjSeriesOptions,
+  type NormalizedKdjSeriesOptions,
   type RsiSeriesOptions,
   type SignificantValueFormat,
   type TradingChartsViewProps,
@@ -66,6 +69,7 @@ const ADDITIONAL_SERIES_TYPES = new Set<string>([
   ...CHART_SERIES_TYPES,
   'histogram',
   'boll',
+  'kdj',
   'sar',
   'macd',
 ]);
@@ -233,11 +237,15 @@ function hasValidScaleMargins(value: { top: number; bottom: number }): boolean {
   return value.top + value.bottom <= 1 - MINIMUM_SCALE_CONTENT_FRACTION;
 }
 
-function hasValidRsiLevels(oversold: number, overbought: number): boolean {
-  if (!Number.isFinite(oversold) || oversold < 0) {
+function hasValidOscillatorLevels(
+  oversold: number,
+  overbought: number,
+  minimum: number
+): boolean {
+  if (!Number.isFinite(oversold) || oversold < minimum) {
     return false;
   }
-  if (!Number.isFinite(overbought) || overbought > 100) {
+  if (!Number.isFinite(overbought) || overbought > minimum + 100) {
     return false;
   }
   return oversold < overbought;
@@ -1117,9 +1125,9 @@ type NormalizedMovingAverageSeriesOptions = Extract<
   { source: { type: 'ohlcvSma' | 'ohlcvEma' } }
 >;
 
-type NormalizedRsiSeriesOptions = Extract<
+type NormalizedFixedOscillator = Extract<
   NormalizedAdditionalChartSeriesOptions,
-  { source: { type: 'ohlcvRsi' } }
+  { source: { type: 'ohlcvRsi' | 'ohlcvWilliamsR' } }
 >;
 
 type NormalizedMacdSeriesOptions = Extract<
@@ -1139,13 +1147,13 @@ function isMacdSeriesOptions(
   return options.type === 'macd' && options.source.type === 'ohlcvMacd';
 }
 
-function isRsiSeriesOptions(
+function isFixedOscillator(
   options: NormalizedAdditionalChartSeriesOptions
-): options is NormalizedRsiSeriesOptions;
-function isRsiSeriesOptions(
+): options is NormalizedFixedOscillator;
+function isFixedOscillator(
   options: AdditionalChartSeriesOptions
-): options is RsiSeriesOptions;
-function isRsiSeriesOptions(
+): options is RsiSeriesOptions | WilliamsRSeriesOptions;
+function isFixedOscillator(
   options: AdditionalChartSeriesOptions | NormalizedAdditionalChartSeriesOptions
 ): boolean {
   if (options.type !== 'line') {
@@ -1163,7 +1171,7 @@ function isRsiSeriesOptions(
   ) {
     return false;
   }
-  return source.type === 'ohlcvRsi';
+  return source.type === 'ohlcvRsi' || source.type === 'ohlcvWilliamsR';
 }
 
 function isMovingAverageSeriesOptions(
@@ -1224,7 +1232,8 @@ function validateLineAppearance(
   options:
     | AdditionalPriceSeriesOptions
     | MovingAverageSeriesOptions
-    | RsiSeriesOptions,
+    | RsiSeriesOptions
+    | WilliamsRSeriesOptions,
   name: string
 ): void {
   const appearance = options.appearance;
@@ -1285,7 +1294,10 @@ function resolvePriceSeriesOptions(
   };
 }
 
-function validateRsiAppearance(options: RsiSeriesOptions, name: string): void {
+function validateOscillatorAppearance(
+  options: RsiSeriesOptions | WilliamsRSeriesOptions,
+  name: string
+): void {
   validateLineAppearance(options, name);
   const appearance = options.appearance;
   for (const [key, value] of [
@@ -1342,43 +1354,46 @@ function resolveMovingAverageSeriesOptions(
   };
 }
 
-function resolveRsiSeriesOptions(
-  options: RsiSeriesOptions,
+function resolveFixedOscillator(
+  options: RsiSeriesOptions | WilliamsRSeriesOptions,
   name: string,
   ids: NormalizedSeriesIdentifiers
 ): NormalizedAdditionalChartSeriesOptions {
+  const williams = options.source.type === 'ohlcvWilliamsR';
   if (ids.paneId === 'main') {
-    throw new TypeError(`${name}.paneId must reference a separate RSI pane`);
+    throw new TypeError(
+      `${name}.paneId must reference a separate ${williams ? 'Williams %R' : 'RSI'} pane`
+    );
   }
   const sourceSeriesId = identifier(
     options.source.seriesId,
     `${name}.source.seriesId`
   );
   const period = options.source.period ?? 14;
-  if (!Number.isInteger(period) || period <= 0) {
+  if (!Number.isInteger(period) || period <= 0 || period > UINT32_MAX) {
     throw new TypeError(`${name}.source.period must be a positive integer`);
   }
-  const oversold = options.levels?.oversold ?? 30;
-  const overbought = options.levels?.overbought ?? 70;
-  if (!hasValidRsiLevels(oversold, overbought)) {
+  const oversold = options.levels?.oversold ?? (williams ? -80 : 30);
+  const overbought = options.levels?.overbought ?? (williams ? -20 : 70);
+  const minimum = williams ? -100 : 0;
+  if (!hasValidOscillatorLevels(oversold, overbought, minimum)) {
     throw new TypeError(
-      `${name}.levels must satisfy 0 <= oversold < overbought <= 100`
+      `${name}.levels must satisfy ${minimum} <= oversold < overbought <= ${minimum + 100}`
     );
   }
-  validateRsiAppearance(options, name);
-  return {
+  validateOscillatorAppearance(options, name);
+  const common = {
     ...options,
     ...ids,
     legendVisible: resolveLegendVisible(options.legendVisible, name),
     visible: options.visible ?? true,
-    source: {
-      type: 'ohlcvRsi',
-      seriesId: sourceSeriesId,
-      period,
-    },
     levels: { oversold, overbought },
     ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
   };
+  const source = { seriesId: sourceSeriesId, period };
+  if (williams)
+    return { ...common, source: { ...source, type: 'ohlcvWilliamsR' } };
+  return { ...common, source: { ...source, type: 'ohlcvRsi' } };
 }
 
 function resolveSarSeriesOptions(
@@ -1475,6 +1490,44 @@ function resolveBollSeriesOptions(
         options.source.valueSource,
         `${name}.source.valueSource`
       ),
+    },
+    ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
+  };
+}
+
+function resolveKdjSeriesOptions(
+  options: KdjSeriesOptions,
+  name: string,
+  ids: NormalizedSeriesIdentifiers
+): NormalizedKdjSeriesOptions {
+  if (ids.paneId === 'main')
+    throw new TypeError(`${name}.paneId must reference a separate KDJ pane`);
+  if (options.source?.type !== 'ohlcvKdj')
+    throw new TypeError(`${name}.source.type must be 'ohlcvKdj'`);
+  const { period = 9, m1 = 3, m2 = 3 } = options.source;
+  for (const [key, value] of Object.entries({ period, m1, m2 })) {
+    if (!Number.isInteger(value) || value < 1 || value > UINT32_MAX)
+      throw new TypeError(
+        `${name}.source.${key} must be an integer from 1 to ${UINT32_MAX}`
+      );
+  }
+  for (const key of ['kLine', 'dLine', 'jLine'] as const) {
+    validateChartLineAppearance(
+      options.appearance?.[key],
+      `${name}.appearance.${key}`
+    );
+  }
+  return {
+    ...options,
+    ...ids,
+    visible: options.visible ?? true,
+    legendVisible: resolveLegendVisible(options.legendVisible, name),
+    source: {
+      type: 'ohlcvKdj',
+      seriesId: identifier(options.source.seriesId, `${name}.source.seriesId`),
+      period,
+      m1,
+      m2,
     },
     ...resolveGapThreshold(options.gapThresholdMs, `${name}.gapThresholdMs`),
   };
@@ -1595,20 +1648,22 @@ export function resolveAdditionalSeriesOptions(
   const ids = resolveSeriesIdentifiers(options, name);
   if (options.type === 'sar')
     return resolveSarSeriesOptions(options, name, ids);
+  if (options.type === 'kdj')
+    return resolveKdjSeriesOptions(options, name, ids);
   if (options.type === 'boll')
     return resolveBollSeriesOptions(options, name, ids);
   if (isMacdSeriesOptions(options)) {
     return resolveMacdSeriesOptions(options, name, ids);
   }
-  if (isRsiSeriesOptions(options)) {
-    return resolveRsiSeriesOptions(options, name, ids);
+  if (isFixedOscillator(options)) {
+    return resolveFixedOscillator(options, name, ids);
   }
   if (isMovingAverageSeriesOptions(options)) {
     return resolveMovingAverageSeriesOptions(options, name, ids);
   }
   if (!isAdditionalSeriesType(options.type)) {
     throw new TypeError(
-      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'baseline', 'histogram', 'boll', 'sar' or 'macd'`
+      `${name}.type must be 'candlestick', 'hollowCandlestick', 'bar', 'line', 'area', 'baseline', 'histogram', 'boll', 'sar', 'kdj' or 'macd'`
     );
   }
   if (options.type === 'baseline') {
@@ -1649,16 +1704,37 @@ type AdditionalSeriesResolutionContext = {
   macdPaneIds: ReadonlySet<string>;
 };
 
+function validateDedicatedPanes(
+  items: ReadonlyArray<AdditionalChartSeriesOptions>
+): void {
+  const dedicatedPanes = new Map<string, string>();
+  for (const item of items) {
+    let kind = '';
+    if (item.type === 'kdj') kind = 'KDJ';
+    if (isFixedOscillator(item) && item.source.type === 'ohlcvWilliamsR')
+      kind = 'Williams %R';
+    const paneId = item.paneId.trim();
+    const previous = dedicatedPanes.get(paneId);
+    if (previous !== undefined && previous !== kind) {
+      throw new TypeError(
+        `Pane '${item.paneId}' is dedicated to ${kind || previous}`
+      );
+    }
+    dedicatedPanes.set(paneId, kind);
+  }
+}
+
 function collectKnownOhlcSeries(
   items: ReadonlyArray<AdditionalChartSeriesOptions>
 ): Map<string, { paneId: string; priceScaleId: string }> {
   const result = new Map<string, { paneId: string; priceScaleId: string }>();
   items.forEach((item) => {
-    if (item.type === 'boll' || item.type === 'sar') return;
+    if (item.type === 'boll' || item.type === 'sar' || item.type === 'kdj')
+      return;
     if (
       item.type !== 'histogram' &&
       item.type !== 'macd' &&
-      !isRsiSeriesOptions(item) &&
+      !isFixedOscillator(item) &&
       !isMovingAverageSeriesOptions(item)
     ) {
       result.set(item.seriesId, {
@@ -1670,16 +1746,24 @@ function collectKnownOhlcSeries(
   return result;
 }
 
+function requireOhlcSource(
+  seriesId: string,
+  name: string,
+  context: AdditionalSeriesResolutionContext
+): void {
+  if (!context.knownOhlcSeries.has(seriesId)) {
+    throw new TypeError(
+      `${name}.source.seriesId must reference data-backed OHLC data`
+    );
+  }
+}
+
 function resolveConfiguredMacdSeries(
   resolved: NormalizedMacdSeriesOptions,
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
-  if (!context.knownOhlcSeries.has(resolved.source.seriesId)) {
-    throw new TypeError(
-      `${name}.source.seriesId must reference data-backed OHLC data`
-    );
-  }
+  requireOhlcSource(resolved.source.seriesId, name, context);
   if (context.rsiPaneIds.has(resolved.paneId)) {
     throw new TypeError(`${name}.paneId cannot share a pane with RSI`);
   }
@@ -1790,19 +1874,15 @@ function resolveConfiguredSeriesIdentifiers(
   return { seriesId, paneId, priceScaleId };
 }
 
-function resolveConfiguredRsiSeries(
-  resolved: NormalizedRsiSeriesOptions,
+function resolveConfiguredFixedOscillator(
+  resolved: NormalizedFixedOscillator,
   name: string,
   context: AdditionalSeriesResolutionContext
 ): ResolvedAdditionalChartSeriesOptions {
   if (context.macdPaneIds.has(resolved.paneId)) {
     throw new TypeError(`${name}.paneId cannot share a pane with MACD`);
   }
-  if (!context.knownOhlcSeries.has(resolved.source.seriesId)) {
-    throw new TypeError(
-      `${name}.source.seriesId must reference data-backed OHLC data`
-    );
-  }
+  requireOhlcSource(resolved.source.seriesId, name, context);
   const rsiColor = color(
     resolved.appearance?.color ?? context.appearance.line.color,
     `${name}.appearance.color`
@@ -1913,6 +1993,11 @@ function resolveConfiguredAdditionalSeries(
 ): ResolvedAdditionalChartSeriesOptions {
   const name = `additionalSeries[${index}]`;
   const ids = resolveConfiguredSeriesIdentifiers(item, name, context);
+  if (item.type === 'kdj') {
+    const resolved = resolveKdjSeriesOptions(item, name, ids);
+    requireOhlcSource(resolved.source.seriesId, name, context);
+    return resolved;
+  }
   if (item.type === 'sar') {
     return resolveConfiguredMovingAverageSeries(
       resolveSarSeriesOptions(item, name, ids),
@@ -1957,8 +2042,8 @@ function resolveConfiguredAdditionalSeries(
     if (resolved.type !== item.type) {
       throw new TypeError(`${name}.type must remain '${item.type}'`);
     }
-    if (isRsiSeriesOptions(resolved)) {
-      return resolveConfiguredRsiSeries(resolved, name, context);
+    if (isFixedOscillator(resolved)) {
+      return resolveConfiguredFixedOscillator(resolved, name, context);
     }
     if (isMovingAverageSeriesOptions(resolved)) {
       return resolveConfiguredMovingAverageSeries(resolved, name, context);
@@ -2118,6 +2203,7 @@ export function resolveChartConfig(
   ];
 
   const additionalSeriesInputs = props.additionalSeries ?? [];
+  validateDedicatedPanes(additionalSeriesInputs);
   const additionalSeriesContext: AdditionalSeriesResolutionContext = {
     panes: orderedPanes,
     seenSeriesIds: new Set<string>(['main']),
@@ -2129,7 +2215,7 @@ export function resolveChartConfig(
     theme,
     rsiPaneIds: new Set(
       additionalSeriesInputs
-        .filter(isRsiSeriesOptions)
+        .filter(isFixedOscillator)
         .map((series) => series.paneId)
     ),
     macdPaneIds: new Set(

@@ -7,6 +7,24 @@ import org.junit.Test
 
 class ChartEngineTransportAbiTest {
   @Test
+  fun oscillatorTransportKeepsPeriodsAndComponentStylesIndependent() {
+    val kdj = SeriesConfig(seriesId = "kdj", type = "kdj", paneId = "kdj", priceScaleId = "kdj",
+      sourceType = "ohlcvKdj", sourceSeriesId = "main", kdjM1 = 2, kdjM2 = 4,
+      kdjD = IndicatorLineStyle(widthPx = 3f), kdjJ = IndicatorLineStyle(dashed = true))
+    val numbers = kdj.nativeTransportPayload().numbers
+    assertEquals(9.0, numbers[SeriesTransportAbi.NumberIndex.SOURCE], 0.0)
+    assertEquals(2.0, numbers[SeriesTransportAbi.NumberIndex.KDJ_M1], 0.0)
+    assertEquals(4.0, numbers[SeriesTransportAbi.NumberIndex.KDJ_M2], 0.0)
+    assertEquals(3.0, numbers[SeriesTransportAbi.NumberIndex.KDJ_D_WIDTH], 0.0)
+    assertEquals(1.0, numbers[SeriesTransportAbi.NumberIndex.KDJ_J_DASHED], 0.0)
+    val wr = kdj.copy(type = "line", sourceType = "ohlcvWilliamsR", williamsPeriod = 4294967295L)
+      .nativeTransportPayload().numbers
+    assertEquals(8.0, wr[SeriesTransportAbi.NumberIndex.SOURCE], 0.0)
+    assertEquals(UInt.MAX_VALUE.toDouble(), wr[SeriesTransportAbi.NumberIndex.WILLIAMS_PERIOD], 0.0)
+    assertEquals(-80.0, wr[SeriesTransportAbi.NumberIndex.WILLIAMS_OVERSOLD], 0.0)
+  }
+
+  @Test
   fun baselinePayloadPreservesBaseAndBothColorRegions() {
     val payload = SeriesConfig(
       seriesId = "baseline", type = "baseline", paneId = "main", priceScaleId = "main",
@@ -56,16 +74,16 @@ class ChartEngineTransportAbiTest {
                 bollPeriod = UInt.MAX_VALUE.toLong(),
                 bollStdDevMultiplier = 1.25,
                 bollFillEnabled = false,
-                bollUpper = BollLineStyle(widthPx = 3f, color = 0x40112233, dashed = true),
+                bollUpper = IndicatorLineStyle(widthPx = 3f, color = 0x40112233, dashed = true),
                 bollMiddle =
-                    BollLineStyle(
+                    IndicatorLineStyle(
                         widthPx = 2f,
                         color = 0x50223344,
                         gradientEnabled = true,
                         gradientTopColor = 0x60334455,
                         gradientBottomColor = 0x70445566,
                     ),
-                bollLower = BollLineStyle(widthPx = 1f, color = 0x80556677.toInt()),
+                bollLower = IndicatorLineStyle(widthPx = 1f, color = 0x80556677.toInt()),
                 bollFillTopColor = 0x20667788,
                 bollFillBottomColor = 0x10778899,
             )
@@ -273,7 +291,7 @@ class ChartEngineTransportAbiTest {
     assertEquals(true, pane.scaleVisible)
     assertEquals(true, pane.volumeFormat)
     assertEquals(112, pane.precision)
-    assertEquals(true, pane.rsiScale)
+    assertEquals(true, pane.fixedOscillatorScale)
 
     assertThrows(IllegalStateException::class.java) {
       decodeSnapshotRecordPayload(values.copyOf(values.size - 1), 14, "panes")
@@ -354,14 +372,14 @@ class ChartEngineTransportAbiTest {
     validateTransportDescriptor(
         intArrayOf(
             CHART_ENGINE_TRANSPORT_ABI_VERSION,
-            45,
-            156,
+            60,
+            192,
             5,
             3,
             2,
             14,
             32,
-            20,
+            23,
         )
     )
     val expectedRoundTrip =

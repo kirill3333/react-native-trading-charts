@@ -111,6 +111,8 @@ function ChartContent<
   const navigation = useNavigation<ChartNavigation>();
   const showVolume = useChartControlsStore((state) => state.showVolume);
   const showRsi = useChartControlsStore((state) => state.showRsi);
+  const showWilliamsR = useChartControlsStore((state) => state.showWilliamsR);
+  const showKdj = useChartControlsStore((state) => state.showKdj);
   const showMacd = useChartControlsStore((state) => state.showMacd);
   const intervalConfig =
     intervals.find((item) => item.value === interval) ?? intervals[0];
@@ -189,6 +191,8 @@ function ChartContent<
         precision={ticker.precision}
         showVolume={showVolume}
         showRsi={showRsi}
+        showWilliamsR={showWilliamsR}
+        showKdj={showKdj}
         showMacd={showMacd}
         resolution={resolution}
       />

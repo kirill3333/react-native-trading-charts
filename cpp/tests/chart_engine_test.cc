@@ -2840,7 +2840,8 @@ void TestIndicatorAppendBufferGrowth() {
   for (const SeriesSource kind :
        {SeriesSource::kOhlcvRsi, SeriesSource::kOhlcvSma,
         SeriesSource::kOhlcvEma, SeriesSource::kOhlcvMacd,
-        SeriesSource::kOhlcvBoll, SeriesSource::kOhlcvSar}) {
+        SeriesSource::kOhlcvBoll, SeriesSource::kOhlcvSar,
+        SeriesSource::kOhlcvKdj, SeriesSource::kOhlcvWilliamsR}) {
     // Exercise both streaming through warmup and appending to loaded history.
     for (const size_t history_size : {size_t{0}, size_t{1000}}) {
       trading_charts::SeriesData series;
@@ -2909,6 +2910,129 @@ void TestIndicatorAppendBufferGrowth() {
       assert(series.macd_states.size() == rebuilt.macd_states.size());
     }
   }
+}
+
+void TestRangeOscillatorFormulas() {
+  using trading_charts::internal::RebuildDerivedSeries;
+  trading_charts::SeriesData kdj;
+  kdj.config.source = SeriesSource::kOhlcvKdj;
+  std::vector<Candle> candles{{0, 5, 5, 5, 5, 1}, {1, 5, 10, 5, 10, 1}};
+  RebuildDerivedSeries(kdj, &candles, 0);
+  ExpectNear(kdj.candles.front().high, 50);
+  ExpectNear(kdj.candles.front().close, 50);
+  ExpectNear(kdj.candles.front().low, 50);
+  ExpectNear(kdj.candles.back().high, 200.0 / 3);
+  ExpectNear(kdj.candles.back().close, 500.0 / 9);
+  ExpectNear(kdj.candles.back().low, 800.0 / 9);
+  kdj.config.kdj_m1 = 2;
+  kdj.config.kdj_m2 = 4;
+  RebuildDerivedSeries(kdj, &candles, 0);
+  ExpectNear(kdj.candles.front().low, 50);
+  ExpectNear(kdj.candles.back().high, 75);
+  ExpectNear(kdj.candles.back().close, 62.5);
+  ExpectNear(kdj.candles.back().low, 175);
+
+  trading_charts::SeriesData wr;
+  wr.config.source = SeriesSource::kOhlcvWilliamsR;
+  wr.config.williams_period = 2;
+  candles.resize(1);
+  RebuildDerivedSeries(wr, &candles, 0);
+  assert(wr.candles.empty());
+  candles.push_back({1, 5, 10, 5, 10, 1});
+  RebuildDerivedSeries(wr, &candles, 1);
+  ExpectNear(wr.candles.back().close, 0);
+  candles.push_back({2, 5, 5, 5, 5, 1});
+  RebuildDerivedSeries(wr, &candles, 2);
+  ExpectNear(wr.candles.back().close, -100);
+  candles.push_back({3, 5, 5, 5, 5, 1});
+  RebuildDerivedSeries(wr, &candles, 3);
+  ExpectNear(wr.candles.back().close, -50);
+  wr.config.williams_period = 1;
+  RebuildDerivedSeries(wr, &candles, 0);
+  assert(wr.candles.size() == candles.size());
+  ExpectNear(wr.candles.front().close, -50);
+  kdj.config.kdj_period = 1;
+  RebuildDerivedSeries(kdj, &candles, 0);
+  ExpectNear(kdj.candles[2].high, 62.5);
+  ExpectNear(kdj.candles[2].close, 62.5);
+}
+
+void TestRangeOscillatorFramesAndStreaming() {
+  ChartEngine engine;
+  engine.SetSize(800, 560);
+  PaneConfig main, wr_pane, kdj_pane;
+  wr_pane.pane_id = wr_pane.price_scale_id = "wr";
+  kdj_pane.pane_id = kdj_pane.price_scale_id = "kdj";
+  engine.SetPanes({main, wr_pane, kdj_pane}, true);
+  SeriesConfig wr;
+  wr.series_id = wr.pane_id = wr.price_scale_id = "wr";
+  wr.source_series_id = "main";
+  wr.source = SeriesSource::kOhlcvWilliamsR;
+  wr.type = SeriesType::kLine;
+  wr.williams_period = 2;
+  SeriesConfig kdj = wr;
+  kdj.source = SeriesSource::kOhlcvKdj;
+  kdj.series_id = kdj.pane_id = kdj.price_scale_id = "kdj";
+  kdj.kdj_m1 = 2;
+  kdj.kdj_m2 = 4;
+  assert(engine.AddSeries(wr) == UpdateStatus::kApplied);
+  assert(engine.AddSeries(kdj) == UpdateStatus::kApplied);
+  const double history[] = {60000, 5, 5, 5, 5, 1, 120000, 5, 10, 5, 10, 1};
+  assert(engine.SetHistory(history, std::size(history)) ==
+         UpdateStatus::kApplied);
+  engine.FitContent();
+  auto frame = engine.Snapshot();
+  assert(frame->panes[1].williams_scale);
+  ExpectNear(frame->panes[1].visible_y_min, -100);
+  ExpectNear(frame->panes[1].visible_y_max, 0);
+  assert(frame->panes[2].visible_y_max >= 175);
+  assert(frame->indicator_legends.size() == 2);
+  ExpectNear(frame->indicator_legends[1].values[2].value, 175);
+  const auto content = frame->content_vertices;
+  engine.SetCrosshair(true, frame->plot.left + 1, frame->plot.top + 10);
+  frame = engine.Snapshot();
+  assert(frame->content_vertices == content);
+  assert(!frame->crosshair_series_values[0].has_value);
+  ExpectNear(frame->crosshair_series_values[1].j, 50);
+  engine.SetCrosshair(true, frame->plot.right - 1, frame->plot.top + 10);
+  frame = engine.Snapshot();
+  ExpectNear(frame->crosshair_series_values[0].value, 0);
+  ExpectNear(frame->crosshair_series_values[1].j, 175);
+  assert(!engine.ScaleYAt(
+      30, (frame->panes[1].plot.top + frame->panes[1].plot.bottom) / 2));
+  const auto check = [&] {
+    const auto candles = engine.Candles();
+    for (const auto* config : {&wr, &kdj}) {
+      trading_charts::SeriesData rebuilt;
+      rebuilt.config = *config;
+      trading_charts::internal::RebuildDerivedSeries(rebuilt, &candles, 0);
+      const auto actual = trading_charts::ChartEngineTestAccess::SeriesCandles(
+          engine, config->series_id);
+      assert(actual.size() == rebuilt.candles.size());
+      for (size_t i = 0; i < actual.size(); ++i) {
+        ExpectNear(actual[i].high, rebuilt.candles[i].high);
+        ExpectNear(actual[i].close, rebuilt.candles[i].close);
+        ExpectNear(actual[i].low, rebuilt.candles[i].low);
+      }
+    }
+  };
+  const double replacement[] = {120000, 5, 7, 4, 4, 1};
+  assert(engine.UpdateCandle(replacement, std::size(replacement)) ==
+         UpdateStatus::kApplied);
+  check();
+  const double trades[] = {120001, 9, 1, 180001, 12, 1};
+  assert(engine.UpdateTrades(trades, std::size(trades)) ==
+         UpdateStatus::kApplied);
+  check();
+  const double prepend[] = {0, 3, 4, 2, 3, 1};
+  assert(engine.PrependHistory(prepend, std::size(prepend)) ==
+         UpdateStatus::kApplied);
+  check();
+  assert(engine.SetSeriesLegendVisible("kdj", false));
+  assert(engine.Snapshot()->indicator_legends.size() == 1);
+  kdj.series_id = "second";
+  kdj.pane_id = kdj.price_scale_id = "wr";
+  assert(engine.AddSeries(kdj) == UpdateStatus::kInvalidInput);
 }
 
 void TestDerivedRsiPaneAndIncrementalUpdates() {
@@ -5249,7 +5373,7 @@ std::vector<float> BlueStrokeVertices(const std::vector<float>& vertices) {
   return result;
 }
 
-void TestRoundingIsExclusiveToMainLineAndArea() {
+void TestMainRoundingAndIndependentIndicatorStrokes() {
   for (const auto type : {SeriesType::kLine, SeriesType::kArea,
                           SeriesType::kCandlestick, SeriesType::kBar}) {
     ChartEngine engine;
@@ -5273,14 +5397,19 @@ void TestRoundingIsExclusiveToMainLineAndArea() {
     assert(engine.AddSeries(series) == UpdateStatus::kApplied);
     assert(engine.SetSeriesData(series.series_id, history, std::size(history),
                                 false) == UpdateStatus::kApplied);
+    const size_t plain_size =
+        BlueStrokeVertices(ContentOf(*engine.Snapshot())).size();
+    assert(plain_size > 0);
     series.series_id = "sma";
     series.source = SeriesSource::kOhlcvSma;
     series.source_series_id = "main";
-    series.moving_average_period = 2;
+    series.moving_average_period = 1;
     assert(engine.AddSeries(series) == UpdateStatus::kApplied);
     const auto rounded = engine.Snapshot();
     const auto overlays = BlueStrokeVertices(ContentOf(*rounded));
-    assert(!overlays.empty());
+    // Both blue curves follow identical samples. The SMA adds arc triangles
+    // at its caps and joins beyond the flat-ended comparison line.
+    assert(overlays.size() > 2 * plain_size);
     config.line_rounded = false;
     engine.SetConfig(config);
     const auto sharp = engine.Snapshot();
@@ -5618,6 +5747,8 @@ int main() noexcept {
     TestPaneSeparatorUsesStrongerGridAlpha();
     TestVolumePaneTickMinimumDependsOnHeight();
     TestIndicatorAppendBufferGrowth();
+    TestRangeOscillatorFormulas();
+    TestRangeOscillatorFramesAndStreaming();
     TestDerivedRsiPaneAndIncrementalUpdates();
     TestRsiEdgeValuesAndWarmup();
     TestRsiFlatAndCascadeRemoval();
@@ -5653,7 +5784,7 @@ int main() noexcept {
     TestLineGapThresholdAndContentReuse();
     TestLineSegmentsKeepConstantWidthAtSharpTurns();
     TestRoundedLineCapsJoinsAndClipping();
-    TestRoundingIsExclusiveToMainLineAndArea();
+    TestMainRoundingAndIndependentIndicatorStrokes();
     TestPriceLinesAndYAxisValueMapping();
     TestClearPreservesChartDefinitions();
     TestResetForReuseStartsNewChart();

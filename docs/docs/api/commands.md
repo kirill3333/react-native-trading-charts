@@ -154,7 +154,7 @@ export function example(chartId: string) {
 TradingCharts.setSeriesLegendVisible(chartId, seriesId, false);
 ```
 
-Shows or hides the legend of an existing SMA, EMA, BOLL, OHLCV volume, RSI or MACD series. The plot and the selection event still include the series. The command can be queued after `addSeries` before the chart mounts. The next declarative configuration applies its own `legendVisible` value, which defaults to `true`.
+Shows or hides the legend of an existing SMA, EMA, BOLL, OHLCV volume, RSI, MACD, Williams %R or KDJ series. The plot and the selection event still include the series. The command can be queued after `addSeries` before the chart mounts. The next declarative configuration applies its own `legendVisible` value, which defaults to `true`.
 
 ## setPaneHeight {#setpaneheight}
 

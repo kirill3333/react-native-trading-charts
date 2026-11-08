@@ -12,7 +12,7 @@ A pane is a separate plot area within one chart. For example, a trading screen c
 
 The panes share one time axis. Panning or zooming changes the visible time range for all of them, so values at the same timestamp stay aligned. `heightWeight` controls how much vertical space each pane gets; users can drag the separators when resizing is enabled.
 
-Define the layout with `panes`, then assign each additional series to a `paneId` and its `priceScaleId`. Include the reserved `main` pane and `main` price scale whenever you supply this prop. Each pane supports one visible price scale. Price and volume panes calculate their ranges independently; RSI uses a fixed range of 0 to 100.
+Define the layout with `panes`, then assign each additional series to a `paneId` and its `priceScaleId`. Include the reserved `main` pane and `main` price scale whenever you supply this prop. Each pane supports one visible price scale. Price and volume panes calculate their ranges independently; RSI uses a fixed range of 0 to 100. Williams %R uses −100 to 0. KDJ scales to the visible K, D and J values.
 
 An OHLCV volume series displays `VOL` in its pane with the selected or last visible candle’s volume and bar color. A zero displays as `0`. Set `legendVisible: false` on the volume series to hide its label.
 

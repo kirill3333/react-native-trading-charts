@@ -9,6 +9,8 @@ extension ChartOverlayView {
     case .sma: return "SMA \(legend.period)"
     case .ema: return "EMA \(legend.period)"
     case .volume: return "VOL"
+    case .williamsR: return "Williams %R \(legend.period)"
+    case .kdj: return "KDJ \(legend.period) \(legend.fast_period) \(legend.slow_period)"
     case .boll:
       let multiplier = String(legend.std_dev_multiplier)
       let text = multiplier.hasSuffix(".0") ? String(multiplier.dropLast(2)) : multiplier
@@ -100,7 +102,11 @@ extension ChartOverlayView {
               number = formatters.formatValue(value.value, using: formatters.valueFormatterToken(scaleId: scaleId))
             }
           }
-          text = legend.kind == .boll ? ["UP ", "MID ", "LOW "][part - 1] + number : number
+          switch legend.kind {
+          case .boll: text = ["UP ", "MID ", "LOW "][part - 1] + number
+          case .kdj: text = ["K ", "D ", "J "][part - 1] + number
+          default: text = number
+          }
           color = value.color
         }
         let layout = legendLayout(text, color: color, style: style, metrics: &metrics)

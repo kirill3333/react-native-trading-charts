@@ -30,6 +30,8 @@ type InteractiveChartProps = {
   minMove: number;
   showVolume: boolean;
   showRsi: boolean;
+  showWilliamsR?: boolean;
+  showKdj?: boolean;
   showMacd: boolean;
   allTimeExtremes: AllTimeExtremes | null;
   onVisibleRangeChange?: (event: VisibleRangeChangeEvent) => void;
@@ -43,6 +45,8 @@ export const InteractiveChart = memo(function InteractiveChart({
   minMove,
   showVolume,
   showRsi,
+  showWilliamsR = false,
+  showKdj = false,
   showMacd,
   allTimeExtremes,
   onVisibleRangeChange,
@@ -76,13 +80,22 @@ export const InteractiveChart = memo(function InteractiveChart({
         minMove,
         showVolume,
         showRsi,
+        showWilliamsR,
+        showKdj,
         showMacd,
       }),
-    [minMove, settings, showMacd, showRsi, showVolume]
+    [minMove, settings, showWilliamsR, showKdj, showMacd, showRsi, showVolume]
   );
   const additionalSeries = useMemo(
-    () => buildAdditionalSeries(settings, { showVolume, showRsi, showMacd }),
-    [settings, showMacd, showRsi, showVolume]
+    () =>
+      buildAdditionalSeries(settings, {
+        showVolume,
+        showRsi,
+        showWilliamsR,
+        showKdj,
+        showMacd,
+      }),
+    [settings, showWilliamsR, showKdj, showMacd, showRsi, showVolume]
   );
 
   useEffect(() => {

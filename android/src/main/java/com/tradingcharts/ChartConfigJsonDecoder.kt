@@ -553,7 +553,12 @@ internal fun seriesConfigFromJson(
 ): SeriesConfig = seriesConfig(JSONObject(json), fallback, declarative)
 
 private fun String.isLineLikeSeries() =
-    this == "baseline" || this == "line" || this == "area" || this == "macd" || this == "boll"
+    this == "baseline" ||
+        this == "line" ||
+        this == "area" ||
+        this == "macd" ||
+        this == "boll" ||
+        this == "kdj"
 
 private fun JSONObject?.optionalColor(name: String): Int? =
     this?.optString(name)?.takeIf { it.isNotEmpty() }?.let(::parseChartColor)
@@ -792,6 +797,7 @@ private fun seriesConfig(
           macdZeroLineColor = macd.zeroLineColor,
           macdTextColor = macd.textColor,
       )
+      .withOscillator(source, json.optJSONObject("levels"), appearance, fallback.displayScale)
       .withBoll(source, appearance, fallback.displayScale)
       .withSar(source, appearance)
       .withBaseline(json, fallback)
@@ -818,6 +824,31 @@ private fun SeriesConfig.withSar(source: JSONObject?, appearance: JSONObject?): 
   )
 }
 
+private fun SeriesConfig.withOscillator(
+    source: JSONObject?,
+    levels: JSONObject?,
+    appearance: JSONObject?,
+    density: Float,
+): SeriesConfig =
+    when (sourceType) {
+      "ohlcvWilliamsR" ->
+          copy(
+              williamsPeriod = source?.optLong("period", 14) ?: 14,
+              williamsOversold = levels?.optDouble("oversold", -80.0) ?: -80.0,
+              williamsOverbought = levels?.optDouble("overbought", -20.0) ?: -20.0,
+          )
+      "ohlcvKdj" ->
+          copy(
+              kdjPeriod = source?.optLong("period", 9) ?: 9,
+              kdjM1 = source?.optLong("m1", 3) ?: 3,
+              kdjM2 = source?.optLong("m2", 3) ?: 3,
+              kdjK = indicatorLineStyle(appearance?.optJSONObject("kLine"), density, kdjK.color),
+              kdjD = indicatorLineStyle(appearance?.optJSONObject("dLine"), density, kdjD.color),
+              kdjJ = indicatorLineStyle(appearance?.optJSONObject("jLine"), density, kdjJ.color),
+          )
+      else -> this
+    }
+
 private fun SeriesConfig.withBoll(
     source: JSONObject?,
     appearance: JSONObject?,
@@ -829,25 +860,37 @@ private fun SeriesConfig.withBoll(
       bollPeriod = source?.optLong("period", 20) ?: 20,
       bollStdDevMultiplier = source?.optDouble("stdDevMultiplier", 2.0) ?: 2.0,
       bollUpper =
-          bollLineStyle(appearance?.optJSONObject("upperLine"), density, Color.rgb(46, 144, 245)),
+          indicatorLineStyle(
+              appearance?.optJSONObject("upperLine"),
+              density,
+              Color.rgb(46, 144, 245),
+          ),
       bollMiddle =
-          bollLineStyle(appearance?.optJSONObject("middleLine"), density, Color.rgb(245, 166, 35)),
+          indicatorLineStyle(
+              appearance?.optJSONObject("middleLine"),
+              density,
+              Color.rgb(245, 166, 35),
+          ),
       bollLower =
-          bollLineStyle(appearance?.optJSONObject("lowerLine"), density, Color.rgb(46, 144, 245)),
+          indicatorLineStyle(
+              appearance?.optJSONObject("lowerLine"),
+              density,
+              Color.rgb(46, 144, 245),
+          ),
       bollFillEnabled = fill?.optBoolean("enabled", true) ?: true,
       bollFillTopColor = fill.optionalColor("topColor") ?: Color.argb(51, 46, 144, 245),
       bollFillBottomColor = fill.optionalColor("bottomColor") ?: Color.argb(13, 46, 144, 245),
   )
 }
 
-private fun bollLineStyle(
+private fun indicatorLineStyle(
     appearance: JSONObject?,
     density: Float,
     defaultColor: Int,
-): BollLineStyle {
+): IndicatorLineStyle {
   val color = appearance.optionalColor("color") ?: defaultColor
   val gradient = appearance?.optJSONObject("gradient")
-  return BollLineStyle(
+  return IndicatorLineStyle(
       widthPx = (appearance?.optDouble("width", 1.0) ?: 1.0).toFloat() * density,
       color = color,
       gradientTopColor = gradient.optionalColor("topColor") ?: color,

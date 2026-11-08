@@ -317,7 +317,7 @@ ScaleYResult ChartEngine::ScaleYAtWithResult(float delta_pixels, float y) {
   if (pane_index >= panes_.size()) {
     return {};
   }
-  if (PaneHasRsiLocked(pane_index)) {
+  if (PaneHasFixedScaleLocked(pane_index)) {
     return {};
   }
   const double plot_height = std::max(

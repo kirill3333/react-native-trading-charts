@@ -22,7 +22,7 @@ Declare series in the `additionalSeries` prop when they are part of the screen's
 | `paneId`         | Existing pane ID                                                                             | Required       | Target pane.                                         |
 | `priceScaleId`   | Target pane's scale ID                                                                       | Required       | Must match the pane price scale.                     |
 | `visible`        | `boolean`                                                                                    | `true`         | Controls rendering without removing the series.      |
-| `type`           | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'`, `'macd'`, `'boll'` | Required       | Series geometry or composite indicator.         |
+| `type`           | `'candlestick'`, `'hollowCandlestick'`, `'bar'`, `'line'`, `'area'`, `'histogram'`, `'macd'`, `'boll'`, `'kdj'`, `'sar'` | Required       | Series geometry or composite indicator.         |
 | `source`         | OHLC field, derived indicator, or histogram source                                           | Type-specific  | Line/area value field or native-derived/data source. |
 | `gapThresholdMs` | Positive milliseconds                                                                        | `undefined`    | Optional line/area gap splitting.                    |
 | `appearance`     | Type-specific style                                                                          | Theme fallback | Optional line, area, or histogram style.             |

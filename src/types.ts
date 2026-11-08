@@ -40,6 +40,15 @@ type CrosshairSeriesIdentity = Readonly<{
 export type CrosshairSeriesValue =
   | (CrosshairSeriesIdentity &
       Readonly<{
+        kind: 'kdj';
+        seriesType: 'kdj';
+        sourceType: 'ohlcvKdj';
+        k: number | null;
+        d: number | null;
+        j: number | null;
+      }>)
+  | (CrosshairSeriesIdentity &
+      Readonly<{
         kind: 'boll';
         seriesType: 'boll';
         sourceType: 'ohlcvBoll';
@@ -60,6 +69,7 @@ export type CrosshairSeriesValue =
         sourceType:
           | 'data'
           | 'ohlcvVolume'
+          | 'ohlcvWilliamsR'
           | 'ohlcvRsi'
           | 'ohlcvSma'
           | 'ohlcvEma'
@@ -333,6 +343,49 @@ export type RsiSeriesOptions = AdditionalSeriesBase & {
   appearance?: RsiSeriesAppearance;
 };
 
+export type WilliamsRSeriesOptions = Omit<RsiSeriesOptions, 'source'> & {
+  source: { type: 'ohlcvWilliamsR'; seriesId: string; period?: number };
+};
+
+type NormalizedFixedOscillator<
+  T extends RsiSeriesOptions | WilliamsRSeriesOptions,
+> = Omit<T, 'source' | 'levels'> & {
+  source: Required<T['source']>;
+  visible: boolean;
+  legendVisible: boolean;
+  levels: Required<RsiLevels>;
+};
+
+type FixedOscillators =
+  | NormalizedFixedOscillator<RsiSeriesOptions>
+  | NormalizedFixedOscillator<WilliamsRSeriesOptions>;
+
+export type KdjSeriesAppearance = {
+  kLine?: ChartLineAppearance;
+  dLine?: ChartLineAppearance;
+  jLine?: ChartLineAppearance;
+};
+
+export type KdjSeriesOptions = AdditionalSeriesBase & {
+  type: 'kdj';
+  source: {
+    type: 'ohlcvKdj';
+    seriesId: string;
+    period?: number;
+    m1?: number;
+    m2?: number;
+  };
+  legendVisible?: boolean;
+  gapThresholdMs?: number;
+  appearance?: KdjSeriesAppearance;
+};
+
+export type NormalizedKdjSeriesOptions = Omit<KdjSeriesOptions, 'source'> & {
+  visible: boolean;
+  legendVisible: boolean;
+  source: Required<KdjSeriesOptions['source']>;
+};
+
 export type MovingAverageSeriesOptions = AdditionalSeriesBase & {
   legendVisible?: boolean;
   type: 'line';
@@ -438,6 +491,8 @@ export type AdditionalChartSeriesOptions =
   | AdditionalOhlcSeriesOptions
   | HistogramSeriesOptions
   | RsiSeriesOptions
+  | WilliamsRSeriesOptions
+  | KdjSeriesOptions
   | MovingAverageSeriesOptions
   | MacdSeriesOptions
   | BollSeriesOptions
@@ -451,18 +506,10 @@ export type AdditionalChartSeriesOptions =
  */
 export type NormalizedAdditionalChartSeriesOptions =
   | NormalizedSarSeriesOptions
+  | NormalizedKdjSeriesOptions
   | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
-  | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels'> & {
-      visible: boolean;
-      legendVisible: boolean;
-      source: {
-        type: 'ohlcvRsi';
-        seriesId: string;
-        period: number;
-      };
-      levels: Required<RsiLevels>;
-    })
+  | FixedOscillators
   | (Omit<MovingAverageSeriesOptions, 'visible' | 'source'> & {
       visible: boolean;
       legendVisible: boolean;
@@ -836,17 +883,10 @@ export type ResolvedChartPaneOptions = {
 
 export type ResolvedAdditionalChartSeriesOptions =
   | NormalizedSarSeriesOptions
+  | NormalizedKdjSeriesOptions
   | NormalizedBollSeriesOptions
   | (AdditionalOhlcSeriesOptions & { visible: boolean })
-  | (Omit<RsiSeriesOptions, 'visible' | 'source' | 'levels' | 'appearance'> & {
-      visible: boolean;
-      legendVisible: boolean;
-      source: {
-        type: 'ohlcvRsi';
-        seriesId: string;
-        period: number;
-      };
-      levels: Required<RsiLevels>;
+  | (FixedOscillators & {
       appearance: Required<
         Pick<
           RsiSeriesAppearance,

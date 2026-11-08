@@ -4,7 +4,7 @@
 import Foundation
 
 enum SeriesConfigurationDecoder {
-  private static func bollLine(
+  private static func indicatorLine(
     _ appearance: JSONDictionary, fallback: NativeIndicatorLineStyle
   ) -> NativeIndicatorLineStyle {
     var line = fallback
@@ -46,7 +46,7 @@ enum SeriesConfigurationDecoder {
     case "bar": return .bar
     case "hollowCandlestick": return .hollowCandlestick
     case "histogram": return .histogram
-    case "line", "macd", "boll", "sar": return .line
+    case "line", "macd", "boll", "sar", "kdj": return .line
     case "area": return .area
     case "baseline": return .baseline
     default: return .candlestick
@@ -101,6 +101,19 @@ enum SeriesConfigurationDecoder {
       let levels = item.dictionary("levels")
       config.rsi_oversold = levels.number("oversold")?.doubleValue ?? 30
       config.rsi_overbought = levels.number("overbought")?.doubleValue ?? 70
+    case "ohlcvWilliamsR":
+      config.source = .ohlcvWilliamsR
+      config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
+      config.williams_period = UInt32(exactly: source?.number("period")?.uint64Value ?? 14) ?? 0
+      let levels = item.dictionary("levels")
+      config.williams_oversold = levels.number("oversold")?.doubleValue ?? -80
+      config.williams_overbought = levels.number("overbought")?.doubleValue ?? -20
+    case "ohlcvKdj":
+      config.source = .ohlcvKdj
+      config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
+      config.kdj_period = UInt32(exactly: source?.number("period")?.uint64Value ?? 9) ?? 0
+      config.kdj_m1 = UInt32(exactly: source?.number("m1")?.uint64Value ?? 3) ?? 0
+      config.kdj_m2 = UInt32(exactly: source?.number("m2")?.uint64Value ?? 3) ?? 0
     case "ohlcvSar":
       config.source = .ohlcvSar
       config.source_series_id = nativeString(source?.stringOrNil("seriesId") ?? "main")
@@ -133,9 +146,11 @@ enum SeriesConfigurationDecoder {
     config.down = colorFromHex(appearance.stringOrNil("downColor"), fallback: chartConfig.down)
     config.sar_reversal = colorFromHex(
       appearance.stringOrNil("reversalColor"), fallback: config.sar_reversal)
-    var defaultLevel = config.color
+    let oscillatorColor = config.source == .ohlcvWilliamsR
+      ? colorFromHex(appearance.stringOrNil("color"), fallback: defaults.lineColor) : config.color
+    var defaultLevel = oscillatorColor
     defaultLevel.a *= 0.5
-    var defaultBand = config.color
+    var defaultBand = oscillatorColor
     defaultBand.a *= 20 / 255
     config.rsi_text_color_set = appearance.stringOrNil("textColor") != nil
     config.rsi_text_color = colorFromHex(appearance.stringOrNil("textColor"), fallback: config.color)
@@ -226,10 +241,15 @@ enum SeriesConfigurationDecoder {
       config.macd_text_color = colorFromHex(
         appearance.stringOrNil("textColor"), fallback: chartConfig.axis_text)
     }
+    if config.source == .ohlcvKdj {
+      config.kdj_k = indicatorLine(appearance.dictionary("kLine"), fallback: config.kdj_k)
+      config.kdj_d = indicatorLine(appearance.dictionary("dLine"), fallback: config.kdj_d)
+      config.kdj_j = indicatorLine(appearance.dictionary("jLine"), fallback: config.kdj_j)
+    }
     if config.source == .ohlcvBoll {
-      config.boll_upper = bollLine(appearance.dictionary("upperLine"), fallback: config.boll_upper)
-      config.boll_middle = bollLine(appearance.dictionary("middleLine"), fallback: config.boll_middle)
-      config.boll_lower = bollLine(appearance.dictionary("lowerLine"), fallback: config.boll_lower)
+      config.boll_upper = indicatorLine(appearance.dictionary("upperLine"), fallback: config.boll_upper)
+      config.boll_middle = indicatorLine(appearance.dictionary("middleLine"), fallback: config.boll_middle)
+      config.boll_lower = indicatorLine(appearance.dictionary("lowerLine"), fallback: config.boll_lower)
       let fill = appearance.dictionary("fill")
       config.boll_fill_enabled = fill.number("enabled")?.boolValue ?? true
       config.boll_fill_top = colorFromHex(fill.stringOrNil("topColor"), fallback: config.boll_fill_top)

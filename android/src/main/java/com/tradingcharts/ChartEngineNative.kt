@@ -31,7 +31,7 @@ internal data class PaneSnapshot(
     val scaleVisible: Boolean,
     val volumeFormat: Boolean,
     val precision: Int,
-    val rsiScale: Boolean,
+    val fixedOscillatorScale: Boolean,
 )
 
 internal data class IndicatorLegendValueSnapshot(
@@ -78,6 +78,9 @@ internal data class CrosshairSeriesValueSnapshot(
     val signal: Double,
     val hasHistogram: Boolean,
     val histogram: Double,
+    val k: Double,
+    val d: Double,
+    val j: Double,
     val upper: Double = 0.0,
     val middle: Double = 0.0,
     val lower: Double = 0.0,
@@ -665,7 +668,7 @@ internal object ChartEngineNative {
           scaleVisible = record.scaleVisible,
           volumeFormat = record.volumeFormat,
           precision = record.precision,
-          rsiScale = record.rsiScale,
+          fixedOscillatorScale = record.fixedOscillatorScale,
       )
     }
   }
@@ -761,6 +764,9 @@ internal object ChartEngineNative {
           upper = number(17),
           middle = number(18),
           lower = number(19),
+          k = number(20),
+          d = number(21),
+          j = number(22),
       )
     }
   }

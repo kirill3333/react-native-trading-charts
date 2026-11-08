@@ -20,14 +20,8 @@ internal fun crosshairSeriesValuesJson(values: List<CrosshairSeriesValueSnapshot
         json.put("seriesType", seriesTypeName(value.seriesType))
         json.put("candle", if (value.hasValue) candleJson(value.candle) else JSONObject.NULL)
       }
-      SERIES_VALUE_KIND_BOLL -> {
-        json.put("kind", "boll")
-        json.put("seriesType", "boll")
-        json.put("sourceType", "ohlcvBoll")
-        json.put("upper", if (value.hasValue) value.upper else JSONObject.NULL)
-        json.put("middle", if (value.hasValue) value.middle else JSONObject.NULL)
-        json.put("lower", if (value.hasValue) value.lower else JSONObject.NULL)
-      }
+      SERIES_VALUE_KIND_KDJ -> putKdjValues(json, value)
+      SERIES_VALUE_KIND_BOLL -> putBollValues(json, value)
       SERIES_VALUE_KIND_MACD -> {
         json.put("kind", "macd")
         json.put("seriesType", "macd")
@@ -46,6 +40,24 @@ internal fun crosshairSeriesValuesJson(values: List<CrosshairSeriesValueSnapshot
     result.put(json)
   }
   return result.toString()
+}
+
+private fun putBollValues(json: JSONObject, value: CrosshairSeriesValueSnapshot) {
+  json.put("kind", "boll")
+  json.put("seriesType", "boll")
+  json.put("sourceType", "ohlcvBoll")
+  json.put("upper", if (value.hasValue) value.upper else JSONObject.NULL)
+  json.put("middle", if (value.hasValue) value.middle else JSONObject.NULL)
+  json.put("lower", if (value.hasValue) value.lower else JSONObject.NULL)
+}
+
+private fun putKdjValues(json: JSONObject, value: CrosshairSeriesValueSnapshot) {
+  json.put("kind", "kdj")
+  json.put("seriesType", "kdj")
+  json.put("sourceType", "ohlcvKdj")
+  json.put("k", if (value.hasValue) value.k else JSONObject.NULL)
+  json.put("d", if (value.hasValue) value.d else JSONObject.NULL)
+  json.put("j", if (value.hasValue) value.j else JSONObject.NULL)
 }
 
 private fun scalarSeriesTypeName(value: CrosshairSeriesValueSnapshot) =
@@ -74,6 +86,7 @@ private fun seriesTypeName(type: Int) =
 private fun sourceTypeName(source: Int) =
     when (source) {
       SERIES_SOURCE_VOLUME -> "ohlcvVolume"
+      SERIES_SOURCE_WILLIAMS_R -> "ohlcvWilliamsR"
       SERIES_SOURCE_RSI -> "ohlcvRsi"
       SERIES_SOURCE_SMA -> "ohlcvSma"
       SERIES_SOURCE_EMA -> "ohlcvEma"
@@ -84,6 +97,8 @@ private fun sourceTypeName(source: Int) =
 
 private const val SERIES_VALUE_KIND_OHLC = 0
 private const val SERIES_VALUE_KIND_MACD = 2
+private const val SERIES_SOURCE_WILLIAMS_R = 8
+private const val SERIES_VALUE_KIND_KDJ = 4
 private const val SERIES_VALUE_KIND_BOLL = 3
 private const val SERIES_TYPE_CANDLESTICK = 0
 private const val SERIES_TYPE_BAR = 1

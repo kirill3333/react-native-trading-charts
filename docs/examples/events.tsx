@@ -22,6 +22,8 @@ export function SelectionSummary({ chartId }: { chartId: string }) {
                 return `${item.seriesId}: ${item.value ?? '—'}`;
               case 'boll':
                 return `${item.seriesId}: ${item.upper ?? '—'} / ${item.middle ?? '—'} / ${item.lower ?? '—'}`;
+              case 'kdj':
+                return `${item.seriesId}: K ${item.k ?? '—'} / D ${item.d ?? '—'} / J ${item.j ?? '—'}`;
               case 'macd':
                 return `${item.seriesId}: ${item.macd ?? '—'}`;
             }
