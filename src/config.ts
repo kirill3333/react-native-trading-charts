@@ -675,6 +675,32 @@ function resolveDisplayFormat(
   };
 }
 
+function resolvePulseDot(
+  appearance: ChartAppearance | undefined,
+  seriesType: ChartSeriesType,
+  strokeColor: string,
+  belowBaseColor: string
+): ResolvedChartAppearance['pulseDot'] {
+  const supported =
+    seriesType === 'line' || seriesType === 'area' || seriesType === 'baseline';
+  const options = supported ? appearance?.[seriesType]?.pulseDot : undefined;
+  const path = `appearance.${seriesType}.pulseDot`;
+  const pulse: ResolvedChartAppearance['pulseDot'] = {
+    enabled: options?.enabled ?? false,
+    color: color(options?.color ?? strokeColor, `${path}.color`),
+    frequency: finitePositive(
+      options?.frequency ?? 1 / 1.2,
+      `${path}.frequency`
+    ),
+    radius: finitePositive(options?.radius ?? 4, `${path}.radius`),
+    haloRadius: finitePositive(options?.haloRadius ?? 14, `${path}.haloRadius`),
+  };
+  if (seriesType === 'baseline')
+    pulse.belowBaseColor =
+      options?.color == null ? belowBaseColor : pulse.color;
+  return pulse;
+}
+
 function resolveAppearance(
   input: ChartAppearance | undefined,
   theme: Required<ChartTheme>,
@@ -797,6 +823,12 @@ function resolveAppearance(
   const badgeFallback = '#000000';
 
   return {
+    pulseDot: resolvePulseDot(
+      input,
+      seriesType,
+      activeUpColor,
+      activeDownColor
+    ),
     baseline: { ...baseline, rounded: input?.baseline?.rounded ?? true },
     backgroundColor,
     grid: {

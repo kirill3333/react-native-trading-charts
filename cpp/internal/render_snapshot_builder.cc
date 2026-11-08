@@ -289,6 +289,7 @@ class RenderSnapshotBuilder {
     AddAdditionalSeriesGeometry();
     AddPaneSeparators();
     AddPriceLineGeometry();
+    SetLineEndpoint();
     AddCurrentPriceGeometry();
     snapshot_->content_vertices = std::move(content_vertices_);
     AddCrosshair();
@@ -1606,6 +1607,24 @@ class RenderSnapshotBuilder {
       EmitDashedHorizontal(*content_vertices_, price_line.y,
                            snapshot_->plot.left, snapshot_->plot.right,
                            input_.config.display_scale, price_line.color);
+    }
+  }
+
+  void SetLineEndpoint() {
+    if (!IsLineLikeSeries(input_.config.series_type)) {
+      return;
+    }
+    const double x = CandleX(input_.candles.size() - 1);
+    const double y =
+        CandleValue(input_.candles.back(), input_.config.line_source);
+    if (x >= input_.visible_x_min && x <= input_.visible_x_max && y >= y_min_ &&
+        y <= y_max_) {
+      snapshot_->line_endpoint_visible = true;
+      snapshot_->line_endpoint_below_base =
+          input_.config.series_type == SeriesType::kBaseline &&
+          y < BaselinePrice(input_.config.baseline, y_min_, y_max_);
+      snapshot_->line_endpoint_x = ProjectX(x);
+      snapshot_->line_endpoint_y = ProjectY(y);
     }
   }
 

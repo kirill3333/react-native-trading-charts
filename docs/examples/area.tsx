@@ -34,6 +34,7 @@ export function Example() {
       appearance={{
         area: {
           width: 2,
+          pulseDot: { enabled: true },
           color: '#2E90F5',
           fill: { topColor: '#2E90F566', bottomColor: '#2E90F500' },
         },

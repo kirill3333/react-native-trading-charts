@@ -38,6 +38,7 @@ export function Example() {
       appearance={{
         baseline: {
           width: 2,
+          pulseDot: { enabled: true },
           topLineColor: '#009688',
           bottomLineColor: '#FF3344',
           topFill: { topColor: '#00968866', bottomColor: '#00968814' },

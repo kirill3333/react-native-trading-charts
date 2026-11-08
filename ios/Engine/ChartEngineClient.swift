@@ -87,6 +87,11 @@ struct ChartRenderFrame {
   var selectedAmplitudePercent: Double { handle.SelectedAmplitudePercent() }
   var width: Float { handle.Width() }
   var height: Float { handle.Height() }
+  var lineEndpointBelowBase: Bool { handle.EndpointBelowBase() }
+  var lineEndpoint: CGPoint? {
+    guard handle.LineEndpointVisible() else { return nil }
+    return CGPoint(x: CGFloat(handle.LineEndpointX()), y: CGFloat(handle.LineEndpointY()))
+  }
   var currentPriceY: Float { handle.CurrentPriceY() }
   var crosshairX: Float { handle.CrosshairX() }
   var crosshairY: Float { handle.CrosshairY() }

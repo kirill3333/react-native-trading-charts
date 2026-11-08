@@ -31,7 +31,19 @@ export function Example() {
       style={{ height: 480 }}
       chartId={chartId}
       series={{ type: 'line', source: 'close', gapThresholdMs: 300_000 }}
-      appearance={{ line: { width: 2, color: '#2E90F5' } }}
+      appearance={{
+        line: {
+          width: 2,
+          color: '#2E90F5',
+          pulseDot: {
+            enabled: true,
+            color: '#CA174A',
+            frequency: 2,
+            radius: 5,
+            haloRadius: 20,
+          },
+        },
+      }}
     />
   );
 }

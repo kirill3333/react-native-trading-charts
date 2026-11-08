@@ -17,6 +17,7 @@ public final class ChartHostView: UIView {
   private let engine = ChartEngineClient()
   private let metalView: MTKView
   private let renderer: ChartMetalRenderer
+  private let pulseDot = ChartPulseDot()
   private let overlay = ChartOverlayView(frame: .zero)
   private let scheduler = ChartFrameScheduler()
   private let momentum = ChartMomentumController()
@@ -41,6 +42,7 @@ public final class ChartHostView: UIView {
     metalView.delegate = renderer
     addSubview(metalView)
     addSubview(overlay)
+    overlay.layer.insertSublayer(pulseDot.clip, at: 0)
 
     scheduler.onFrame = { [weak self] displayLink in
       self?.renderFrame(displayLink)
@@ -48,6 +50,7 @@ public final class ChartHostView: UIView {
     renderer.onNeedsFrame = { [weak self] in self?.requestFrame() }
     renderer.onDidCommit = { [weak self] frame in
       guard let self else { return }
+      if !self.isHidden { self.pulseDot.apply(frame) }
       self.overlay.apply(frame: frame)
       self.lastDrawnRevision = frame.revision
       self.forceNextDraw = false
@@ -102,6 +105,12 @@ public final class ChartHostView: UIView {
     requestFrame()
   }
 
+  public override var isHidden: Bool {
+    didSet {
+      if isHidden { pulseDot.hide() } else if oldValue { forceNextDraw = true; requestFrame() }
+    }
+  }
+
   public override func didMoveToWindow() {
     super.didMoveToWindow()
 #if TRADING_CHARTS_EXAMPLE_DIAGNOSTICS
@@ -110,6 +119,7 @@ public final class ChartHostView: UIView {
     interaction.cancelInteraction()
     scheduler.suspend()
     guard window != nil else {
+      pulseDot.hide()
       events.priceScaleChanges.clear()
       realTimeScroll.stop()
       return
@@ -132,6 +142,7 @@ public final class ChartHostView: UIView {
     realTimeScroll.stop()
     events.priceScaleChanges.clear()
     configuration = next
+    pulseDot.configure(next)
     overlay.apply(configuration: next)
     engine.setConfig(next.native)
     engine.setPanes(next.panes, resizable: next.panesResizable)
@@ -316,6 +327,7 @@ public final class ChartHostView: UIView {
     interaction.apply(config: NativeChartConfig(), panesResizable: false)
     interaction.setYAxisPressEnabled(false)
     engine.resetForReuse()
+    pulseDot.hide()
     configuration = nil
     declarativeSeriesIds.removeAll()
     events.reset()
@@ -400,6 +412,7 @@ public final class ChartHostView: UIView {
   }
 
   @objc private func applicationWillResignActive() {
+    pulseDot.hide()
     interaction.cancelInteraction()
     realTimeScroll.stop()
     scheduler.suspend()

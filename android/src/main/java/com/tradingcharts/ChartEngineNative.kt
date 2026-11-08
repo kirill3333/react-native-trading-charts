@@ -127,6 +127,10 @@ internal data class ChartSnapshot(
     val activePaneIndex: Int,
     val currentPriceVisible: Boolean,
     val currentPrice: Double,
+    val lineEndpointVisible: Boolean,
+    val lineEndpointBelowBase: Boolean,
+    val lineEndpointX: Float,
+    val lineEndpointY: Float,
     val currentPriceY: Float,
     val currentPriceColor: FloatArray,
     val currentPriceLabelColor: FloatArray,
@@ -193,8 +197,14 @@ private object SnapshotMetaIndex {
   const val CURRENT_PRICE_LABEL_COLOR_A = 50
   const val HORIZONTAL_SCALE = 51
   const val Y_AXIS_SCALE = 52
-  const val SIZE = 53
+  const val LINE_ENDPOINT_VISIBLE = 53
+  const val LINE_ENDPOINT_X = 54
+  const val LINE_ENDPOINT_Y = 55
+  const val LINE_ENDPOINT_BELOW_BASE = 56
+  const val SIZE = 57
 }
+
+private fun DoubleArray.rgba(start: Int) = FloatArray(4) { this[start + it].toFloat() }
 
 private fun DoubleArray.visibleMaximum() =
     PriceExtremumSnapshot(
@@ -579,21 +589,13 @@ internal object ChartEngineNative {
         activePaneIndex = nativeSnapshotActivePane(snapshot),
         currentPriceVisible = meta[SnapshotMetaIndex.CURRENT_PRICE_VISIBLE] != 0.0,
         currentPrice = meta[SnapshotMetaIndex.CURRENT_PRICE],
+        lineEndpointVisible = meta[SnapshotMetaIndex.LINE_ENDPOINT_VISIBLE] != 0.0,
+        lineEndpointX = meta[SnapshotMetaIndex.LINE_ENDPOINT_X].toFloat(),
+        lineEndpointY = meta[SnapshotMetaIndex.LINE_ENDPOINT_Y].toFloat(),
+        lineEndpointBelowBase = meta[SnapshotMetaIndex.LINE_ENDPOINT_BELOW_BASE] != 0.0,
         currentPriceY = meta[SnapshotMetaIndex.CURRENT_PRICE_Y].toFloat(),
-        currentPriceColor =
-            floatArrayOf(
-                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_R].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_G].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_B].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_COLOR_A].toFloat(),
-            ),
-        currentPriceLabelColor =
-            floatArrayOf(
-                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_R].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_G].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_B].toFloat(),
-                meta[SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_A].toFloat(),
-            ),
+        currentPriceColor = meta.rgba(SnapshotMetaIndex.CURRENT_PRICE_COLOR_R),
+        currentPriceLabelColor = meta.rgba(SnapshotMetaIndex.CURRENT_PRICE_LABEL_COLOR_R),
         visibleMaximum = meta.visibleMaximum(),
         visibleMinimum = meta.visibleMinimum(),
         crosshairVisible = meta[SnapshotMetaIndex.CROSSHAIR_VISIBLE] != 0.0,
